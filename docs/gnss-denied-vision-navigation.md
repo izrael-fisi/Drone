@@ -1,116 +1,155 @@
-# GNSS-Denied Vision Navigation Goal
+# GNSS-Denied Vision Navigation
 
 ## Goal
 
-Develop a low-cost drone navigation system that can estimate geolocation in GNSS-denied environments using computer vision and pre-installed maps, then output position in an NMEA-compatible format for downstream systems.
+Develop a low-cost onboard navigation system that estimates UAV position when GNSS is unavailable, degraded, spoofed, or intentionally ignored.
 
-The target is not only to fly autonomously, but to produce a useful geolocation stream when GNSS is unavailable, degraded, or intentionally denied.
+The system should use:
 
-## Desired Output
+- Onboard camera imagery
+- IMU and attitude estimates from the flight controller
+- Barometer and optional rangefinder data
+- Pre-installed georeferenced maps or visual feature databases
+- Estimator fusion with explicit confidence/covariance
 
-The system should eventually produce NMEA-style location messages, such as:
+The project should produce the most useful modern navigation output for PX4 and ROS 2. NMEA is only an optional compatibility output.
 
-- Estimated latitude
-- Estimated longitude
-- Estimated altitude or height estimate
-- Estimated heading/course
-- Estimated speed if available
-- Position confidence or quality indicator
-- Timestamp
-
-Possible NMEA sentences to emulate or produce:
-
-- `$GPGGA` / `$GNGGA` for fix data
-- `$GPRMC` / `$GNRMC` for recommended minimum navigation data
-- `$GPVTG` / `$GNVTG` for course and speed
-
-The generated NMEA stream should clearly distinguish estimated vision/map-derived position from true GNSS.
-
-## Candidate Localization Approach
+## Core Navigation Concept
 
 ```text
 Camera frames
-  -> visual feature extraction / object recognition
-    -> match against pre-installed map or landmark database
-      -> estimate camera/drone pose
-        -> fuse with IMU/barometer/optical flow/VIO if available
-          -> produce geolocation estimate
-            -> convert to NMEA-style output
+  -> feature tracking / visual odometry / VIO
+    -> visual place recognition or map matching
+      -> absolute or drift-corrected pose estimate
+        -> fusion with inertial, altitude, and heading sources
+          -> navigation estimate with covariance/confidence
+            -> ROS 2 pose/odometry
+            -> PX4 external vision or GPS-like input
 ```
+
+## Key Subsystems
+
+### Sensor Capture
+
+- Camera driver
+- Camera calibration
+- Timestamp synchronization
+- Frame quality checks
+- Rolling/global-shutter characterization
+
+### Local Motion Estimation
+
+Candidate approaches:
+
+- Visual odometry
+- Visual-inertial odometry
+- Optical flow plus rangefinder for low-altitude velocity, if justified by tests
+- Feature tracking with IMU propagation
+
+### Global Relocalization
+
+Candidate approaches:
+
+- Matching against georeferenced orthomosaic tiles
+- Matching against satellite/aerial image tiles
+- Matching against a prebuilt visual landmark database
+- Place recognition followed by geometric verification
+- Pose refinement using known camera intrinsics, altitude, and attitude
+
+### Fusion And Health
+
+The estimator should publish:
+
+- Pose
+- Velocity if available
+- Covariance or confidence
+- Time since last map match
+- Drift estimate if available
+- Estimator mode: initializing, local-only, map-matched, degraded, failed
 
 ## Map Inputs
 
-Possible pre-installed map sources:
+Possible map sources:
 
 - Orthomosaic imagery
 - Satellite imagery tiles
-- Known building/landmark database
-- Feature map generated before deployment
-- Local mission map with georeferenced keypoints
-- Floor plan or site map for indoor/special environments
+- Prebuilt feature maps
+- Georeferenced keypoints
+- Landmark/object databases
+- Site-specific maps generated before deployment
+
+Initial simulator maps can be small and artificial. The point is to validate the full navigation loop before paying the complexity cost of real-world map preparation.
+
+## Output Strategy
+
+Use modern robotics/autopilot outputs first:
+
+- ROS 2 `nav_msgs/Odometry` for local pose/velocity with covariance
+- ROS 2 `geometry_msgs/PoseWithCovarianceStamped` for pose-only consumers
+- MAVLink `ODOMETRY` for PX4 external-vision input when velocity and covariance are available
+- MAVLink `VISION_POSITION_ESTIMATE` for simpler PX4 external-vision pose input
+- MAVLink `GPS_INPUT` only if the estimate is intentionally being used as a GPS-like global sensor
+- NMEA only as a compatibility adapter for legacy consumers
 
 ## Low-Cost Sensor Bias
 
 Prefer inexpensive modules first:
 
-- Raspberry Pi camera module or similar low-cost camera
 - Raspberry Pi 5 onboard compute
-- Raspberry Pi AI HAT+ 2 only if needed
+- Raspberry Pi camera or low-cost UVC camera modules
+- Fixed-focus global-shutter camera if affordable
 - Pixhawk IMU/barometer data through PX4
-- Optional rangefinder for altitude correction
+- Optional rangefinder for height-above-ground correction
+- Raspberry Pi AI HAT+ 2 only after benchmarks show it is needed
 
-Avoid expensive modules unless benchmarks prove they are necessary:
+Avoid expensive modules unless tests prove they are necessary:
 
-- High-end GNSS/RTK
-- Expensive LiDAR
 - Premium stereo depth cameras
 - Heavy onboard GPU modules
+- Expensive LiDAR
+- High-end INS/RTK systems
 
 ## Optical Flow Decision
 
 Do not buy an optical flow sensor yet.
 
-Optical flow can help with indoor or GNSS-denied velocity estimation, especially when paired with a downward rangefinder. However, the project direction is more flexible if the first GNSS-denied approach is based on ROS 2 computer vision, visual odometry, and map matching.
+Optical flow can help with low-altitude velocity estimation, especially when paired with a rangefinder. PX4's EKF uses optical flow only when valid rangefinder data is available, optical-flow fusion is enabled, and the flow quality metric is good enough. That makes it useful, but not automatically required.
 
-Possible later use cases for optical flow:
-
-- Low-cost indoor hold
-- Velocity stabilization near ground
-- Backup velocity estimate when visual map matching is unavailable
+The first implementation path should be camera-based VIO/map matching. Add optical flow only if tests show a real accuracy, robustness, or cost advantage.
 
 ## Simulation Milestones
 
 1. Run PX4 SITL with Gazebo X500.
 2. Add simulated camera/depth/vision models.
 3. Publish camera frames into ROS 2.
-4. Run object recognition on simulated imagery.
-5. Create a small georeferenced test map.
-6. Estimate drone pose from visual features and map matches.
-7. Publish estimated pose as a ROS 2 topic.
-8. Convert estimated pose into NMEA-style sentences.
-9. Feed estimated pose into mission logic as GNSS-denied navigation input.
-10. Validate against simulator ground truth.
+4. Record and replay camera, IMU, pose, and ground-truth data.
+5. Build a small georeferenced test map.
+6. Estimate local visual motion.
+7. Match visual features or landmarks against the map.
+8. Publish estimated pose and covariance.
+9. Feed pose into PX4 external-vision paths.
+10. Compare estimated position to simulator ground truth.
 
 ## Hardware Milestones
 
-1. Bench-test Raspberry Pi 5 camera capture.
-2. Benchmark vision inference on Raspberry Pi 5 CPU/GPU path.
-3. Benchmark Raspberry Pi AI HAT+ 2 if needed.
-4. Connect Raspberry Pi 5 to Pixhawk 6X.
-5. Stream PX4 telemetry into ROS 2.
-6. Run perception on recorded datasets before live flight.
-7. Test NMEA output on bench before flight.
-8. Test localization outdoors with GNSS available as ground truth.
-9. Test degraded/GNSS-denied behavior only after safety validation.
+1. Bench-test camera capture on Raspberry Pi 5.
+2. Benchmark local feature extraction and VIO on Raspberry Pi 5.
+3. Benchmark map matching on Raspberry Pi 5.
+4. Test Raspberry Pi AI HAT+ 2 only if CPU benchmarks fail latency targets.
+5. Connect Raspberry Pi 5 to Pixhawk 6X.
+6. Verify PX4/MAVLink telemetry and time synchronization.
+7. Feed external-vision estimates to PX4 on the bench.
+8. Validate outdoors with GNSS available only as ground truth.
+9. Test GNSS-denied/degraded behavior only after estimator failure handling is proven.
 
 ## Design Risks
 
-- Vision-map matching may fail in repetitive, low-texture, dark, or changed environments.
-- Pre-installed maps can become stale.
-- Low-cost cameras may have motion blur or rolling-shutter artifacts.
+- Map matching can fail in repetitive, low-texture, dark, seasonal, or changed environments.
+- Rolling-shutter cameras may degrade accuracy during fast motion.
 - Raspberry Pi inference latency may be too high without acceleration.
-- NMEA consumers may assume the stream is real GNSS unless metadata or sentence quality fields are handled carefully.
+- Poor time synchronization can break estimator fusion.
+- Feeding low-confidence vision estimates into the flight controller can be worse than declaring failure.
 
 ## Safety Rule
 
-Map-derived NMEA should be treated as an estimated navigation source with confidence bounds. It should not silently replace GNSS in safety-critical logic until tested against ground truth and failure cases.
+A low-confidence map/vision estimate must degrade or fail explicitly. It should not silently replace GNSS or be presented as a high-quality position source.
