@@ -2,23 +2,32 @@
 
 ## Project Vision
 
-Build a simulator-first drone autonomy platform that can later run on a Pixhawk + Raspberry Pi physical drone. The end-stage product should use computer vision recognition and pre-installed maps to generate NMEA-style geolocation output in GNSS-denied environments.
+Build a low-cost drone navigation stack that can estimate position in GNSS-denied environments using onboard computer vision, inertial data, altitude sensing, and pre-installed maps.
 
-The project should prioritize inexpensive, repeatable hardware modules so each drone can be built at a reasonable cost.
+The project is not a general autonomy, chatbot, or mission-command project. The only goal is GNSS-denied vision navigation and the flight-control/compute dependencies needed to validate it.
 
-## Current Priorities
+## Primary Objective
 
-Physical flight is not the immediate priority. The immediate goal is to build a robust software stack in simulation, then move to Pixhawk/Raspberry Pi hardware once the core autonomy design is proven.
+Produce a reliable navigation estimate when GNSS is unavailable or untrusted.
 
-Primary early work:
+The navigation estimate should include:
 
-- PX4 SITL simulation
-- Gazebo X500 drone models
-- ROS 2 integration
-- MAVSDK-Python command/control
-- MCP server for high-level LLM commands
-- Computer vision recognition pipeline
-- GNSS-denied localization concept using maps and vision
+- Local pose and velocity
+- Global georeferenced position when map matching supports it
+- Covariance or confidence score
+- Timestamp and estimator health
+- Failure/degraded-state reporting
+
+## Preferred Output Strategy
+
+Do not force everything into NMEA.
+
+Preferred outputs:
+
+1. ROS 2 `nav_msgs/Odometry` or pose-with-covariance topics for internal robotics use.
+2. PX4-compatible external vision via MAVLink `ODOMETRY` or `VISION_POSITION_ESTIMATE` when feeding local pose into the PX4 estimator.
+3. MAVLink `GPS_INPUT` only when intentionally presenting the output as a GPS-like global sensor input.
+4. Optional NMEA adapter only for downstream systems that specifically require NMEA sentences.
 
 ## Planned Hardware
 
@@ -26,87 +35,61 @@ Known purchases/planned modules:
 
 - Raspberry Pi 5 16GB as the companion computer
 - Holybro Pixhawk 6X Standard V2A as the flight controller
-- Raspberry Pi AI HAT+ 2 if local AI inference requires acceleration
+- Raspberry Pi AI HAT+ 2 only if local inference benchmarks require acceleration
 
-Possible later modules:
+Likely low-cost sensor path:
 
-- Low-cost global-shutter or rolling-shutter camera module
-- Depth camera only if needed for visual odometry or obstacle awareness
-- Rangefinder for altitude/landing support
-- Optical flow sensor only if low-cost indoor velocity hold is needed and vision/VIO is insufficient
+- Fixed-focus global-shutter camera if budget allows
+- Raspberry Pi camera or low-cost UVC camera for early tests
+- Barometer from Pixhawk for altitude input
+- Optional rangefinder for better height-above-ground estimates
+- Optional optical flow only after simulation/bench tests show clear value
 
 ## Software Architecture
 
 ```text
-LLM / UI / CLI
-  -> MCP command server
-    -> Safety and mission-policy layer
-      -> Mission manager
-        -> MAVSDK-Python for simple vehicle actions
-        -> ROS 2 for perception, localization, planning, and offboard autonomy
-          -> PX4 SITL / Gazebo
-          -> Pixhawk 6X + Raspberry Pi 5 on hardware
+Sensor acquisition
+  -> camera calibration and time synchronization
+    -> VIO / visual odometry
+      -> map matching / visual relocalization
+        -> estimator fusion
+          -> navigation output bridge
+            -> ROS 2 topics
+            -> PX4/MAVLink estimator input
+            -> optional legacy output adapters
 ```
-
-## Control Philosophy
-
-PX4 owns hard flight safety:
-
-- Stabilization
-- Failsafes
-- Arming checks
-- Return-to-launch behavior
-- Flight modes
-- Low-level control loops
-
-ROS 2 owns autonomy:
-
-- Camera input
-- Computer vision recognition
-- Visual localization
-- Map matching
-- Local planning
-- Offboard setpoint generation
-
-The MCP/LLM layer owns high-level intent only:
-
-- Start mission
-- Inspect target
-- Return home
-- Hold position
-- Land
-- Report state
-
-The LLM must not directly control motors, raw attitude, or unsafe low-level setpoints.
 
 ## Development Machines
 
 M1 MacBook Pro, 16GB RAM:
 
 - Code editing
+- Git and documentation
 - QGroundControl
-- Python/MCP development
-- Light PX4 simulation
+- Light Python tools and smaller tests
 
 Desktop PC, 24GB RAM, RTX 3060:
 
-- Recommended primary development machine
+- Main development machine
 - Ubuntu 22.04 LTS dual boot preferred
 - PX4 SITL
 - Gazebo
 - ROS 2 Humble
-- Computer vision training and inference experiments
+- Computer vision and VIO experiments
+- Model benchmarking and training experiments
 
-Cloud:
+Raspberry Pi 5:
 
-- Not required at the start
-- Useful later only for heavier model training
+- Onboard companion-computer deployment target
+- Camera capture
+- Runtime estimator and output bridge
+- AI HAT+ 2 benchmarks if needed
 
-## Major Decisions So Far
+## Major Decisions
 
-- Use ROS 2 early because computer vision is an end-stage requirement.
-- Keep MAVSDK-Python for simple commands and telemetry.
-- Prefer Ubuntu dual boot over Windows-only Docker/WSL for ROS 2/PX4/Gazebo work.
-- Use Docker inside Ubuntu for reproducible services and tests.
-- Do not buy an optical flow sensor yet.
-- Treat PeterJBurke/droneserver as a useful reference, not as the safety-critical foundation.
+- Use ROS 2 for perception, localization, sensor fusion, logging, and replay.
+- Use PX4 SITL and Gazebo before relying on physical flight tests.
+- Use PX4 external-vision paths before pretending a vision estimate is ordinary GNSS.
+- Keep NMEA as optional, not central.
+- Treat Theseus products/docs as architecture inspiration, not a direct implementation target, because Cyclops and Micro VPS currently document ArduPilot support rather than PX4 support.
+- The referenced `evansfsu/Macula` GitHub URL could not be publicly verified; do not base technical assumptions on it until the correct public repository is available.
