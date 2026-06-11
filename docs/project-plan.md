@@ -4,106 +4,105 @@
 
 - Install Ubuntu 22.04 LTS dual boot on the desktop PC.
 - Install QGroundControl, PX4-Autopilot, Gazebo, ROS 2 Humble, Micro XRCE-DDS Agent, and `px4_msgs`.
-- Create Python environment with MAVSDK and MCP dependencies.
+- Create Python environment with computer vision, geospatial, MAVLink, and test dependencies.
 - Run PX4 SITL smoke tests with X500 models.
 
 Acceptance criteria:
 
 - `gz_x500` launches successfully.
 - QGroundControl connects to PX4 SITL.
-- A Python MAVSDK script can read telemetry from SITL.
+- ROS 2 bridge can observe PX4 SITL state.
 
 ## Phase 2: Repository Scaffold
 
-- Create Python package structure.
-- Add ROS 2 workspace structure.
-- Add MCP server skeleton.
-- Add mission manager skeleton.
+- Create ROS 2 workspace structure.
+- Create Python package structure for estimator utilities and data tools.
 - Add simulation launch scripts.
+- Add dataset/log directory conventions.
 - Add basic pytest tests.
 
 Acceptance criteria:
 
 - Local tests run.
-- Project can start simulator and connect the Python service.
+- Project can launch simulator and record synchronized data.
 
-## Phase 3: Basic Vehicle Command Layer
+## Phase 3: Sensor And Data Pipeline
 
-- Implement MAVSDK adapter.
-- Implement vehicle state reader.
-- Implement safe high-level tools: arm, takeoff, land, RTL, hold.
-- Implement command validation and logging.
-
-Acceptance criteria:
-
-- MCP tools can command PX4 SITL through safety checks.
-- Invalid commands are rejected.
-
-## Phase 4: ROS 2 Bridge
-
-- Add PX4 uXRCE-DDS integration.
-- Subscribe to vehicle status and position topics.
-- Publish internal vehicle state topics.
-- Record telemetry with rosbag2.
+- Publish simulated camera frames into ROS 2.
+- Record camera, IMU, PX4 state, and simulator ground truth with rosbag2.
+- Add camera calibration file format.
+- Add timestamp validation tools.
 
 Acceptance criteria:
 
-- ROS 2 can observe PX4 SITL state.
-- Logs can be replayed for debugging.
+- Sensor data can be recorded and replayed.
+- Timestamp gaps and synchronization errors are detectable.
 
-## Phase 5: Vision Pipeline
+## Phase 4: Local Visual Motion
 
-- Use Gazebo camera/depth/vision model.
-- Publish camera frames into ROS 2.
-- Add basic object recognition node.
-- Add recording/replay workflow.
-
-Acceptance criteria:
-
-- Vision node detects known targets in simulation or recorded data.
-- Detection output is timestamped and published as ROS 2 messages.
-
-## Phase 6: GNSS-Denied Localization Prototype
-
-- Define map format.
-- Build small georeferenced test map.
-- Match visual features or recognized landmarks to map features.
-- Estimate pose and confidence.
-- Compare pose estimate to simulator ground truth.
+- Evaluate visual odometry or VIO candidate stack.
+- Publish local pose/velocity as `nav_msgs/Odometry`.
+- Compare local estimate to simulator ground truth.
+- Track drift over distance/time.
 
 Acceptance criteria:
 
-- System produces an estimated position with confidence.
-- Error can be measured against ground truth.
+- Local motion estimate is available with measurable error.
+- Drift metrics are logged automatically.
 
-## Phase 7: NMEA Output
+## Phase 5: Map And Relocalization Prototype
 
-- Convert estimated position into NMEA-style sentences.
-- Include quality/confidence handling.
-- Add logs and replay tests.
+- Define a small georeferenced map format.
+- Create or simulate map imagery/features.
+- Match visual features, landmarks, or image tiles to the map.
+- Estimate global pose correction.
 
 Acceptance criteria:
 
-- System emits parseable NMEA-style output.
-- Output distinguishes estimated vision/map position from true GNSS.
+- System can relocalize against a known map in simulation.
+- Confidence and failure cases are reported.
+
+## Phase 6: Estimator Fusion
+
+- Fuse local visual motion with map-derived corrections.
+- Include altitude/height source where available.
+- Publish covariance/confidence and estimator mode.
+- Handle relocalization jumps and resets.
+
+Acceptance criteria:
+
+- Estimator publishes pose, velocity, covariance/confidence, and health state.
+- Failure and degraded modes are explicit.
+
+## Phase 7: PX4 Integration
+
+- Bridge estimator output to PX4 external-vision input.
+- Test MAVLink `ODOMETRY` and `VISION_POSITION_ESTIMATE` paths.
+- Evaluate `GPS_INPUT` only if a GPS-like global source is needed.
+- Validate PX4 EKF behavior in simulation and bench tests.
+
+Acceptance criteria:
+
+- PX4 can consume the estimator output without unsafe estimator behavior.
+- Logs show correct frame, timing, and covariance handling.
 
 ## Phase 8: Raspberry Pi + Pixhawk Bench Integration
 
 - Install companion-computer image on Raspberry Pi 5.
 - Connect Raspberry Pi to Pixhawk 6X.
 - Verify MAVLink and/or Ethernet communication.
-- Run MAVSDK telemetry scripts.
-- Run ROS 2 bridge.
+- Run camera capture and estimator components on the Pi.
+- Feed external-vision estimates to PX4 on the bench.
 
 Acceptance criteria:
 
 - Pi can read Pixhawk telemetry.
-- Pi can run the mission manager without flight hardware attached.
+- Pi can publish localization output to PX4 without flight hardware attached.
 
 ## Phase 9: Hardware Vision Benchmarks
 
 - Test low-cost camera options.
-- Benchmark inference on Raspberry Pi 5.
+- Benchmark feature extraction, VIO, and map matching on Raspberry Pi 5.
 - Benchmark Raspberry Pi AI HAT+ 2 if needed.
 - Decide final low-cost vision module.
 
@@ -119,9 +118,10 @@ Physical flight comes only after the simulator and bench systems are stable.
 - Configure PX4.
 - Run manual flight tests.
 - Validate failsafes.
-- Test autonomy incrementally.
+- Test estimator output with GNSS available as ground truth.
+- Test GNSS-denied/degraded behavior incrementally.
 
 Acceptance criteria:
 
 - Manual flight is stable.
-- Autonomous features pass simulation and bench tests before real flight.
+- Vision navigation is validated against ground truth before being trusted for navigation.
