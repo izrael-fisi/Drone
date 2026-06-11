@@ -1,50 +1,57 @@
 # Drone
 
-Simulator-first autonomy project for a low-cost quadcopter platform using PX4, Pixhawk, Raspberry Pi, ROS 2, computer vision, and MCP/LLM-assisted high-level control.
+GNSS-denied vision navigation project for low-cost UAVs.
 
-## Current Goal
+## Single Project Goal
 
-Design a drone navigation stack that can use computer vision plus pre-installed maps to produce NMEA-style geolocation data in GNSS-denied environments. The project should favor inexpensive, repeatable modules so the cost per drone stays low.
+Build a drone navigation system that uses onboard vision, inertial data, altitude sensing, and pre-installed maps to estimate vehicle position when GNSS is unavailable, degraded, or untrusted.
 
-## Planned Hardware Direction
+The system should prioritize high accuracy, low hardware cost, and repeatable deployment across many drones. Output should use the best interface for the consumer, not default to NMEA. Preferred internal outputs are ROS 2 pose/odometry messages with covariance and PX4-compatible external-vision or GPS-like MAVLink inputs. NMEA can remain an optional adapter only if a downstream system specifically requires it.
+
+## Hardware Direction
+
+Planned core modules:
 
 - Flight controller: Holybro Pixhawk 6X Standard V2A running PX4
 - Companion computer: Raspberry Pi 5 16GB
-- AI acceleration: Raspberry Pi AI HAT+ 2 only if benchmarks show the Pi CPU/GPU path is insufficient
-- Development machines:
-  - M1 MacBook Pro, 16GB RAM, for editing, QGroundControl, Python/MCP work, and light simulation
-  - Desktop PC, 24GB RAM, RTX 3060, recommended as the main Ubuntu ROS 2/PX4/Gazebo/CV workstation
+- Optional AI acceleration: Raspberry Pi AI HAT+ 2, only if benchmarks require it
+- Primary development workstation: desktop PC with Ubuntu 22.04 LTS, 24GB RAM, RTX 3060
+- Secondary development machine: M1 MacBook Pro for editing, QGroundControl, documentation, and light tests
 
-## Architecture Summary
+Low-cost sensor bias:
+
+- Prefer fixed-focus global-shutter cameras where possible
+- Use Raspberry Pi camera or low-cost UVC camera modules first
+- Add a rangefinder if vertical/height-above-ground quality needs improvement
+- Add optical flow only if tests show it improves low-altitude hold or velocity estimation enough to justify the extra module
+
+## System Architecture
 
 ```text
-LLM / UI / CLI
-  -> MCP command server
-    -> Safety and mission-policy layer
-      -> Mission manager
-        -> MAVSDK-Python for simple vehicle actions
-        -> ROS 2 for perception, localization, planning, and offboard autonomy
-          -> PX4 SITL / Gazebo during simulation
-          -> Pixhawk 6X + Raspberry Pi 5 on hardware
+Camera + IMU + barometer/rangefinder
+  -> timestamped sensor capture
+    -> visual odometry / visual-inertial odometry
+      -> map matching / visual relocalization
+        -> estimator fusion and confidence scoring
+          -> local pose + global pose estimate
+            -> ROS 2 odometry/pose output
+            -> PX4 external-vision or GPS-like MAVLink input
+            -> optional NMEA adapter if required
 ```
 
-PX4 remains responsible for flight control, stabilization, arming, failsafes, and low-level safety. ROS 2 handles perception, localization, and autonomy. MCP/LLM control is limited to high-level mission intents, never raw motor or attitude commands.
-
-## Development Strategy
-
-1. Build and test everything in PX4 SITL and Gazebo before prioritizing physical flight.
-2. Use ROS 2 early because computer vision recognition is part of the end product.
-3. Use MAVSDK-Python for simple command/control workflows.
-4. Use Micro XRCE-DDS and `px4_msgs` when ROS 2 needs direct PX4 topic integration.
-5. Add physical Pixhawk/Raspberry Pi integration after the simulator stack is stable.
+PX4 owns flight stabilization, arming, failsafes, and low-level control. The companion computer owns vision processing, map matching, estimator fusion, and navigation-source output.
 
 ## Documentation
 
 - [Project Summary](docs/project-summary.md)
+- [GNSS-Denied Vision Navigation](docs/gnss-denied-vision-navigation.md)
 - [Simulator Development Stack](docs/simulator-development-stack.md)
-- [GNSS-Denied Vision Navigation Goal](docs/gnss-denied-vision-navigation.md)
-- [Reference Repo Assessment](docs/reference-repo-assessment.md)
+- [Localization Output Interfaces](docs/localization-output-interfaces.md)
+- [Flight Control And Compute Boundaries](docs/flight-control-and-compute-boundaries.md)
+- [References And Inspiration](docs/references-and-inspiration.md)
+- [Software Download Checklist](docs/software-download-checklist.md)
+- [Project Plan](docs/project-plan.md)
 
-## Key Safety Rule
+## Design Rule
 
-The LLM should never directly control motors, publish raw low-level setpoints, or bypass PX4 failsafes. It should request mission-level actions that are validated by a deterministic safety gate.
+Every component in this repository should directly support GNSS-denied vision navigation, estimator fusion, flight-controller integration, simulator validation, or onboard compute benchmarking. Anything outside that scope should stay out of the project.
