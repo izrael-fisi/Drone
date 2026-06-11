@@ -4,13 +4,24 @@
 
 This document records references that are relevant to the GNSS-denied vision navigation goal. It should only include claims that have been verified from accessible sources.
 
-## evansfsu/Macula
+## evansfsu/Macula And evansfsu/Mascula
 
-Requested reference: https://github.com/evansfsu/Macula
+Requested references:
+
+- https://github.com/evansfsu/Macula
+- https://github.com/evansfsu/Mascula
 
 Status: not publicly verifiable at the time of review.
 
-The GitHub connector and direct public GitHub access returned `404 Not Found` for the repository URL. Do not make architecture or implementation decisions based on this repository until the correct public URL or repo access is available.
+Both repository paths returned `404 Not Found` through the GitHub connector and public GitHub/web lookup. Do not make architecture or implementation decisions based on either name until the correct public URL or repository access is available.
+
+If the repository becomes accessible later, review it specifically for:
+
+- Whether it performs visual odometry, visual place recognition, map matching, or full visual positioning
+- Whether it supports UAV/downward-camera imagery or only another camera geometry
+- Whether it outputs local pose, global geolocation, GPS-like data, or only image matches
+- Its dependency stack and whether it can run on Raspberry Pi 5-class compute
+- Whether it includes calibration, timestamping, covariance/confidence, and failure handling
 
 ## Theseus Cyclops
 
