@@ -127,7 +127,13 @@ if [[ -x scripts/pi/verify_pi_setup.sh ]]; then
   scripts/pi/verify_pi_setup.sh || true
 fi
 if [[ -x scripts/pi/validate_vision_nav_bundle.sh ]]; then
-  scripts/pi/validate_vision_nav_bundle.sh || true
+  bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
+  if [[ -f "$bundle/manifest.json" ]]; then
+    scripts/pi/validate_vision_nav_bundle.sh || true
+  else
+    echo "Skipping map bundle validation: missing $bundle/manifest.json"
+    echo "Set VISION_NAV_BUNDLE=/path/to/bundle after a mission bundle exists."
+  fi
 fi
 
 section "Done"
