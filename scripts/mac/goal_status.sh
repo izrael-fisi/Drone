@@ -80,6 +80,9 @@ if command -v systemsetup >/dev/null 2>&1; then
     ok "macOS Remote Login is on"
   elif [[ "$remote_login_status" == "Remote Login: Off" ]]; then
     warn "macOS Remote Login is off. Run ./scripts/mac/enable_remote_login.sh"
+  elif command -v launchctl >/dev/null 2>&1 && launchctl print system/com.openssh.sshd >/dev/null 2>&1; then
+    ok "macOS SSH service is registered with launchd"
+    info "systemsetup still needs admin permission to print the Remote Login setting."
   else
     warn "macOS Remote Login status needs admin permission to verify."
     info "Run ./scripts/mac/enable_remote_login.sh if Codex or another machine must SSH into this Mac."

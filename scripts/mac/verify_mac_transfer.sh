@@ -22,8 +22,12 @@ if command -v systemsetup >/dev/null 2>&1; then
   echo "[INFO] Remote Login status requires admin permission on some macOS versions:"
   echo "$remote_login_status"
   if [[ "$remote_login_status" != Remote\ Login:* ]]; then
-    echo "[WARN] Remote Login status could not be verified without admin permission." >&2
-    echo "[WARN] Run ./scripts/mac/enable_remote_login.sh when you are ready to enable Mac SSH." >&2
+    if command -v launchctl >/dev/null 2>&1 && launchctl print system/com.openssh.sshd >/dev/null 2>&1; then
+      echo "[OK] macOS SSH service is registered with launchd"
+    else
+      echo "[WARN] Remote Login status could not be verified without admin permission." >&2
+      echo "[WARN] Run ./scripts/mac/enable_remote_login.sh when you are ready to enable Mac SSH." >&2
+    fi
   fi
 fi
 
