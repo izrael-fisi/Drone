@@ -1,7 +1,11 @@
 # Operator Handoff
 
-This repo is prepared for the Raspberry Pi 5 vision-navigation setup, but it is
-not committed or pushed until the user explicitly asks for that.
+This repo is prepared for the Raspberry Pi 5 vision-navigation setup. The
+current setup work is published as draft PR #1:
+
+```text
+https://github.com/izrael-fisi/Drone/pull/1
+```
 
 ## Current Storage Assumption
 
@@ -27,19 +31,23 @@ VISION_NAV_REPLAY_OUTPUT_DIR=/mnt/drone-ssd/replay-match
 
 ## Path A: GitHub Clone On The Pi
 
-Use this path after the user says to commit and push.
-
-On the Mac, first run the handoff audit and push a feature branch according to
-`docs/github-push-plan.md`.
+Use this path after the draft PR is merged, or clone the PR branch directly
+while it is still under review.
 
 On the Raspberry Pi:
 
 ```bash
-git clone https://github.com/izrael-fisi/Drone.git
+git clone -b codex/pi-vision-nav-setup-pr https://github.com/izrael-fisi/Drone.git
 cd Drone
 chmod +x scripts/pi/*.sh
 ./scripts/pi/bootstrap_pi5.sh
 sudo reboot
+```
+
+After the PR is merged, clone the default branch instead:
+
+```bash
+git clone https://github.com/izrael-fisi/Drone.git
 ```
 
 After reboot:
@@ -99,6 +107,18 @@ PI_USER=pi PI_HOST=raspberrypi.local ./scripts/mac/run_pi_first_checks.sh
 ```
 
 ## Pi Info Codex May Need
+
+From the Mac, this repo now has a status helper:
+
+```bash
+./scripts/mac/goal_status.sh
+```
+
+If the Pi has a known address, pass it explicitly:
+
+```bash
+PI_USER=pi PI_HOST=192.168.1.123 ./scripts/mac/goal_status.sh
+```
 
 The easiest option is to run this on the Pi:
 

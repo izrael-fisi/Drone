@@ -109,6 +109,7 @@ required_mac_scripts=(
   "scripts/mac/sync_from_pi.sh"
   "scripts/mac/bootstrap_pi_over_ssh.sh"
   "scripts/mac/run_pi_first_checks.sh"
+  "scripts/mac/goal_status.sh"
   "scripts/mac/verify_mac_transfer.sh"
 )
 for path in "${required_mac_scripts[@]}"; do

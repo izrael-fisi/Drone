@@ -173,6 +173,23 @@ VISION_NAV_SKIP_DOCKER_SMOKE=1 PI_USER=pi PI_HOST=raspberrypi.local ./scripts/ma
 Use `VISION_NAV_SKIP_CAMERA_HEALTH=1` only when intentionally running the remote
 check without the Raspberry Pi camera attached.
 
+## Goal Status Check
+
+From the Mac, run:
+
+```bash
+./scripts/mac/goal_status.sh
+```
+
+If the Pi does not resolve as `raspberrypi.local`, pass the real host or IP:
+
+```bash
+PI_USER=pi PI_HOST=192.168.1.123 ./scripts/mac/goal_status.sh
+```
+
+This checks the local transfer folders, Mac SSH key, macOS Remote Login status,
+current GitHub PR branch, Pi hostname reachability, and non-interactive SSH.
+
 On the Pi, collect a full diagnostic report:
 
 ```bash
