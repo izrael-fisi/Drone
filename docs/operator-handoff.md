@@ -1,0 +1,135 @@
+# Operator Handoff
+
+This repo is prepared for the Raspberry Pi 5 vision-navigation setup, but it is
+not committed or pushed until the user explicitly asks for that.
+
+## Current Storage Assumption
+
+The Raspberry Pi is currently using its onboard 256GB microSD for everything.
+That is the default for the setup scripts:
+
+```text
+~/DroneTransfer/
+~/drone-data/
+```
+
+Use the microSD for the first setup, camera checks, calibration images, small
+mission map bundles, and short runtime logs.
+
+If a USB SSD is added later, keep the repo in `~/Drone` and move only bulky
+runtime data by editing `config/pi/vision-nav.env` on the Pi:
+
+```bash
+VISION_NAV_BUNDLE=/mnt/drone-ssd/map_bundles/mission_bundle
+VISION_NAV_OUTPUT_DIR=/mnt/drone-ssd/runtime-match
+VISION_NAV_REPLAY_OUTPUT_DIR=/mnt/drone-ssd/replay-match
+```
+
+## Path A: GitHub Clone On The Pi
+
+Use this path after the user says to commit and push.
+
+On the Mac, first run the handoff audit and push a feature branch according to
+`docs/github-push-plan.md`.
+
+On the Raspberry Pi:
+
+```bash
+git clone https://github.com/izrael-fisi/Drone.git
+cd Drone
+chmod +x scripts/pi/*.sh
+./scripts/pi/bootstrap_pi5.sh
+sudo reboot
+```
+
+After reboot:
+
+```bash
+cd Drone
+./scripts/pi/first_run_checks.sh
+```
+
+Or run the same checks remotely from the Mac and pull the generated reports:
+
+```bash
+PI_USER=pi PI_HOST=raspberrypi.local ./scripts/mac/run_pi_first_checks.sh
+```
+
+The camera health report will be at:
+
+```text
+~/DroneTransfer/outgoing/camera-health/camera_health_report.json
+```
+
+## Path B: SSH Sync From The Mac
+
+Use this path before a GitHub push, or when iterating locally.
+
+On the Pi:
+
+```bash
+cd Drone
+./scripts/pi/enable_ssh_transfer.sh
+hostname
+hostname -I
+```
+
+Give Codex:
+
+- Pi username from `whoami`
+- Pi hostname from `hostname`
+- Pi IP address from `hostname -I`
+- whether `raspberrypi.local` or another `.local` name works from the Mac
+
+On the Mac:
+
+```bash
+PI_USER=pi PI_HOST=raspberrypi.local ./scripts/mac/install_pi_ssh_key.sh
+PI_USER=pi PI_HOST=raspberrypi.local ./scripts/mac/setup_pi_ssh_config.sh
+./scripts/mac/test_pi_ssh.sh
+PI_USER=pi PI_HOST=raspberrypi.local ./scripts/mac/bootstrap_pi_over_ssh.sh
+```
+
+Replace `pi` and `raspberrypi.local` with the real values.
+
+After the Pi reboots from bootstrap:
+
+```bash
+PI_USER=pi PI_HOST=raspberrypi.local ./scripts/mac/run_pi_first_checks.sh
+```
+
+## Pi Info Codex May Need
+
+The easiest option is to run this on the Pi:
+
+```bash
+cd Drone
+./scripts/pi/collect_pi_info.sh
+```
+
+Then pull the report back to the Mac:
+
+```bash
+PI_USER=pi PI_HOST=raspberrypi.local ./scripts/mac/sync_from_pi.sh
+```
+
+If the repo is not on the Pi yet, send the output of:
+
+```bash
+whoami
+hostname
+hostname -I
+cat /etc/os-release
+rpicam-hello --list-cameras
+df -h /
+lsblk -o NAME,SIZE,TYPE,MOUNTPOINTS,FSTYPE
+```
+
+## Mac SSH Note
+
+Mac Remote Login requires admin permission. Run this on the Mac if remote login
+is needed:
+
+```bash
+./scripts/mac/enable_remote_login.sh
+```

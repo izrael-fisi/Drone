@@ -1,0 +1,29 @@
+{
+  "bundle_id": "example-single-image",
+  "description": "Example single-image orthophoto bundle for early Pi smoke tests.",
+  "version": "0.1.0",
+  "coordinate_frame": "simple_local_tangent",
+  "orthophoto": {
+    "path": "ortho/map.png",
+    "origin_lat": 40.0,
+    "origin_lon": -75.0,
+    "origin_pixel_x": 0.0,
+    "origin_pixel_y": 0.0,
+    "gsd_m": 0.2,
+    "rotation_deg": 0.0
+  },
+  "features": {
+    "path": "features/map_features.npz",
+    "method": "orb",
+    "max_features": 3000
+  },
+  "calibration": {
+    "down_camera": "../../config/camera/down_camera.yaml",
+    "camera_to_body": "../../config/camera/camera_to_body.yaml"
+  },
+  "notes": [
+    "Replace example values with real mission-map metadata.",
+    "Use this schema as a lightweight prototype before moving to GeoTIFF/GeoPackage/STAC bundles."
+  ]
+}
+

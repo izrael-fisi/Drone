@@ -1,0 +1,29 @@
+# Raspberry Pi Global Shutter Camera placeholder calibration.
+# Replace these values with an OpenCV calibration from your actual lens/mount.
+camera_name: down_global_shutter
+image_width: 1456
+image_height: 1088
+camera_model: pinhole
+distortion_model: plumb_bob
+
+# OpenCV camera matrix K, row-major.
+camera_matrix:
+  rows: 3
+  cols: 3
+  data:
+    - 1000.0
+    - 0.0
+    - 728.0
+    - 0.0
+    - 1000.0
+    - 544.0
+    - 0.0
+    - 0.0
+    - 1.0
+
+# OpenCV distortion coefficients [k1, k2, p1, p2, k3].
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+

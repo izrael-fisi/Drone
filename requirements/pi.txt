@@ -1,0 +1,8 @@
+numpy>=1.24
+opencv-python-headless>=4.8
+pydantic>=2.0
+PyYAML>=6.0
+rich>=13.0
+pymavlink>=2.4
+geographiclib>=2.0
+pyproj>=3.4

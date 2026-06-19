@@ -1,57 +1,113 @@
-# Drone
+# Drone GNSS-Denied Vision Navigation
 
-GNSS-denied vision navigation project for low-cost UAVs.
+This repository contains the setup scripts and first prototype pipeline for a
+Raspberry Pi 5 + Raspberry Pi Global Shutter Camera navigation module.
 
-## Single Project Goal
+The project goal is narrow:
 
-Build a drone navigation system that uses onboard vision, inertial data, altitude sensing, and pre-installed maps to estimate vehicle position when GNSS is unavailable, degraded, or untrusted.
+- Downward camera visual map-relative localization
+- Precomputed map features from georeferenced imagery
+- Runtime feature matching with confidence scoring
+- Approximate map-pixel to lat/lon conversion for simple orthophoto bundles
+- PX4/Pixhawk integration as a navigation source after bench validation
 
-The system should prioritize high accuracy, low hardware cost, and repeatable deployment across many drones. Output should use the best interface for the consumer, not default to NMEA. Preferred internal outputs are ROS 2 pose/odometry messages with covariance and PX4-compatible external-vision or GPS-like MAVLink inputs. NMEA can remain an optional adapter only if a downstream system specifically requires it.
-
-## Hardware Direction
-
-Planned core modules:
-
-- Flight controller: Holybro Pixhawk 6X Standard V2A running PX4
-- Companion computer: Raspberry Pi 5 16GB
-- Optional AI acceleration: Raspberry Pi AI HAT+ 2, only if benchmarks require it
-- Primary development workstation: desktop PC with Ubuntu 22.04 LTS, 24GB RAM, RTX 3060
-- Secondary development machine: M1 MacBook Pro for editing, QGroundControl, documentation, and light tests
-
-Low-cost sensor bias:
-
-- Prefer fixed-focus global-shutter cameras where possible
-- Use Raspberry Pi camera or low-cost UVC camera modules first
-- Add a rangefinder if vertical/height-above-ground quality needs improvement
-- Add optical flow only if tests show it improves low-altitude hold or velocity estimation enough to justify the extra module
-
-## System Architecture
+The first implementation is intentionally classical computer vision:
 
 ```text
-Camera + IMU + barometer/rangefinder
-  -> timestamped sensor capture
-    -> visual odometry / visual-inertial odometry
-      -> map matching / visual relocalization
-        -> estimator fusion and confidence scoring
-          -> local pose + global pose estimate
-            -> ROS 2 odometry/pose output
-            -> PX4 external-vision or GPS-like MAVLink input
-            -> optional NMEA adapter if required
+downward global-shutter frame
+  -> undistort / normalize
+    -> ORB or AKAZE feature extraction
+      -> match against precomputed map-tile descriptors
+        -> RANSAC homography verification
+          -> confidence/covariance estimate
+            -> log result
+            -> later publish to PX4 external vision
 ```
 
-PX4 owns flight stabilization, arming, failsafes, and low-level control. The companion computer owns vision processing, map matching, estimator fusion, and navigation-source output.
+Do not start with AI accelerators or model training. Add neural features only
+after the classical pipeline has been measured and its failure modes are known.
 
-## Documentation
+## Current Hardware Target
 
-- [Project Summary](docs/project-summary.md)
-- [GNSS-Denied Vision Navigation](docs/gnss-denied-vision-navigation.md)
-- [Simulator Development Stack](docs/simulator-development-stack.md)
-- [Localization Output Interfaces](docs/localization-output-interfaces.md)
-- [Flight Control And Compute Boundaries](docs/flight-control-and-compute-boundaries.md)
-- [References And Inspiration](docs/references-and-inspiration.md)
-- [Software Download Checklist](docs/software-download-checklist.md)
-- [Project Plan](docs/project-plan.md)
+- Raspberry Pi 5 16GB
+- Raspberry Pi Global Shutter Camera, downward-facing
+- 256GB microSD for current logs and map bundles
+- Optional USB 3 SSD later for larger maps, image logs, and long test runs
+- Pixhawk/PX4 flight controller later
+- Downward rangefinder strongly recommended before estimator fusion
 
-## Design Rule
+## Main Folders
 
-Every component in this repository should directly support GNSS-denied vision navigation, estimator fusion, flight-controller integration, simulator validation, or onboard compute benchmarking. Anything outside that scope should stay out of the project.
+- `scripts/pi/`: Raspberry Pi bootstrap, Docker, SSH, and transfer setup
+- `scripts/mac/`: Mac transfer and SSH helpers
+- `docker/pi/`: Docker runtime for the Pi vision environment
+- `src/vision_nav/`: First feature-map and frame-to-map matching tools
+- `transfer/`: Local staging folder for Mac-to-Pi and Pi-to-Mac file movement
+- `docs/`: Setup and architecture notes
+
+Key docs:
+
+- [Raspberry Pi Setup](docs/raspberry-pi-setup.md)
+- [Camera Calibration](docs/camera-calibration.md)
+- [Vision Pipeline](docs/vision-pipeline.md)
+- [SSH And File Transfer](docs/ssh-and-transfer.md)
+- [Operator Handoff](docs/operator-handoff.md)
+
+## Quick Pi Setup
+
+On the Raspberry Pi:
+
+```bash
+git clone https://github.com/izrael-fisi/Drone.git
+cd Drone
+chmod +x scripts/pi/*.sh
+./scripts/pi/bootstrap_pi5.sh
+sudo reboot
+```
+
+After reboot:
+
+```bash
+cd Drone
+./scripts/pi/first_run_checks.sh
+```
+
+Rebooting after bootstrap makes Docker group membership and camera/system
+services fully active.
+
+After you copy a mission map bundle to `~/drone-data/map_bundles/mission_bundle`,
+validate it, then start the logging-only bench loop:
+
+```bash
+./scripts/pi/validate_vision_nav_bundle.sh
+./scripts/pi/run_vision_nav_loop.sh
+```
+
+For transfer-safe mission bundles, write checksums after building features:
+
+```bash
+vision-nav-build-bundle --bundle mission_bundle --write-checksums
+```
+
+It captures camera frames, matches them against the bundle, and writes logs to
+`~/DroneTransfer/outgoing/runtime-match/`.
+By default, Pi runtime matching undistorts frames with
+`config/camera/down_camera.yaml`.
+
+Replay saved frames without using the camera:
+
+```bash
+./scripts/pi/replay_vision_nav_frames.sh
+```
+
+Summarize runtime and replay match logs:
+
+```bash
+./scripts/pi/summarize_vision_nav_logs.sh
+```
+
+Before committing or handing the repo to the Pi:
+
+```bash
+./scripts/dev/handoff_audit.sh
+```

@@ -1,0 +1,25 @@
+services:
+  vision-nav-pi:
+    image: drone-vision-nav:pi
+    build:
+      context: ../..
+      dockerfile: docker/pi/Dockerfile
+    network_mode: host
+    privileged: true
+    environment:
+      PYTHONUNBUFFERED: "1"
+      VISION_NAV_LOG_DIR: /logs
+      VISION_NAV_MAP_DIR: /maps
+      VISION_NAV_CONFIG_DIR: /config
+    env_file:
+      - ../../config/pi/vision-nav.env.example
+    volumes:
+      - ../../data:/data
+      - ../../logs:/logs
+      - ../../map_bundles:/maps
+      - ../../config:/config:ro
+      - ../../transfer:/transfer
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+    working_dir: /workspace
+    command: ["python", "-m", "vision_nav.match_frame_to_map", "--help"]

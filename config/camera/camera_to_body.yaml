@@ -1,0 +1,18 @@
+# Camera-to-body transform placeholder.
+# Coordinate convention:
+# - body: PX4 FRD style, x forward, y right, z down
+# - camera optical frame should be measured and documented after mounting
+#
+# Replace translation and rotation with measured extrinsics.
+frame_id: body
+child_frame_id: down_camera
+translation_m:
+  x: 0.0
+  y: 0.0
+  z: 0.0
+rotation_quat_xyzw:
+  x: 0.0
+  y: 0.0
+  z: 0.0
+  w: 1.0
+

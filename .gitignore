@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime data
+data/*
+logs/*
+!data/.gitkeep
+!logs/.gitkeep
+map_bundles/
+!map_bundles/
+map_bundles/*
+!map_bundles/example/
+!map_bundles/example/manifest.json
+*.bag/
+*.mcap
+
+# Local Pi runtime overrides
+config/pi/vision-nav.env
+
+# Transfer staging keeps folder structure, not payloads.
+transfer/mac_to_pi/*
+transfer/pi_to_mac/*
+!transfer/mac_to_pi/.gitkeep
+!transfer/pi_to_mac/.gitkeep
+!transfer/README.md
