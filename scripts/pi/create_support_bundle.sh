@@ -45,8 +45,16 @@ if [[ -n "${VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE:-}" && -f "${VISION_NAV_PX4_MA
   args+=(--px4-mavlink-status "$VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE")
 fi
 
+if [[ -n "${VISION_NAV_PX4_SITL_SESSION:-}" && -e "${VISION_NAV_PX4_SITL_SESSION}" ]]; then
+  args+=(--px4-sitl-session "$VISION_NAV_PX4_SITL_SESSION")
+fi
+
 if [[ -n "${VISION_NAV_PX4_PARAMS:-}" && -f "${VISION_NAV_PX4_PARAMS}" ]]; then
   args+=(--px4-params "$VISION_NAV_PX4_PARAMS")
+fi
+
+if [[ -n "${VISION_NAV_ARDUPILOT_PARAMS:-}" && -f "${VISION_NAV_ARDUPILOT_PARAMS}" ]]; then
+  args+=(--ardupilot-params "$VISION_NAV_ARDUPILOT_PARAMS")
 fi
 
 if [[ -n "${VISION_NAV_SITL_MAVLINK_MESSAGE:-}" ]]; then

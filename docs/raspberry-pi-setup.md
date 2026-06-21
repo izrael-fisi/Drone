@@ -287,6 +287,20 @@ VISION_NAV_GNSS_DENIED_CHECK=1 \
 ./scripts/pi/check_px4_params.sh
 ```
 
+ArduPilot remains a later adapter path after PX4 bench validation. If you are
+checking an ArduPilot/Mission Planner parameter export for ExternalNav
+readiness, use:
+
+```bash
+VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" \
+VISION_NAV_GNSS_DENIED_CHECK=1 \
+VISION_NAV_EXTRINSICS_MEASURED=1 \
+./scripts/pi/check_ardupilot_params.sh
+```
+
+This only audits the exported file. It does not modify ArduPilot parameters.
+See [ArduPilot ExternalNav Adapter Design](ardupilot-externalnav-adapter.md).
+
 For PX4 uXRCE-DDS and ROS 2 bench paths, also check the optional Micro XRCE-DDS
 Agent:
 
@@ -543,6 +557,17 @@ VISION_NAV_SITL_MAVLINK_MESSAGE=odometry \
 The raw captures are copied under `extras/px4_sitl_evidence/`, and the parsed
 pass/fail report is written under `summaries/px4_sitl_evidence/`.
 
+If the captures were collected through a PX4 SITL evidence-session folder,
+include the whole session instead:
+
+```bash
+VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" \
+./scripts/pi/create_support_bundle.sh
+```
+
+The session folder is copied under `extras/px4_sitl_session/`, and the parsed
+pass/fail report is still written under `summaries/px4_sitl_evidence/`.
+
 To include the PX4 parameter readiness report in the same support bundle:
 
 ```bash
@@ -552,6 +577,17 @@ VISION_NAV_PX4_PARAMS="$HOME/px4.params" \
 
 The raw parameter export is copied under `extras/px4_params/`, and the parsed
 report is written under `summaries/px4_params/`.
+
+To include the optional ArduPilot ExternalNav parameter readiness report in the
+same support bundle:
+
+```bash
+VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" \
+./scripts/pi/create_support_bundle.sh
+```
+
+The raw parameter export is copied under `extras/ardupilot_params/`, and the
+parsed report is written under `summaries/ardupilot_params/`.
 
 Every support bundle now includes a combined bench-readiness report under
 `summaries/bench_readiness.json`. Re-run the same gate against an existing ZIP

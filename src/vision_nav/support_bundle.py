@@ -11,11 +11,13 @@ import sys
 import zipfile
 from typing import Any
 
+from vision_nav.ardupilot_params import evaluate_ardupilot_param_file
 from vision_nav.bench_readiness import evaluate_bench_readiness
 from vision_nav.bundle import load_manifest
 from vision_nav.geospatial_health import write_geospatial_health_report
 from vision_nav.px4_params import evaluate_px4_param_file
 from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sitl_evidence
+from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.replay_gates import ReplayGateConfig, evaluate_replay_log
 from vision_nav.summarize_match_log import summarize_log
 
@@ -35,7 +37,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mavlink-endpoint", help="Optional MAVLink endpoint used during the run.")
     parser.add_argument("--px4-listener", help="Optional PX4 `listener vehicle_visual_odometry` capture text file.")
     parser.add_argument("--px4-mavlink-status", help="Optional PX4 `mavlink status` capture text file.")
+    parser.add_argument("--px4-sitl-session", help="Optional PX4 SITL evidence session directory or manifest.")
     parser.add_argument("--px4-params", help="Optional PX4 parameter export file to check and include.")
+    parser.add_argument("--ardupilot-params", help="Optional ArduPilot parameter export file to check and include.")
     parser.add_argument(
         "--px4-expected-message",
         choices=["odometry", "vision_position_estimate"],
@@ -343,11 +347,36 @@ def evaluate_replay_cases(replay_cases: dict[str, Any], support_dir: Path) -> di
 
 def evaluate_px4_receiver_evidence(
     *,
+    session_path: str | None = None,
     listener_path: str | None = None,
     mavlink_status_path: str | None = None,
     expected_message: str = "odometry",
     support_dir: Path,
 ) -> dict[str, Any]:
+    if session_path:
+        session = Path(session_path).expanduser()
+        evidence_dir = support_dir / "summaries" / "px4_sitl_evidence"
+        raw_dir = support_dir / "extras" / "px4_sitl_session"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        raw_dir.parent.mkdir(parents=True, exist_ok=True)
+        if not session.exists():
+            report = {
+                "status": "failed",
+                "expected_message": expected_message,
+                "session_path": str(session),
+                "issues": [{"severity": "error", "message": "PX4 SITL evidence session is missing."}],
+            }
+        else:
+            copied = copy_tree(session, raw_dir) if session.is_dir() else copy_file(session, raw_dir / session.name)
+            report = evaluate_px4_sitl_session(session, output_path=evidence_dir / "receiver_evidence.json")
+            report["session_path"] = str(session)
+            report["session_copy"] = copied
+            report["source"] = "px4_sitl_session"
+        report_path = evidence_dir / "receiver_evidence.json"
+        report["report_path"] = str(report_path)
+        report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        return report
+
     if not listener_path:
         return {"status": "not_provided", "expected_message": expected_message}
 
@@ -429,6 +458,37 @@ def evaluate_px4_param_export(
     return report
 
 
+def evaluate_ardupilot_param_export(
+    *,
+    params_path: str | None = None,
+    support_dir: Path,
+) -> dict[str, Any]:
+    if not params_path:
+        return {"status": "not_provided"}
+
+    src = Path(params_path).expanduser()
+    report_dir = support_dir / "summaries" / "ardupilot_params"
+    raw_dir = support_dir / "extras" / "ardupilot_params"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    if not src.exists():
+        report = {
+            "status": "failed",
+            "param_file": str(src),
+            "issues": [{"severity": "error", "message": "ArduPilot parameter export is missing."}],
+        }
+    else:
+        copied = copy_file(src, raw_dir / src.name)
+        report = evaluate_ardupilot_param_file(src)
+        report["param_copy"] = copied
+
+    report_path = report_dir / "param_check.json"
+    report["report_path"] = str(report_path)
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    return report
+
+
 def zip_directory(source_dir: Path, zip_path: Path) -> None:
     if zip_path.exists():
         zip_path.unlink()
@@ -450,7 +510,9 @@ def create_support_bundle(
     mavlink_endpoint: str | None = None,
     px4_listener_path: str | None = None,
     px4_mavlink_status_path: str | None = None,
+    px4_sitl_session_path: str | None = None,
     px4_params_path: str | None = None,
+    ardupilot_params_path: str | None = None,
     px4_expected_message: str = "odometry",
     replay_case_manifest_path: str | None = None,
     inline_replay_cases: list[str] | None = None,
@@ -489,6 +551,7 @@ def create_support_bundle(
     )
     replay_gate_summary = evaluate_replay_cases(replay_cases, support_dir)
     px4_evidence_summary = evaluate_px4_receiver_evidence(
+        session_path=px4_sitl_session_path,
         listener_path=px4_listener_path,
         mavlink_status_path=px4_mavlink_status_path,
         expected_message=px4_expected_message,
@@ -496,6 +559,10 @@ def create_support_bundle(
     )
     px4_params_summary = evaluate_px4_param_export(
         params_path=px4_params_path,
+        support_dir=support_dir,
+    )
+    ardupilot_params_summary = evaluate_ardupilot_param_export(
+        params_path=ardupilot_params_path,
         support_dir=support_dir,
     )
     manifest = {
@@ -507,6 +574,7 @@ def create_support_bundle(
         "replay_gates": replay_gate_summary,
         "px4_sitl_evidence": px4_evidence_summary,
         "px4_params": px4_params_summary,
+        "ardupilot_params": ardupilot_params_summary,
         "extras": extra_summary,
     }
     bench_readiness = evaluate_bench_readiness(manifest)
@@ -551,6 +619,9 @@ def print_human(result: dict[str, Any]) -> None:
     px4_params = manifest.get("px4_params") or {}
     if px4_params.get("status") not in {None, "not_provided"}:
         print(f"PX4 params: {px4_params.get('status')}")
+    ardupilot_params = manifest.get("ardupilot_params") or {}
+    if ardupilot_params.get("status") not in {None, "not_provided"}:
+        print(f"ArduPilot params: {ardupilot_params.get('status')}")
     readiness = manifest.get("bench_readiness") or {}
     print(f"Bench readiness: {readiness.get('status') or 'unknown'}")
 
@@ -568,7 +639,9 @@ def main() -> None:
         mavlink_endpoint=args.mavlink_endpoint,
         px4_listener_path=args.px4_listener,
         px4_mavlink_status_path=args.px4_mavlink_status,
+        px4_sitl_session_path=args.px4_sitl_session,
         px4_params_path=args.px4_params,
+        ardupilot_params_path=args.ardupilot_params,
         px4_expected_message=args.px4_expected_message,
         replay_case_manifest_path=args.replay_case_manifest,
         inline_replay_cases=args.replay_case,

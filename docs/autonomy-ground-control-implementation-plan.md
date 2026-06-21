@@ -27,6 +27,13 @@ Status:
 - In progress: `scripts/dev/px4_sitl_external_vision_smoke.sh` generates a
   synthetic accepted/rejected external-vision log and sends it to a PX4 SITL UDP
   endpoint so the operator can verify `vehicle_visual_odometry` reception.
+- Done: the PX4 SITL smoke script writes an evidence-session folder with the
+  synthetic sender log, session manifest, receiver-capture instructions, stable
+  capture filenames, and a dry-run mode used by local preflight.
+- Done: `vision-nav-evaluate-px4-sitl-session` and
+  `scripts/dev/evaluate_px4_sitl_session.sh` evaluate an evidence-session
+  folder directly, write `receiver_evidence.json`, and fail cleanly until the
+  PX4 listener capture exists.
 - Done: `vision-nav-evaluate-px4-sitl-evidence` and
   `scripts/dev/evaluate_px4_sitl_receiver_evidence.sh` convert captured PX4
   `listener vehicle_visual_odometry` / `mavlink status` output into pass/fail
@@ -34,6 +41,10 @@ Status:
 - Done: support bundles can package PX4 SITL receiver captures and the generated
   receiver-evidence report so bench verification can be reviewed later from the
   desktop app.
+- Done: support bundles can ingest a full PX4 SITL evidence-session folder via
+  `--px4-sitl-session` / `VISION_NAV_PX4_SITL_SESSION`, copy it under
+  `extras/px4_sitl_session/`, and publish the parsed receiver report under
+  `summaries/px4_sitl_evidence/`.
 - Done: `vision-nav-check-px4-params` and `scripts/pi/check_px4_params.sh`
   evaluate exported PX4 parameter files for external-vision bench readiness
   without modifying the flight controller.
@@ -314,6 +325,40 @@ Acceptance checks:
   threshold tuning is considered complete.
 - Support bundles are enough to reproduce a failed bench run offline.
 
+### Track 6: ArduPilot Adapter Path
+
+Goal: keep ArduPilot compatibility in view without distracting from the PX4
+bench prototype.
+
+Status:
+
+- Done: [ArduPilot ExternalNav Adapter Design](ardupilot-externalnav-adapter.md)
+  documents the later adapter contract, preferred `ODOMETRY` path, conservative
+  ExternalNav parameter shape, bench sequence, and explicit non-goals.
+- Done: `vision-nav-check-ardupilot-params` and
+  `scripts/pi/check_ardupilot_params.sh` audit exported ArduPilot parameters for
+  ExternalNav bench readiness without modifying the flight controller.
+- Done: support bundles can include ArduPilot parameter exports and parsed
+  ExternalNav readiness reports under `extras/ardupilot_params/` and
+  `summaries/ardupilot_params/`, and the desktop support-bundle detail view can
+  display them.
+
+Tasks:
+
+1. Wait for repeatable PX4 SITL/bench receiver evidence before enabling an
+   ArduPilot runtime send profile.
+2. Run ArduPilot SITL with `ODOMETRY` input and save receiver/EKF source-state
+   evidence.
+3. Add ArduPilot receiver-evidence parsing only after the SITL evidence format
+   is known.
+
+Acceptance checks:
+
+- ArduPilot support never becomes the default output path.
+- Parameter checks can be run from an exported Mission Planner/MAVProxy file.
+- Runtime adapter work remains blocked behind PX4 bench evidence and ArduPilot
+  SITL receiver proof.
+
 ## Execution Order
 
 1. External-position conversion and MAVLink payloads.
@@ -322,7 +367,8 @@ Acceptance checks:
 4. COG/STAC/GeoTIFF bundle validation and health report.
 5. ROS 2 package wrapper and replay.
 6. Hierarchical tile retrieval and map-quality heatmap.
-7. ArduPilot adapter after PX4 bench validation.
+7. ArduPilot adapter after PX4 bench validation. The design and parameter
+   readiness checker now exist; runtime output remains intentionally gated.
 
 The first execution item is now represented in code by
 `src/vision_nav/external_position.py` and the updated MAVLink bridge tests.

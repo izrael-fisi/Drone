@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+import shutil
 import sqlite3
 import struct
 import tempfile
@@ -12,6 +13,7 @@ import zipfile
 import numpy as np
 
 from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
+from vision_nav.ardupilot_params import check_ardupilot_external_nav_params, params_from_text as ardupilot_params_from_text
 from vision_nav.bench_readiness import evaluate_bench_readiness, evaluate_bench_readiness_file
 from vision_nav.benchmark_retrieval import benchmark_retrieval
 from vision_nav.bundle import (
@@ -36,6 +38,7 @@ from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
 from vision_nav.mavlink_bridge import MavlinkSendResult, MavlinkVisionBridge, parse_mavlink_endpoint, send_records_once
 from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sitl_evidence
+from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.px4_params import check_px4_external_vision_params, evaluate_px4_param_file, params_from_text
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
 from vision_nav.ros2_bridge import export_rosbag_jsonl, ros_records_from_log
@@ -584,6 +587,76 @@ instance #0:
     assert_equal(failed["status"], "failed", "px4 sitl evidence failed")
 
 
+def test_px4_sitl_session_evaluator_writes_report_and_flags_missing_captures() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        session_dir = Path(tmp)
+        capture_dir = session_dir / "receiver_capture"
+        capture_dir.mkdir()
+        listener_path = capture_dir / "vehicle_visual_odometry.txt"
+        mavlink_status_path = capture_dir / "mavlink_status.txt"
+        report_path = session_dir / "receiver_evidence.json"
+        listener_path.write_text(
+            """
+TOPIC: vehicle_visual_odometry
+ vehicle_visual_odometry
+    timestamp: 5000000 (0.010000 seconds ago)
+    timestamp_sample: 4999000
+    position: [0.10000, 0.20000, -1.50000]
+    q: [1.00000, 0.00000, 0.00000, 0.00000]
+    position_variance: [1.50000, 1.50000, 4.00000]
+    reset_counter: 0
+    quality: 82
+TOPIC: vehicle_visual_odometry
+ vehicle_visual_odometry
+    timestamp: 5200000 (0.020000 seconds ago)
+    timestamp_sample: 5199000
+    position: [0.35000, 0.30000, -1.50000]
+    q: [1.00000, 0.00000, 0.00000, 0.00000]
+    position_variance: [1.50000, 1.50000, 4.00000]
+    reset_counter: 0
+    quality: 82
+""".strip()
+        )
+        mavlink_status_path.write_text(
+            """
+instance #0:
+    mavlink chan: #0
+    MAVLink version: 2
+    transport protocol: UDP (14550)
+    accepting commands: YES
+""".strip()
+        )
+        (session_dir / "px4_sitl_evidence_session.json").write_text(
+            json.dumps(
+                {
+                    "version": "0.1.0",
+                    "message_type": "odometry",
+                    "expected_captures": {
+                        "vehicle_visual_odometry": "receiver_capture/vehicle_visual_odometry.txt",
+                        "mavlink_status": "receiver_capture/mavlink_status.txt",
+                    },
+                    "receiver_report": "receiver_evidence.json",
+                }
+            )
+        )
+
+        report = evaluate_px4_sitl_session(
+            session_dir,
+            config=Px4SitlEvidenceConfig(min_samples=2, max_sample_age_s=1.0),
+        )
+        assert_equal(report["status"], "passed", "px4 sitl session passed")
+        assert_equal(report["listener"]["sample_count"], 2, "px4 sitl session sample count")
+        if not report_path.exists():
+            raise AssertionError("Expected px4 sitl session evaluator to write receiver_evidence.json")
+
+        listener_path.unlink()
+        failed = evaluate_px4_sitl_session(session_dir)
+        assert_equal(failed["status"], "failed", "px4 sitl session missing listener failed")
+        messages = " ".join(issue["message"] for issue in failed["issues"])
+        if "vehicle_visual_odometry" not in messages:
+            raise AssertionError(f"Expected missing listener issue, got {messages}")
+
+
 def test_px4_param_checker_flags_external_vision_readiness() -> None:
     params = params_from_text(
         """
@@ -620,6 +693,63 @@ def test_px4_param_checker_flags_external_vision_readiness() -> None:
     for expected in ["bit 0", "Vision", "GNSS-denied"]:
         if expected not in messages:
             raise AssertionError(f"Expected PX4 param issue containing {expected!r}, got {messages}")
+
+
+def test_ardupilot_param_checker_flags_external_nav_readiness() -> None:
+    params = ardupilot_params_from_text(
+        """
+# Mission Planner style parameter export
+EK3_ENABLE,1
+EK2_ENABLE,0
+AHRS_EKF_TYPE,3
+VISO_TYPE,3
+VISO_POS_X,0.02
+VISO_POS_Y,0.01
+VISO_POS_Z,-0.04
+EK3_SRC1_POSXY,6
+EK3_SRC1_VELXY,0
+EK3_SRC1_POSZ,1
+EK3_SRC1_VELZ,0
+EK3_SRC1_YAW,1
+EK3_SRC_OPTIONS,0
+GPS_TYPE,0
+RC8_OPTION,90
+"""
+    )
+    report = check_ardupilot_external_nav_params(
+        params,
+        gnss_denied=True,
+        extrinsics_measured=True,
+        require_source_switch=True,
+    )
+    assert_equal(report["status"], "passed", "ardupilot param checker passed")
+    assert_equal(report["parameters"]["EK3_SRC1_POSXY"], 6, "ardupilot external nav xy source")
+    assert_equal(report["parameters"]["source_switch_channels"], ["RC8_OPTION"], "ardupilot source switch")
+
+    risky = check_ardupilot_external_nav_params(
+        {
+            "EK3_ENABLE": 0,
+            "AHRS_EKF_TYPE": 2,
+            "VISO_TYPE": 0,
+            "VISO_POS_X": 0,
+            "VISO_POS_Y": 0,
+            "VISO_POS_Z": 0,
+            "EK3_SRC1_POSXY": 3,
+            "EK3_SRC1_VELXY": 6,
+            "EK3_SRC1_POSZ": 6,
+            "EK3_SRC1_VELZ": 6,
+            "EK3_SRC1_YAW": 6,
+            "EK3_SRC_OPTIONS": 1,
+            "GPS_TYPE": 1,
+        },
+        gnss_denied=True,
+        require_source_switch=True,
+    )
+    assert_equal(risky["status"], "failed", "ardupilot param checker risky status")
+    messages = " ".join(issue["message"] for issue in risky["issues"])
+    for expected in ["EK3_ENABLE", "AHRS_EKF_TYPE", "VISO_TYPE", "POSXY", "RCx_OPTION=90"]:
+        if expected not in messages:
+            raise AssertionError(f"Expected ArduPilot param issue containing {expected!r}, got {messages}")
 
 
 def test_external_position_payloads() -> None:
@@ -1145,6 +1275,24 @@ instance #0:
     accepting commands: YES
 """.strip()
         )
+        px4_session = root / "px4-sitl-session"
+        px4_session_capture = px4_session / "receiver_capture"
+        px4_session_capture.mkdir(parents=True)
+        shutil.copy2(px4_listener, px4_session_capture / "vehicle_visual_odometry.txt")
+        shutil.copy2(px4_status, px4_session_capture / "mavlink_status.txt")
+        (px4_session / "px4_sitl_evidence_session.json").write_text(
+            json.dumps(
+                {
+                    "version": "0.1.0",
+                    "message_type": "odometry",
+                    "expected_captures": {
+                        "vehicle_visual_odometry": "receiver_capture/vehicle_visual_odometry.txt",
+                        "mavlink_status": "receiver_capture/mavlink_status.txt",
+                    },
+                    "receiver_report": "receiver_evidence.json",
+                }
+            )
+        )
         px4_params = root / "px4.params"
         px4_params.write_text(
             """
@@ -1158,6 +1306,26 @@ instance #0:
 1 1 EKF2_EV_POS_Z 0.0 9
 """.strip()
         )
+        ardupilot_params = root / "ardupilot.params"
+        ardupilot_params.write_text(
+            """
+EK3_ENABLE,1
+EK2_ENABLE,0
+AHRS_EKF_TYPE,3
+VISO_TYPE,3
+VISO_POS_X,0.02
+VISO_POS_Y,0.01
+VISO_POS_Z,-0.04
+EK3_SRC1_POSXY,6
+EK3_SRC1_VELXY,0
+EK3_SRC1_POSZ,1
+EK3_SRC1_VELZ,0
+EK3_SRC1_YAW,1
+EK3_SRC_OPTIONS,0
+GPS_TYPE,0
+RC8_OPTION,90
+""".strip()
+        )
 
         result = create_support_bundle(
             bundle=str(bundle),
@@ -1166,9 +1334,9 @@ instance #0:
             output_dir=root / "support",
             name="unit-support",
             mavlink_endpoint="udp:14550",
-            px4_listener_path=str(px4_listener),
-            px4_mavlink_status_path=str(px4_status),
+            px4_sitl_session_path=str(px4_session),
             px4_params_path=str(px4_params),
+            ardupilot_params_path=str(ardupilot_params),
             px4_expected_message="odometry",
             replay_case_manifest_path=str(replay_manifest),
             include_map_assets=True,
@@ -1190,10 +1358,13 @@ instance #0:
             "summaries/replay_gates/unit-good.gate.json",
             "summaries/px4_sitl_evidence/receiver_evidence.json",
             "summaries/px4_params/param_check.json",
+            "summaries/ardupilot_params/param_check.json",
             "summaries/bench_readiness.json",
-            "extras/px4_sitl_evidence/vehicle_visual_odometry.txt",
-            "extras/px4_sitl_evidence/mavlink_status.txt",
+            "extras/px4_sitl_session/px4_sitl_evidence_session.json",
+            "extras/px4_sitl_session/receiver_capture/vehicle_visual_odometry.txt",
+            "extras/px4_sitl_session/receiver_capture/mavlink_status.txt",
             "extras/px4_params/px4.params",
+            "extras/ardupilot_params/ardupilot.params",
         }:
             if expected not in names:
                 raise AssertionError(f"Missing {expected} from support bundle zip")
@@ -1205,6 +1376,8 @@ instance #0:
         assert_equal(manifest["px4_sitl_evidence"]["listener"]["sample_count"], 2, "support px4 evidence samples")
         assert_equal(manifest["px4_params"]["status"], "degraded", "support px4 params status")
         assert_equal(manifest["px4_params"]["parameters"]["EKF2_EV_CTRL"], 1, "support px4 ev ctrl")
+        assert_equal(manifest["ardupilot_params"]["status"], "passed", "support ardupilot params status")
+        assert_equal(manifest["ardupilot_params"]["parameters"]["EK3_SRC1_POSXY"], 6, "support ardupilot posxy")
         assert_equal(manifest["bench_readiness"]["status"], "degraded", "support bench readiness status")
         assert_equal(manifest["bench_readiness"]["summary"]["degraded"], 1, "support bench readiness degraded count")
         readiness = evaluate_bench_readiness_file(zip_path)
@@ -1736,7 +1909,9 @@ def main() -> None:
         test_mavlink_endpoint_parsing_and_axis_mapping,
         test_mavlink_log_sender_uses_selected_message_type,
         test_px4_sitl_receiver_evidence_gate,
+        test_px4_sitl_session_evaluator_writes_report_and_flags_missing_captures,
         test_px4_param_checker_flags_external_vision_readiness,
+        test_ardupilot_param_checker_flags_external_nav_readiness,
         test_external_position_payloads,
         test_external_position_stream_health,
         test_ros2_odometry_and_diagnostics_adapters,

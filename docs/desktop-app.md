@@ -238,20 +238,22 @@ Raspberry Pi. Support bundles are written under
 `~/DroneTransfer/from-pi/support-bundles/` on the desktop. They include active
 map metadata, bundle health, runtime logs, generated summaries, app/git state,
 the configured MAVLink endpoint, optional replay-gate reports, optional PX4
-SITL receiver evidence and parameter checks, and an automatic bench-readiness
-summary. The panel lists recent downloaded support bundle ZIPs with parsed
-bench-readiness status, bundle health, checksum status, map source provenance,
-georeference confidence, replay-gate status, PX4 evidence status, and PX4
+SITL receiver evidence and parameter checks, optional ArduPilot parameter
+checks, and an automatic bench-readiness summary. The panel lists recent
+downloaded support bundle ZIPs with parsed bench-readiness status, bundle
+health, checksum status, map source provenance, georeference confidence,
+replay-gate status, PX4 evidence status, PX4 parameter status, and ArduPilot
 parameter status so the operator can confirm what was captured without manually opening the archive. The list can reveal a ZIP in
 the local file manager, copy the full path for support notes, show a compact
 detail view, or delete stale ZIP files after a bench session. The detail view
 reads the ZIP archive directly and shows support metadata, git/app state, log
 status counts, accepted-rate summaries, bench-readiness checks, replay-gate case
 results, PX4 receiver sample counts, MAVLink version/link hints, PX4
-external-vision parameter readiness, and compact per-record previews from bundled runtime/replay JSONL
-logs. It also previews a bounded set of small image artifacts from camera,
-debug, replay, smoke, or extra-file paths while skipping full map, orthophoto,
-and tile assets.
+external-vision parameter readiness, ArduPilot ExternalNav parameter readiness,
+and compact per-record previews from bundled runtime/replay JSONL logs. It also
+previews a bounded set of small image artifacts from camera, debug, replay,
+smoke, or extra-file paths while skipping full map, orthophoto, and tile
+assets.
 
 Module Setup uses the same support-bundle path for its `Bench Report` action,
 after validating the deployed terrain bundle at the configured runtime bundle
@@ -281,6 +283,11 @@ with local NED position derived from the repo's local ENU measurement. Set
 `ODOMETRY` path. Rejected matches are logged but not sent. Runtime logs include
 `external_position_health` snapshots with output status, send rate, latency,
 skip reasons, and covariance warnings.
+
+ArduPilot device selection is kept as an adapter-readiness path, not the
+default runtime output. PX4 remains the bench target until receiver evidence is
+repeatable. The ArduPilot design and parameter audit workflow live in
+[ArduPilot ExternalNav Adapter Design](ardupilot-externalnav-adapter.md).
 
 The Devices Control tab mirrors the same runtime actions for a selected Pi:
 status, short terrain loop, stop loop, view logs, create support bundle, and

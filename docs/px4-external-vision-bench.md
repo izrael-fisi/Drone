@@ -201,9 +201,28 @@ VISION_NAV_SITL_REPEAT=6
 
 Use `VISION_NAV_SITL_MAVLINK_MESSAGE=vision_position_estimate` to check the
 pose-only compatibility path. The script creates a temporary synthetic
-`terrain_matches.jsonl`, sends accepted records through
+`synthetic_external_vision.jsonl`, sends accepted records through
 `vision-nav-send-mavlink-log`, and includes one rejected record that should be
 skipped.
+
+The smoke script also writes a durable evidence-session folder. Set
+`VISION_NAV_SITL_SMOKE_DIR` when you want stable paths:
+
+```bash
+VISION_NAV_SITL_SMOKE_DIR="$PWD/px4-sitl-evidence" \
+./scripts/dev/px4_sitl_external_vision_smoke.sh
+```
+
+The folder contains:
+
+- `synthetic_external_vision.jsonl`: sender-side synthetic match log
+- `px4_sitl_evidence_session.json`: endpoint/message/rate/session metadata
+- `receiver_capture/README.md`: exact capture and evaluation commands
+- `receiver_capture/vehicle_visual_odometry.txt`: where to save listener output
+- `receiver_capture/mavlink_status.txt`: where to save MAVLink status output
+- `receiver_evidence.json`: recommended evaluator output path
+
+For a no-MAVLink scaffolding check, use `VISION_NAV_SITL_DRY_RUN=1`.
 
 This script proves the project can emit the selected MAVLink message path to
 the SITL endpoint. It does not, by itself, prove EKF2 fusion. Confirm reception
@@ -214,13 +233,11 @@ listener vehicle_visual_odometry 5
 mavlink status
 ```
 
-Save the output from those two commands into text files, then evaluate the
-receiver-side evidence from this repo:
+Save the output from those two commands into the session folder, then evaluate
+the receiver-side evidence from this repo:
 
 ```bash
-./scripts/dev/evaluate_px4_sitl_receiver_evidence.sh \
-  /tmp/vehicle_visual_odometry.txt \
-  /tmp/mavlink_status.txt
+./scripts/dev/evaluate_px4_sitl_session.sh "$PWD/px4-sitl-evidence"
 ```
 
 The evaluator checks that PX4 published `vehicle_visual_odometry`, that multiple
@@ -230,9 +247,28 @@ It emits a JSON-compatible report through the
 `vision-nav-evaluate-px4-sitl-evidence` CLI. A `failed` or `degraded` result
 means the SITL receiver requirement is not proven yet.
 
+For loose capture files outside a session folder, use:
+
+```bash
+./scripts/dev/evaluate_px4_sitl_receiver_evidence.sh \
+  /tmp/vehicle_visual_odometry.txt \
+  /tmp/mavlink_status.txt
+```
+
 The same capture files can be included in support bundles with
 `VISION_NAV_PX4_LISTENER_CAPTURE` and `VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE`;
 the generated report is stored under `summaries/px4_sitl_evidence/`.
+If you used the smoke script's evidence-session folder, prefer:
+
+```bash
+vision-nav-support-bundle \
+  --bundle mission_bundle \
+  --log terrain_matches.jsonl \
+  --px4-sitl-session "$PWD/px4-sitl-evidence"
+```
+
+The session folder is copied under `extras/px4_sitl_session/`, and the parsed
+receiver report is still written under `summaries/px4_sitl_evidence/`.
 
 Support bundles include the combined bench-readiness report automatically under
 `summaries/bench_readiness.json`. Re-run the same gate against an existing ZIP

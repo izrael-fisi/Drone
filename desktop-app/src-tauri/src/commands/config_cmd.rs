@@ -32,6 +32,9 @@ pub struct SupportBundleSummary {
     pub px4_sitl_sample_count: Option<u64>,
     pub px4_params_status: Option<String>,
     pub px4_ev_ctrl: Option<i64>,
+    pub ardupilot_params_status: Option<String>,
+    pub ardupilot_source_set: Option<i64>,
+    pub ardupilot_posxy_source: Option<i64>,
     pub bench_readiness_status: Option<String>,
     pub bench_readiness_failed_count: Option<u64>,
     pub bench_readiness_degraded_count: Option<u64>,
@@ -86,6 +89,20 @@ pub struct SupportBundlePx4ParamReport {
     pub gps_ctrl: Option<i64>,
     pub ev_noise_mode: Option<i64>,
     pub ev_delay_ms: Option<f64>,
+    pub issues: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleArduPilotParamReport {
+    pub status: Option<String>,
+    pub source_set: Option<i64>,
+    pub viso_type: Option<i64>,
+    pub posxy_source: Option<i64>,
+    pub velxy_source: Option<i64>,
+    pub posz_source: Option<i64>,
+    pub velz_source: Option<i64>,
+    pub yaw_source: Option<i64>,
+    pub source_switch_channels: Option<serde_json::Value>,
     pub issues: Vec<String>,
 }
 
@@ -149,6 +166,7 @@ pub struct SupportBundleDetails {
     pub replay_reports: Vec<SupportBundleReplayReport>,
     pub px4_evidence_reports: Vec<SupportBundlePx4EvidenceReport>,
     pub px4_param_reports: Vec<SupportBundlePx4ParamReport>,
+    pub ardupilot_param_reports: Vec<SupportBundleArduPilotParamReport>,
     pub bench_readiness: Option<SupportBundleBenchReadinessReport>,
     pub entry_count: usize,
 }
@@ -272,6 +290,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut replay_reports = Vec::new();
     let mut px4_evidence_reports = Vec::new();
     let mut px4_param_reports = Vec::new();
+    let mut ardupilot_param_reports = Vec::new();
     let mut bench_readiness = manifest
         .get("bench_readiness")
         .map(bench_readiness_report_from_json);
@@ -303,6 +322,10 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 px4_param_reports.push(px4_param_report_from_json(&value));
             }
+        } else if name.starts_with("summaries/ardupilot_params/") && name.ends_with(".json") {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                ardupilot_param_reports.push(ardupilot_param_report_from_json(&value));
+            }
         } else if name == "summaries/bench_readiness.json" {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 bench_readiness = Some(bench_readiness_report_from_json(&value));
@@ -324,6 +347,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         replay_reports,
         px4_evidence_reports,
         px4_param_reports,
+        ardupilot_param_reports,
         bench_readiness,
         entry_count,
         manifest,
@@ -556,7 +580,56 @@ fn px4_param_report_from_json(value: &serde_json::Value) -> SupportBundlePx4Para
     }
 }
 
-fn bench_readiness_report_from_json(value: &serde_json::Value) -> SupportBundleBenchReadinessReport {
+fn ardupilot_param_report_from_json(
+    value: &serde_json::Value,
+) -> SupportBundleArduPilotParamReport {
+    let issues = value
+        .get("issues")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    item.get("message")
+                        .and_then(|message| message.as_str())
+                        .map(|message| message.to_string())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let source_set = value
+        .pointer("/parameters/source_set")
+        .and_then(|value| value.as_i64());
+    let source_prefix = format!("EK3_SRC{}", source_set.unwrap_or(1));
+    SupportBundleArduPilotParamReport {
+        status: json_string(value.get("status")),
+        source_set,
+        viso_type: value
+            .pointer("/parameters/VISO_TYPE")
+            .and_then(|value| value.as_i64()),
+        posxy_source: value
+            .pointer(&format!("/parameters/{}_POSXY", source_prefix))
+            .and_then(|value| value.as_i64()),
+        velxy_source: value
+            .pointer(&format!("/parameters/{}_VELXY", source_prefix))
+            .and_then(|value| value.as_i64()),
+        posz_source: value
+            .pointer(&format!("/parameters/{}_POSZ", source_prefix))
+            .and_then(|value| value.as_i64()),
+        velz_source: value
+            .pointer(&format!("/parameters/{}_VELZ", source_prefix))
+            .and_then(|value| value.as_i64()),
+        yaw_source: value
+            .pointer(&format!("/parameters/{}_YAW", source_prefix))
+            .and_then(|value| value.as_i64()),
+        source_switch_channels: value.pointer("/parameters/source_switch_channels").cloned(),
+        issues,
+    }
+}
+
+fn bench_readiness_report_from_json(
+    value: &serde_json::Value,
+) -> SupportBundleBenchReadinessReport {
     let checks = value
         .get("checks")
         .and_then(|value| value.as_array())
@@ -777,6 +850,15 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         px4_ev_ctrl: manifest
             .pointer("/px4_params/parameters/EKF2_EV_CTRL")
             .and_then(|value| value.as_i64()),
+        ardupilot_params_status: json_string(manifest.pointer("/ardupilot_params/status")),
+        ardupilot_source_set: manifest
+            .pointer("/ardupilot_params/parameters/source_set")
+            .and_then(|value| value.as_i64()),
+        ardupilot_posxy_source: manifest
+            .pointer("/ardupilot_params/parameters/EK3_SRC1_POSXY")
+            .or_else(|| manifest.pointer("/ardupilot_params/parameters/EK3_SRC2_POSXY"))
+            .or_else(|| manifest.pointer("/ardupilot_params/parameters/EK3_SRC3_POSXY"))
+            .and_then(|value| value.as_i64()),
         bench_readiness_status: json_string(manifest.pointer("/bench_readiness/status")),
         bench_readiness_failed_count: manifest
             .pointer("/bench_readiness/summary/failed")
@@ -792,6 +874,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.replay_gate_status.is_none()
         && summary.px4_sitl_evidence_status.is_none()
         && summary.px4_params_status.is_none()
+        && summary.ardupilot_params_status.is_none()
         && summary.bench_readiness_status.is_none()
     {
         return None;
@@ -876,6 +959,13 @@ mod tests {
                     "EKF2_EV_CTRL": 1
                 }
             },
+            "ardupilot_params": {
+                "status": "passed",
+                "parameters": {
+                    "source_set": 1,
+                    "EK3_SRC1_POSXY": 6
+                }
+            },
             "bench_readiness": {
                 "status": "degraded",
                 "summary": {
@@ -901,6 +991,9 @@ mod tests {
         assert_eq!(summary.px4_sitl_sample_count, Some(2));
         assert_eq!(summary.px4_params_status.as_deref(), Some("degraded"));
         assert_eq!(summary.px4_ev_ctrl, Some(1));
+        assert_eq!(summary.ardupilot_params_status.as_deref(), Some("passed"));
+        assert_eq!(summary.ardupilot_source_set, Some(1));
+        assert_eq!(summary.ardupilot_posxy_source, Some(6));
         assert_eq!(summary.bench_readiness_status.as_deref(), Some("degraded"));
         assert_eq!(summary.bench_readiness_failed_count, Some(0));
         assert_eq!(summary.bench_readiness_degraded_count, Some(1));
@@ -1005,8 +1098,11 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write gate");
-            zip.start_file("summaries/px4_sitl_evidence/receiver_evidence.json", options)
-                .expect("px4 evidence entry");
+            zip.start_file(
+                "summaries/px4_sitl_evidence/receiver_evidence.json",
+                options,
+            )
+            .expect("px4 evidence entry");
             zip.write_all(
                 serde_json::json!({
                     "status": "passed",
@@ -1044,6 +1140,27 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write px4 params");
+            zip.start_file("summaries/ardupilot_params/param_check.json", options)
+                .expect("ardupilot params entry");
+            zip.write_all(
+                serde_json::json!({
+                    "status": "passed",
+                    "parameters": {
+                        "source_set": 1,
+                        "VISO_TYPE": 3,
+                        "EK3_SRC1_POSXY": 6,
+                        "EK3_SRC1_VELXY": 0,
+                        "EK3_SRC1_POSZ": 1,
+                        "EK3_SRC1_VELZ": 0,
+                        "EK3_SRC1_YAW": 1,
+                        "source_switch_channels": ["RC8_OPTION"]
+                    },
+                    "issues": []
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write ardupilot params");
             zip.start_file("summaries/bench_readiness.json", options)
                 .expect("bench readiness entry");
             zip.write_all(
@@ -1070,7 +1187,7 @@ mod tests {
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(details.entry_count, 9);
+        assert_eq!(details.entry_count, 10);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(details.log_previews.len(), 1);
@@ -1094,13 +1211,26 @@ mod tests {
             vec!["low accepted rate".to_string()]
         );
         assert_eq!(details.px4_evidence_reports.len(), 1);
-        assert_eq!(details.px4_evidence_reports[0].status.as_deref(), Some("passed"));
+        assert_eq!(
+            details.px4_evidence_reports[0].status.as_deref(),
+            Some("passed")
+        );
         assert_eq!(details.px4_evidence_reports[0].sample_count, Some(2));
         assert_eq!(details.px4_evidence_reports[0].has_udp_14550, Some(true));
         assert_eq!(details.px4_param_reports.len(), 1);
-        assert_eq!(details.px4_param_reports[0].status.as_deref(), Some("degraded"));
+        assert_eq!(
+            details.px4_param_reports[0].status.as_deref(),
+            Some("degraded")
+        );
         assert_eq!(details.px4_param_reports[0].ev_ctrl, Some(1));
         assert_eq!(details.px4_param_reports[0].hgt_ref, Some(0));
+        assert_eq!(details.ardupilot_param_reports.len(), 1);
+        assert_eq!(
+            details.ardupilot_param_reports[0].status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(details.ardupilot_param_reports[0].source_set, Some(1));
+        assert_eq!(details.ardupilot_param_reports[0].posxy_source, Some(6));
         let readiness = details.bench_readiness.expect("bench readiness report");
         assert_eq!(readiness.status.as_deref(), Some("degraded"));
         assert_eq!(readiness.degraded_count, Some(1));

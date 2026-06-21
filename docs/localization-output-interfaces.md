@@ -47,6 +47,29 @@ Use only when deliberately presenting the estimate as a GPS-like global sensor. 
 
 For local-only systems, PX4 can use a global origin so a local estimate can support mission-like global behavior. This is useful for indoor or site-specific maps with a known origin.
 
+## ArduPilot Output Options
+
+ArduPilot support is a later adapter path after PX4 bench validation. The
+preferred shape is still MAVLink `ODOMETRY` from the shared external-position
+conversion layer, with ArduPilot configured to consume ExternalNav through its
+EKF source parameters.
+
+Use `VISION_POSITION_ESTIMATE` only as a compatibility path and `GPS_INPUT` only
+for a deliberate GPS-like compatibility mode. ArduPilot's own Non-GPS Position
+Estimation docs list `GPS_INPUT` but mark it not recommended for this use.
+
+Before testing an ArduPilot vehicle, audit the exported parameters with:
+
+```bash
+vision-nav-check-ardupilot-params \
+  --params ardupilot.params \
+  --source-set 1 \
+  --gnss-denied \
+  --extrinsics-measured
+```
+
+See [ArduPilot ExternalNav Adapter Design](ardupilot-externalnav-adapter.md).
+
 ## Optional Legacy Output
 
 ### NMEA
@@ -66,11 +89,15 @@ If implemented, NMEA output must:
    [ROS 2 Runtime Adapter](ros2-runtime.md).
 2. Publish estimator diagnostics.
 3. Bridge odometry to PX4 through MAVLink `ODOMETRY` or PX4 ROS 2 external-vision topics.
-4. Add `GPS_INPUT` only if PX4 integration tests show it is the right abstraction for global map-derived estimates.
-5. Add NMEA last, and only if a downstream system needs it.
+4. Add the ArduPilot ExternalNav adapter only after PX4 bench evidence is
+   repeatable.
+5. Add `GPS_INPUT` only if integration tests show it is the right abstraction
+   for a specific global map-derived compatibility target.
+6. Add NMEA last, and only if a downstream system needs it.
 
 ## References
 
 - PX4 external position estimation: https://docs.px4.io/main/en/ros/external_position_estimation
 - PX4 EKF2 external vision fusion: https://docs.px4.io/main/en/advanced_config/tuning_the_ecl_ekf.html#external-vision-system
+- ArduPilot Non-GPS position estimation: https://ardupilot.org/dev/docs/mavlink-nongps-position-estimation.html
 - MAVLink common messages: https://mavlink.io/en/messages/common.html

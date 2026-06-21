@@ -137,6 +137,9 @@ export interface SupportBundleFile {
     px4_sitl_sample_count?: number;
     px4_params_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     px4_ev_ctrl?: number;
+    ardupilot_params_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    ardupilot_source_set?: number;
+    ardupilot_posxy_source?: number;
     bench_readiness_status?: "passed" | "failed" | "degraded" | string;
     bench_readiness_failed_count?: number;
     bench_readiness_degraded_count?: number;
@@ -207,6 +210,18 @@ export interface SupportBundleDetails {
     gps_ctrl?: number;
     ev_noise_mode?: number;
     ev_delay_ms?: number;
+    issues: string[];
+  }>;
+  ardupilot_param_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    source_set?: number;
+    viso_type?: number;
+    posxy_source?: number;
+    velxy_source?: number;
+    posz_source?: number;
+    velz_source?: number;
+    yaw_source?: number;
+    source_switch_channels?: unknown;
     issues: string[];
   }>;
   bench_readiness?: {

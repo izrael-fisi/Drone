@@ -233,6 +233,32 @@ function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }
         </div>
       )}
 
+      {details.ardupilot_param_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">ArduPilot parameter check</div>
+          {details.ardupilot_param_reports.slice(0, 2).map((report, index) => (
+            <div key={`${report.source_set}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(report.status)}>
+                  {statusIcon(report.status)}
+                  {formatLabel(report.status)}
+                </span>
+                <span className="font-mono text-slate-500">SRC {report.source_set ?? "n/a"}</span>
+                <span className="font-mono text-slate-500">VISO {report.viso_type ?? "n/a"}</span>
+                <span className="font-mono text-slate-500">XY {report.posxy_source ?? "n/a"}</span>
+                <span className="font-mono text-slate-500">Z {report.posz_source ?? "n/a"}</span>
+                <span className="font-mono text-slate-500">YAW {report.yaw_source ?? "n/a"}</span>
+              </div>
+              {report.issues.slice(0, 2).map((issue) => (
+                <div key={issue} className="text-amber-200/80 truncate">
+                  {issue}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
       {details.replay_reports.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Replay gates</div>
@@ -385,6 +411,12 @@ export function SupportBundleList({
                   <span className={statusClass(bundle.summary.px4_params_status)}>
                     {statusIcon(bundle.summary.px4_params_status)}
                     params {formatLabel(bundle.summary.px4_params_status)}
+                  </span>
+                )}
+                {bundle.summary.ardupilot_params_status && bundle.summary.ardupilot_params_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.ardupilot_params_status)}>
+                    {statusIcon(bundle.summary.ardupilot_params_status)}
+                    ardu {formatLabel(bundle.summary.ardupilot_params_status)}
                   </span>
                 )}
                 {bundle.summary.elevation_status && (
