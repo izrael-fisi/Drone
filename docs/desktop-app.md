@@ -237,17 +237,21 @@ Raspberry Pi. Support bundles are written under
 `~/DroneTransfer/outgoing/support-bundles/` on the Pi, then downloaded to
 `~/DroneTransfer/from-pi/support-bundles/` on the desktop. They include active
 map metadata, bundle health, runtime logs, generated summaries, app/git state,
-and the configured MAVLink endpoint. The panel lists recent downloaded support
-bundle ZIPs with parsed bundle health, checksum status, map source provenance,
-georeference confidence, and replay-gate status so the operator can confirm what
-was captured without manually opening the archive. The list can reveal a ZIP in
+the configured MAVLink endpoint, optional replay-gate reports, optional PX4
+SITL receiver evidence and parameter checks, and an automatic bench-readiness
+summary. The panel lists recent downloaded support bundle ZIPs with parsed
+bench-readiness status, bundle health, checksum status, map source provenance,
+georeference confidence, replay-gate status, PX4 evidence status, and PX4
+parameter status so the operator can confirm what was captured without manually opening the archive. The list can reveal a ZIP in
 the local file manager, copy the full path for support notes, show a compact
 detail view, or delete stale ZIP files after a bench session. The detail view
 reads the ZIP archive directly and shows support metadata, git/app state, log
-status counts, accepted-rate summaries, replay-gate case results, and compact
-per-record previews from bundled runtime/replay JSONL logs. It also previews a
-bounded set of small image artifacts from camera, debug, replay, smoke, or
-extra-file paths while skipping full map, orthophoto, and tile assets.
+status counts, accepted-rate summaries, bench-readiness checks, replay-gate case
+results, PX4 receiver sample counts, MAVLink version/link hints, PX4
+external-vision parameter readiness, and compact per-record previews from bundled runtime/replay JSONL
+logs. It also previews a bounded set of small image artifacts from camera,
+debug, replay, smoke, or extra-file paths while skipping full map, orthophoto,
+and tile assets.
 
 Module Setup uses the same support-bundle path for its `Bench Report` action,
 after validating the deployed terrain bundle at the configured runtime bundle

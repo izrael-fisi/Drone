@@ -284,6 +284,44 @@ vision-nav-support-bundle \
   --replay-case-manifest data/replay_cases/manifest.example.json
 ```
 
+Support bundles write `summaries/bench_readiness.json` automatically. Re-run
+the whole-artifact gate before treating a bench run as reviewable:
+
+```bash
+vision-nav-bench-readiness \
+  --support-bundle ~/DroneTransfer/outgoing/support-bundles/<bundle>.zip
+```
+
+The readiness gate combines terrain bundle health, runtime logs, replay gates,
+PX4 receiver evidence, and PX4 parameter checks into one pass/degraded/fail
+report.
+
+Register field logs before treating them as dataset coverage:
+
+```bash
+vision-nav-register-replay-case \
+  --manifest data/replay_cases/field_manifest.json \
+  --case-name field-good-texture \
+  --expected good_map \
+  --dataset-type field \
+  --condition good_texture \
+  --bundle ~/drone-data/map_bundles/mission_bundle \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --copy-log
+```
+
+Audit whether the manifest covers the required real field cases:
+
+```bash
+vision-nav-audit-replay-coverage \
+  --manifest data/replay_cases/manifest.example.json
+```
+
+This audit fails when coverage is synthetic-only or when field replay logs are
+missing. It expects field cases for good texture, low texture, blur, seasonal
+change, lighting change, altitude/scale change, repeated patterns, and wrong-map
+rejection.
+
 For a dependency-free local registry smoke test:
 
 ```bash

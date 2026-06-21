@@ -28,6 +28,13 @@ pub struct SupportBundleSummary {
     pub georef_confidence: Option<f64>,
     pub replay_gate_status: Option<String>,
     pub replay_case_count: Option<u64>,
+    pub px4_sitl_evidence_status: Option<String>,
+    pub px4_sitl_sample_count: Option<u64>,
+    pub px4_params_status: Option<String>,
+    pub px4_ev_ctrl: Option<i64>,
+    pub bench_readiness_status: Option<String>,
+    pub bench_readiness_failed_count: Option<u64>,
+    pub bench_readiness_degraded_count: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -57,6 +64,45 @@ pub struct SupportBundleReplayReport {
     pub accepted_rate: Option<f64>,
     pub total_records: Option<u64>,
     pub issues: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundlePx4EvidenceReport {
+    pub status: Option<String>,
+    pub expected_message: Option<String>,
+    pub sample_count: Option<u64>,
+    pub latest_sample_age_s: Option<f64>,
+    pub last_position: Option<serde_json::Value>,
+    pub mavlink_version: Option<u64>,
+    pub has_udp_14550: Option<bool>,
+    pub issues: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundlePx4ParamReport {
+    pub status: Option<String>,
+    pub ev_ctrl: Option<i64>,
+    pub hgt_ref: Option<i64>,
+    pub gps_ctrl: Option<i64>,
+    pub ev_noise_mode: Option<i64>,
+    pub ev_delay_ms: Option<f64>,
+    pub issues: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleBenchReadinessCheck {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleBenchReadinessReport {
+    pub status: Option<String>,
+    pub failed_count: Option<u64>,
+    pub degraded_count: Option<u64>,
+    pub passed_count: Option<u64>,
+    pub checks: Vec<SupportBundleBenchReadinessCheck>,
 }
 
 #[derive(Serialize)]
@@ -101,6 +147,9 @@ pub struct SupportBundleDetails {
     pub log_previews: Vec<SupportBundleLogPreview>,
     pub image_previews: Vec<SupportBundleImagePreview>,
     pub replay_reports: Vec<SupportBundleReplayReport>,
+    pub px4_evidence_reports: Vec<SupportBundlePx4EvidenceReport>,
+    pub px4_param_reports: Vec<SupportBundlePx4ParamReport>,
+    pub bench_readiness: Option<SupportBundleBenchReadinessReport>,
     pub entry_count: usize,
 }
 
@@ -221,6 +270,11 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut log_previews = Vec::new();
     let mut image_previews = Vec::new();
     let mut replay_reports = Vec::new();
+    let mut px4_evidence_reports = Vec::new();
+    let mut px4_param_reports = Vec::new();
+    let mut bench_readiness = manifest
+        .get("bench_readiness")
+        .map(bench_readiness_report_from_json);
     for index in 0..archive.len() {
         let (name, size_bytes) = {
             let entry = archive.by_index(index).map_err(|e| e.to_string())?;
@@ -241,6 +295,18 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 replay_reports.push(replay_report_from_json(&value));
             }
+        } else if name.starts_with("summaries/px4_sitl_evidence/") && name.ends_with(".json") {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                px4_evidence_reports.push(px4_evidence_report_from_json(&value));
+            }
+        } else if name.starts_with("summaries/px4_params/") && name.ends_with(".json") {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                px4_param_reports.push(px4_param_report_from_json(&value));
+            }
+        } else if name == "summaries/bench_readiness.json" {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                bench_readiness = Some(bench_readiness_report_from_json(&value));
+            }
         } else if image_previews.len() < IMAGE_PREVIEW_LIMIT
             && should_preview_image_entry(&name, size_bytes)
         {
@@ -256,6 +322,9 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         log_previews,
         image_previews,
         replay_reports,
+        px4_evidence_reports,
+        px4_param_reports,
+        bench_readiness,
         entry_count,
         manifest,
     })
@@ -413,6 +482,107 @@ fn replay_report_from_json(value: &serde_json::Value) -> SupportBundleReplayRepo
             .and_then(|value| value.get("total_records"))
             .and_then(|value| value.as_u64()),
         issues,
+    }
+}
+
+fn px4_evidence_report_from_json(value: &serde_json::Value) -> SupportBundlePx4EvidenceReport {
+    let issues = value
+        .get("issues")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    item.get("message")
+                        .and_then(|message| message.as_str())
+                        .map(|message| message.to_string())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    SupportBundlePx4EvidenceReport {
+        status: json_string(value.get("status")),
+        expected_message: json_string(value.get("expected_message")),
+        sample_count: value
+            .pointer("/listener/sample_count")
+            .and_then(|value| value.as_u64()),
+        latest_sample_age_s: value
+            .pointer("/listener/latest_sample_age_s")
+            .and_then(|value| value.as_f64()),
+        last_position: value.pointer("/listener/last_position").cloned(),
+        mavlink_version: value
+            .pointer("/mavlink_status/mavlink_version")
+            .and_then(|value| value.as_u64()),
+        has_udp_14550: value
+            .pointer("/mavlink_status/has_udp_14550")
+            .and_then(|value| value.as_bool()),
+        issues,
+    }
+}
+
+fn px4_param_report_from_json(value: &serde_json::Value) -> SupportBundlePx4ParamReport {
+    let issues = value
+        .get("issues")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    item.get("message")
+                        .and_then(|message| message.as_str())
+                        .map(|message| message.to_string())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    SupportBundlePx4ParamReport {
+        status: json_string(value.get("status")),
+        ev_ctrl: value
+            .pointer("/parameters/EKF2_EV_CTRL")
+            .and_then(|value| value.as_i64()),
+        hgt_ref: value
+            .pointer("/parameters/EKF2_HGT_REF")
+            .and_then(|value| value.as_i64()),
+        gps_ctrl: value
+            .pointer("/parameters/EKF2_GPS_CTRL")
+            .and_then(|value| value.as_i64()),
+        ev_noise_mode: value
+            .pointer("/parameters/EKF2_EV_NOISE_MD")
+            .and_then(|value| value.as_i64()),
+        ev_delay_ms: value
+            .pointer("/parameters/EKF2_EV_DELAY")
+            .and_then(|value| value.as_f64()),
+        issues,
+    }
+}
+
+fn bench_readiness_report_from_json(value: &serde_json::Value) -> SupportBundleBenchReadinessReport {
+    let checks = value
+        .get("checks")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| SupportBundleBenchReadinessCheck {
+                    name: json_string(item.get("name")),
+                    status: json_string(item.get("status")),
+                    message: json_string(item.get("message")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    SupportBundleBenchReadinessReport {
+        status: json_string(value.get("status")),
+        failed_count: value
+            .pointer("/summary/failed")
+            .and_then(|value| value.as_u64()),
+        degraded_count: value
+            .pointer("/summary/degraded")
+            .and_then(|value| value.as_u64()),
+        passed_count: value
+            .pointer("/summary/passed")
+            .and_then(|value| value.as_u64()),
+        checks,
     }
 }
 
@@ -599,12 +769,30 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         replay_case_count: manifest
             .pointer("/replay_gates/case_count")
             .and_then(|value| value.as_u64()),
+        px4_sitl_evidence_status: json_string(manifest.pointer("/px4_sitl_evidence/status")),
+        px4_sitl_sample_count: manifest
+            .pointer("/px4_sitl_evidence/listener/sample_count")
+            .and_then(|value| value.as_u64()),
+        px4_params_status: json_string(manifest.pointer("/px4_params/status")),
+        px4_ev_ctrl: manifest
+            .pointer("/px4_params/parameters/EKF2_EV_CTRL")
+            .and_then(|value| value.as_i64()),
+        bench_readiness_status: json_string(manifest.pointer("/bench_readiness/status")),
+        bench_readiness_failed_count: manifest
+            .pointer("/bench_readiness/summary/failed")
+            .and_then(|value| value.as_u64()),
+        bench_readiness_degraded_count: manifest
+            .pointer("/bench_readiness/summary/degraded")
+            .and_then(|value| value.as_u64()),
     };
     if summary.bundle_id.is_none()
         && summary.bundle_health_status.is_none()
         && summary.checksum_status.is_none()
         && summary.elevation_status.is_none()
         && summary.replay_gate_status.is_none()
+        && summary.px4_sitl_evidence_status.is_none()
+        && summary.px4_params_status.is_none()
+        && summary.bench_readiness_status.is_none()
     {
         return None;
     }
@@ -675,6 +863,26 @@ mod tests {
             "replay_gates": {
                 "status": "passed",
                 "case_count": 3
+            },
+            "px4_sitl_evidence": {
+                "status": "passed",
+                "listener": {
+                    "sample_count": 2
+                }
+            },
+            "px4_params": {
+                "status": "degraded",
+                "parameters": {
+                    "EKF2_EV_CTRL": 1
+                }
+            },
+            "bench_readiness": {
+                "status": "degraded",
+                "summary": {
+                    "failed": 0,
+                    "degraded": 1,
+                    "passed": 4
+                }
             }
         });
         let summary = support_summary_from_manifest(&manifest).expect("support summary");
@@ -689,6 +897,13 @@ mod tests {
         assert_eq!(summary.source_name.as_deref(), Some("field-map.tif"));
         assert_eq!(summary.replay_gate_status.as_deref(), Some("passed"));
         assert_eq!(summary.replay_case_count, Some(3));
+        assert_eq!(summary.px4_sitl_evidence_status.as_deref(), Some("passed"));
+        assert_eq!(summary.px4_sitl_sample_count, Some(2));
+        assert_eq!(summary.px4_params_status.as_deref(), Some("degraded"));
+        assert_eq!(summary.px4_ev_ctrl, Some(1));
+        assert_eq!(summary.bench_readiness_status.as_deref(), Some("degraded"));
+        assert_eq!(summary.bench_readiness_failed_count, Some(0));
+        assert_eq!(summary.bench_readiness_degraded_count, Some(1));
     }
 
     #[test]
@@ -790,6 +1005,60 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write gate");
+            zip.start_file("summaries/px4_sitl_evidence/receiver_evidence.json", options)
+                .expect("px4 evidence entry");
+            zip.write_all(
+                serde_json::json!({
+                    "status": "passed",
+                    "expected_message": "odometry",
+                    "listener": {
+                        "sample_count": 2,
+                        "latest_sample_age_s": 0.02,
+                        "last_position": [0.35, 0.3, -1.5]
+                    },
+                    "mavlink_status": {
+                        "mavlink_version": 2,
+                        "has_udp_14550": true
+                    },
+                    "issues": []
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write px4 evidence");
+            zip.start_file("summaries/px4_params/param_check.json", options)
+                .expect("px4 params entry");
+            zip.write_all(
+                serde_json::json!({
+                    "status": "degraded",
+                    "parameters": {
+                        "EKF2_EV_CTRL": 1,
+                        "EKF2_HGT_REF": 0,
+                        "EKF2_GPS_CTRL": 7,
+                        "EKF2_EV_NOISE_MD": 0,
+                        "EKF2_EV_DELAY": 80.0
+                    },
+                    "issues": [{"message": "confirm extrinsics"}]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write px4 params");
+            zip.start_file("summaries/bench_readiness.json", options)
+                .expect("bench readiness entry");
+            zip.write_all(
+                serde_json::json!({
+                    "status": "degraded",
+                    "summary": {"failed": 0, "degraded": 1, "passed": 4},
+                    "checks": [
+                        {"name": "bundle_health", "status": "passed", "message": "Terrain bundle health passed."},
+                        {"name": "px4_params", "status": "degraded", "message": "PX4 parameter check is degraded."}
+                    ]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write bench readiness");
             zip.start_file("extras/camera-health/frame.png", options)
                 .expect("image entry");
             zip.write_all(TINY_PNG).expect("write image");
@@ -801,7 +1070,7 @@ mod tests {
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(details.entry_count, 6);
+        assert_eq!(details.entry_count, 9);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(details.log_previews.len(), 1);
@@ -824,5 +1093,18 @@ mod tests {
             details.replay_reports[0].issues,
             vec!["low accepted rate".to_string()]
         );
+        assert_eq!(details.px4_evidence_reports.len(), 1);
+        assert_eq!(details.px4_evidence_reports[0].status.as_deref(), Some("passed"));
+        assert_eq!(details.px4_evidence_reports[0].sample_count, Some(2));
+        assert_eq!(details.px4_evidence_reports[0].has_udp_14550, Some(true));
+        assert_eq!(details.px4_param_reports.len(), 1);
+        assert_eq!(details.px4_param_reports[0].status.as_deref(), Some("degraded"));
+        assert_eq!(details.px4_param_reports[0].ev_ctrl, Some(1));
+        assert_eq!(details.px4_param_reports[0].hgt_ref, Some(0));
+        let readiness = details.bench_readiness.expect("bench readiness report");
+        assert_eq!(readiness.status.as_deref(), Some("degraded"));
+        assert_eq!(readiness.degraded_count, Some(1));
+        assert_eq!(readiness.checks.len(), 2);
+        assert_eq!(readiness.checks[1].name.as_deref(), Some("px4_params"));
     }
 }

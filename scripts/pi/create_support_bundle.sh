@@ -37,6 +37,22 @@ if [[ -n "$mavlink_endpoint" ]]; then
   args+=(--mavlink-endpoint "$mavlink_endpoint")
 fi
 
+if [[ -n "${VISION_NAV_PX4_LISTENER_CAPTURE:-}" && -f "${VISION_NAV_PX4_LISTENER_CAPTURE}" ]]; then
+  args+=(--px4-listener "$VISION_NAV_PX4_LISTENER_CAPTURE")
+fi
+
+if [[ -n "${VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE:-}" && -f "${VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE}" ]]; then
+  args+=(--px4-mavlink-status "$VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE")
+fi
+
+if [[ -n "${VISION_NAV_PX4_PARAMS:-}" && -f "${VISION_NAV_PX4_PARAMS}" ]]; then
+  args+=(--px4-params "$VISION_NAV_PX4_PARAMS")
+fi
+
+if [[ -n "${VISION_NAV_SITL_MAVLINK_MESSAGE:-}" ]]; then
+  args+=(--px4-expected-message "$VISION_NAV_SITL_MAVLINK_MESSAGE")
+fi
+
 if [[ -n "${VISION_NAV_REPLAY_CASE_MANIFEST:-}" && -f "${VISION_NAV_REPLAY_CASE_MANIFEST}" ]]; then
   args+=(--replay-case-manifest "$VISION_NAV_REPLAY_CASE_MANIFEST")
 fi

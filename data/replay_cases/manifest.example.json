@@ -1,18 +1,77 @@
 {
   "version": "0.1.0",
+  "description": "Template for real field replay coverage. Replace paths with captured logs before using this as a passing audit input.",
   "cases": [
     {
-      "case_name": "good-texture-bench",
+      "case_name": "field-good-texture",
       "expected": "good_map",
-      "bundle": "mission_bundle",
-      "log": "terrain-run/terrain_matches.jsonl",
-      "notes": "Clear texture, matching map, nominal focus and lighting."
+      "dataset_type": "field",
+      "conditions": ["good_texture"],
+      "bundle": "field-bundles/site-a/mission_bundle",
+      "log": "field/site-a/good_texture/terrain_matches.jsonl",
+      "notes": "Clear ground texture, matching map, nominal focus, nominal altitude, and normal lighting."
     },
     {
-      "case_name": "wrong-map-bench",
+      "case_name": "field-low-texture",
+      "expected": "degraded",
+      "dataset_type": "field",
+      "conditions": ["low_texture"],
+      "bundle": "field-bundles/site-a/mission_bundle",
+      "log": "field/site-a/low_texture/terrain_matches.jsonl",
+      "notes": "Sparse visual features such as pavement, grass, water, or uniform ground. Weak accepted matches must inflate covariance."
+    },
+    {
+      "case_name": "field-blur",
+      "expected": "degraded",
+      "dataset_type": "field",
+      "conditions": ["blur"],
+      "bundle": "field-bundles/site-a/mission_bundle",
+      "log": "field/site-a/blur/terrain_matches.jsonl",
+      "notes": "Motion blur, focus error, vibration, or rolling-shutter smear. Runtime should degrade or reject."
+    },
+    {
+      "case_name": "field-seasonal-change",
+      "expected": "degraded",
+      "dataset_type": "field",
+      "conditions": ["seasonal_change"],
+      "bundle": "field-bundles/site-a/mission_bundle",
+      "log": "field/site-a/seasonal_change/terrain_matches.jsonl",
+      "notes": "Reference map and runtime imagery differ because of vegetation, snow, construction, or map age."
+    },
+    {
+      "case_name": "field-lighting-change",
+      "expected": "degraded",
+      "dataset_type": "field",
+      "conditions": ["lighting_change"],
+      "bundle": "field-bundles/site-a/mission_bundle",
+      "log": "field/site-a/lighting_change/terrain_matches.jsonl",
+      "notes": "Different sun angle, cloud cover, glare, shadows, or exposure compared with the reference map."
+    },
+    {
+      "case_name": "field-altitude-scale-change",
+      "expected": "good_map",
+      "dataset_type": "field",
+      "conditions": ["altitude_scale_change"],
+      "bundle": "field-bundles/site-a/mission_bundle",
+      "log": "field/site-a/altitude_scale_change/terrain_matches.jsonl",
+      "notes": "Altitude or camera scale differs from nominal but geometry remains recoverable."
+    },
+    {
+      "case_name": "field-repeated-patterns",
+      "expected": "degraded",
+      "dataset_type": "field",
+      "conditions": ["repeated_patterns"],
+      "bundle": "field-bundles/site-a/mission_bundle",
+      "log": "field/site-a/repeated_patterns/terrain_matches.jsonl",
+      "notes": "Repeated roofs, fields, parking rows, solar panels, or other ambiguous terrain patterns."
+    },
+    {
+      "case_name": "field-wrong-map",
       "expected": "wrong_map",
-      "bundle": "mission_bundle",
-      "log": "terrain-run/wrong_map_matches.jsonl",
+      "dataset_type": "field",
+      "conditions": ["wrong_map"],
+      "bundle": "field-bundles/site-b/mission_bundle",
+      "log": "field/site-a/replayed_against_site_b/terrain_matches.jsonl",
       "notes": "Frames intentionally replayed against the wrong map. Accepted rate must remain zero."
     }
   ]

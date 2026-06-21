@@ -27,6 +27,22 @@ Status:
 - In progress: `scripts/dev/px4_sitl_external_vision_smoke.sh` generates a
   synthetic accepted/rejected external-vision log and sends it to a PX4 SITL UDP
   endpoint so the operator can verify `vehicle_visual_odometry` reception.
+- Done: `vision-nav-evaluate-px4-sitl-evidence` and
+  `scripts/dev/evaluate_px4_sitl_receiver_evidence.sh` convert captured PX4
+  `listener vehicle_visual_odometry` / `mavlink status` output into pass/fail
+  receiver evidence for SITL bench runs.
+- Done: support bundles can package PX4 SITL receiver captures and the generated
+  receiver-evidence report so bench verification can be reviewed later from the
+  desktop app.
+- Done: `vision-nav-check-px4-params` and `scripts/pi/check_px4_params.sh`
+  evaluate exported PX4 parameter files for external-vision bench readiness
+  without modifying the flight controller.
+- Done: `vision-nav-bench-readiness` evaluates support-bundle ZIPs/manifests as
+  a single bench-readiness gate across terrain bundle health, runtime logs,
+  replay gates, PX4 receiver evidence, and PX4 parameter checks.
+- Done: support-bundle creation now writes `summaries/bench_readiness.json` and
+  embeds the same status in `support_manifest.json` so downloaded bench reports
+  carry their own readiness result.
 - Done: PX4 external-vision bench guidance is documented in
   [PX4 External Vision Bench Guide](px4-external-vision-bench.md).
 - Done: runtime logs include `external_position_health` snapshots with message
@@ -36,10 +52,10 @@ Status:
 
 Next tasks:
 
-1. Run PX4 SITL receiver verification and capture evidence that EKF2/uORB
-   receives the selected message path at the expected rate.
-2. Add PX4 SITL receiver automation once the local PX4 environment is available
-   for repeatable log capture.
+1. Run PX4 SITL receiver verification and save the evaluator report proving
+   that EKF2/uORB receives the selected message path at the expected rate.
+2. Add direct PX4 console/log capture automation once the local PX4 environment
+   is available for repeatable receiver artifacts.
 
 Acceptance checks:
 
@@ -251,6 +267,18 @@ Status:
 - In progress: support-bundle details now include bounded previews for small
   camera/debug/replay image artifacts inside downloaded ZIPs while skipping
   full map, orthophoto, tile, descriptor, and elevation assets.
+- In progress: support-bundle details now include PX4 SITL receiver evidence
+  status, sample counts, latest sample age, local position, MAVLink version, UDP
+  link hint, and report issues when receiver captures are provided.
+- In progress: support-bundle details now include PX4 external-vision parameter
+  readiness status, EKF2 external-vision control value, height reference, GNSS
+  control, covariance-source mode, delay, and report issues when a parameter
+  export is provided.
+- Done: support bundles can be evaluated by `vision-nav-bench-readiness` to
+  produce one pass/degraded/fail bench artifact status instead of relying on
+  separate manual inspections.
+- In progress: downloaded support-bundle details now show the embedded
+  bench-readiness status and per-check messages in the desktop app.
 - In progress: `data/replay_cases/` defines the replay case registry shape for
   good texture, degraded, and wrong-map datasets.
 - Done: `vision-nav-evaluate-replay-manifest` evaluates replay-case manifests
@@ -258,12 +286,21 @@ Status:
 - Done: `data/replay_cases/synthetic_smoke/` provides deterministic local
   smoke coverage for good-map, degraded low-texture, and wrong-map rejection
   behavior; `local_preflight.sh` evaluates this suite.
+- Done: `vision-nav-audit-replay-coverage` audits replay manifests for required
+  real field coverage across good texture, low texture, blur, seasonal change,
+  lighting change, altitude/scale change, repeated patterns, and wrong-map
+  rejection.
+- Done: `vision-nav-register-replay-case` registers copied field, bench, or
+  synthetic logs into replay manifests with dataset type, condition tags, and
+  stable manifest-relative log paths.
 
 Tasks:
 
-1. Fill `data/replay_cases/` with real field logs for good texture, low texture,
-   blur, seasonal change, altitude/scale change, repeated patterns, and wrong
-   map.
+1. Fill `data/replay_cases/` with real field logs that pass
+   `vision-nav-audit-replay-coverage` for good texture, low texture, blur,
+   seasonal change, lighting change, altitude/scale change, repeated patterns,
+   and wrong map. Use `vision-nav-register-replay-case` when bringing Pi logs
+   into the repo dataset folder.
 2. Compare ORB/AKAZE against optional higher-compute features on the same logs.
 3. Tune replay-gate thresholds against real field logs for blur, seasonal
    change, altitude/scale change, repeated patterns, and wrong-map cases.

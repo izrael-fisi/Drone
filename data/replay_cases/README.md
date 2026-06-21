@@ -7,6 +7,10 @@ Each case should include:
 
 - `case_name`
 - `expected`: `good_map`, `degraded`, or `wrong_map`
+- `dataset_type`: `field`, `bench`, or `synthetic`
+- `conditions`: one or more validation tags such as `good_texture`,
+  `low_texture`, `blur`, `seasonal_change`, `lighting_change`,
+  `altitude_scale_change`, `repeated_patterns`, or `wrong_map`
 - `bundle`: bundle path used for replay
 - `log`: replay/runtime JSONL path
 - notes describing lighting, texture, blur, seasonal change, altitude/scale
@@ -38,6 +42,64 @@ vision-nav-support-bundle \
 
 Generated reports are stored under `summaries/replay_gates/` inside the support
 bundle.
+
+## Register Field Logs
+
+Use the registry helper to turn Pi runtime/replay logs into manifest cases with
+consistent condition tags and manifest-relative paths:
+
+```bash
+vision-nav-register-replay-case \
+  --manifest data/replay_cases/field_manifest.json \
+  --case-name field-good-texture \
+  --expected good_map \
+  --dataset-type field \
+  --condition good_texture \
+  --bundle field-bundles/site-a/mission_bundle \
+  --log ~/DroneTransfer/from-pi/terrain_matches.jsonl \
+  --copy-log \
+  --notes "clear texture, matching map, nominal lighting"
+```
+
+`--copy-log` copies the source log under the manifest folder, defaulting to
+`<dataset-type>/<case-name>/`, so the dataset can be moved or reviewed as a
+single folder. Use `--replace` to update a case after retesting.
+
+After registering cases, run:
+
+```bash
+vision-nav-evaluate-replay-manifest \
+  --manifest data/replay_cases/field_manifest.json \
+  --output-dir data/replay_cases/field_reports
+
+vision-nav-audit-replay-coverage \
+  --manifest data/replay_cases/field_manifest.json
+```
+
+## Coverage Audit
+
+Before treating replay validation as field-ready, audit the manifest for the
+real field conditions required by the ground-control implementation plan:
+
+```bash
+vision-nav-audit-replay-coverage \
+  --manifest data/replay_cases/manifest.example.json
+```
+
+The audit requires real `dataset_type=field` cases, existing log paths, and
+coverage for:
+
+- good texture / matching map
+- low texture
+- blur
+- seasonal or map-age change
+- lighting or shadow change
+- altitude / visual scale change
+- repeated patterns
+- wrong-map rejection
+
+Use `--allow-synthetic` only to smoke-test the audit tool itself. Passing
+synthetic replay gates does not satisfy the real field dataset requirement.
 
 ## Synthetic Smoke Suite
 

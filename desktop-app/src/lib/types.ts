@@ -133,6 +133,13 @@ export interface SupportBundleFile {
     georef_confidence?: number;
     replay_gate_status?: "passed" | "failed" | "degraded" | string;
     replay_case_count?: number;
+    px4_sitl_evidence_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    px4_sitl_sample_count?: number;
+    px4_params_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    px4_ev_ctrl?: number;
+    bench_readiness_status?: "passed" | "failed" | "degraded" | string;
+    bench_readiness_failed_count?: number;
+    bench_readiness_degraded_count?: number;
   };
 }
 
@@ -183,6 +190,36 @@ export interface SupportBundleDetails {
     total_records?: number;
     issues: string[];
   }>;
+  px4_evidence_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    expected_message?: string;
+    sample_count?: number;
+    latest_sample_age_s?: number;
+    last_position?: unknown;
+    mavlink_version?: number;
+    has_udp_14550?: boolean;
+    issues: string[];
+  }>;
+  px4_param_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    ev_ctrl?: number;
+    hgt_ref?: number;
+    gps_ctrl?: number;
+    ev_noise_mode?: number;
+    ev_delay_ms?: number;
+    issues: string[];
+  }>;
+  bench_readiness?: {
+    status?: "passed" | "failed" | "degraded" | string;
+    failed_count?: number;
+    degraded_count?: number;
+    passed_count?: number;
+    checks: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+    }>;
+  };
 }
 
 export interface BuildDroneBundleRequest {

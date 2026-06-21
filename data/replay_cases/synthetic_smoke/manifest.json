@@ -5,6 +5,8 @@
     {
       "case_name": "synthetic-good-map",
       "expected": "good_map",
+      "dataset_type": "synthetic",
+      "conditions": ["good_texture"],
       "bundle": "synthetic",
       "log": "logs/good_map.jsonl",
       "notes": "Accepted records include confidence, inliers, reprojection error, scale confidence, covariance, and smooth local motion."
@@ -12,6 +14,8 @@
     {
       "case_name": "synthetic-degraded-low-texture",
       "expected": "degraded",
+      "dataset_type": "synthetic",
+      "conditions": ["low_texture"],
       "bundle": "synthetic",
       "log": "logs/degraded_low_texture.jsonl",
       "notes": "Mostly rejected low-texture records with one weak accepted match that inflates covariance."
@@ -19,6 +23,8 @@
     {
       "case_name": "synthetic-wrong-map",
       "expected": "wrong_map",
+      "dataset_type": "synthetic",
+      "conditions": ["wrong_map"],
       "bundle": "synthetic",
       "log": "logs/wrong_map.jsonl",
       "notes": "All records are rejected; any accepted record should fail the gate."

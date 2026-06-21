@@ -278,6 +278,15 @@ VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600 \
 ./scripts/pi/check_mavlink_endpoint.sh
 ```
 
+After exporting PX4 parameters from QGroundControl or the PX4 shell, check the
+external-vision readiness settings without changing the flight controller:
+
+```bash
+VISION_NAV_PX4_PARAMS="$HOME/px4.params" \
+VISION_NAV_GNSS_DENIED_CHECK=1 \
+./scripts/pi/check_px4_params.sh
+```
+
 For PX4 uXRCE-DDS and ROS 2 bench paths, also check the optional Micro XRCE-DDS
 Agent:
 
@@ -520,6 +529,45 @@ VISION_NAV_REPLAY_CASE_MANIFEST="$HOME/Drone/replay_cases.json" \
 Replay-gate reports are written under `summaries/replay_gates/` inside the
 support bundle.
 
+To include PX4 SITL receiver evidence, save the PX4 console outputs from
+`listener vehicle_visual_odometry 5` and `mavlink status`, then pass those files
+to the wrapper:
+
+```bash
+VISION_NAV_PX4_LISTENER_CAPTURE="$HOME/px4-evidence/vehicle_visual_odometry.txt" \
+VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE="$HOME/px4-evidence/mavlink_status.txt" \
+VISION_NAV_SITL_MAVLINK_MESSAGE=odometry \
+./scripts/pi/create_support_bundle.sh
+```
+
+The raw captures are copied under `extras/px4_sitl_evidence/`, and the parsed
+pass/fail report is written under `summaries/px4_sitl_evidence/`.
+
+To include the PX4 parameter readiness report in the same support bundle:
+
+```bash
+VISION_NAV_PX4_PARAMS="$HOME/px4.params" \
+./scripts/pi/create_support_bundle.sh
+```
+
+The raw parameter export is copied under `extras/px4_params/`, and the parsed
+report is written under `summaries/px4_params/`.
+
+Every support bundle now includes a combined bench-readiness report under
+`summaries/bench_readiness.json`. Re-run the same gate against an existing ZIP
+with:
+
+```bash
+vision-nav-bench-readiness \
+  --support-bundle "$HOME/DroneTransfer/outgoing/support-bundles/<bundle>.zip"
+```
+
+The gate checks terrain bundle health, runtime logs, replay gates, PX4 receiver
+evidence, and PX4 parameter readiness in one report. Use
+`--allow-missing-px4-evidence`, `--allow-missing-px4-params`, or
+`--allow-missing-replay-gates` only for local software smoke checks before the
+real bench evidence exists.
+
 The desktop Module Setup `Bench Report` action runs the terrain bundle validator
 against the configured deployed bundle, creates this same support bundle, and
 downloads the latest zip back to `~/DroneTransfer/from-pi/support-bundles/` on
@@ -528,5 +576,5 @@ check results, selected discovery adapter, copyable discovery checklist, and
 downloaded support-bundle summaries. The desktop support-bundle list can reveal
 downloaded ZIPs in the local file manager, copy their path, show compact
 manifest details, inspect log/replay-gate summaries and per-record JSONL
-previews from inside the ZIP, preview bounded camera/debug/replay image
-artifacts, or delete stale ZIPs.
+previews from inside the ZIP, inspect PX4 receiver evidence reports, preview
+bounded camera/debug/replay image artifacts, or delete stale ZIPs.

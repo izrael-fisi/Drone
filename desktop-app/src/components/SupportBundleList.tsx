@@ -36,6 +36,13 @@ function formatCounts(counts?: Record<string, number>) {
     .join(", ");
 }
 
+function formatVector(value: unknown) {
+  if (!Array.isArray(value)) return "n/a";
+  return value
+    .map((item) => typeof item === "number" ? item.toFixed(2) : String(item))
+    .join(", ");
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
@@ -60,13 +67,40 @@ function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }
     <div className="space-y-2 pt-1">
       <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
         <span>entries {details.entry_count}</span>
-        <span>health {formatLabel(healthStatus)}</span>
+        <span>readiness {formatLabel(details.bench_readiness?.status ?? healthStatus)}</span>
         <span>version {formatLabel(projectVersion)}</span>
         <span>checksums {formatLabel(checksumStatus)}</span>
         <span className="truncate">branch {formatLabel(gitBranch)}</span>
         <span className="truncate">commit {gitCommit ? gitCommit.slice(0, 8) : "n/a"}</span>
         <span className="col-span-2 truncate">host {formatLabel(platform)}</span>
       </div>
+
+      {details.bench_readiness && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Bench readiness</div>
+          <div className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={statusClass(details.bench_readiness.status)}>
+                {statusIcon(details.bench_readiness.status)}
+                {formatLabel(details.bench_readiness.status)}
+              </span>
+              <span className="font-mono text-slate-500">pass {details.bench_readiness.passed_count ?? 0}</span>
+              <span className="font-mono text-slate-500">degrade {details.bench_readiness.degraded_count ?? 0}</span>
+              <span className="font-mono text-slate-500">fail {details.bench_readiness.failed_count ?? 0}</span>
+            </div>
+            {details.bench_readiness.checks.slice(0, 5).map((check) => (
+              <div key={`${check.name}-${check.status}`} className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500">
+                <span className={statusClass(check.status)}>
+                  {statusIcon(check.status)}
+                  {formatLabel(check.status)}
+                </span>
+                <span>{formatLabel(check.name)}</span>
+                {check.message && <span className="truncate text-slate-400">{check.message}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {details.logs.length > 0 && (
         <div className="space-y-1">
@@ -137,6 +171,65 @@ function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {details.px4_evidence_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">PX4 receiver evidence</div>
+          {details.px4_evidence_reports.slice(0, 2).map((report, index) => (
+            <div key={`${report.expected_message}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(report.status)}>
+                  {statusIcon(report.status)}
+                  {formatLabel(report.status)}
+                </span>
+                <span className="font-mono text-slate-400">{formatLabel(report.expected_message)}</span>
+                <span className="font-mono text-slate-500">{report.sample_count ?? 0} samples</span>
+                {report.latest_sample_age_s != null && (
+                  <span className="font-mono text-slate-500">age {report.latest_sample_age_s.toFixed(2)}s</span>
+                )}
+                {report.mavlink_version != null && (
+                  <span className="font-mono text-slate-500">mavlink v{report.mavlink_version}</span>
+                )}
+                {report.has_udp_14550 && <span className="font-mono text-slate-500">udp 14550</span>}
+              </div>
+              <div className="font-mono text-slate-500 truncate">pos [{formatVector(report.last_position)}]</div>
+              {report.issues.slice(0, 2).map((issue) => (
+                <div key={issue} className="text-amber-200/80 truncate">
+                  {issue}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {details.px4_param_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">PX4 parameter check</div>
+          {details.px4_param_reports.slice(0, 2).map((report, index) => (
+            <div key={`${report.ev_ctrl}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(report.status)}>
+                  {statusIcon(report.status)}
+                  {formatLabel(report.status)}
+                </span>
+                <span className="font-mono text-slate-500">EV {report.ev_ctrl ?? "n/a"}</span>
+                <span className="font-mono text-slate-500">HGT {report.hgt_ref ?? "n/a"}</span>
+                <span className="font-mono text-slate-500">GPS {report.gps_ctrl ?? "n/a"}</span>
+                <span className="font-mono text-slate-500">NOISE {report.ev_noise_mode ?? "n/a"}</span>
+                {report.ev_delay_ms != null && (
+                  <span className="font-mono text-slate-500">delay {report.ev_delay_ms.toFixed(0)}ms</span>
+                )}
+              </div>
+              {report.issues.slice(0, 2).map((issue) => (
+                <div key={issue} className="text-amber-200/80 truncate">
+                  {issue}
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       )}
 
@@ -262,6 +355,12 @@ export function SupportBundleList({
           {bundle.summary ? (
             <>
               <div className="flex flex-wrap gap-1.5">
+                {bundle.summary.bench_readiness_status && (
+                  <span className={statusClass(bundle.summary.bench_readiness_status)}>
+                    {statusIcon(bundle.summary.bench_readiness_status)}
+                    readiness {formatLabel(bundle.summary.bench_readiness_status)}
+                  </span>
+                )}
                 <span className={statusClass(bundle.summary.bundle_health_status)}>
                   {statusIcon(bundle.summary.bundle_health_status)}
                   health {formatLabel(bundle.summary.bundle_health_status)}
@@ -274,6 +373,18 @@ export function SupportBundleList({
                   <span className={statusClass(bundle.summary.replay_gate_status)}>
                     {statusIcon(bundle.summary.replay_gate_status)}
                     replay {formatLabel(bundle.summary.replay_gate_status)}
+                  </span>
+                )}
+                {bundle.summary.px4_sitl_evidence_status && bundle.summary.px4_sitl_evidence_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.px4_sitl_evidence_status)}>
+                    {statusIcon(bundle.summary.px4_sitl_evidence_status)}
+                    px4 {formatLabel(bundle.summary.px4_sitl_evidence_status)}
+                  </span>
+                )}
+                {bundle.summary.px4_params_status && bundle.summary.px4_params_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.px4_params_status)}>
+                    {statusIcon(bundle.summary.px4_params_status)}
+                    params {formatLabel(bundle.summary.px4_params_status)}
                   </span>
                 )}
                 {bundle.summary.elevation_status && (
@@ -316,6 +427,14 @@ export function SupportBundleList({
                   <span>checksums {formatLabel(bundle.summary.checksum_status)}</span>
                   <span>elevation {bundle.summary.vertical_sanity_ready ? "ready" : formatLabel(bundle.summary.elevation_status)}</span>
                   <span>replay {formatLabel(bundle.summary.replay_gate_status)}</span>
+                  <span>px4 {formatLabel(bundle.summary.px4_sitl_evidence_status)}</span>
+                  <span>px4 samples {bundle.summary.px4_sitl_sample_count ?? 0}</span>
+                  <span>params {formatLabel(bundle.summary.px4_params_status)}</span>
+                  <span>EV ctrl {bundle.summary.px4_ev_ctrl ?? "n/a"}</span>
+                  <span>ready {formatLabel(bundle.summary.bench_readiness_status)}</span>
+                  <span>
+                    gate {bundle.summary.bench_readiness_failed_count ?? 0} fail / {bundle.summary.bench_readiness_degraded_count ?? 0} degrade
+                  </span>
                 </div>
               )}
               {detailLoadingPath === bundle.path && (

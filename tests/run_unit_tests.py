@@ -12,6 +12,7 @@ import zipfile
 import numpy as np
 
 from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
+from vision_nav.bench_readiness import evaluate_bench_readiness, evaluate_bench_readiness_file
 from vision_nav.benchmark_retrieval import benchmark_retrieval
 from vision_nav.bundle import (
     load_manifest,
@@ -34,9 +35,13 @@ from vision_nav.external_position_health import ExternalPositionHealthConfig, Ex
 from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health_report
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
 from vision_nav.mavlink_bridge import MavlinkSendResult, MavlinkVisionBridge, parse_mavlink_endpoint, send_records_once
+from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sitl_evidence
+from vision_nav.px4_params import check_px4_external_vision_params, evaluate_px4_param_file, params_from_text
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
 from vision_nav.ros2_bridge import export_rosbag_jsonl, ros_records_from_log
 from vision_nav.replay_case_manifest import evaluate_replay_case_manifest
+from vision_nav.replay_case_registry import register_replay_case
+from vision_nav.replay_dataset_audit import audit_replay_dataset_coverage
 from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
 from vision_nav.support_bundle import create_support_bundle
@@ -522,6 +527,99 @@ def test_mavlink_log_sender_uses_selected_message_type() -> None:
     assert_equal(report["skipped"], 2, "mavlink log sender skipped count")
     assert_equal(report["skip_reasons"], {"match_not_accepted": 2}, "mavlink log sender skip reasons")
     assert_equal({message_type for _result, message_type in calls}, {"odometry"}, "mavlink log sender dispatch type")
+
+
+def test_px4_sitl_receiver_evidence_gate() -> None:
+    listener = """
+TOPIC: vehicle_visual_odometry
+ vehicle_visual_odometry
+    timestamp: 5000000 (0.010000 seconds ago)
+    timestamp_sample: 4999000
+    pose_frame: 1
+    position: [0.10000, 0.20000, -1.50000]
+    q: [1.00000, 0.00000, 0.00000, 0.00000]
+    velocity_frame: 1
+    velocity: [nan, nan, nan]
+    position_variance: [1.50000, 1.50000, 4.00000]
+    orientation_variance: [0.25000, 0.25000, 0.25000]
+    reset_counter: 0
+    quality: 82
+TOPIC: vehicle_visual_odometry
+ vehicle_visual_odometry
+    timestamp: 5200000 (0.020000 seconds ago)
+    timestamp_sample: 5199000
+    pose_frame: 1
+    position: [0.35000, 0.30000, -1.50000]
+    q: [1.00000, 0.00000, 0.00000, 0.00000]
+    position_variance: [1.50000, 1.50000, 4.00000]
+    reset_counter: 0
+    quality: 82
+"""
+    mavlink_status = """
+instance #0:
+    mavlink chan: #0
+    MAVLink version: 2
+    transport protocol: UDP (14550)
+    accepting commands: YES
+    rates:
+      tx: 1.2 kB/s
+      rx: 0.8 kB/s
+"""
+    report = evaluate_px4_sitl_evidence(
+        listener_text=listener,
+        mavlink_status_text=mavlink_status,
+        expected_message="odometry",
+        config=Px4SitlEvidenceConfig(min_samples=2, max_sample_age_s=1.0),
+    )
+    assert_equal(report["status"], "passed", "px4 sitl evidence passed")
+    assert_equal(report["listener"]["sample_count"], 2, "px4 sitl evidence sample count")
+    assert_equal(report["listener"]["last_position"], [0.35, 0.3, -1.5], "px4 sitl evidence position")
+    assert_equal(report["mavlink_status"]["has_udp_14550"], True, "px4 sitl evidence mavlink udp")
+
+    failed = evaluate_px4_sitl_evidence(
+        listener_text="TOPIC: vehicle_visual_odometry\nnever published\n",
+        expected_message="odometry",
+        config=Px4SitlEvidenceConfig(min_samples=1),
+    )
+    assert_equal(failed["status"], "failed", "px4 sitl evidence failed")
+
+
+def test_px4_param_checker_flags_external_vision_readiness() -> None:
+    params = params_from_text(
+        """
+# QGC/PX4 style parameter export
+1 1 EKF2_EV_CTRL 1 6
+1 1 EKF2_HGT_REF 0 6
+1 1 EKF2_GPS_CTRL 0 6
+1 1 EKF2_EV_NOISE_MD 0 6
+1 1 EKF2_EV_DELAY 80 9
+1 1 EKF2_EV_POS_X 0.0 9
+1 1 EKF2_EV_POS_Y 0.0 9
+1 1 EKF2_EV_POS_Z -0.05 9
+"""
+    )
+    report = check_px4_external_vision_params(params, gnss_denied=True, extrinsics_measured=True)
+    assert_equal(report["status"], "passed", "px4 param checker passed")
+    assert_equal(report["parameters"]["EKF2_EV_CTRL_bits"], [0], "px4 ev ctrl bits")
+
+    risky = check_px4_external_vision_params(
+        {
+            "EKF2_EV_CTRL": 0,
+            "EKF2_HGT_REF": 3,
+            "EKF2_GPS_CTRL": 7,
+            "EKF2_EV_NOISE_MD": 1,
+            "EKF2_EV_DELAY": 900,
+            "EKF2_EV_POS_X": 0,
+            "EKF2_EV_POS_Y": 0,
+            "EKF2_EV_POS_Z": 0,
+        },
+        gnss_denied=True,
+    )
+    assert_equal(risky["status"], "failed", "px4 param checker risky status")
+    messages = " ".join(issue["message"] for issue in risky["issues"])
+    for expected in ["bit 0", "Vision", "GNSS-denied"]:
+        if expected not in messages:
+            raise AssertionError(f"Expected PX4 param issue containing {expected!r}, got {messages}")
 
 
 def test_external_position_payloads() -> None:
@@ -1014,6 +1112,52 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
                 }
             )
         )
+        px4_listener = root / "vehicle_visual_odometry.txt"
+        px4_listener.write_text(
+            """
+TOPIC: vehicle_visual_odometry
+ vehicle_visual_odometry
+    timestamp: 5000000 (0.010000 seconds ago)
+    timestamp_sample: 4999000
+    position: [0.10000, 0.20000, -1.50000]
+    q: [1.00000, 0.00000, 0.00000, 0.00000]
+    position_variance: [1.50000, 1.50000, 4.00000]
+    reset_counter: 0
+    quality: 82
+TOPIC: vehicle_visual_odometry
+ vehicle_visual_odometry
+    timestamp: 5200000 (0.020000 seconds ago)
+    timestamp_sample: 5199000
+    position: [0.35000, 0.30000, -1.50000]
+    q: [1.00000, 0.00000, 0.00000, 0.00000]
+    position_variance: [1.50000, 1.50000, 4.00000]
+    reset_counter: 0
+    quality: 82
+""".strip()
+        )
+        px4_status = root / "mavlink_status.txt"
+        px4_status.write_text(
+            """
+instance #0:
+    mavlink chan: #0
+    MAVLink version: 2
+    transport protocol: UDP (14550)
+    accepting commands: YES
+""".strip()
+        )
+        px4_params = root / "px4.params"
+        px4_params.write_text(
+            """
+1 1 EKF2_EV_CTRL 1 6
+1 1 EKF2_HGT_REF 0 6
+1 1 EKF2_GPS_CTRL 7 6
+1 1 EKF2_EV_NOISE_MD 0 6
+1 1 EKF2_EV_DELAY 80 9
+1 1 EKF2_EV_POS_X 0.0 9
+1 1 EKF2_EV_POS_Y 0.0 9
+1 1 EKF2_EV_POS_Z 0.0 9
+""".strip()
+        )
 
         result = create_support_bundle(
             bundle=str(bundle),
@@ -1022,6 +1166,10 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
             output_dir=root / "support",
             name="unit-support",
             mavlink_endpoint="udp:14550",
+            px4_listener_path=str(px4_listener),
+            px4_mavlink_status_path=str(px4_status),
+            px4_params_path=str(px4_params),
+            px4_expected_message="odometry",
             replay_case_manifest_path=str(replay_manifest),
             include_map_assets=True,
         )
@@ -1040,6 +1188,12 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
             "logs/terrain_matches.jsonl",
             "summaries/terrain_matches.summary.json",
             "summaries/replay_gates/unit-good.gate.json",
+            "summaries/px4_sitl_evidence/receiver_evidence.json",
+            "summaries/px4_params/param_check.json",
+            "summaries/bench_readiness.json",
+            "extras/px4_sitl_evidence/vehicle_visual_odometry.txt",
+            "extras/px4_sitl_evidence/mavlink_status.txt",
+            "extras/px4_params/px4.params",
         }:
             if expected not in names:
                 raise AssertionError(f"Missing {expected} from support bundle zip")
@@ -1047,6 +1201,25 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
         assert_equal(manifest["logs"]["summaries"][0]["accepted_rate"], 1.0, "support log accepted rate")
         assert_equal(manifest["replay_gates"]["status"], "passed", "support replay gate status")
         assert_equal(manifest["replay_gates"]["reports"][0]["status"], "passed", "support replay gate report")
+        assert_equal(manifest["px4_sitl_evidence"]["status"], "passed", "support px4 evidence status")
+        assert_equal(manifest["px4_sitl_evidence"]["listener"]["sample_count"], 2, "support px4 evidence samples")
+        assert_equal(manifest["px4_params"]["status"], "degraded", "support px4 params status")
+        assert_equal(manifest["px4_params"]["parameters"]["EKF2_EV_CTRL"], 1, "support px4 ev ctrl")
+        assert_equal(manifest["bench_readiness"]["status"], "degraded", "support bench readiness status")
+        assert_equal(manifest["bench_readiness"]["summary"]["degraded"], 1, "support bench readiness degraded count")
+        readiness = evaluate_bench_readiness_file(zip_path)
+        assert_equal(readiness["status"], "degraded", "bench readiness degraded on px4 param warning")
+        readiness_checks = {check["name"]: check["status"] for check in readiness["checks"]}
+        assert_equal(readiness_checks["bundle_health"], "passed", "bench readiness bundle health")
+        assert_equal(readiness_checks["px4_sitl_evidence"], "passed", "bench readiness px4 evidence")
+        assert_equal(readiness_checks["px4_params"], "degraded", "bench readiness px4 params")
+
+        missing_px4 = dict(manifest)
+        missing_px4["px4_sitl_evidence"] = {"status": "not_provided"}
+        failed = evaluate_bench_readiness(missing_px4)
+        assert_equal(failed["status"], "failed", "bench readiness missing px4 evidence")
+        allowed = evaluate_bench_readiness(missing_px4, allow_missing_px4_evidence=True)
+        assert_equal(allowed["status"], "degraded", "bench readiness allow missing px4 evidence")
 
 
 def test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance() -> None:
@@ -1193,6 +1366,117 @@ def test_synthetic_replay_case_manifest_passes_all_cases() -> None:
         )
         if not Path(summary["summary_path"]).exists():
             raise AssertionError("Expected synthetic replay manifest summary to be written")
+
+
+def test_replay_dataset_coverage_audit_requires_real_field_cases() -> None:
+    root = Path(__file__).resolve().parents[1]
+    synthetic_manifest = root / "data" / "replay_cases" / "synthetic_smoke" / "manifest.json"
+    synthetic_report = audit_replay_dataset_coverage(synthetic_manifest, require_field_logs=True)
+    assert_equal(synthetic_report["status"], "failed", "synthetic replay coverage status")
+    requirement_statuses = {item["key"]: item["status"] for item in synthetic_report["requirements"]}
+    assert_equal(requirement_statuses["good_texture"], "synthetic_only", "synthetic good texture coverage")
+    assert_equal(requirement_statuses["wrong_map"], "synthetic_only", "synthetic wrong map coverage")
+    assert_equal(requirement_statuses["blur"], "missing", "synthetic blur coverage")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        cases = [
+            ("field-good-texture", "good_map", "good_texture"),
+            ("field-low-texture", "degraded", "low_texture"),
+            ("field-blur", "degraded", "blur"),
+            ("field-seasonal-change", "degraded", "seasonal_change"),
+            ("field-lighting-change", "degraded", "lighting_change"),
+            ("field-altitude-scale-change", "good_map", "altitude_scale_change"),
+            ("field-repeated-patterns", "degraded", "repeated_patterns"),
+            ("field-wrong-map", "wrong_map", "wrong_map"),
+        ]
+        manifest_cases = []
+        for case_name, expected, condition in cases:
+            log = base / f"{case_name}.jsonl"
+            log.write_text(json.dumps({"result": {"status": "rejected", "reason": "audit_fixture"}}) + "\n")
+            manifest_cases.append(
+                {
+                    "case_name": case_name,
+                    "expected": expected,
+                    "dataset_type": "field",
+                    "conditions": [condition],
+                    "bundle": "field-bundle",
+                    "log": log.name,
+                    "notes": f"Field replay coverage fixture for {condition}.",
+                }
+            )
+        manifest = base / "field_manifest.json"
+        manifest.write_text(json.dumps({"version": "0.1.0", "cases": manifest_cases}))
+        field_report = audit_replay_dataset_coverage(manifest, require_field_logs=True)
+        assert_equal(field_report["status"], "passed", "field replay coverage status")
+        assert_equal(field_report["field_case_count"], len(cases), "field replay coverage case count")
+        if any(requirement["status"] != "covered" for requirement in field_report["requirements"]):
+            raise AssertionError(f"Expected all coverage requirements to pass, got {field_report['requirements']}")
+
+
+def test_replay_case_registry_registers_and_replaces_cases() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_root = Path(tmp)
+        base = tmp_root / "dataset"
+        base.mkdir()
+        source_dir = tmp_root / "source_logs"
+        source_dir.mkdir()
+        log = source_dir / "terrain_matches.jsonl"
+        log.write_text(json.dumps({"result": {"status": "accepted", "confidence": 0.91}}) + "\n")
+        manifest = base / "manifest.json"
+
+        result = register_replay_case(
+            manifest_path=manifest,
+            case_name="field-good-texture",
+            expected="good_map",
+            dataset_type="field",
+            conditions=["good_texture", "clear-texture"],
+            log_path=log,
+            bundle="field-bundle",
+            notes="field capture",
+            copy_log=True,
+        )
+        assert_equal(result["status"], "registered", "replay case registry status")
+        copied_log = base / "field" / "field-good-texture" / "terrain_matches.jsonl"
+        if not copied_log.exists():
+            raise AssertionError(f"Expected copied replay log at {copied_log}")
+        manifest_data = json.loads(manifest.read_text())
+        assert_equal(len(manifest_data["cases"]), 1, "registered replay case count")
+        case = manifest_data["cases"][0]
+        assert_equal(case["log"], "field/field-good-texture/terrain_matches.jsonl", "stored replay log path")
+        assert_equal(case["conditions"], ["good_texture", "clear_texture"], "normalized replay case conditions")
+
+        try:
+            register_replay_case(
+                manifest_path=manifest,
+                case_name="field-good-texture",
+                expected="good_map",
+                dataset_type="field",
+                conditions=["good_texture"],
+                log_path=log,
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Expected duplicate replay case registration to require --replace")
+
+        replaced = register_replay_case(
+            manifest_path=manifest,
+            case_name="field-good-texture",
+            expected="degraded",
+            dataset_type="field",
+            conditions=["low_texture"],
+            log_path=log,
+            bundle="field-bundle-v2",
+            replace=True,
+        )
+        assert_equal(replaced["case_count"], 1, "replaced replay case count")
+        replaced_data = json.loads(manifest.read_text())
+        replaced_case = replaced_data["cases"][0]
+        assert_equal(replaced_case["expected"], "degraded", "replaced expected behavior")
+        assert_equal(replaced_case["conditions"], ["low_texture"], "replaced replay conditions")
+        if not Path(replaced_case["log"]).is_absolute():
+            raise AssertionError("Expected external non-copied log path to be stored as absolute path")
 
 
 def test_geospatial_health_blocks_missing_georef() -> None:
@@ -1451,6 +1735,8 @@ def main() -> None:
         test_quality_metrics_and_covariance,
         test_mavlink_endpoint_parsing_and_axis_mapping,
         test_mavlink_log_sender_uses_selected_message_type,
+        test_px4_sitl_receiver_evidence_gate,
+        test_px4_param_checker_flags_external_vision_readiness,
         test_external_position_payloads,
         test_external_position_stream_health,
         test_ros2_odometry_and_diagnostics_adapters,
@@ -1467,6 +1753,8 @@ def main() -> None:
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
         test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance,
         test_synthetic_replay_case_manifest_passes_all_cases,
+        test_replay_dataset_coverage_audit_requires_real_field_cases,
+        test_replay_case_registry_registers_and_replaces_cases,
         test_geospatial_health_blocks_missing_georef,
         test_terrain_tile_origins_cover_edges,
         test_global_image_descriptor_separates_simple_textures,

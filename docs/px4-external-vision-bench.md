@@ -102,6 +102,29 @@ flight controller after changing EKF parameters.
 | `EKF2_EVP_NOISE`, `EKF2_EVV_NOISE`, `EKF2_EVA_NOISE` | Lower bounds or direct noise values for external position, velocity, and angle. | Keep conservative until replay logs prove accuracy. |
 | `EKF2_GPS_CTRL` | Controls GNSS aiding. | Leave GNSS available for ground truth during early outdoor testing. Disable GNSS fusion only in controlled GNSS-denied validation. |
 
+After exporting PX4 parameters from QGroundControl or the PX4 shell, run the
+repo checker:
+
+```bash
+vision-nav-check-px4-params \
+  --params /path/to/px4.params \
+  --gnss-denied
+```
+
+For a Pi bench workflow, use the wrapper:
+
+```bash
+VISION_NAV_PX4_PARAMS=/path/to/px4.params \
+VISION_NAV_GNSS_DENIED_CHECK=1 \
+./scripts/pi/check_px4_params.sh
+```
+
+The checker is report-only. It flags missing external-vision horizontal fusion,
+GPS height/GNSS fusion during controlled GNSS-denied validation, vision height
+fusion before vertical validation, velocity/yaw fusion before those fields are
+validated, covariance-source mode, unusual EV delay values, and missing or
+default-looking camera-to-body offsets.
+
 ## Bench Sequence
 
 1. Confirm the terrain bundle validates:
@@ -190,6 +213,40 @@ from the PX4 shell or QGroundControl MAVLink console:
 listener vehicle_visual_odometry 5
 mavlink status
 ```
+
+Save the output from those two commands into text files, then evaluate the
+receiver-side evidence from this repo:
+
+```bash
+./scripts/dev/evaluate_px4_sitl_receiver_evidence.sh \
+  /tmp/vehicle_visual_odometry.txt \
+  /tmp/mavlink_status.txt
+```
+
+The evaluator checks that PX4 published `vehicle_visual_odometry`, that multiple
+fresh samples are present, that local position and position variance arrived,
+and that the optional MAVLink status capture looks like a MAVLink 2 UDP link.
+It emits a JSON-compatible report through the
+`vision-nav-evaluate-px4-sitl-evidence` CLI. A `failed` or `degraded` result
+means the SITL receiver requirement is not proven yet.
+
+The same capture files can be included in support bundles with
+`VISION_NAV_PX4_LISTENER_CAPTURE` and `VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE`;
+the generated report is stored under `summaries/px4_sitl_evidence/`.
+
+Support bundles include the combined bench-readiness report automatically under
+`summaries/bench_readiness.json`. Re-run the same gate against an existing ZIP
+with:
+
+```bash
+vision-nav-bench-readiness \
+  --support-bundle ~/DroneTransfer/outgoing/support-bundles/latest-support.zip
+```
+
+The readiness gate checks bundle health, runtime logs, replay gates, PX4
+receiver evidence, and PX4 parameter readiness together. It should pass or
+degrade for a bench artifact that is ready to review; it should fail when PX4
+receiver evidence, replay gates, or parameter evidence are missing.
 
 Only count the SITL requirement as passed after PX4 shows the selected external
 vision stream arriving at a stable rate and rejected records are absent from the
