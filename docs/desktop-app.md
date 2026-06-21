@@ -39,6 +39,7 @@ The flow is:
    - camera health
    - time sync
    - MAVLink endpoint access
+   - optional Micro XRCE-DDS Agent readiness for PX4 ROS 2 paths
    - calibration image capture
    - synthetic vision smoke test
    - deployed runtime bundle validation
@@ -57,8 +58,11 @@ runtime paths, step status, command output, camera-preview path, and the most
 recent downloaded support-bundle summaries. Discovery results are saved in the
 desktop app so recent local-network candidates remain visible even after a Pi
 reboots or temporarily drops offline. Discovery also shows active desktop
-IPv4 interface/subnet hints so the operator can quickly confirm whether the Pi
-and desktop are on the same local network.
+IPv4 interface/subnet hints, lets the operator select the adapter that should
+be on the Pi network, and provides a copyable mDNS/SSH/firewall checklist. The
+selected adapter and checklist are included in the setup report, which helps
+diagnose whether the Pi and desktop are on the same local network after a
+failed bench install.
 
 ## Vision Pipeline
 
@@ -232,7 +236,12 @@ map metadata, bundle health, runtime logs, generated summaries, app/git state,
 and the configured MAVLink endpoint. The panel lists recent downloaded support
 bundle ZIPs with parsed bundle health, checksum status, map source provenance,
 georeference confidence, and replay-gate status so the operator can confirm what
-was captured without manually opening the archive.
+was captured without manually opening the archive. The list can reveal a ZIP in
+the local file manager, copy the full path for support notes, show a compact
+detail view, or delete stale ZIP files after a bench session. The detail view
+reads the ZIP archive directly and shows support metadata, git/app state, log
+status counts, accepted-rate summaries, replay-gate case results, and compact
+per-record previews from bundled runtime/replay JSONL logs.
 
 Module Setup uses the same support-bundle path for its `Bench Report` action,
 after validating the deployed terrain bundle at the configured runtime bundle

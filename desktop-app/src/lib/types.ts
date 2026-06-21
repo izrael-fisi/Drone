@@ -136,6 +136,48 @@ export interface SupportBundleFile {
   };
 }
 
+export interface SupportBundleDetails {
+  manifest: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  bundle_health?: Record<string, unknown>;
+  entry_count: number;
+  logs: Array<{
+    name: string;
+    total_records?: number;
+    accepted_rate?: number;
+    status_counts?: Record<string, number>;
+    reason_counts?: Record<string, number>;
+    external_position?: Record<string, unknown>;
+  }>;
+  log_previews: Array<{
+    name: string;
+    truncated: boolean;
+    records: Array<{
+      line_number: number;
+      sequence?: number;
+      timestamp_utc?: string;
+      timestamp_us?: number;
+      status?: string;
+      reason?: string;
+      tile_id?: string;
+      map_id?: string;
+      confidence?: number;
+      inliers?: number;
+      reprojection_error_px?: number;
+      external_position_status?: string;
+      external_position_message_type?: string;
+    }>;
+  }>;
+  replay_reports: Array<{
+    case_name?: string;
+    expected?: string;
+    status?: "passed" | "failed" | "degraded" | string;
+    accepted_rate?: number;
+    total_records?: number;
+    issues: string[];
+  }>;
+}
+
 export interface BuildDroneBundleRequest {
   region_dir: string;
   output_dir: string;

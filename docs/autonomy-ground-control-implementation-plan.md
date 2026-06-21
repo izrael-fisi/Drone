@@ -57,6 +57,12 @@ Status:
   odometry and diagnostics during camera/matcher runtime.
 - In progress: repo-local launch files under `ros2/launch/` start live terrain
   runtime publishing or replay publishing with repeatable arguments.
+- Done: Pi diagnostics and Module Setup now include an optional Micro
+  XRCE-DDS Agent check for PX4 uXRCE-DDS/ROS 2 bridge readiness.
+- In progress: `vision-nav-ros2-replay-log --export-rosbag-jsonl` writes a
+  dependency-free topic replay artifact with ROS message types, topics,
+  timestamps, and payloads for offline field-log review before native rosbag2 is
+  required.
 
 Tasks:
 
@@ -64,8 +70,8 @@ Tasks:
    available.
 2. Add a package-style ROS 2 entrypoint if the project later needs colcon-native
    packaging.
-3. Add Micro XRCE-DDS Agent setup checks to Pi diagnostics.
-4. Add rosbag replay for terrain logs and camera frames.
+3. Add native rosbag2/MCAP conversion and camera-frame topic export after a ROS
+   2 workstation workflow is available.
 
 Acceptance checks:
 
@@ -157,8 +163,8 @@ Status:
   heading reset, home reset, and estimator-health status.
 - In progress: Module Setup chains Wi-Fi SSH identity, repo sync/install,
   runtime verification, camera preview/health, time sync, MAVLink endpoint
-  validation, calibration image capture, synthetic smoke testing, and deployed
-  bundle validation from the app.
+  validation, optional Micro XRCE-DDS Agent readiness, calibration image
+  capture, synthetic smoke testing, and deployed bundle validation from the app.
 - In progress: Module Setup now has per-check run actions, a bench-report
   action that validates the deployed terrain bundle and downloads the Pi support
   bundle, plus a local JSON setup-report export for install/bench audit trails.
@@ -167,8 +173,9 @@ Status:
 - In progress: Devices and Module Setup now provide local Wi-Fi discovery for
   saved Pi hosts, common Raspberry Pi mDNS names, and local SSH neighbors, with
   recent discoveries persisted in desktop storage.
-- In progress: Discovery now shows active desktop IPv4 interface/subnet hints
-  and guided troubleshooting when no SSH-reachable Pi is found.
+- Done: Discovery now shows active desktop IPv4 interface/subnet hints, supports
+  adapter selection, summarizes mDNS/SSH failure modes, and provides a copyable
+  mDNS/SSH/firewall checklist that is also written into setup reports.
 - In progress: Mission Planner bundle results show imported DEM/DSM terrain
   profile, estimated minimum AGL, AGL/GSD warnings, and map-quality heatmaps.
 - In progress: Mission Planner now exposes terrain planning constraints,
@@ -177,11 +184,9 @@ Status:
 
 Tasks:
 
-1. Add deeper discovery diagnostics for mDNS/firewall failures, including
-   adapter selection and an operator-facing copyable checklist.
-2. Add route splitting/export behavior for long terrain-aware segments after
+1. Add route splitting/export behavior for long terrain-aware segments after
    field replay data confirms the preferred segmentation rule.
-3. Wire GNSS-denied readiness actions to live runtime telemetry and autopilot
+2. Wire GNSS-denied readiness actions to live runtime telemetry and autopilot
    checklist validation.
 
 Acceptance checks:
@@ -213,8 +218,21 @@ Status:
 - In progress: `vision_nav.replay_gates` evaluates replay/runtime logs for
   `good_map`, `degraded`, and `wrong_map` expected behavior. Wrong-map cases
   fail if any map match is accepted by default.
+- In progress: replay gates now require accepted good-map records to include
+  confidence, inliers, reprojection error, scale confidence, covariance, and
+  motion-consistency checks; degraded accepted weak matches must inflate
+  covariance.
 - In progress: support bundles include replay-gate reports when a replay-case
   manifest is provided.
+- In progress: the desktop support-bundle list now supports compact details,
+  reveal in file manager, copy path, and stale ZIP deletion for downloaded bench
+  artifacts.
+- In progress: support-bundle details now read downloaded ZIP archives directly
+  and show metadata, bundle health, log summaries, accepted rates, and
+  replay-gate case issues without manually extracting the archive.
+- In progress: support-bundle details now include compact per-record previews
+  from bundled runtime/replay JSONL logs so accepted/rejected match reasons,
+  confidence, tile IDs, and external-position state are visible in the app.
 - In progress: `data/replay_cases/` defines the replay case registry shape for
   good texture, degraded, and wrong-map datasets.
 
@@ -224,11 +242,9 @@ Tasks:
    blur, seasonal change, altitude/scale change, repeated patterns, and wrong
    map.
 2. Compare ORB/AKAZE against optional higher-compute features on the same logs.
-3. Add acceptance gates for inliers, reprojection error, scale confidence,
-   geometry sanity, motion consistency, covariance inflation, and wrong-map
-   rejection.
-4. Add a dedicated support-bundle browser with open/delete/share actions and
-   deeper per-log/replay drilldown.
+3. Tune replay-gate thresholds against real field logs for blur, seasonal
+   change, altitude/scale change, repeated patterns, and wrong-map cases.
+4. Add image/replay artifact previews from extracted support-bundle assets.
 
 Acceptance checks:
 

@@ -21,6 +21,9 @@ class ReplayGateConfig:
     max_reprojection_error_px: float = 5.0
     min_scale_confidence: float = 0.35
     max_covariance_sigma_xy_m: float = 12.0
+    min_weak_match_covariance_sigma_xy_m: float = 12.0
+    max_motion_jump_m: float = 75.0
+    max_motion_speed_mps: float = 35.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,6 +45,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-reprojection-error-px", type=float, default=ReplayGateConfig.max_reprojection_error_px)
     parser.add_argument("--min-scale-confidence", type=float, default=ReplayGateConfig.min_scale_confidence)
     parser.add_argument("--max-covariance-sigma-xy-m", type=float, default=ReplayGateConfig.max_covariance_sigma_xy_m)
+    parser.add_argument(
+        "--min-weak-match-covariance-sigma-xy-m",
+        type=float,
+        default=ReplayGateConfig.min_weak_match_covariance_sigma_xy_m,
+    )
+    parser.add_argument("--max-motion-jump-m", type=float, default=ReplayGateConfig.max_motion_jump_m)
+    parser.add_argument("--max-motion-speed-mps", type=float, default=ReplayGateConfig.max_motion_speed_mps)
     return parser.parse_args()
 
 
@@ -55,12 +65,21 @@ def config_from_args(args: argparse.Namespace) -> ReplayGateConfig:
         max_reprojection_error_px=args.max_reprojection_error_px,
         min_scale_confidence=args.min_scale_confidence,
         max_covariance_sigma_xy_m=args.max_covariance_sigma_xy_m,
+        min_weak_match_covariance_sigma_xy_m=args.min_weak_match_covariance_sigma_xy_m,
+        max_motion_jump_m=args.max_motion_jump_m,
+        max_motion_speed_mps=args.max_motion_speed_mps,
     )
 
 
 def result_from_record(record: dict[str, Any]) -> dict[str, Any]:
     result = record.get("result")
-    return result if isinstance(result, dict) else record
+    if not isinstance(result, dict):
+        return record
+    merged = dict(result)
+    for key in ("timestamp_us", "sequence"):
+        if key in record and key not in merged:
+            merged[key] = record[key]
+    return merged
 
 
 def covariance_sigma_xy_m(result: dict[str, Any]) -> float | None:
@@ -82,6 +101,85 @@ def numeric_values(results: list[dict[str, Any]], key: str) -> list[float]:
         if value is not None:
             values.append(float(value))
     return values
+
+
+def local_xy_m(result: dict[str, Any]) -> tuple[float, float] | None:
+    local = result.get("local_enu_m")
+    if not isinstance(local, dict):
+        measurement = result.get("measurement")
+        if isinstance(measurement, dict):
+            local = measurement.get("local_enu_m")
+    if not isinstance(local, dict):
+        return None
+    x = local.get("x")
+    y = local.get("y")
+    if x is None or y is None:
+        return None
+    return float(x), float(y)
+
+
+def timestamp_s(result: dict[str, Any]) -> float | None:
+    timestamp_us = result.get("timestamp_us")
+    if timestamp_us is None:
+        return None
+    return float(timestamp_us) / 1_000_000.0
+
+
+def accepted_motion_metrics(accepted: list[dict[str, Any]]) -> list[dict[str, float | None]]:
+    samples = []
+    for index, result in enumerate(accepted):
+        xy = local_xy_m(result)
+        if xy is None:
+            continue
+        samples.append({"index": float(index + 1), "x": xy[0], "y": xy[1], "timestamp_s": timestamp_s(result)})
+    if len(samples) < 2:
+        return []
+    if all(sample["timestamp_s"] is not None for sample in samples):
+        samples.sort(key=lambda sample: float(sample["timestamp_s"] or 0.0))
+
+    motions: list[dict[str, float | None]] = []
+    for previous, current in zip(samples, samples[1:]):
+        jump_m = math.hypot(float(current["x"]) - float(previous["x"]), float(current["y"]) - float(previous["y"]))
+        dt_s = None
+        speed_mps = None
+        if previous["timestamp_s"] is not None and current["timestamp_s"] is not None:
+            dt_s = max(float(current["timestamp_s"]) - float(previous["timestamp_s"]), 0.0)
+            if dt_s > 0:
+                speed_mps = jump_m / dt_s
+        motions.append(
+            {
+                "from_index": previous["index"],
+                "to_index": current["index"],
+                "jump_m": jump_m,
+                "dt_s": dt_s,
+                "speed_mps": speed_mps,
+            }
+        )
+    return motions
+
+
+def add_accepted_motion_issues(
+    issues: list[dict[str, str]],
+    accepted: list[dict[str, Any]],
+    config: ReplayGateConfig,
+) -> list[dict[str, float | None]]:
+    motions = accepted_motion_metrics(accepted)
+    for motion in motions:
+        jump_m = float(motion["jump_m"] or 0.0)
+        speed_mps = motion["speed_mps"]
+        if jump_m > config.max_motion_jump_m:
+            add_issue(
+                issues,
+                "error",
+                f"Accepted records {int(motion['from_index'] or 0)}->{int(motion['to_index'] or 0)} jump {jump_m:.1f} m exceeds motion gate.",
+            )
+        if speed_mps is not None and speed_mps > config.max_motion_speed_mps:
+            add_issue(
+                issues,
+                "error",
+                f"Accepted records {int(motion['from_index'] or 0)}->{int(motion['to_index'] or 0)} speed {speed_mps:.1f} m/s exceeds motion gate.",
+            )
+    return motions
 
 
 def add_issue(issues: list[dict[str, str]], severity: str, message: str) -> None:
@@ -108,6 +206,7 @@ def evaluate_replay_records(
     reprojection_errors = numeric_values(accepted, "reprojection_error_px")
     scale_confidences = numeric_values(accepted, "scale_confidence")
     sigmas = [value for value in (covariance_sigma_xy_m(result) for result in accepted) if value is not None]
+    motions = add_accepted_motion_issues(issues, accepted, config) if expected in {"good_map", "degraded"} else []
 
     if not results:
         add_issue(issues, "error", "Replay log has no records.")
@@ -120,11 +219,24 @@ def evaluate_replay_records(
                 f"Good-map accepted rate {accepted_rate:.3f} is below {config.min_good_accepted_rate:.3f}.",
             )
         for index, result in enumerate(accepted, start=1):
-            confidence = float(result.get("confidence", 0.0))
-            inlier_count = int(result.get("inliers", 0))
+            confidence_raw = result.get("confidence")
+            inliers_raw = result.get("inliers")
             reprojection_error = result.get("reprojection_error_px")
-            scale_confidence = float(result.get("scale_confidence", 1.0))
+            scale_confidence_raw = result.get("scale_confidence")
             sigma_xy = covariance_sigma_xy_m(result)
+            if confidence_raw is None:
+                add_issue(issues, "error", f"Accepted record {index} is missing confidence.")
+            if inliers_raw is None:
+                add_issue(issues, "error", f"Accepted record {index} is missing inlier count.")
+            if reprojection_error is None:
+                add_issue(issues, "error", f"Accepted record {index} is missing reprojection error.")
+            if scale_confidence_raw is None:
+                add_issue(issues, "error", f"Accepted record {index} is missing scale confidence.")
+            if sigma_xy is None:
+                add_issue(issues, "error", f"Accepted record {index} is missing XY covariance.")
+            confidence = float(confidence_raw or 0.0)
+            inlier_count = int(inliers_raw or 0)
+            scale_confidence = float(scale_confidence_raw or 0.0)
             if confidence < config.min_confidence:
                 add_issue(issues, "error", f"Accepted record {index} confidence {confidence:.3f} is below threshold.")
             if inlier_count < config.min_inliers:
@@ -161,6 +273,20 @@ def evaluate_replay_records(
         confident = [result for result in accepted if float(result.get("confidence", 0.0)) >= config.min_confidence]
         if confident:
             add_issue(issues, "error", f"Degraded case has {len(confident)} high-confidence accepted record(s).")
+        for index, result in enumerate(accepted, start=1):
+            confidence = float(result.get("confidence", 0.0))
+            scale_confidence = float(result.get("scale_confidence", 0.0))
+            sigma_xy = covariance_sigma_xy_m(result)
+            if sigma_xy is None:
+                add_issue(issues, "error", f"Degraded accepted record {index} is missing XY covariance.")
+            elif (
+                confidence < config.min_confidence or scale_confidence < config.min_scale_confidence
+            ) and sigma_xy < config.min_weak_match_covariance_sigma_xy_m:
+                add_issue(
+                    issues,
+                    "error",
+                    f"Degraded accepted record {index} covariance sigma {sigma_xy:.3f} m was not inflated for a weak match.",
+                )
     else:
         add_issue(issues, "error", f"Unsupported expected behavior: {expected}")
 
@@ -181,6 +307,11 @@ def evaluate_replay_records(
             "reprojection_error_max_px": max(reprojection_errors) if reprojection_errors else None,
             "scale_confidence_min": min(scale_confidences) if scale_confidences else None,
             "covariance_sigma_xy_max_m": max(sigmas) if sigmas else None,
+            "motion_jump_max_m": max((float(motion["jump_m"] or 0.0) for motion in motions), default=None),
+            "motion_speed_max_mps": max(
+                (float(motion["speed_mps"]) for motion in motions if motion["speed_mps"] is not None),
+                default=None,
+            ),
         },
         "issues": issues,
     }

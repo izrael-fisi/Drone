@@ -35,6 +35,7 @@ from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
 from vision_nav.mavlink_bridge import MavlinkVisionBridge, parse_mavlink_endpoint
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
+from vision_nav.ros2_bridge import export_rosbag_jsonl, ros_records_from_log
 from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
 from vision_nav.support_bundle import create_support_bundle
@@ -611,6 +612,55 @@ def test_ros2_odometry_and_diagnostics_adapters() -> None:
     assert_equal(degraded["level"], DIAG_ERROR, "ROS 2 degraded diagnostic level")
 
 
+def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        log = root / "terrain_matches.jsonl"
+        log.write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "sequence": 1,
+                            "timestamp_us": 1_000_000,
+                            "result": {
+                                "status": "accepted",
+                                "timestamp_us": 1_000_000,
+                                "confidence": 0.8,
+                                "measurement": {
+                                    "frame": "local_enu",
+                                    "x_m": 1.0,
+                                    "y_m": 2.0,
+                                    "z_m": 0.5,
+                                    "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": 9.0},
+                                },
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "sequence": 2,
+                            "timestamp_us": 2_000_000,
+                            "result": {"status": "rejected", "reason": "low_inliers"},
+                        }
+                    ),
+                ]
+            )
+            + "\n"
+        )
+        records = ros_records_from_log(log)
+        result = export_rosbag_jsonl(records, root / "rosbag-jsonl", source_log=log)
+        metadata = json.loads(Path(result["metadata_path"]).read_text())
+        messages = [json.loads(line) for line in Path(result["messages_path"]).read_text().splitlines()]
+        assert_equal(metadata["format"], "vision_nav_rosbag_jsonl_v1", "rosbag jsonl format")
+        assert_equal(metadata["message_count"], 3, "rosbag jsonl message count")
+        assert_equal(metadata["topics"][0]["message_count"], 1, "rosbag odometry count")
+        assert_equal(metadata["topics"][1]["message_count"], 2, "rosbag diagnostics count")
+        assert_equal(messages[0]["topic"], "/vision_nav/odometry", "first rosbag jsonl topic")
+        assert_equal(messages[1]["topic"], "/diagnostics", "second rosbag jsonl topic")
+        assert_equal(messages[2]["message"]["status"][0]["message"], "terrain match rejected: low_inliers", "rejected diagnostic message")
+
+
 def test_ros2_launch_profiles_static() -> None:
     root = Path(__file__).resolve().parents[1]
     live = (root / "ros2" / "launch" / "terrain_nav_live.launch.py").read_text()
@@ -980,6 +1030,82 @@ def test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance() -> None:
     assert_equal(bad_wrong_map_report["status"], "failed", "wrong-map accepted gate status")
 
 
+def test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance() -> None:
+    missing_metric_report = evaluate_replay_records(
+        [
+            {
+                "result": {
+                    "status": "accepted",
+                    "confidence": 0.9,
+                    "inliers": 40,
+                }
+            }
+        ],
+        case_name="unit-good-missing-metrics",
+        expected="good_map",
+    )
+    assert_equal(missing_metric_report["status"], "failed", "good-map missing metrics gate status")
+    missing_messages = " ".join(issue["message"] for issue in missing_metric_report["issues"])
+    if "missing reprojection error" not in missing_messages or "missing XY covariance" not in missing_messages:
+        raise AssertionError(f"Expected missing metric issues, got {missing_messages}")
+
+    motion_jump_report = evaluate_replay_records(
+        [
+            {
+                "timestamp_us": 1_000_000,
+                "result": {
+                    "status": "accepted",
+                    "confidence": 0.82,
+                    "inliers": 32,
+                    "reprojection_error_px": 1.7,
+                    "scale_confidence": 0.8,
+                    "local_enu_m": {"x": 0.0, "y": 0.0, "z": None},
+                    "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
+                },
+            },
+            {
+                "timestamp_us": 2_000_000,
+                "result": {
+                    "status": "accepted",
+                    "confidence": 0.84,
+                    "inliers": 34,
+                    "reprojection_error_px": 1.6,
+                    "scale_confidence": 0.8,
+                    "local_enu_m": {"x": 300.0, "y": 0.0, "z": None},
+                    "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
+                },
+            },
+        ],
+        case_name="unit-good-motion-jump",
+        expected="good_map",
+    )
+    assert_equal(motion_jump_report["status"], "failed", "good-map motion jump gate status")
+    assert_equal(motion_jump_report["metrics"]["motion_jump_max_m"], 300.0, "motion jump metric")
+
+    weak_degraded_report = evaluate_replay_records(
+        [
+            {
+                "result": {
+                    "status": "accepted",
+                    "confidence": 0.4,
+                    "inliers": 22,
+                    "reprojection_error_px": 4.0,
+                    "scale_confidence": 0.2,
+                    "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
+                }
+            },
+            {"result": {"status": "rejected", "reason": "blurred"}},
+            {"result": {"status": "rejected", "reason": "blurred"}},
+        ],
+        case_name="unit-degraded-weak-covariance",
+        expected="degraded",
+    )
+    assert_equal(weak_degraded_report["status"], "failed", "degraded weak covariance gate status")
+    weak_messages = " ".join(issue["message"] for issue in weak_degraded_report["issues"])
+    if "not inflated" not in weak_messages:
+        raise AssertionError(f"Expected covariance inflation issue, got {weak_messages}")
+
+
 def test_geospatial_health_blocks_missing_georef() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         bundle = Path(tmp) / "bundle"
@@ -1238,6 +1364,7 @@ def main() -> None:
         test_external_position_payloads,
         test_external_position_stream_health,
         test_ros2_odometry_and_diagnostics_adapters,
+        test_ros2_bag_jsonl_export_writes_topic_records,
         test_ros2_launch_profiles_static,
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
@@ -1247,6 +1374,7 @@ def main() -> None:
         test_terrain_profile_reports_agl_and_gsd_warnings,
         test_support_bundle_collects_manifest_health_logs_and_summary,
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
+        test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance,
         test_geospatial_health_blocks_missing_georef,
         test_terrain_tile_origins_cover_edges,
         test_global_image_descriptor_separates_simple_textures,

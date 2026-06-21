@@ -197,6 +197,7 @@ def ros_record_from_runtime_record(
     diagnostic = diagnostic_status_from_result(result, health=health)
     return {
         "sequence": record.get("sequence"),
+        "timestamp_us": record.get("timestamp_us", result.get("timestamp_us") if isinstance(result, dict) else None),
         "timestamp_utc": record.get("timestamp_utc"),
         "published": odometry is not None,
         "skip_reason": reason,
@@ -215,6 +216,97 @@ def ros_records_from_log(
         ros_record_from_runtime_record(record, frame_id=frame_id, child_frame_id=child_frame_id)
         for record in _load_jsonl(log_path)
     ]
+
+
+def rosbag_jsonl_events_from_records(
+    records: list[dict[str, Any]],
+    *,
+    odometry_topic: str = "/vision_nav/odometry",
+    diagnostics_topic: str = "/diagnostics",
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for record in records:
+        stamp = _record_stamp(record)
+        if record.get("odometry") is not None:
+            events.append(
+                {
+                    "topic": odometry_topic,
+                    "type": "nav_msgs/msg/Odometry",
+                    "timestamp_ns": _stamp_to_ns(record["odometry"]["header"]["stamp"]),
+                    "sequence": record.get("sequence"),
+                    "message": record["odometry"],
+                }
+            )
+        events.append(
+            {
+                "topic": diagnostics_topic,
+                "type": "diagnostic_msgs/msg/DiagnosticArray",
+                "timestamp_ns": _stamp_to_ns(stamp),
+                "sequence": record.get("sequence"),
+                "message": {
+                    "header": {
+                        "stamp": stamp,
+                        "frame_id": "",
+                    },
+                    "status": [record["diagnostic"]],
+                },
+            }
+        )
+    topic_rank = {odometry_topic: 0, diagnostics_topic: 1}
+    events.sort(key=lambda event: (int(event["timestamp_ns"]), topic_rank.get(str(event["topic"]), 99), str(event["topic"])))
+    return events
+
+
+def export_rosbag_jsonl(
+    records: list[dict[str, Any]],
+    output_dir: str | Path,
+    *,
+    source_log: str | Path | None = None,
+    odometry_topic: str = "/vision_nav/odometry",
+    diagnostics_topic: str = "/diagnostics",
+) -> dict[str, Any]:
+    output_path = Path(output_dir).expanduser()
+    output_path.mkdir(parents=True, exist_ok=True)
+    messages_path = output_path / "messages.jsonl"
+    metadata_path = output_path / "metadata.json"
+    events = rosbag_jsonl_events_from_records(
+        records,
+        odometry_topic=odometry_topic,
+        diagnostics_topic=diagnostics_topic,
+    )
+    with messages_path.open("w", encoding="utf-8") as stream:
+        for event in events:
+            stream.write(json.dumps(event, sort_keys=True, allow_nan=True) + "\n")
+    topic_counts: dict[str, int] = {}
+    for event in events:
+        topic = str(event["topic"])
+        topic_counts[topic] = topic_counts.get(topic, 0) + 1
+    metadata = {
+        "format": "vision_nav_rosbag_jsonl_v1",
+        "source_log": str(source_log) if source_log is not None else None,
+        "message_file": messages_path.name,
+        "message_count": len(events),
+        "source_record_count": len(records),
+        "topics": [
+            {
+                "name": odometry_topic,
+                "type": "nav_msgs/msg/Odometry",
+                "message_count": topic_counts.get(odometry_topic, 0),
+            },
+            {
+                "name": diagnostics_topic,
+                "type": "diagnostic_msgs/msg/DiagnosticArray",
+                "message_count": topic_counts.get(diagnostics_topic, 0),
+            },
+        ],
+    }
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {
+        "output_dir": str(output_path),
+        "metadata_path": str(metadata_path),
+        "messages_path": str(messages_path),
+        "metadata": metadata,
+    }
 
 
 class Ros2RuntimePublisher:
@@ -271,12 +363,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--odometry-topic", default="/vision_nav/odometry")
     parser.add_argument("--diagnostics-topic", default="/diagnostics")
     parser.add_argument("--rate-hz", type=float, default=2.0)
+    parser.add_argument(
+        "--export-rosbag-jsonl",
+        help="Write a dependency-free ROS-bag-like directory with metadata.json and topic messages.jsonl.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     records = ros_records_from_log(args.log, frame_id=args.frame_id, child_frame_id=args.child_frame_id)
+    if args.export_rosbag_jsonl:
+        result = export_rosbag_jsonl(
+            records,
+            args.export_rosbag_jsonl,
+            source_log=args.log,
+            odometry_topic=args.odometry_topic,
+            diagnostics_topic=args.diagnostics_topic,
+        )
+        print(json.dumps(result["metadata"], indent=2, sort_keys=True))
+        return
     if args.publish:
         _publish_with_rclpy(
             records,
@@ -331,6 +437,23 @@ def _publish_with_rclpy(
             time.sleep(period_s)
     finally:
         publisher.close()
+
+
+def _stamp_to_ns(stamp: dict[str, int]) -> int:
+    return int(stamp.get("sec") or 0) * 1_000_000_000 + int(stamp.get("nanosec") or 0)
+
+
+def _record_stamp(record: dict[str, Any]) -> dict[str, int]:
+    odometry = record.get("odometry")
+    if isinstance(odometry, dict):
+        header = odometry.get("header") or {}
+        stamp = header.get("stamp")
+        if isinstance(stamp, dict):
+            return {"sec": int(stamp.get("sec") or 0), "nanosec": int(stamp.get("nanosec") or 0)}
+    timestamp_us = record.get("timestamp_us")
+    if timestamp_us is not None:
+        return ros_stamp_from_us(int(timestamp_us))
+    return ros_stamp_from_us(None)
 
 
 def _odometry_msg_from_dict(odometry_cls: Any, data: dict[str, Any]) -> Any:

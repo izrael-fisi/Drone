@@ -16,6 +16,7 @@ import type {
   Profile,
   Region,
   SupportBundleFile,
+  SupportBundleDetails,
   TileEstimate,
 } from "./types";
 
@@ -117,6 +118,10 @@ export const cmd = {
     invoke<void>("write_yaml_config", { path, data }),
   listYamlConfigs: (dir: string) => invoke<string[]>("list_yaml_configs", { dir }),
   listSupportBundles: (dir: string) => invoke<SupportBundleFile[]>("list_support_bundles", { dir }),
+  revealSupportBundle: (path: string) => invoke<void>("reveal_support_bundle", { path }),
+  deleteSupportBundle: (path: string) => invoke<void>("delete_support_bundle", { path }),
+  readSupportBundleDetails: (path: string) =>
+    invoke<SupportBundleDetails>("read_support_bundle_details", { path }),
 };
 
 export type { DownloadProgress };

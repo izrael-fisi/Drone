@@ -15,6 +15,15 @@ ros2 launch ros2/launch/terrain_nav_replay.launch.py \
   log:=terrain-run/terrain_matches.jsonl
 ```
 
+Without ROS 2 installed, export the same replay stream as a topic-oriented JSONL
+bag directory:
+
+```bash
+vision-nav-ros2-replay-log \
+  --log terrain-run/terrain_matches.jsonl \
+  --export-rosbag-jsonl terrain-run/rosbag-jsonl
+```
+
 For live Pi or desktop camera runtime:
 
 ```bash

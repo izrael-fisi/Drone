@@ -1,7 +1,10 @@
 mod commands;
 
 use commands::{
-    config_cmd::{list_support_bundles, list_yaml_configs, read_yaml_config, write_yaml_config},
+    config_cmd::{
+        delete_support_bundle, list_support_bundles, list_yaml_configs,
+        read_support_bundle_details, read_yaml_config, reveal_support_bundle, write_yaml_config,
+    },
     discovery::{discover_pi_devices, local_network_hints},
     drone::{build_drone_bundle, import_elevation_assets, import_map_file},
     profile::{load_devices, load_profile, load_regions, save_devices, save_profile, save_regions},
@@ -44,6 +47,9 @@ pub fn run() {
             write_yaml_config,
             list_yaml_configs,
             list_support_bundles,
+            reveal_support_bundle,
+            delete_support_bundle,
+            read_support_bundle_details,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Drone Vision Nav");

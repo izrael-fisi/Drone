@@ -38,6 +38,19 @@ vision-nav-ros2-replay-log \
 It prints the odometry and diagnostic records that would be published. This is
 the safest first check on a Mac or a Pi that does not have ROS 2 sourced.
 
+To create an offline topic-oriented replay artifact without ROS 2 installed:
+
+```bash
+vision-nav-ros2-replay-log \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl
+```
+
+This writes `metadata.json` and `messages.jsonl` with ROS message type names,
+topics, timestamps, and payloads. It is intentionally dependency-free; convert
+it to native rosbag2/MCAP later on a ROS 2 workstation when that workflow is
+needed.
+
 ## Publish With ROS 2
 
 On a ROS 2 machine, source the ROS environment first:
@@ -131,3 +144,14 @@ terrain matcher result
 
 Direct MAVLink output remains available for simple Pi deployments and early
 bench tests.
+
+On Raspberry Pi modules that should use the PX4 uXRCE-DDS ROS 2 path, run:
+
+```bash
+./scripts/pi/check_micro_xrce_dds_agent.sh
+```
+
+Set `VISION_NAV_REQUIRE_XRCE=1` when the setup should fail if
+`MicroXRCEAgent` is missing. The script reports the detected agent path,
+validates the selected UDP or serial transport settings, and prints the launch
+command for the expected PX4 bridge path.

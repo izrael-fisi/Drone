@@ -35,7 +35,9 @@ page can scan common Raspberry Pi mDNS hostnames and local SSH neighbors. The
 scan stores recent discoveries locally so the module can be selected again even
 if it later resolves through a different hostname or IP. The scan also shows
 the desktop's active private/link-local IPv4 interfaces and subnet hints to help
-diagnose wrong-Wi-Fi, guest-network, or mDNS failures.
+diagnose wrong-Wi-Fi, guest-network, or mDNS failures. Choose the adapter that
+should reach the Pi, then use the checklist button to copy the exact
+mDNS/SSH/firewall checks for terminal or support-bundle notes.
 
 The bootstrap script installs:
 
@@ -276,6 +278,25 @@ VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600 \
 ./scripts/pi/check_mavlink_endpoint.sh
 ```
 
+For PX4 uXRCE-DDS and ROS 2 bench paths, also check the optional Micro XRCE-DDS
+Agent:
+
+```bash
+./scripts/pi/check_micro_xrce_dds_agent.sh
+```
+
+The check passes with a warning when the agent is not installed so direct
+MAVLink deployments are not blocked. To require the ROS 2 bridge dependency in
+a setup run:
+
+```bash
+VISION_NAV_REQUIRE_XRCE=1 ./scripts/pi/check_micro_xrce_dds_agent.sh
+```
+
+The default UDP launch hint is `MicroXRCEAgent udp4 -p 8888`. For serial XRCE
+links, set `VISION_NAV_XRCE_TRANSPORT=serial` and
+`VISION_NAV_XRCE_SERIAL_DEVICE=/dev/<device>`.
+
 ## First Feature-Matching Test
 
 Prepare a map image and a query image, then run:
@@ -503,4 +524,8 @@ The desktop Module Setup `Bench Report` action runs the terrain bundle validator
 against the configured deployed bundle, creates this same support bundle, and
 downloads the latest zip back to `~/DroneTransfer/from-pi/support-bundles/` on
 the desktop. It also lets you save a local JSON setup report containing the
-check results and downloaded support-bundle summaries.
+check results, selected discovery adapter, copyable discovery checklist, and
+downloaded support-bundle summaries. The desktop support-bundle list can reveal
+downloaded ZIPs in the local file manager, copy their path, show compact
+manifest details, inspect log/replay-gate summaries and per-record JSONL
+previews from inside the ZIP, or delete stale ZIPs.

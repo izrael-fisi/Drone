@@ -136,5 +136,12 @@ if [[ -x scripts/pi/validate_vision_nav_bundle.sh ]]; then
   fi
 fi
 
+section "Micro XRCE-DDS Agent"
+if [[ -x scripts/pi/check_micro_xrce_dds_agent.sh ]]; then
+  scripts/pi/check_micro_xrce_dds_agent.sh || true
+else
+  echo "Missing scripts/pi/check_micro_xrce_dds_agent.sh"
+fi
+
 section "Done"
 echo "Wrote: $out_file"

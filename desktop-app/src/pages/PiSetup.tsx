@@ -28,11 +28,15 @@ import { cn, generateId } from "../lib/utils";
 import {
   candidateHost,
   candidateName,
+  discoveryChecklistText,
+  discoveryStatusSummary,
   discoveryTroubleshooting,
   loadDiscoveryHistory,
   mergeDiscoveryHistory,
+  networkHintKey,
   networkHintLabel,
   saveDiscoveryHistory,
+  selectedNetworkHint,
 } from "../lib/discovery";
 import { SupportBundleList } from "../components/SupportBundleList";
 import type { Device, LocalNetworkHint, PiDiscoveryCandidate, SupportBundleFile, UploadProgress } from "../lib/types";
@@ -210,6 +214,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [discoveryCandidates, setDiscoveryCandidates] = useState<PiDiscoveryCandidate[]>(() => loadDiscoveryHistory());
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [networkHints, setNetworkHints] = useState<LocalNetworkHint[]>([]);
+  const [selectedAdapterKey, setSelectedAdapterKey] = useState("");
+  const [discoveryCopied, setDiscoveryCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const selectedDevice = useMemo(
@@ -317,6 +323,28 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       setDiscoveryError(String(err));
     } finally {
       setDiscovering(false);
+    }
+  };
+
+  const selectedDiscoveryHint = selectedNetworkHint(networkHints, selectedAdapterKey);
+  const discoverySummary = discoveryStatusSummary(discoveryCandidates, networkHints, selectedDiscoveryHint);
+  const discoveryTips = discoveryTroubleshooting(discoveryCandidates, networkHints, selectedDiscoveryHint);
+
+  const discoveryChecklist = () => discoveryChecklistText({
+    candidates: discoveryCandidates,
+    networkHints,
+    selectedHint: selectedDiscoveryHint,
+    targetHost: form.host,
+    username: form.username,
+  });
+
+  const copyDiscoveryChecklist = async () => {
+    try {
+      await navigator.clipboard.writeText(discoveryChecklist());
+      setDiscoveryCopied(true);
+      window.setTimeout(() => setDiscoveryCopied(false), 1800);
+    } catch (err) {
+      setDiscoveryError(`Could not copy checklist: ${err}`);
     }
   };
 
@@ -622,6 +650,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       recommended: true,
     },
     {
+      id: "xrce-dds",
+      title: "Micro XRCE-DDS Agent",
+      detail: "Checks the optional PX4 uXRCE-DDS Agent used for ROS 2 telemetry and external-vision bench paths.",
+      command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/check_micro_xrce_dds_agent.sh`,
+    },
+    {
       id: "calibration-capture",
       title: "Calibration Capture",
       detail: "Captures a short chessboard image set for down-camera calibration when the target is ready.",
@@ -710,6 +744,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       discovery: {
         candidates: discoveryCandidates.slice(0, 8),
         network_hints: networkHints,
+        selected_network_hint: selectedDiscoveryHint,
+        checklist: discoveryChecklist(),
       },
       connection_result: connectionResult
         ? {
@@ -825,15 +861,39 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   {discoveryError}
                 </div>
               )}
-              {networkHints.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {networkHints.slice(0, 3).map((hint) => (
-                    <span key={`${hint.interface_name}-${hint.ipv4}`} className="badge-cyan text-[10px]">
-                      {networkHintLabel(hint)}
-                    </span>
-                  ))}
+              <div className="rounded-lg border border-border bg-bg-base px-3 py-2 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-[11px] uppercase tracking-wide text-slate-500">Network adapter</label>
+                  <span className={discoverySummary.status === "ready" ? "badge-green text-[10px]" : discoverySummary.status === "blocked" ? "badge-red text-[10px]" : "badge-yellow text-[10px]"}>
+                    {discoverySummary.status === "ready" ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+                    {discoverySummary.label}
+                  </span>
                 </div>
-              )}
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                  {networkHints.length > 0 ? (
+                    <select
+                      className="input-field text-xs"
+                      value={selectedDiscoveryHint ? networkHintKey(selectedDiscoveryHint) : ""}
+                      onChange={(event) => setSelectedAdapterKey(event.target.value)}
+                    >
+                      {networkHints.map((hint) => (
+                        <option key={networkHintKey(hint)} value={networkHintKey(hint)}>
+                          {networkHintLabel(hint)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="rounded-md border border-border bg-bg-card px-2 py-1.5 text-[11px] text-slate-500">
+                      No private Wi-Fi/Ethernet adapter detected yet.
+                    </div>
+                  )}
+                  <button onClick={copyDiscoveryChecklist} className="btn-secondary text-xs py-1 px-2">
+                    <Copy size={11} />
+                    {discoveryCopied ? "Copied" : "Checklist"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">{discoverySummary.detail}</p>
+              </div>
               {discoveryCandidates.length > 0 && (
                 <div className="space-y-2">
                   {discoveryCandidates.slice(0, 4).map((candidate) => (
@@ -852,9 +912,9 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   ))}
                 </div>
               )}
-              {discoveryTroubleshooting(discoveryCandidates, networkHints).length > 0 && (
+              {discoveryTips.length > 0 && (
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 space-y-1">
-                  {discoveryTroubleshooting(discoveryCandidates, networkHints).map((item) => (
+                  {discoveryTips.map((item) => (
                     <div key={item} className="text-[11px] text-amber-200">{item}</div>
                   ))}
                 </div>
@@ -1212,7 +1272,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 <p className="text-xs text-slate-500">Run a setup check to see command output.</p>
               </div>
             )}
-            <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} />
+            <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} onChanged={refreshSupportBundles} />
           </div>
         </div>
       </div>

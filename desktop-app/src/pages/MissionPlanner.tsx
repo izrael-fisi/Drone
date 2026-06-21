@@ -2335,7 +2335,7 @@ export function MissionPlanner() {
               {cmdRunning ? commandOutput + "..." : commandOutput}
             </pre>
           )}
-          <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} />
+          <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} onChanged={refreshSupportBundles} />
         </div>
       </div>
     </div>
