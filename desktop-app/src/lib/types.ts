@@ -99,8 +99,15 @@ export interface BuildDroneBundleRequest {
 export interface BuildDroneBundleResult {
   bundle_dir: string;
   manifest_path: string;
+  stac_manifest_path?: string;
   orthophoto_path: string;
   features_path: string;
+  terrain_index_path?: string;
+  terrain_config_path?: string;
+  terrain_tile_count?: number;
+  terrain_feature_count?: number;
+  terrain_gsd_m?: number;
+  terrain_tile_size_px?: number;
   checksums_path: string;
   mission_plan_path?: string;
   qgc_plan_path?: string;

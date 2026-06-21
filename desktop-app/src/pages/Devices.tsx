@@ -430,16 +430,16 @@ export function Devices() {
                     {getTab(d.id) === "control" && (
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "status", "systemctl --user is-active drone-vision-nav.service 2>/dev/null || true; pgrep -af 'vision_nav.run_bundle_match_loop|vision-nav-run-bundle-loop' || true")} className="btn-secondary text-xs py-1 px-3">
+                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "status", "systemctl --user is-active drone-vision-nav.service 2>/dev/null || true; pgrep -af 'vision_nav.run_bundle_match_loop|vision_nav.run_terrain_loop|vision-nav-run-bundle-loop|vision-nav-run-terrain-loop' || true")} className="btn-secondary text-xs py-1 px-3">
                             {cmdRunning === d.id ? <Loader2 size={11} className="animate-spin" /> : <Wifi size={11} />}Status
                           </button>
-                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "run 30-frame loop", `cd ${shellQuote(remotePath)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_vision_nav_loop.sh`)} className="btn-secondary text-xs py-1 px-3 text-emerald-400 border-emerald-500/20">
+                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "run 30-frame terrain loop", `cd ${shellQuote(remotePath)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh`)} className="btn-secondary text-xs py-1 px-3 text-emerald-400 border-emerald-500/20">
                             <Play size={11} />Run Loop
                           </button>
-                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "stop loop", "pkill -f 'vision_nav.run_bundle_match_loop|vision-nav-run-bundle-loop' && echo 'Loop stopped' || echo 'No loop running'")} className="btn-secondary text-xs py-1 px-3 text-red-400 border-red-500/20">
+                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "stop loop", "pkill -f 'vision_nav.run_bundle_match_loop|vision_nav.run_terrain_loop|vision-nav-run-bundle-loop|vision-nav-run-terrain-loop' && echo 'Loop stopped' || echo 'No loop running'")} className="btn-secondary text-xs py-1 px-3 text-red-400 border-red-500/20">
                             <Square size={11} />Stop Loop
                           </button>
-                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "logs (last 60 lines)", "tail -n 60 $HOME/DroneTransfer/outgoing/runtime-match/matches.jsonl 2>/dev/null || echo '(no match log yet)'")} className="btn-secondary text-xs py-1 px-3">
+                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "logs (last 60 lines)", "tail -n 60 $HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl 2>/dev/null || tail -n 60 $HOME/DroneTransfer/outgoing/runtime-match/matches.jsonl 2>/dev/null || echo '(no match log yet)'")} className="btn-secondary text-xs py-1 px-3">
                             <FileText size={11} />View Logs
                           </button>
                           <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "systemd status", "systemctl --user status drone-vision-nav.service --no-pager 2>&1 || echo 'service not installed'")} className="btn-secondary text-xs py-1 px-3">
@@ -455,6 +455,7 @@ export function Devices() {
                           <div className="flex items-center gap-2 text-[11px] text-slate-500">
                             <Cable size={11} /> MAVLink: <span className="font-mono text-slate-400">{d.mavlink_endpoint}</span>
                             <span className="text-[10px] bg-bg-elevated border border-border rounded px-1.5 py-0.5 text-slate-400">{d.autopilot?.toUpperCase() ?? "PX4"}</span>
+                            <span className="text-slate-500">barometer optional</span>
                           </div>
                         )}
                       </div>

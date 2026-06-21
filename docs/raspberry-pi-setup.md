@@ -249,7 +249,9 @@ Prepare a map image and a query image, then run:
 ```bash
 source ~/drone_vision_nav_venv/bin/activate
 vision-nav-build-bundle --bundle mission_bundle
+vision-nav-build-terrain-bundle --bundle mission_bundle
 vision-nav-match-bundle-frame --bundle mission_bundle --frame query.jpg --viz match_debug.jpg
+vision-nav-match-terrain-frame --bundle mission_bundle --frame query.jpg
 ```
 
 The output JSON reports match count, inlier count, inlier ratio, reprojection
@@ -279,6 +281,7 @@ Validate the bundle before using the camera:
 ```bash
 cd Drone
 ./scripts/pi/validate_vision_nav_bundle.sh
+./scripts/pi/validate_terrain_bundle.sh
 ```
 
 The validator checks:
@@ -313,13 +316,14 @@ Or build features and write checksums in one step:
 
 ```bash
 vision-nav-build-bundle --bundle mission_bundle --write-checksums
+vision-nav-build-terrain-bundle --bundle mission_bundle --write-checksums
 ```
 
 Then run continuous capture and map matching:
 
 ```bash
 cd Drone
-./scripts/pi/run_vision_nav_loop.sh
+./scripts/pi/run_terrain_nav_loop.sh
 ```
 
 Defaults:
@@ -327,8 +331,8 @@ Defaults:
 - captures from the Raspberry Pi Global Shutter Camera
 - undistorts frames with `config/camera/down_camera.yaml`
 - matches once per second
-- writes frames, optional visualizations, and `matches.jsonl` to
-  `~/DroneTransfer/outgoing/runtime-match/`
+- writes frames and `terrain_matches.jsonl` to
+  `~/DroneTransfer/outgoing/terrain-match/`
 - runs until you press `Ctrl+C`
 
 Useful overrides:
@@ -338,12 +342,14 @@ VISION_NAV_BUNDLE="$HOME/drone-data/map_bundles/test_bundle" \
 VISION_NAV_OUTPUT_DIR="$HOME/DroneTransfer/outgoing/runtime-match-test" \
 VISION_NAV_COUNT=30 \
 VISION_NAV_INTERVAL_S=0.5 \
-VISION_NAV_VIZ_EVERY=5 \
 VISION_NAV_MAX_ROTATION_DEG=60 \
 VISION_NAV_MAX_SCALE_ANISOTROPY=2.0 \
 VISION_NAV_CAMERA_CALIBRATION="$PWD/config/camera/down_camera.yaml" \
-./scripts/pi/run_vision_nav_loop.sh
+./scripts/pi/run_terrain_nav_loop.sh
 ```
+
+Use `./scripts/pi/run_vision_nav_loop.sh` only when you specifically want the
+legacy single-image matcher.
 
 Each accepted or rejected match logs homography geometry metrics:
 
@@ -373,26 +379,25 @@ versions without touching the camera:
 
 ```bash
 cd Drone
-./scripts/pi/replay_vision_nav_frames.sh
+./scripts/pi/replay_terrain_nav_log.sh
 ```
 
 Defaults:
 
-- reads frames from `~/DroneTransfer/outgoing/runtime-match/frames/*.jpg`
+- reads frame records from `~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl`
 - undistorts frames with `config/camera/down_camera.yaml`
-- writes `replay_matches.jsonl` and optional visualizations to
-  `~/DroneTransfer/outgoing/replay-match/`
+- writes `terrain_replay_matches.jsonl` to
+  `~/DroneTransfer/outgoing/terrain-replay/`
 
 Useful overrides:
 
 ```bash
 VISION_NAV_BUNDLE="$HOME/drone-data/map_bundles/test_bundle" \
-VISION_NAV_REPLAY_FRAMES="$HOME/DroneTransfer/outgoing/runtime-match/frames/*.jpg" \
-VISION_NAV_REPLAY_OUTPUT_DIR="$HOME/DroneTransfer/outgoing/replay-test" \
-VISION_NAV_VIZ_EVERY=1 \
+VISION_NAV_TERRAIN_REPLAY_LOG="$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl" \
+VISION_NAV_REPLAY_OUTPUT_DIR="$HOME/DroneTransfer/outgoing/terrain-replay-test" \
 VISION_NAV_MAX_ROTATION_DEG=60 \
 VISION_NAV_CAMERA_CALIBRATION="$PWD/config/camera/down_camera.yaml" \
-./scripts/pi/replay_vision_nav_frames.sh
+./scripts/pi/replay_terrain_nav_log.sh
 ```
 
 Set `VISION_NAV_CAMERA_CALIBRATION=` to disable undistortion for synthetic or

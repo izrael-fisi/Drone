@@ -34,7 +34,8 @@ after the classical pipeline has been measured and its failure modes are known.
 - 256GB microSD for current logs and map bundles
 - Optional USB 3 SSD later for larger maps, image logs, and long test runs
 - Pixhawk/PX4 flight controller later
-- Downward rangefinder strongly recommended before estimator fusion
+- IMU/attitude telemetry from PX4 for vision-estimator context
+- Optional PX4 barometer telemetry for relative vertical confidence
 
 ## Main Folders
 
@@ -81,18 +82,18 @@ After you copy a mission map bundle to `~/drone-data/map_bundles/mission_bundle`
 validate it, then start the logging-only bench loop:
 
 ```bash
-./scripts/pi/validate_vision_nav_bundle.sh
-./scripts/pi/run_vision_nav_loop.sh
+./scripts/pi/validate_terrain_bundle.sh
+./scripts/pi/run_terrain_nav_loop.sh
 ```
 
 For transfer-safe mission bundles, write checksums after building features:
 
 ```bash
-vision-nav-build-bundle --bundle mission_bundle --write-checksums
+vision-nav-build-terrain-bundle --bundle mission_bundle --write-checksums
 ```
 
 It captures camera frames, matches them against the bundle, and writes logs to
-`~/DroneTransfer/outgoing/runtime-match/`.
+`~/DroneTransfer/outgoing/terrain-match/`.
 By default, Pi runtime matching undistorts frames with
 `config/camera/down_camera.yaml`.
 When `VISION_NAV_MAVLINK_ENDPOINT` is set, accepted local map measurements are
@@ -101,7 +102,7 @@ also sent as MAVLink `VISION_POSITION_ESTIMATE`.
 Replay saved frames without using the camera:
 
 ```bash
-./scripts/pi/replay_vision_nav_frames.sh
+./scripts/pi/replay_terrain_nav_log.sh
 ```
 
 Summarize runtime and replay match logs:

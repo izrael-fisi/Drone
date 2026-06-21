@@ -52,7 +52,7 @@ The MacBook owns:
 The companion computer may:
 
 - Read telemetry from PX4
-- Read IMU, attitude, barometer, and estimator status
+- Read IMU, attitude, optional barometer, and estimator status
 - Publish external-vision pose/odometry estimates
 - Publish GPS-like inputs only when deliberately configured and tested
 - Send simple bench-test commands only in controlled development scripts

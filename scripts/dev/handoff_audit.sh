@@ -67,6 +67,7 @@ required_paths=(
   "docs/camera-calibration.md"
   "docs/github-push-plan.md"
   "docs/operator-handoff.md"
+  "docs/terrain-vision-navigation.md"
 )
 for path in "${required_paths[@]}"; do
   require_path "$path"
@@ -86,8 +87,11 @@ required_pi_scripts=(
   "scripts/pi/smoke_test_vision.sh"
   "scripts/pi/smoke_test_docker.sh"
   "scripts/pi/validate_vision_nav_bundle.sh"
+  "scripts/pi/validate_terrain_bundle.sh"
   "scripts/pi/run_vision_nav_loop.sh"
+  "scripts/pi/run_terrain_nav_loop.sh"
   "scripts/pi/replay_vision_nav_frames.sh"
+  "scripts/pi/replay_terrain_nav_log.sh"
   "scripts/pi/summarize_vision_nav_logs.sh"
   "scripts/pi/install_vision_nav_service.sh"
 )
@@ -121,15 +125,20 @@ echo "== Python entrypoints =="
 entrypoints=(
   "vision-nav-build-map"
   "vision-nav-build-bundle"
+  "vision-nav-build-terrain-bundle"
   "vision-nav-bundle-checksums"
   "vision-nav-calibrate-camera"
   "vision-nav-camera-health"
   "vision-nav-match-frame"
   "vision-nav-match-bundle-frame"
+  "vision-nav-match-terrain-frame"
   "vision-nav-run-bundle-loop"
+  "vision-nav-run-terrain-loop"
   "vision-nav-replay-bundle-frames"
+  "vision-nav-replay-terrain-log"
   "vision-nav-summarize-match-log"
   "vision-nav-validate-bundle"
+  "vision-nav-validate-terrain-bundle"
 )
 for entrypoint in "${entrypoints[@]}"; do
   if rg -q "^${entrypoint} = " pyproject.toml; then

@@ -41,8 +41,7 @@ Likely low-cost sensor path:
 
 - Fixed-focus global-shutter camera if budget allows
 - Raspberry Pi camera or low-cost UVC camera for early tests
-- Barometer from Pixhawk for altitude input
-- Optional rangefinder for better height-above-ground estimates
+- Optional Pixhawk barometer telemetry for relative vertical confidence
 - Optional optical flow only after simulation/bench tests show clear value
 
 ## Software Architecture

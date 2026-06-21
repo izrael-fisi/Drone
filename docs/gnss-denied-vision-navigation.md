@@ -8,7 +8,7 @@ The system should use:
 
 - Onboard camera imagery
 - IMU and attitude estimates from the flight controller
-- Barometer and optional rangefinder data
+- Optional barometer telemetry for relative vertical confidence
 - Pre-installed georeferenced maps or visual feature databases
 - Estimator fusion with explicit confidence/covariance
 
@@ -21,7 +21,7 @@ Camera frames
   -> feature tracking / visual odometry / VIO
     -> visual place recognition or map matching
       -> absolute or drift-corrected pose estimate
-        -> fusion with inertial, altitude, and heading sources
+        -> fusion with inertial attitude/motion context
           -> navigation estimate with covariance/confidence
             -> ROS 2 pose/odometry
             -> PX4 external vision or GPS-like input
@@ -43,7 +43,6 @@ Candidate approaches:
 
 - Visual odometry
 - Visual-inertial odometry
-- Optical flow plus rangefinder for low-altitude velocity, if justified by tests
 - Feature tracking with IMU propagation
 
 ### Global Relocalization
@@ -54,7 +53,7 @@ Candidate approaches:
 - Matching against satellite/aerial image tiles
 - Matching against a prebuilt visual landmark database
 - Place recognition followed by geometric verification
-- Pose refinement using known camera intrinsics, altitude, and attitude
+- Pose refinement using known camera intrinsics, visual geometry, and attitude
 
 ### Fusion And Health
 
@@ -98,8 +97,8 @@ Prefer inexpensive modules first:
 - Raspberry Pi 5 onboard compute
 - Raspberry Pi camera or low-cost UVC camera modules
 - Fixed-focus global-shutter camera if affordable
-- Pixhawk IMU/barometer data through PX4
-- Optional rangefinder for height-above-ground correction
+- Pixhawk IMU and attitude telemetry through PX4
+- Optional Pixhawk barometer telemetry through PX4
 - Raspberry Pi AI HAT+ 2 only after benchmarks show it is needed
 
 Avoid expensive modules unless tests prove they are necessary:
@@ -113,7 +112,7 @@ Avoid expensive modules unless tests prove they are necessary:
 
 Do not buy an optical flow sensor yet.
 
-Optical flow can help with low-altitude velocity estimation, especially when paired with a rangefinder. PX4's EKF uses optical flow only when valid rangefinder data is available, optical-flow fusion is enabled, and the flow quality metric is good enough. That makes it useful, but not automatically required.
+Optical flow can help short-term image-motion propagation, but it should be tested as a software signal from the downward camera before buying a dedicated sensor.
 
 The first implementation path should be camera-based VIO/map matching. Add optical flow only if tests show a real accuracy, robustness, or cost advantage.
 

@@ -32,9 +32,10 @@ mission_bundle/
     camera_to_body.yaml
 ```
 
-Later map bundles can use Cloud Optimized GeoTIFF, GeoPackage, STAC metadata,
-and tiled feature indexes. The first prototype intentionally keeps the map
-format simple so matching and confidence scoring can be tested immediately.
+Terrain map bundles keep this legacy shape and add `imagery/tiles/`,
+`index/tiles.sqlite`, per-tile descriptors, `manifest.stac.json`, and
+`config/terrain_nav.yaml`. See
+[Terrain Vision Navigation](terrain-vision-navigation.md).
 
 ## First Georeferenced Feature Index
 
@@ -59,6 +60,7 @@ Example:
 ```bash
 vision-nav-validate-bundle --bundle mission_bundle --require-calibration
 vision-nav-build-bundle --bundle mission_bundle --write-checksums
+vision-nav-build-terrain-bundle --bundle mission_bundle --write-checksums
 vision-nav-bundle-checksums --bundle mission_bundle --verify
 ```
 
@@ -125,8 +127,7 @@ vision-nav-match-frame \
 ## Runtime Loop
 
 ```text
-PX4 attitude/altitude prior
-  + rangefinder height above ground
+PX4/IMU attitude and motion context when available
   + downward camera frame
     -> undistort
     -> normalize contrast
@@ -163,6 +164,27 @@ Or use the Pi wrapper:
 ```bash
 ./scripts/pi/run_vision_nav_loop.sh
 ```
+
+The tiled terrain runtime uses the selected mission bundle's tile index:
+
+```bash
+vision-nav-run-terrain-loop \
+  --bundle ~/drone-data/map_bundles/mission_bundle \
+  --output-dir ~/DroneTransfer/outgoing/terrain-match \
+  --count 30 \
+  --interval-s 1.0 \
+  --camera-calibration config/camera/down_camera.yaml
+```
+
+Or use the Pi wrapper:
+
+```bash
+./scripts/pi/run_terrain_nav_loop.sh
+```
+
+It writes one JSON record per frame in `terrain_matches.jsonl`. Vertical fields
+remain unset unless optional barometer telemetry or a future visual vertical
+estimate is available.
 
 It writes:
 

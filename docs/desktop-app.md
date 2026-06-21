@@ -96,6 +96,10 @@ The normalized `metadata.json` includes `georef_source`,
 bundle so the Pi runtime can combine map georeference quality with visual match
 quality when it estimates measurement covariance.
 
+Terrain bundles also declare optional barometer support. The app does not
+require that telemetry, but the runtime can use PX4 MAVLink altitude/pressure
+messages to fill relative vertical fields and vertical covariance.
+
 ## Local Setup
 
 ```bash
@@ -143,21 +147,23 @@ The mission bundle action builds the selected map source, writes the desktop
 mission JSON to `mission/mission_plan.json`, writes the QGC-style file to
 `mission/qgc.plan`, records both in `manifest.json`, and uploads the bundle to
 the runtime compute module. Feature extraction settings are read from the saved
-Vision Pipeline defaults. By default this overwrites the active bundle at:
+Vision Pipeline defaults. It also builds the terrain tile index, STAC-style
+manifest, and terrain runtime config. By default this overwrites the active
+bundle at:
 
 ```text
 /home/<pi-user>/drone-data/map_bundles/mission_bundle
 ```
 
-That path is what `./scripts/pi/run_vision_nav_loop.sh` loads through
+That path is what `./scripts/pi/run_terrain_nav_loop.sh` loads through
 `VISION_NAV_BUNDLE`, so the map selected in the desktop app becomes the active
 map used for feature comparison on the Raspberry Pi.
 
 It then runs the existing Pi scripts:
 
 ```bash
-./scripts/pi/validate_vision_nav_bundle.sh
-./scripts/pi/run_vision_nav_loop.sh
+./scripts/pi/validate_terrain_bundle.sh
+./scripts/pi/run_terrain_nav_loop.sh
 ```
 
 ## MAVLink

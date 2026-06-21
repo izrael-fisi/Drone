@@ -50,3 +50,43 @@ def test_send_match_result_uses_px4_ned_axes():
     assert z_down == -0.0
     assert covariance[0] == 16.0
     assert covariance[6] == 9.0
+
+
+def test_send_match_result_maps_optional_z_to_px4_down():
+    calls = []
+
+    class FakeMav:
+        def vision_position_estimate_send(self, *args):
+            calls.append(args)
+
+    class FakeConnection:
+        mav = FakeMav()
+
+    bridge = MavlinkVisionBridge("udp:14550")
+    bridge._conn = FakeConnection()
+    bridge._last_heartbeat_s = time.monotonic()
+
+    result = bridge.send_match_result(
+        {
+            "status": "accepted",
+            "measurement": {
+                "frame": "local_enu",
+                "x_m": 1.0,
+                "y_m": 2.0,
+                "z_m": 3.0,
+                "yaw_rad": 0.25,
+                "covariance": {
+                    "x_m2": 4.0,
+                    "y_m2": 5.0,
+                    "z_m2": 6.0,
+                    "yaw_rad2": 0.1,
+                },
+            },
+        }
+    )
+
+    assert result.sent is True
+    _, _x_north, _y_east, z_down, *_rest, covariance = calls[0]
+    assert z_down == -3.0
+    assert covariance[11] == 6.0
+    assert covariance[20] == 0.1

@@ -416,7 +416,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       title: "Runtime Bundle Check",
       detail: "Validates the currently deployed mission bundle if one exists.",
       command: () =>
-        `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ./scripts/pi/validate_vision_nav_bundle.sh`,
+        `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ./scripts/pi/validate_terrain_bundle.sh`,
     },
   ];
 

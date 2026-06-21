@@ -75,8 +75,15 @@ struct RegionMetadata {
 pub struct BuildDroneBundleResult {
     pub bundle_dir: String,
     pub manifest_path: String,
+    pub stac_manifest_path: Option<String>,
     pub orthophoto_path: String,
     pub features_path: String,
+    pub terrain_index_path: Option<String>,
+    pub terrain_config_path: Option<String>,
+    pub terrain_tile_count: Option<u64>,
+    pub terrain_feature_count: Option<u64>,
+    pub terrain_gsd_m: Option<f64>,
+    pub terrain_tile_size_px: Option<u32>,
     pub checksums_path: String,
     pub mission_plan_path: Option<String>,
     pub qgc_plan_path: Option<String>,
@@ -661,6 +668,30 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
                 "region_path": "high_compute_region"
             }
         },
+        "terrain_bundle": {
+            "version": "0.1.0",
+            "tile_index_path": "index/tiles.sqlite",
+            "tile_size_px": 512,
+            "overlap_px": 64,
+            "local_origin": {
+                "latitude": metadata.origin_lat,
+                "longitude": metadata.origin_lon,
+                "east_m": 0.0,
+                "north_m": 0.0
+            },
+            "crs": metadata.georef_crs.as_deref(),
+            "gsd_m": metadata.gsd_m_per_px,
+            "coordinate_frame": "local_enu",
+            "vertical_source": "barometer_optional",
+            "sensors": {
+                "barometer": {
+                    "enabled_optional": true,
+                    "source": "mavlink_or_replay",
+                    "required": false
+                }
+            },
+            "runtime": "vision_imu_map"
+        },
         "orthophoto": {
             "path": "ortho/map.png",
             "origin_lat": metadata.origin_lat,
@@ -696,6 +727,7 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         },
         "notes": [
             "Low-compute Pi runtime uses the classical feature index.",
+            "Terrain runtime uses tiled map descriptors for coarse-to-local vision matching.",
             "High-compute runtimes can use high_compute_region/satellite.png and metadata.json with SuperPoint + LightGlue."
         ]
     });
@@ -703,7 +735,7 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
 
     let python = std::env::var("DRONE_DESKTOP_PYTHON").unwrap_or_else(|_| "python3".to_string());
     let command_display = format!(
-        "{} -m vision_nav.build_map_bundle --bundle {} --write-checksums",
+        "{} -m vision_nav.build_terrain_bundle --bundle {} --write-checksums",
         python,
         shellish(&bundle_dir)
     );
@@ -712,7 +744,7 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         .current_dir(&repo_path)
         .env("PYTHONPATH", python_path)
         .arg("-m")
-        .arg("vision_nav.build_map_bundle")
+        .arg("vision_nav.build_terrain_bundle")
         .arg("--bundle")
         .arg(&bundle_dir)
         .arg("--write-checksums")
@@ -731,11 +763,54 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         ));
     }
 
+    let terrain_output: Option<serde_json::Value> = serde_json::from_str(&stdout).ok();
+    let terrain_index_path = terrain_output
+        .as_ref()
+        .and_then(|value| value.pointer("/tile_index/path"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let terrain_config_path = terrain_output
+        .as_ref()
+        .and_then(|value| value.get("config_path"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let stac_manifest_path = terrain_output
+        .as_ref()
+        .and_then(|value| value.get("stac_manifest_path"))
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    let terrain_tile_count = terrain_output
+        .as_ref()
+        .and_then(|value| value.pointer("/tile_index/tile_count"))
+        .and_then(|value| value.as_u64());
+    let terrain_feature_count = terrain_output
+        .as_ref()
+        .and_then(|value| value.pointer("/tile_index/feature_count"))
+        .and_then(|value| value.as_u64());
+    let terrain_gsd_m = terrain_output
+        .as_ref()
+        .and_then(|value| value.pointer("/terrain_bundle/gsd_m"))
+        .and_then(|value| value.as_f64())
+        .or(Some(metadata.gsd_m_per_px));
+    let terrain_tile_size_px = terrain_output
+        .as_ref()
+        .and_then(|value| value.pointer("/terrain_bundle/tile_size_px"))
+        .and_then(|value| value.as_u64())
+        .map(|value| value as u32)
+        .or(Some(512));
+
     Ok(BuildDroneBundleResult {
         bundle_dir: bundle_dir.to_string_lossy().into_owned(),
         manifest_path: manifest_path.to_string_lossy().into_owned(),
+        stac_manifest_path,
         orthophoto_path: orthophoto_path.to_string_lossy().into_owned(),
         features_path: bundle_dir.join("features").join("map_features.npz").to_string_lossy().into_owned(),
+        terrain_index_path,
+        terrain_config_path,
+        terrain_tile_count,
+        terrain_feature_count,
+        terrain_gsd_m,
+        terrain_tile_size_px,
         checksums_path: bundle_dir.join("checksums.sha256").to_string_lossy().into_owned(),
         mission_plan_path: mission_plan_path.map(|path| path.to_string_lossy().into_owned()),
         qgc_plan_path: qgc_plan_path.map(|path| path.to_string_lossy().into_owned()),

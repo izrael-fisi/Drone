@@ -241,26 +241,27 @@ Validate the bundle:
 
 ```bash
 cd Drone
-./scripts/pi/validate_vision_nav_bundle.sh
+./scripts/pi/validate_terrain_bundle.sh
 ```
 
 When you want the Pi to fail fast on a partial or stale map-bundle transfer:
 
 ```bash
 VISION_NAV_REQUIRE_CHECKSUMS=1 ./scripts/pi/validate_vision_nav_bundle.sh
+./scripts/pi/validate_terrain_bundle.sh
 ```
 
 Then run:
 
 ```bash
-./scripts/pi/run_vision_nav_loop.sh
+./scripts/pi/run_terrain_nav_loop.sh
 ```
 
 The loop captures Global Shutter frames, matches them to the bundle, and writes
 review artifacts to:
 
 ```text
-~/DroneTransfer/outgoing/runtime-match/
+~/DroneTransfer/outgoing/terrain-match/
 ```
 
 Tune geometry rejection thresholds with environment variables such as
@@ -277,7 +278,7 @@ Replay the captured frames without touching the camera:
 
 ```bash
 cd Drone
-./scripts/pi/replay_vision_nav_frames.sh
+./scripts/pi/replay_terrain_nav_log.sh
 ```
 
 Summarize runtime/replay logs:

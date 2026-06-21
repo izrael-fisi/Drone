@@ -7,6 +7,7 @@ import time
 
 import numpy as np
 
+from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
 from vision_nav.bundle import (
     load_manifest,
     manifest_feature_options,
@@ -19,6 +20,8 @@ from vision_nav.camera import load_camera_calibration, validate_image_size
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
 from vision_nav.mavlink_bridge import MavlinkVisionBridge, parse_mavlink_endpoint
 from vision_nav.summarize_match_log import summarize_records
+from vision_nav.terrain_estimator import TerrainEstimator
+from vision_nav.terrain_tiles import tile_origins
 from vision_nav.validate_map_bundle import validate_bundle
 
 
@@ -392,6 +395,62 @@ rotation_quat_xyzw: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
         assert_equal(summary["checksums"]["status"], "passed", "bundle validation checksums")
 
 
+def test_terrain_tile_origins_cover_edges() -> None:
+    assert_equal(tile_origins(100, 128, 16), [0], "short tile origins")
+    origins = tile_origins(300, 128, 16)
+    assert_equal(origins[-1], 172, "tile origins final edge")
+    assert_equal(len(set(origins)), len(origins), "tile origins unique")
+
+
+def test_terrain_estimator_updates_and_inflates_covariance() -> None:
+    estimator = TerrainEstimator(process_noise_m2_per_s=2.0)
+    result = estimator.update_from_match(
+        {
+            "timestamp_us": 1_000_000,
+            "status": "accepted",
+            "local_enu_m": {"x": 3.0, "y": 4.0, "z": None},
+            "confidence": 0.8,
+            "scale_confidence": 0.7,
+            "covariance": {"x_m2": 1.0, "y_m2": 2.0, "z_m2": None, "yaw_rad2": None},
+        }
+    )
+    assert_equal(result["estimator"]["initialized"], True, "terrain estimator initialized")
+    estimator.propagate_time(2_000_000)
+    if estimator.state.covariance_x_m2 is None or estimator.state.covariance_x_m2 <= 1.0:
+        raise AssertionError("Expected terrain estimator covariance to grow after propagation")
+
+
+def test_barometer_tracker_and_estimator_fields() -> None:
+    if abs(pressure_to_altitude_m(1013.25)) > 0.01:
+        raise AssertionError("Expected standard pressure altitude to be near zero")
+    tracker = BarometerTracker()
+    tracker.update(BarometerSample(altitude_m=100.0, source="unit"))
+    baro_state = tracker.update(BarometerSample(altitude_m=103.0, source="unit"))
+    assert_equal(baro_state.relative_altitude_m, 3.0, "barometer relative altitude")
+
+    estimator = TerrainEstimator()
+    result = estimator.update_from_match(
+        {
+            "timestamp_us": 1,
+            "status": "accepted",
+            "local_enu_m": {"x": 1.0, "y": 2.0, "z": None},
+            "confidence": 0.8,
+            "scale_confidence": 0.5,
+            "covariance": {"x_m2": 1.0, "y_m2": 1.0, "z_m2": None, "yaw_rad2": None},
+            "measurement": {
+                "frame": "local_enu",
+                "x_m": 1.0,
+                "y_m": 2.0,
+                "z_m": None,
+                "covariance": {"x_m2": 1.0, "y_m2": 1.0, "z_m2": None, "yaw_rad2": None},
+            },
+        },
+        barometer_sample={"relative_altitude_m": 4.0, "source": "unit"},
+    )
+    assert_equal(result["altitude_source"], "barometer", "barometer altitude source")
+    assert_equal(result["local_enu_m"]["z"], 4.0, "barometer local z")
+
+
 def main() -> None:
     tests = [
         test_pixel_to_local_default_north_up_axes,
@@ -405,6 +464,9 @@ def main() -> None:
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
+        test_terrain_tile_origins_cover_edges,
+        test_terrain_estimator_updates_and_inflates_covariance,
+        test_barometer_tracker_and_estimator_fields,
     ]
     for test in tests:
         try:

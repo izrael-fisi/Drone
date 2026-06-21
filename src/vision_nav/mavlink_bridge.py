@@ -23,6 +23,36 @@ class MavlinkSendResult:
         }
 
 
+@dataclass(frozen=True)
+class MavlinkTelemetrySample:
+    message_type: str
+    timestamp_us: int
+    roll_rad: float | None = None
+    pitch_rad: float | None = None
+    yaw_rad: float | None = None
+    local_north_m: float | None = None
+    local_east_m: float | None = None
+    local_down_m: float | None = None
+    pressure_altitude_m: float | None = None
+    relative_altitude_m: float | None = None
+    pressure_hpa: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "message_type": self.message_type,
+            "timestamp_us": self.timestamp_us,
+            "roll_rad": self.roll_rad,
+            "pitch_rad": self.pitch_rad,
+            "yaw_rad": self.yaw_rad,
+            "local_north_m": self.local_north_m,
+            "local_east_m": self.local_east_m,
+            "local_down_m": self.local_down_m,
+            "pressure_altitude_m": self.pressure_altitude_m,
+            "relative_altitude_m": self.relative_altitude_m,
+            "pressure_hpa": self.pressure_hpa,
+        }
+
+
 def parse_mavlink_endpoint(endpoint: str) -> tuple[str, int | None]:
     value = endpoint.strip()
     if not value:
@@ -107,6 +137,55 @@ class MavlinkVisionBridge:
         )
         self._last_heartbeat_s = now
 
+    def try_read_telemetry(self, timeout_s: float = 0.0) -> MavlinkTelemetrySample | None:
+        """Read one non-blocking PX4 telemetry sample when the link is bidirectional.
+
+        Terrain matching does not require inbound MAVLink, but this helper lets
+        runtime loops opportunistically consume attitude/local-state messages.
+        """
+
+        if self._conn is None:
+            return None
+        message = self._conn.recv_match(
+            type=["ATTITUDE", "LOCAL_POSITION_NED", "ALTITUDE", "SCALED_PRESSURE"],
+            blocking=timeout_s > 0.0,
+            timeout=timeout_s,
+        )
+        if message is None:
+            return None
+        message_type = message.get_type()
+        timestamp_us = int(time.time() * 1_000_000)
+        if message_type == "ATTITUDE":
+            return MavlinkTelemetrySample(
+                message_type=message_type,
+                timestamp_us=timestamp_us,
+                roll_rad=_as_optional_float(getattr(message, "roll", None)),
+                pitch_rad=_as_optional_float(getattr(message, "pitch", None)),
+                yaw_rad=_as_optional_float(getattr(message, "yaw", None)),
+            )
+        if message_type == "LOCAL_POSITION_NED":
+            return MavlinkTelemetrySample(
+                message_type=message_type,
+                timestamp_us=timestamp_us,
+                local_north_m=_as_optional_float(getattr(message, "x", None)),
+                local_east_m=_as_optional_float(getattr(message, "y", None)),
+                local_down_m=_as_optional_float(getattr(message, "z", None)),
+            )
+        if message_type == "ALTITUDE":
+            return MavlinkTelemetrySample(
+                message_type=message_type,
+                timestamp_us=timestamp_us,
+                pressure_altitude_m=_as_optional_float(getattr(message, "altitude_monotonic", None)),
+                relative_altitude_m=_as_optional_float(getattr(message, "altitude_relative", None)),
+            )
+        if message_type == "SCALED_PRESSURE":
+            return MavlinkTelemetrySample(
+                message_type=message_type,
+                timestamp_us=timestamp_us,
+                pressure_hpa=_as_optional_float(getattr(message, "press_abs", None)),
+            )
+        return MavlinkTelemetrySample(message_type=message_type, timestamp_us=timestamp_us)
+
     def send_match_result(self, result: dict[str, Any]) -> MavlinkSendResult:
         if self._conn is None:
             return MavlinkSendResult(False, reason="not_connected")
@@ -158,6 +237,16 @@ def _as_float(value: Any, *, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _as_optional_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        output = float(value)
+        return output if math.isfinite(output) else None
+    except (TypeError, ValueError):
+        return None
 
 
 def send_log_once(log_path: str, endpoint: str, ev_delay_ms: int = 50) -> dict[str, Any]:

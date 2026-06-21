@@ -57,7 +57,7 @@ Relevant verified points:
 - Micro VPS is described as a camera-based daytime visual positioning system for GPS-denied drone navigation.
 - Its docs describe a sensor module, compute module, UART serial cables, and flight-controller integration.
 - Its autopilot docs currently state ArduPilot support.
-- The docs say Micro VPS sends GPS data to ArduPilot over MAVLink and reads compass/barometer data over MAVLink.
+- The docs say Micro VPS sends GPS data to ArduPilot over MAVLink and reads autopilot telemetry over MAVLink.
 
 Useful inspiration:
 

@@ -519,7 +519,7 @@ export function MissionPlanner() {
   const [enableMavlink, setEnableMavlink] = useState(false);
   const [activeLayer, setActiveLayer] = useState<PlanLayer>("mission");
   const [missionDefaults, setMissionDefaults] = useState<MissionDefaults>(DEFAULT_MISSION_DEFAULTS);
-  const [missionPlacementType, setMissionPlacementType] = useState<MissionItemType>("waypoint");
+  const [missionPlacementType, setMissionPlacementType] = useState<MissionItemType>("takeoff");
   const [missionItems, setMissionItems] = useState<MissionItem[]>([]);
   const [selectedMissionItemId, setSelectedMissionItemId] = useState<string | null>(null);
   const [fencePoints, setFencePoints] = useState<PlanPoint[]>([]);
@@ -593,6 +593,7 @@ export function MissionPlanner() {
   );
   const missionDistance = useMemo(() => missionDistanceM(missionPath), [missionPath]);
   const selectedMissionItem = missionItems.find((item) => item.id === selectedMissionItemId);
+  const effectiveMissionPlacementType = missionItems.length === 0 ? "takeoff" : missionPlacementType;
   const regionSize = useMemo(() => regionDimensionsM(selectedRegion), [selectedRegion]);
   const estimatedTimeMin = missionDefaults.speedMps > 0
     ? Math.ceil(missionDistance / missionDefaults.speedMps / 60)
@@ -662,19 +663,19 @@ export function MissionPlanner() {
         point.lon,
         missionDefaults.altitudeM,
         missionDefaults.speedMps,
-        missionPlacementType,
+        effectiveMissionPlacementType,
       );
       setMissionItems((current) => {
-        if (missionPlacementType === "takeoff") {
+        if (effectiveMissionPlacementType === "takeoff") {
           return [item, ...current.filter((candidate) => candidate.type !== "takeoff")];
         }
-        if (missionPlacementType === "land") {
+        if (effectiveMissionPlacementType === "land") {
           return [...current.filter((candidate) => candidate.type !== "land"), item];
         }
         return [...current, item];
       });
       setSelectedMissionItemId(item.id);
-      if (missionPlacementType !== "waypoint") setMissionPlacementType("waypoint");
+      if (effectiveMissionPlacementType !== "waypoint") setMissionPlacementType("waypoint");
     } else if (activeLayer === "fence") {
       setFencePoints((current) => [...current, makePoint(point.lat, point.lon)]);
     } else if (activeLayer === "rally") {
@@ -712,7 +713,7 @@ export function MissionPlanner() {
     if (activeLayer === "mission") {
       setMissionItems([]);
       setSelectedMissionItemId(null);
-      setMissionPlacementType("waypoint");
+      setMissionPlacementType("takeoff");
     } else if (activeLayer === "fence") {
       setFencePoints([]);
     } else if (activeLayer === "rally") {
@@ -745,7 +746,7 @@ export function MissionPlanner() {
       if (imported.mission?.items) {
         setMissionItems(imported.mission.items);
         setSelectedMissionItemId(imported.mission.items[0]?.id ?? null);
-        setMissionPlacementType("waypoint");
+        setMissionPlacementType(imported.mission.items.length === 0 ? "takeoff" : "waypoint");
         setMissionDefaults((current) => ({
           altitudeM: Number(imported.mission?.altitude_m ?? current.altitudeM),
           speedMps: Number(imported.mission?.speed_mps ?? current.speedMps),
@@ -978,7 +979,7 @@ export function MissionPlanner() {
                   disabled={!selectedRegion}
                   className={cn(
                     "btn-secondary justify-center text-xs py-1.5",
-                    missionPlacementType === "takeoff" && "border-cyan-500/40 bg-cyan-500/10 text-cyan-300",
+                    effectiveMissionPlacementType === "takeoff" && "border-cyan-500/40 bg-cyan-500/10 text-cyan-300",
                   )}
                 >
                   <PlaneTakeoff size={13} /> Takeoff
@@ -988,7 +989,7 @@ export function MissionPlanner() {
                   disabled={!selectedRegion}
                   className={cn(
                     "btn-secondary justify-center text-xs py-1.5",
-                    missionPlacementType === "waypoint" && "border-cyan-500/40 bg-cyan-500/10 text-cyan-300",
+                    effectiveMissionPlacementType === "waypoint" && "border-cyan-500/40 bg-cyan-500/10 text-cyan-300",
                   )}
                 >
                   <Route size={13} /> Waypoint
@@ -998,7 +999,7 @@ export function MissionPlanner() {
                   disabled={!selectedRegion}
                   className={cn(
                     "btn-secondary justify-center text-xs py-1.5",
-                    missionPlacementType === "land" && "border-cyan-500/40 bg-cyan-500/10 text-cyan-300",
+                    effectiveMissionPlacementType === "land" && "border-cyan-500/40 bg-cyan-500/10 text-cyan-300",
                   )}
                 >
                   <Navigation size={13} /> Land
@@ -1295,6 +1296,7 @@ export function MissionPlanner() {
               <div>
                 <div className="text-sm text-slate-200">Send MAVLink vision messages</div>
                 <div className="text-[11px] text-slate-500 font-mono">{activeDevice.mavlink_endpoint || "No endpoint configured"}</div>
+                <div className="text-[11px] text-slate-500">Optional barometer telemetry is read from MAVLink when available.</div>
               </div>
               <button
                 onClick={() => setEnableMavlink((v) => !v)}
@@ -1316,7 +1318,7 @@ export function MissionPlanner() {
                 disabled={activeDevice.kind !== "pi5" || cmdRunning}
                 onClick={() => runPiCommand(
                   "validate bundle",
-                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ./scripts/pi/validate_vision_nav_bundle.sh`,
+                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ./scripts/pi/validate_terrain_bundle.sh`,
                 )}
                 className="btn-secondary justify-center"
               >
@@ -1327,7 +1329,7 @@ export function MissionPlanner() {
                 disabled={activeDevice.kind !== "pi5" || cmdRunning}
                 onClick={() => runPiCommand(
                   enableMavlink ? "run loop with mavlink" : "run loop",
-                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_vision_nav_loop.sh`,
+                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh`,
                 )}
                 className="btn-secondary justify-center text-emerald-400 border-emerald-500/20"
               >
@@ -1345,6 +1347,24 @@ export function MissionPlanner() {
               {(bundleResult.mission_plan_path || bundleResult.qgc_plan_path) && (
                 <div className="flex items-center gap-2 text-[11px] text-emerald-300/80">
                   <ClipboardCheck size={12} /> Mission plan files included in bundle
+                </div>
+              )}
+              {bundleResult.terrain_index_path && (
+                <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] text-emerald-300/80">
+                  <div>
+                    <span className="block text-emerald-300/60">Tiles</span>
+                    <span className="font-mono">{bundleResult.terrain_tile_count ?? "ready"}</span>
+                  </div>
+                  <div>
+                    <span className="block text-emerald-300/60">Features</span>
+                    <span className="font-mono">{bundleResult.terrain_feature_count?.toLocaleString() ?? "ready"}</span>
+                  </div>
+                  <div>
+                    <span className="block text-emerald-300/60">GSD</span>
+                    <span className="font-mono">
+                      {bundleResult.terrain_gsd_m != null ? `${bundleResult.terrain_gsd_m.toFixed(2)} m/px` : "set"}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
