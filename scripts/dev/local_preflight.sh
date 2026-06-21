@@ -44,17 +44,50 @@ rm -rf "$field_smoke_dir"
 
 echo "[6/8] Checking autonomy-readiness fail-closed behavior"
 if PYTHONPATH=src python3 -m vision_nav.autonomy_readiness --json >/tmp/vision_nav_autonomy_readiness_preflight.txt; then
-  echo "Expected autonomy readiness to fail before support bundle, PX4, field, and threshold evidence exist." >&2
+  echo "Expected autonomy readiness to fail before support bundle, PX4, field, feature, and threshold evidence exist." >&2
   exit 1
 fi
 tail -n 18 /tmp/vision_nav_autonomy_readiness_preflight.txt
 local_audit_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-local-audit-preflight.XXXXXX")"
+mkdir -p "$local_audit_dir/feature-method-bench"
+mkdir -p "$local_audit_dir/px4-sitl-evidence"
+cat >"$local_audit_dir/feature-method-bench/preflight_feature_benchmark.json" <<'EOF'
+{
+  "status": "passed",
+  "case_name": "preflight-feature-method",
+  "expected": "good_map",
+  "recommended_method": "orb",
+  "methods": [
+    {"method": "orb", "status": "passed", "record_count": 2}
+  ]
+}
+EOF
+cat >"$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" <<'EOF'
+{
+  "status": "passed",
+  "expected_message": "odometry",
+  "session_dir": "preflight-px4-sitl-evidence",
+  "report_path": "receiver_evidence.json",
+  "listener": {
+    "sample_count": 3,
+    "latest_sample_age_s": 0.2,
+    "last_position": [0.0, 1.0, -2.0]
+  },
+  "issues": []
+}
+EOF
 VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
+VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
+VISION_NAV_PX4_SITL_REPORT="$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" \
 VISION_NAV_AUTONOMY_ALLOW_FAILED=1 \
 ./scripts/dev/run_local_autonomy_readiness_audit.sh >/tmp/vision_nav_local_autonomy_readiness_preflight.txt 2>&1
 grep -q "__VISION_NAV_AUTONOMY_REPORT__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
+grep -q "__VISION_NAV_PX4_SITL_REPORT__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+grep -q "preflight_feature_benchmark.json" "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+grep -q "receiver_evidence.json" "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+grep -q '"next_actions"' "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 rm -rf "$local_audit_dir"
 
 echo "[7/8] Preparing PX4 SITL evidence session dry-run"

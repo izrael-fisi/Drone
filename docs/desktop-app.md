@@ -291,7 +291,9 @@ covered or still missing.
 Module Setup can run `Threshold Tuning` after enough field cases are registered.
 The action runs `scripts/pi/run_threshold_tuning_report.sh` over SSH, writes the
 threshold report under the Pi replay-cases folder, and downloads it to
-`~/DroneTransfer/from-pi/replay-cases/` on the desktop.
+`~/DroneTransfer/from-pi/replay-cases/` on the desktop. The Threshold Tuning
+Reports list shows downloaded JSON reports with coverage status, replay status,
+field-case count, and the main acceptance-rate margins.
 
 Module Setup can also run `Feature Benchmark` against the latest field replay
 log and active runtime bundle. The action runs
@@ -305,7 +307,17 @@ Module Setup also indexes downloaded final audit reports from
 shows the latest JSON reports with pass/degraded/fail counts, support-bundle
 bench status, PX4 receiver proof status, field-evidence status,
 feature-benchmark status, and threshold-tuning status. Each report can be
-revealed in the local file manager or copied by path for support notes.
+revealed in the local file manager or copied by path for support notes. Failed
+or degraded reports include next-action rows that point to the matching Module
+Setup action or shell command needed to collect the missing evidence. Field and
+threshold failures also show the missing condition checklist directly in the
+report card.
+Module Setup also lists downloaded PX4 receiver-evidence JSON reports from
+`~/DroneTransfer/from-pi/px4-sitl-evidence/`, including sample count, latest
+sample age, MAVLink version, and issue summaries. The local readiness wrapper
+consumes the downloaded feature-benchmark JSON and PX4 receiver-evidence JSON
+directly, so a new benchmark or receiver check can be audited without rebuilding
+the support bundle just to duplicate the same report summary.
 
 After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
 `Open Bench Report In Module Setup` action opens that device's setup tab with

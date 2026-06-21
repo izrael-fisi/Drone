@@ -256,6 +256,9 @@ It emits a JSON-compatible report through the
 `__VISION_NAV_PX4_SITL_SESSION__=...` plus
 `__VISION_NAV_PX4_SITL_REPORT__=...` markers. A `failed` or `degraded` result
 means the SITL receiver requirement is not proven yet.
+The final autonomy-readiness audit accepts either the full session via
+`--px4-sitl-session` or the already generated receiver report via
+`--px4-sitl-report`.
 
 For loose capture files outside a session folder, use:
 

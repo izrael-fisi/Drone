@@ -62,6 +62,7 @@ def evaluate_bench_readiness(
     manifest: dict[str, Any],
     *,
     allow_missing_px4_evidence: bool = False,
+    require_px4_evidence: bool = True,
     allow_missing_px4_params: bool = False,
     require_ardupilot_params: bool = False,
     require_feature_method_benchmark: bool = False,
@@ -72,9 +73,10 @@ def evaluate_bench_readiness(
         check_bundle_health(manifest),
         check_runtime_logs(manifest),
         check_replay_gates(manifest, allow_missing=allow_missing_replay_gates),
-        check_px4_evidence(manifest, allow_missing=allow_missing_px4_evidence),
         check_px4_params(manifest, allow_missing=allow_missing_px4_params),
     ]
+    if require_px4_evidence:
+        checks.append(check_px4_evidence(manifest, allow_missing=allow_missing_px4_evidence))
     ardupilot_check = check_ardupilot_params(manifest, require=require_ardupilot_params)
     if ardupilot_check is not None:
         checks.append(ardupilot_check)

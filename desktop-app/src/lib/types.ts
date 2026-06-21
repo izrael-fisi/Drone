@@ -306,6 +306,32 @@ export interface AutonomyReadinessReportFile {
     status?: "passed" | "failed" | "degraded" | string;
     message?: string;
   }>;
+  next_actions: Array<{
+    check?: string;
+    status?: "passed" | "failed" | "degraded" | string;
+    title?: string;
+    desktop_action?: string;
+    command?: string;
+    notes?: string;
+    missing_conditions: string[];
+  }>;
+}
+
+export interface Px4ReceiverReportFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  report: {
+    status?: "passed" | "failed" | "degraded" | string;
+    expected_message?: string;
+    sample_count?: number;
+    latest_sample_age_s?: number;
+    last_position?: unknown;
+    mavlink_version?: number;
+    has_udp_14550?: boolean;
+    issues: string[];
+  };
 }
 
 export interface FieldEvidenceReportFile {
@@ -347,6 +373,24 @@ export interface FeatureMethodBenchmarkReportFile {
       accepted_rate?: number;
       total_records?: number;
     }>;
+  };
+}
+
+export interface ThresholdTuningReportFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  report: {
+    status?: "passed" | "failed" | "degraded" | string;
+    method?: string;
+    manifest_path?: string;
+    coverage_status?: "passed" | "failed" | "degraded" | string;
+    replay_status?: "passed" | "failed" | "degraded" | string;
+    case_count?: number;
+    field_case_count?: number;
+    covered_conditions?: unknown;
+    margins?: unknown;
   };
 }
 

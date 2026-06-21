@@ -6,10 +6,13 @@ python_bin="${VISION_NAV_PYTHON:-python3}"
 download_root="${VISION_NAV_DESKTOP_TRANSFER_FROM_PI:-$HOME/DroneTransfer/from-pi}"
 support_dir="${VISION_NAV_LOCAL_SUPPORT_DIR:-$download_root/support-bundles}"
 replay_dir="${VISION_NAV_LOCAL_REPLAY_DIR:-$download_root/replay-cases}"
+feature_benchmark_dir="${VISION_NAV_LOCAL_FEATURE_BENCH_DIR:-$download_root/feature-method-bench}"
 support_bundle="${VISION_NAV_AUTONOMY_SUPPORT_BUNDLE:-}"
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$replay_dir/field_evidence_report.json}"
+feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$replay_dir/threshold_tuning_report.json}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
+px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 output_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$replay_dir/autonomy_readiness_report.json}"
 allow_failed="${VISION_NAV_AUTONOMY_ALLOW_FAILED:-0}"
 
@@ -41,12 +44,36 @@ first_existing_px4_session() {
   done
 }
 
+first_existing_px4_report() {
+  local candidates=(
+    "$repo_root/px4-sitl-evidence/receiver_evidence.json"
+    "$PWD/px4-sitl-evidence/receiver_evidence.json"
+    "$HOME/px4-sitl-evidence/receiver_evidence.json"
+    "$download_root/px4-sitl-evidence/receiver_evidence.json"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
 if [[ -z "$support_bundle" ]]; then
   support_bundle="$(latest_glob "$support_dir/*.zip")"
 fi
 
+if [[ -z "$feature_method_benchmark_report" ]]; then
+  feature_method_benchmark_report="$(latest_glob "$feature_benchmark_dir/*.json")"
+fi
+
 if [[ -z "$px4_sitl_session" ]]; then
   px4_sitl_session="$(first_existing_px4_session || true)"
+fi
+
+if [[ -z "$px4_sitl_report" ]]; then
+  px4_sitl_report="$(first_existing_px4_report || true)"
 fi
 
 mkdir -p "$(dirname "$output_report")"
@@ -64,10 +91,16 @@ fi
 
 if [[ -n "$px4_sitl_session" && -f "$px4_sitl_session/px4_sitl_evidence_session.json" ]]; then
   args+=(--px4-sitl-session "$px4_sitl_session")
+elif [[ -f "$px4_sitl_report" ]]; then
+  args+=(--px4-sitl-report "$px4_sitl_report")
 fi
 
 if [[ -f "$field_evidence_report" ]]; then
   args+=(--field-evidence-report "$field_evidence_report")
+fi
+
+if [[ -f "$feature_method_benchmark_report" ]]; then
+  args+=(--feature-method-benchmark-report "$feature_method_benchmark_report")
 fi
 
 if [[ -f "$threshold_tuning_report" ]]; then
@@ -84,12 +117,18 @@ cat <<EOF
 Local autonomy readiness audit inputs:
   support bundle:          ${support_bundle:-not found}
   px4 sitl session:        ${px4_sitl_session:-not found}
+  px4 sitl report:         $([[ -f "$px4_sitl_report" ]] && printf '%s' "$px4_sitl_report" || printf 'not found')
   field evidence report:   $([[ -f "$field_evidence_report" ]] && printf '%s' "$field_evidence_report" || printf 'not found')
+  feature benchmark report: $([[ -f "$feature_method_benchmark_report" ]] && printf '%s' "$feature_method_benchmark_report" || printf 'not found')
   threshold tuning report: $([[ -f "$threshold_tuning_report" ]] && printf '%s' "$threshold_tuning_report" || printf 'not found')
   output report:           $output_report
 
 __VISION_NAV_AUTONOMY_REPORT__=$output_report
 EOF
+
+if [[ -f "$px4_sitl_report" ]]; then
+  echo "__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report"
+fi
 
 if [[ "$audit_status" -ne 0 ]]; then
   echo

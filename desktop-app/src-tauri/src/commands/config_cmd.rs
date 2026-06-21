@@ -91,6 +91,15 @@ pub struct SupportBundlePx4EvidenceReport {
 }
 
 #[derive(Serialize)]
+pub struct Px4ReceiverReportFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub report: SupportBundlePx4EvidenceReport,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundlePx4ParamReport {
     pub status: Option<String>,
     pub ev_ctrl: Option<i64>,
@@ -185,6 +194,15 @@ pub struct SupportBundleThresholdTuningReport {
 }
 
 #[derive(Serialize)]
+pub struct ThresholdTuningReportFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub report: SupportBundleThresholdTuningReport,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleBenchReadinessCheck {
     pub name: Option<String>,
     pub status: Option<String>,
@@ -208,6 +226,17 @@ pub struct AutonomyReadinessCheck {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyReadinessNextAction {
+    pub check: Option<String>,
+    pub status: Option<String>,
+    pub title: Option<String>,
+    pub desktop_action: Option<String>,
+    pub command: Option<String>,
+    pub notes: Option<String>,
+    pub missing_conditions: Vec<String>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyReadinessSummary {
     pub status: Option<String>,
     pub failed_count: Option<u64>,
@@ -228,6 +257,7 @@ pub struct AutonomyReadinessReportFile {
     pub modified_unix_ms: Option<u128>,
     pub summary: AutonomyReadinessSummary,
     pub checks: Vec<AutonomyReadinessCheck>,
+    pub next_actions: Vec<AutonomyReadinessNextAction>,
 }
 
 #[derive(Serialize)]
@@ -514,7 +544,7 @@ pub fn list_autonomy_readiness_reports(
             Ok(value) => value,
             Err(_) => continue,
         };
-        let (summary, checks) = match autonomy_readiness_report_from_json(&value) {
+        let (summary, checks, next_actions) = match autonomy_readiness_report_from_json(&value) {
             Some(value) => value,
             None => continue,
         };
@@ -534,6 +564,7 @@ pub fn list_autonomy_readiness_reports(
             modified_unix_ms,
             summary,
             checks,
+            next_actions,
         });
     }
     files.sort_by(|a, b| {
@@ -650,6 +681,120 @@ pub fn list_feature_method_benchmark_reports(
             size_bytes: metadata.len(),
             modified_unix_ms,
             report: feature_method_report_from_json(&value),
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn list_px4_receiver_reports(dir: String) -> Result<Vec<Px4ReceiverReportFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if !value.get("listener").is_some_and(|value| value.is_object()) {
+            continue;
+        }
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(Px4ReceiverReportFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("receiver_evidence.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            report: px4_evidence_report_from_json(&value),
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn list_threshold_tuning_reports(
+    dir: String,
+) -> Result<Vec<ThresholdTuningReportFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if !value.get("method").is_some_and(|value| value.is_string())
+            || !value.get("summary").is_some_and(|value| value.is_object())
+        {
+            continue;
+        }
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(ThresholdTuningReportFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("threshold_tuning_report.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            report: threshold_tuning_report_from_json(&value),
         });
     }
     files.sort_by(|a, b| {
@@ -1065,7 +1210,11 @@ fn bench_readiness_report_from_json(
 
 fn autonomy_readiness_report_from_json(
     value: &serde_json::Value,
-) -> Option<(AutonomyReadinessSummary, Vec<AutonomyReadinessCheck>)> {
+) -> Option<(
+    AutonomyReadinessSummary,
+    Vec<AutonomyReadinessCheck>,
+    Vec<AutonomyReadinessNextAction>,
+)> {
     let checks_value = value.get("checks")?.as_array()?;
     if !value
         .get("summary")
@@ -1085,6 +1234,34 @@ fn autonomy_readiness_report_from_json(
     if checks.is_empty() {
         return None;
     }
+    let next_actions = value
+        .get("next_actions")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| AutonomyReadinessNextAction {
+                    check: json_string(item.get("check")),
+                    status: json_string(item.get("status")),
+                    title: json_string(item.get("title")),
+                    desktop_action: json_string(item.get("desktop_action")),
+                    command: json_string(item.get("command")),
+                    notes: json_string(item.get("notes")),
+                    missing_conditions: item
+                        .get("missing_conditions")
+                        .and_then(|value| value.as_array())
+                        .map(|items| {
+                            items
+                                .iter()
+                                .filter_map(|item| item.as_str().map(|text| text.to_string()))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let check_status = |name: &str| {
         checks
             .iter()
@@ -1110,6 +1287,7 @@ fn autonomy_readiness_report_from_json(
             threshold_tuning_status: check_status("threshold_tuning"),
         },
         checks,
+        next_actions,
     ))
 }
 
@@ -1385,7 +1563,8 @@ mod tests {
     use super::{
         delete_support_bundle, expand_local_path, list_autonomy_readiness_reports,
         list_feature_method_benchmark_reports, list_field_evidence_reports,
-        read_support_bundle_details, support_summary_from_manifest,
+        list_px4_receiver_reports, list_threshold_tuning_reports, read_support_bundle_details,
+        support_summary_from_manifest,
     };
     use std::fs::File;
     use std::io::Write;
@@ -1548,6 +1727,25 @@ mod tests {
                     {"name": "field_evidence_proof", "status": "degraded", "message": "Needs more logs."},
                     {"name": "feature_method_benchmark", "status": "passed", "message": "Benchmark present."},
                     {"name": "threshold_tuning", "status": "passed", "message": "Threshold report present."}
+                ],
+                "next_actions": [
+                    {
+                        "check": "support_bundle_bench_readiness",
+                        "status": "failed",
+                        "title": "Create a support bundle with bench evidence.",
+                        "desktop_action": "Module Setup > Bench Report",
+                        "command": "./scripts/pi/create_support_bundle.sh",
+                        "notes": "Run after evidence is available."
+                    },
+                    {
+                        "check": "px4_receiver_proof",
+                        "status": "failed",
+                        "title": "Capture PX4 external-vision receiver proof.",
+                        "desktop_action": "PX4 SITL capture harness",
+                        "command": "./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+                        "notes": "Capture vehicle_visual_odometry.",
+                        "missing_conditions": ["good_texture", "wrong_map"]
+                    }
                 ]
             })
             .to_string(),
@@ -1578,6 +1776,12 @@ mod tests {
             Some("degraded")
         );
         assert_eq!(reports[0].checks.len(), 6);
+        assert_eq!(reports[0].next_actions.len(), 2);
+        assert_eq!(
+            reports[0].next_actions[0].desktop_action.as_deref(),
+            Some("Module Setup > Bench Report")
+        );
+        assert_eq!(reports[0].next_actions[1].missing_conditions.len(), 2);
     }
 
     #[test]
@@ -1638,6 +1842,53 @@ mod tests {
     }
 
     #[test]
+    fn lists_px4_receiver_reports_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-px4-receiver-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create px4 report dir");
+        std::fs::write(
+            dir.join("receiver_evidence.json"),
+            serde_json::json!({
+                "status": "passed",
+                "expected_message": "odometry",
+                "listener": {
+                    "sample_count": 4,
+                    "latest_sample_age_s": 0.3,
+                    "last_position": [1.0, 2.0, -3.0]
+                },
+                "mavlink_status": {
+                    "mavlink_version": 2,
+                    "has_udp_14550": true
+                },
+                "issues": []
+            })
+            .to_string(),
+        )
+        .expect("write receiver report");
+        std::fs::write(
+            dir.join("autonomy_readiness_report.json"),
+            serde_json::json!({"status": "failed", "checks": [], "summary": {}}).to_string(),
+        )
+        .expect("write unrelated report");
+        let reports =
+            list_px4_receiver_reports(dir.to_string_lossy().into_owned()).expect("list reports");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].name, "receiver_evidence.json");
+        assert_eq!(reports[0].report.status.as_deref(), Some("passed"));
+        assert_eq!(
+            reports[0].report.expected_message.as_deref(),
+            Some("odometry")
+        );
+        assert_eq!(reports[0].report.sample_count, Some(4));
+        assert_eq!(reports[0].report.mavlink_version, Some(2));
+        assert_eq!(reports[0].report.has_udp_14550, Some(true));
+    }
+
+    #[test]
     fn lists_feature_method_benchmark_reports_from_json_dir() {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1684,6 +1935,56 @@ mod tests {
         assert_eq!(reports[0].report.methods[0].method.as_deref(), Some("orb"));
         assert_eq!(reports[0].report.methods[0].accepted_rate, Some(0.9));
         assert_eq!(reports[0].report.methods[0].total_records, Some(10));
+    }
+
+    #[test]
+    fn lists_threshold_tuning_reports_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-threshold-tuning-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create threshold dir");
+        std::fs::write(
+            dir.join("threshold_tuning_report.json"),
+            serde_json::json!({
+                "status": "passed",
+                "method": "field-replay-gate-threshold-audit",
+                "manifest_path": "field_manifest.json",
+                "summary": {
+                    "coverage_status": "passed",
+                    "replay_status": "passed",
+                    "case_count": 8,
+                    "field_case_count": 8,
+                    "covered_conditions": ["good_texture", "wrong_map"]
+                },
+                "metrics": {
+                    "margins": {
+                        "good_map_accepted_rate": 0.25,
+                        "wrong_map_accepted_rate": 0.1
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .expect("write threshold report");
+        std::fs::write(
+            dir.join("feature-method-benchmark.json"),
+            serde_json::json!({"status": "passed", "methods": []}).to_string(),
+        )
+        .expect("write unrelated report");
+        let reports = list_threshold_tuning_reports(dir.to_string_lossy().into_owned())
+            .expect("list reports");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].name, "threshold_tuning_report.json");
+        assert_eq!(reports[0].report.status.as_deref(), Some("passed"));
+        assert_eq!(
+            reports[0].report.method.as_deref(),
+            Some("field-replay-gate-threshold-audit")
+        );
+        assert_eq!(reports[0].report.field_case_count, Some(8));
+        assert!(reports[0].report.margins.is_some());
     }
 
     #[test]

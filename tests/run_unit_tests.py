@@ -1627,6 +1627,38 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 }
             )
         )
+        feature_report = root / "feature_method_benchmark.json"
+        feature_report.write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "case_name": "unit-method-benchmark",
+                    "expected": "good_map",
+                    "recommended_method": "orb",
+                    "methods": [
+                        {"method": "orb", "status": "passed", "record_count": 2},
+                        {"method": "akaze", "status": "failed", "record_count": 2},
+                    ],
+                }
+            )
+        )
+        px4_receiver_report = root / "receiver_evidence.json"
+        px4_receiver_report.write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "expected_message": "odometry",
+                    "session_dir": str(root / "px4-sitl-evidence"),
+                    "report_path": str(root / "receiver_evidence.json"),
+                    "listener": {
+                        "sample_count": 5,
+                        "latest_sample_age_s": 0.25,
+                        "last_position": [1.0, 2.0, -3.0],
+                    },
+                    "issues": [],
+                }
+            )
+        )
         threshold_report = root / "threshold_tuning.json"
         threshold_report.write_text(
             json.dumps(
@@ -1638,18 +1670,57 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             )
         )
 
+        direct_report_support_manifest = root / "support_manifest_without_embedded_field_feature.json"
+        direct_report_support_data = json.loads(support_manifest.read_text())
+        direct_report_support_data.pop("px4_sitl_evidence", None)
+        direct_report_support_data.pop("feature_method_benchmarks", None)
+        direct_report_support_data.pop("field_evidence", None)
+        direct_report_support_manifest.write_text(json.dumps(direct_report_support_data))
+
         ready = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
             implementation_plan_path=implementation_plan,
-            support_bundle_path=support_manifest,
+            support_bundle_path=direct_report_support_manifest,
+            px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
+            feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
         )
         assert_equal(ready["status"], "passed", "autonomy readiness full proof status")
         ready_checks = {check["name"]: check["status"] for check in ready["checks"]}
         assert_equal(ready_checks["support_bundle_bench_readiness"], "passed", "autonomy readiness support bundle")
+        assert_equal(ready_checks["px4_receiver_proof"], "passed", "autonomy readiness direct px4 receiver proof")
         assert_equal(ready_checks["field_evidence_proof"], "passed", "autonomy readiness field evidence")
+        assert_equal(ready_checks["feature_method_benchmark"], "passed", "autonomy readiness feature benchmark")
         assert_equal(ready_checks["threshold_tuning"], "passed", "autonomy readiness threshold tuning")
+        assert_equal(len(ready["next_actions"]), 0, "autonomy readiness passing report next actions")
+
+        missing_feature_direct = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=direct_report_support_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            threshold_tuning_report_path=threshold_report,
+        )
+        missing_feature_checks = {check["name"]: check["status"] for check in missing_feature_direct["checks"]}
+        assert_equal(missing_feature_direct["status"], "failed", "autonomy readiness missing direct feature benchmark")
+        assert_equal(
+            missing_feature_checks["feature_method_benchmark"],
+            "failed",
+            "autonomy readiness feature benchmark fail closed",
+        )
+        feature_actions = [
+            action
+            for action in missing_feature_direct["next_actions"]
+            if action.get("check") == "feature_method_benchmark"
+        ]
+        assert_equal(len(feature_actions), 1, "autonomy readiness feature benchmark next action")
+        assert_equal(
+            feature_actions[0]["desktop_action"],
+            "Module Setup > Feature Benchmark",
+            "autonomy readiness feature benchmark desktop action",
+        )
 
         bundled_threshold_manifest = root / "support_manifest_with_threshold.json"
         bundled_threshold_data = json.loads(support_manifest.read_text())
@@ -1683,6 +1754,15 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(missing_threshold["status"], "failed", "autonomy readiness missing threshold report")
         missing_checks = {check["name"]: check["status"] for check in missing_threshold["checks"]}
         assert_equal(missing_checks["threshold_tuning"], "failed", "autonomy readiness threshold fail closed")
+        threshold_actions = [
+            action for action in missing_threshold["next_actions"] if action.get("check") == "threshold_tuning"
+        ]
+        assert_equal(len(threshold_actions), 1, "autonomy readiness threshold next action")
+        assert_equal(
+            threshold_actions[0]["missing_conditions"],
+            REQUIRED_FIELD_CONDITIONS,
+            "autonomy readiness threshold missing conditions",
+        )
 
 
 def test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance() -> None:

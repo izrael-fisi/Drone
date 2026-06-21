@@ -377,7 +377,9 @@ and threshold-tuning report exist, run the goal-level readiness audit:
 The wrapper scans conventional downloaded artifact folders under
 `~/DroneTransfer/from-pi/`, writes
 `~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json`, and
-prints `__VISION_NAV_AUTONOMY_REPORT__=...`. Use
+prints `__VISION_NAV_AUTONOMY_REPORT__=...`. It passes standalone field,
+PX4 receiver, feature-method benchmark, and threshold-tuning reports directly
+when they were downloaded outside the support bundle. Use
 `vision-nav-autonomy-readiness` directly when custom artifact paths are needed.
 
 This is intentionally stricter than the synthetic smoke tests. It fails until

@@ -53,6 +53,13 @@ Status:
   `--px4-sitl-session` / `VISION_NAV_PX4_SITL_SESSION`, copy it under
   `extras/px4_sitl_session/`, and publish the parsed receiver report under
   `summaries/px4_sitl_evidence/`.
+- Done: the final readiness audit accepts standalone PX4 receiver-evidence
+  reports through `--px4-sitl-report` / `VISION_NAV_PX4_SITL_REPORT`, so
+  already evaluated receiver proof can be reused without rebuilding the support
+  bundle.
+- Done: Module Setup lists downloaded standalone PX4 receiver-evidence JSON
+  reports from `~/DroneTransfer/from-pi/px4-sitl-evidence/` with sample counts,
+  latest sample age, MAVLink version, and report issues.
 - Done: `vision-nav-check-px4-params` and `scripts/pi/check_px4_params.sh`
   evaluate exported PX4 parameter files for external-vision bench readiness
   without modifying the flight controller.
@@ -363,6 +370,9 @@ Status:
   generation on the Pi and emits a stable report marker for desktop download.
 - Done: Module Setup exposes a `Threshold Tuning` SSH action that generates and
   downloads the threshold report after field cases are registered.
+- Done: Module Setup lists downloaded standalone threshold-tuning JSON reports
+  from `~/DroneTransfer/from-pi/replay-cases/` with coverage status, replay
+  status, field-case count, and acceptance-rate margins.
 - Done: support bundles ingest threshold-tuning reports, copy the raw JSON under
   `extras/threshold_tuning/`, publish parsed reports under
   `summaries/threshold_tuning/`, and let the final autonomy-readiness audit use
@@ -375,12 +385,26 @@ Status:
   readiness, PX4 receiver proof, real field evidence, feature-method benchmark
   evidence, and threshold-tuning proof. It intentionally fails until the
   external PX4 and field-log artifacts exist.
+- Done: autonomy-readiness reports include machine-readable `next_actions` for
+  failed or degraded proof gates, with the relevant Module Setup action and
+  shell command to collect the missing artifact.
+- Done: field-evidence and threshold-tuning next actions carry the missing
+  required condition keys so operators can see which real-world cases still
+  need to be collected.
+- Done: the final readiness audit accepts standalone PX4 receiver,
+  field-evidence, feature-method benchmark, and threshold-tuning JSON reports in
+  addition to support-bundle summaries, so downloaded evidence can be re-audited
+  without repackaging the support bundle.
 - Done: `scripts/pi/run_autonomy_readiness_audit.sh` runs the same final audit
   on the Pi against the latest support bundle and writes
   `autonomy_readiness_report.json` for transfer or support review.
+- Done: the Pi and local autonomy-readiness wrappers emit
+  `__VISION_NAV_PX4_SITL_REPORT__=...` when direct receiver proof is available,
+  letting Module Setup download the receiver report beside the final audit.
 - Done: `scripts/dev/run_local_autonomy_readiness_audit.sh` scans the
   conventional downloaded desktop artifact folders, writes the same strict
-  autonomy-readiness report locally, and fails closed while preserving a report
+  autonomy-readiness report locally, includes the latest downloaded
+  feature-method benchmark report, and fails closed while preserving a report
   that explains which proof artifacts are missing.
 - Done: Module Setup exposes an `Autonomy Readiness` SSH action after the bench
   report step, so operators can run the strict final audit from the desktop app
@@ -405,8 +429,9 @@ Tasks:
    save the generated `threshold_tuning_report.json` artifact.
 4. Add native replay artifact views for full extracted support-bundle logs and
    frame timelines after real field datasets exist.
-5. Run `vision-nav-autonomy-readiness` against the final support bundle, field
-   evidence report, and threshold-tuning report before calling the autonomy and
+5. Run `vision-nav-autonomy-readiness` against the final support bundle, PX4
+   receiver-evidence report, field evidence report, feature-method benchmark
+   report, and threshold-tuning report before calling the autonomy and
    ground-control implementation goal complete.
 
 Acceptance checks:

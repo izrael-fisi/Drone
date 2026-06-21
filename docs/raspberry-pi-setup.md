@@ -621,6 +621,12 @@ The desktop SITL smoke and capture scripts print
 session. Use the session marker as `VISION_NAV_PX4_SITL_SESSION`. The session
 folder is copied under `extras/px4_sitl_session/`, and the parsed pass/fail
 report is still written under `summaries/px4_sitl_evidence/`.
+The final autonomy-readiness wrapper can also consume the report marker
+directly through `VISION_NAV_PX4_SITL_REPORT`, which is useful when receiver
+proof has already been evaluated and does not need to be repackaged into a new
+support bundle. When that direct report is present, the wrapper prints
+`__VISION_NAV_PX4_SITL_REPORT__=...` so the desktop app can download and list
+the standalone receiver proof beside the final readiness report.
 
 To include the PX4 parameter readiness report in the same support bundle:
 
@@ -654,6 +660,9 @@ VISION_NAV_FEATURE_METHOD_BENCHMARK="$HOME/DroneTransfer/outgoing/feature-method
 
 The benchmark directory is copied under `extras/feature_method_benchmarks/`, and
 parsed report JSON files are written under `summaries/feature_method_benchmarks/`.
+The final autonomy-readiness wrapper can also consume the newest benchmark JSON
+directly, so you do not need to rebuild a support bundle just to re-run the
+goal-level audit after downloading a benchmark report.
 
 If a field evidence report exists at
 `~/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`, the Pi
@@ -712,6 +721,8 @@ The wrapper writes `threshold_tuning_report.json` and per-case tuning reports
 under `~/DroneTransfer/outgoing/replay-cases/`. Set
 `VISION_NAV_THRESHOLD_ALLOW_FAILED=1` only when you want to download a failing
 intermediate report without treating the command as a passing validation step.
+Downloaded threshold reports are listed in Module Setup beside the PX4, field,
+feature, and final readiness evidence artifacts.
 
 Then run:
 
@@ -736,10 +747,14 @@ strict audit report locally:
 ```
 
 It uses the latest downloaded support bundle, downloaded field-evidence and
-threshold-tuning reports, and a local PX4 SITL evidence session when present.
+feature-method benchmark reports, downloaded threshold-tuning reports, and a
+local PX4 SITL evidence session or receiver report when present.
 It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and writes
 `~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json` even when
 the audit fails, so the missing proof artifacts are visible in one report.
+Failed or degraded gates include `next_actions` entries with the matching
+Module Setup action or shell command to run next. Field-evidence and
+threshold-tuning next actions include the missing real-world condition keys.
 
 The desktop Module Setup `Bench Report` action runs the terrain bundle validator
 against the configured deployed bundle, creates this same support bundle, and

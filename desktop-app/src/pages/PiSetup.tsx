@@ -47,7 +47,9 @@ import type {
   FeatureMethodBenchmarkReportFile,
   LocalNetworkHint,
   PiDiscoveryCandidate,
+  Px4ReceiverReportFile,
   SupportBundleFile,
+  ThresholdTuningReportFile,
   UploadProgress,
 } from "../lib/types";
 
@@ -56,6 +58,7 @@ const HOST_SUGGESTIONS = ["dronecompute.local", "raspberrypi.local", "192.168.1.
 const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
 const AUTONOMY_REPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/replay-cases";
 const FEATURE_BENCH_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/feature-method-bench";
+const PX4_RECEIVER_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/px4-sitl-evidence";
 const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 const SUPPORT_EVIDENCE_ENV =
   'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
@@ -181,6 +184,14 @@ function parseFeatureMethodReport(output: string) {
     .map((line) => line.trim())
     .find((line) => line.startsWith("__VISION_NAV_FEATURE_METHOD_REPORT__="))
     ?.replace("__VISION_NAV_FEATURE_METHOD_REPORT__=", "");
+}
+
+function parsePx4SitlReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_PX4_SITL_REPORT__="))
+    ?.replace("__VISION_NAV_PX4_SITL_REPORT__=", "");
 }
 
 function readModuleSetupHandoff(): ModuleSetupHandoff | null {
@@ -432,6 +443,45 @@ function AutonomyReadinessReportList({
                   {check.message && <span className="text-slate-400 truncate">{check.message}</span>}
                 </div>
               ))}
+              {report.next_actions.length > 0 && (
+                <div className="space-y-1 border-t border-border pt-2">
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                    Next actions
+                  </div>
+                  {report.next_actions.slice(0, 4).map((action) => (
+                    <div key={`${report.path}-${action.check}`} className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                        <span className={cn(readinessBadgeClass(action.status), "text-[10px]")}>
+                          {formatReadinessLabel(action.status)}
+                        </span>
+                        <span className="text-slate-300">{action.title}</span>
+                        {action.desktop_action && (
+                          <span className="font-mono text-slate-500">{action.desktop_action}</span>
+                        )}
+                      </div>
+                      {action.command && (
+                        <button
+                          onClick={() => navigator.clipboard.writeText(action.command ?? "")}
+                          className="font-mono text-[10px] text-cyan-400 hover:text-cyan-300 truncate max-w-full"
+                          title="Copy command"
+                        >
+                          {action.command}
+                        </button>
+                      )}
+                      {action.missing_conditions.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {action.missing_conditions.slice(0, 8).map((condition) => (
+                            <span key={`${report.path}-${action.check}-${condition}`} className="font-mono text-[10px] text-slate-500">
+                              {formatReadinessLabel(condition)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {action.notes && <div className="text-[10px] text-slate-500">{action.notes}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -559,6 +609,125 @@ function formatAcceptedRate(value?: number) {
   return value == null ? "n/a" : `${Math.round(value * 100)}%`;
 }
 
+function formatPosition(value: unknown) {
+  if (!Array.isArray(value)) return "pos n/a";
+  return value
+    .slice(0, 3)
+    .map((item) => (typeof item === "number" ? item.toFixed(1) : String(item)))
+    .join(", ");
+}
+
+function Px4ReceiverReportList({
+  reports,
+  downloadDir,
+  onRefresh,
+}: {
+  reports: Px4ReceiverReportFile[];
+  downloadDir: string;
+  onRefresh: () => void;
+}) {
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reveal = async (path: string) => {
+    setBusyPath(path);
+    setActionError(null);
+    try {
+      await cmd.revealSupportBundle(path);
+    } catch (err) {
+      setActionError(String(err));
+    } finally {
+      setBusyPath(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="text-xs font-medium text-slate-300 flex items-center gap-2">
+            <Terminal size={13} className="text-cyan-400" /> PX4 Receiver Evidence
+          </h4>
+          <p className="text-[10px] text-slate-500 font-mono truncate">{downloadDir}</p>
+        </div>
+        <button onClick={onRefresh} className="btn-secondary text-xs py-1 px-2">
+          <RefreshCw size={11} />
+          Refresh
+        </button>
+      </div>
+      {actionError && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
+      {reports.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-slate-500">
+          No downloaded PX4 receiver report yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {reports.slice(0, 3).map((file) => (
+            <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={readinessBadgeClass(file.report.status)}>
+                      {readinessIcon(file.report.status)}
+                      {formatReadinessLabel(file.report.status)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      {formatReadinessLabel(file.report.expected_message)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      samples {file.report.sample_count ?? 0}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      age {file.report.latest_sample_age_s == null ? "n/a" : `${file.report.latest_sample_age_s.toFixed(2)}s`}
+                    </span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
+                    {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
+                    position {formatPosition(file.report.last_position)} / mavlink {file.report.mavlink_version ?? "n/a"} / udp{" "}
+                    {file.report.has_udp_14550 ? "14550" : "n/a"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(file.path)}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Copy report path"
+                  >
+                    <Copy size={11} />
+                  </button>
+                  <button
+                    onClick={() => reveal(file.path)}
+                    disabled={busyPath === file.path}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Show report file"
+                  >
+                    {busyPath === file.path ? <Loader2 size={11} className="animate-spin" /> : <FolderOpen size={11} />}
+                  </button>
+                </div>
+              </div>
+              {file.report.issues.length > 0 && (
+                <div className="space-y-1">
+                  {file.report.issues.slice(0, 3).map((issue) => (
+                    <div key={`${file.path}-${issue}`} className="text-[10px] text-slate-500 truncate">
+                      {issue}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FeatureMethodBenchmarkReportList({
   reports,
   downloadDir,
@@ -667,6 +836,121 @@ function FeatureMethodBenchmarkReportList({
   );
 }
 
+function thresholdMarginLabels(margins: unknown) {
+  if (!margins || typeof margins !== "object" || Array.isArray(margins)) return [];
+  return Object.entries(margins as Record<string, unknown>)
+    .slice(0, 3)
+    .map(([key, value]) => {
+      const numeric = typeof value === "number" ? value.toFixed(2) : String(value ?? "n/a");
+      return `${formatReadinessLabel(key)} ${numeric}`;
+    });
+}
+
+function ThresholdTuningReportList({
+  reports,
+  downloadDir,
+  onRefresh,
+}: {
+  reports: ThresholdTuningReportFile[];
+  downloadDir: string;
+  onRefresh: () => void;
+}) {
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reveal = async (path: string) => {
+    setBusyPath(path);
+    setActionError(null);
+    try {
+      await cmd.revealSupportBundle(path);
+    } catch (err) {
+      setActionError(String(err));
+    } finally {
+      setBusyPath(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="text-xs font-medium text-slate-300 flex items-center gap-2">
+            <ShieldCheck size={13} className="text-cyan-400" /> Threshold Tuning Reports
+          </h4>
+          <p className="text-[10px] text-slate-500 font-mono truncate">{downloadDir}</p>
+        </div>
+        <button onClick={onRefresh} className="btn-secondary text-xs py-1 px-2">
+          <RefreshCw size={11} />
+          Refresh
+        </button>
+      </div>
+      {actionError && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
+      {reports.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-slate-500">
+          No downloaded threshold-tuning report yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {reports.slice(0, 3).map((file) => (
+            <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={readinessBadgeClass(file.report.status)}>
+                      {readinessIcon(file.report.status)}
+                      {formatReadinessLabel(file.report.status)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      coverage {formatReadinessLabel(file.report.coverage_status)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      replay {formatReadinessLabel(file.report.replay_status)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      field cases {file.report.field_case_count ?? 0}
+                    </span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
+                    {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {thresholdMarginLabels(file.report.margins).map((label) => (
+                      <span key={`${file.path}-${label}`} className="font-mono text-[10px] text-slate-600">
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(file.path)}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Copy report path"
+                  >
+                    <Copy size={11} />
+                  </button>
+                  <button
+                    onClick={() => reveal(file.path)}
+                    disabled={busyPath === file.path}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Show report file"
+                  >
+                    {busyPath === file.path ? <Loader2 size={11} className="animate-spin" /> : <FolderOpen size={11} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ModuleSetupProps {
   initialDeviceId?: string;
   embedded?: boolean;
@@ -695,8 +979,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [capturingCamera, setCapturingCamera] = useState(false);
   const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
   const [autonomyReports, setAutonomyReports] = useState<AutonomyReadinessReportFile[]>([]);
+  const [px4ReceiverReports, setPx4ReceiverReports] = useState<Px4ReceiverReportFile[]>([]);
   const [fieldEvidenceReports, setFieldEvidenceReports] = useState<FieldEvidenceReportFile[]>([]);
   const [featureBenchmarkReports, setFeatureBenchmarkReports] = useState<FeatureMethodBenchmarkReportFile[]>([]);
+  const [thresholdTuningReports, setThresholdTuningReports] = useState<ThresholdTuningReportFile[]>([]);
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
   const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
   const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => defaultFieldCaseForm());
@@ -737,6 +1023,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const refreshPx4ReceiverReports = async () => {
+    try {
+      setPx4ReceiverReports(await cmd.listPx4ReceiverReports(PX4_RECEIVER_DOWNLOAD_DIR));
+    } catch {
+      setPx4ReceiverReports([]);
+    }
+  };
+
   const refreshFieldEvidenceReports = async () => {
     try {
       setFieldEvidenceReports(await cmd.listFieldEvidenceReports(AUTONOMY_REPORT_DOWNLOAD_DIR));
@@ -753,11 +1047,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const refreshThresholdTuningReports = async () => {
+    try {
+      setThresholdTuningReports(await cmd.listThresholdTuningReports(AUTONOMY_REPORT_DOWNLOAD_DIR));
+    } catch {
+      setThresholdTuningReports([]);
+    }
+  };
+
   useEffect(() => {
     refreshSupportBundles();
     refreshAutonomyReports();
+    refreshPx4ReceiverReports();
     refreshFieldEvidenceReports();
     refreshFeatureBenchmarkReports();
+    refreshThresholdTuningReports();
     cmd.localNetworkHints().then(setNetworkHints).catch(() => setNetworkHints([]));
   }, []);
 
@@ -1019,6 +1323,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteReport = parseAutonomyReadinessReport(output);
+      const remotePx4Report = parsePx4SitlReport(output);
       if (!remoteReport) {
         setResult("autonomy-readiness", {
           status: "failed",
@@ -1040,12 +1345,29 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         remoteReport,
         AUTONOMY_REPORT_DOWNLOAD_DIR,
       );
+      let px4DownloadText = "";
+      if (remotePx4Report) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n\n$ download PX4 receiver report\nDownloading ${remotePx4Report}...`,
+        });
+        const downloadedPx4 = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remotePx4Report,
+          PX4_RECEIVER_DOWNLOAD_DIR,
+        );
+        px4DownloadText = `\n\n$ download PX4 receiver report\nSaved to ${downloadedPx4.local_path}\n[${downloadedPx4.bytes_received} bytes]`;
+      }
       setResult("autonomy-readiness", {
         status: result.exit_code === 0 ? "passed" : "failed",
-        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${px4DownloadText}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
       await refreshAutonomyReports();
+      await refreshPx4ReceiverReports();
     } catch (err) {
       setResult("autonomy-readiness", { status: "failed", output: `$ autonomy readiness\nERROR: ${err}` });
     } finally {
@@ -1098,7 +1420,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         output: `$ threshold tuning\n${output}\n\n$ download threshold report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
-      await refreshAutonomyReports();
+      await refreshThresholdTuningReports();
     } catch (err) {
       setResult("threshold-tuning", { status: "failed", output: `$ threshold tuning\nERROR: ${err}` });
     } finally {
@@ -1504,6 +1826,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         support_bundle_download_dir: SUPPORT_DOWNLOAD_DIR,
         autonomy_report_download_dir: AUTONOMY_REPORT_DOWNLOAD_DIR,
         feature_benchmark_download_dir: FEATURE_BENCH_DOWNLOAD_DIR,
+        px4_receiver_download_dir: PX4_RECEIVER_DOWNLOAD_DIR,
       },
       discovery: {
         candidates: discoveryCandidates.slice(0, 8),
@@ -1524,8 +1847,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       extra_results: extraResults,
       downloaded_support_bundles: supportBundles.slice(0, 5),
       downloaded_autonomy_reports: autonomyReports.slice(0, 5),
+      downloaded_px4_receiver_reports: px4ReceiverReports.slice(0, 5),
       downloaded_field_evidence_reports: fieldEvidenceReports.slice(0, 5),
       downloaded_feature_benchmark_reports: featureBenchmarkReports.slice(0, 5),
+      downloaded_threshold_tuning_reports: thresholdTuningReports.slice(0, 5),
     };
     const defaultPath = `drone-module-setup-${safeReportName(form.host || form.name)}-${new Date().toISOString().slice(0, 10)}.json`;
     const path = await saveDialog({
@@ -2125,6 +2450,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               </div>
             )}
             <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} onChanged={refreshSupportBundles} />
+            <Px4ReceiverReportList
+              reports={px4ReceiverReports}
+              downloadDir={PX4_RECEIVER_DOWNLOAD_DIR}
+              onRefresh={refreshPx4ReceiverReports}
+            />
             <FeatureMethodBenchmarkReportList
               reports={featureBenchmarkReports}
               downloadDir={FEATURE_BENCH_DOWNLOAD_DIR}
@@ -2134,6 +2464,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               reports={fieldEvidenceReports}
               downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
               onRefresh={refreshFieldEvidenceReports}
+            />
+            <ThresholdTuningReportList
+              reports={thresholdTuningReports}
+              downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
+              onRefresh={refreshThresholdTuningReports}
             />
             <AutonomyReadinessReportList
               reports={autonomyReports}
