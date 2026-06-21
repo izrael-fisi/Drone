@@ -778,6 +778,33 @@ intermediate report without treating the command as a passing validation step.
 Downloaded threshold reports are listed in Module Setup beside the PX4, field,
 feature, and final readiness evidence artifacts.
 
+If you want one Pi-side command that attempts the ordered evidence workflow and
+preserves a step-by-step report even when prerequisites are still missing, run:
+
+```bash
+./scripts/pi/run_autonomy_evidence_workflow.sh
+```
+
+The workflow creates or reuses the field evidence template, optionally
+registers a field case when `VISION_NAV_FIELD_CASE_NAME`,
+`VISION_NAV_FIELD_EXPECTED`, and `VISION_NAV_FIELD_CONDITION(S)` are set, then
+attempts feature benchmarking, threshold tuning, support-bundle creation, and
+the final autonomy-readiness audit. It writes
+`~/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json`
+with per-step status, log paths, tail output, and any emitted
+`__VISION_NAV_*__` markers. By default it exits successfully after writing the
+report even when evidence is still incomplete; set
+`VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED=0` when you want a CI-style nonzero
+exit on missing proof.
+From the desktop app, Module Setup exposes the same sequence as `Evidence
+Workflow`. It uses the current Field Evidence Case form values for the optional
+registration step, downloads the workflow JSON to the replay-cases transfer
+folder, and downloads any readiness report, handoff, evidence package, or PX4
+receiver marker emitted by the wrapper.
+The downloaded workflow JSON remains visible after app restart in Module Setup's
+Evidence Workflow Reports list, including per-step status and emitted artifact
+markers.
+
 Then run:
 
 ```bash
@@ -809,7 +836,8 @@ It uses the latest downloaded support bundle, downloaded field-evidence and
 feature-method benchmark reports, downloaded threshold-tuning reports, and a
 local PX4 SITL evidence session or receiver report when present.
 It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and
-`__VISION_NAV_AUTONOMY_HANDOFF__=...`, then writes
+`__VISION_NAV_AUTONOMY_HANDOFF__=...` plus
+`__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=...`, then writes
 `~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json` and
 `~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.md`, plus
 `~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.evidence.zip`,
@@ -828,18 +856,25 @@ against the configured deployed bundle, creates this same support bundle, and
 downloads the latest zip back to `~/DroneTransfer/from-pi/support-bundles/` on
 the desktop. The `Autonomy Readiness` action runs the same strict final audit on
 the Pi against the latest support bundle and downloads the readiness report to
-`~/DroneTransfer/from-pi/replay-cases/` on the desktop. It also lets you save a
-local JSON setup report containing the check results, selected discovery
-adapter, copyable discovery checklist, downloaded support-bundle summaries,
-downloaded feature-benchmark summaries, downloaded field-evidence coverage
-summaries, downloaded autonomy-readiness report summaries, and a compact
-latest-readiness snapshot with handoff path, goal-completion flag, external
-blockers, and next actions. The same Module
+`~/DroneTransfer/from-pi/replay-cases/` on the desktop, including the sibling
+Markdown handoff and evidence ZIP package when those markers are emitted. It
+also lets you save a local JSON setup report containing the check results,
+selected discovery adapter, copyable discovery checklist, downloaded
+support-bundle summaries, downloaded feature-benchmark summaries, downloaded
+field-evidence coverage summaries, downloaded autonomy-readiness report
+summaries, downloaded autonomy-workflow reports, and a compact latest-readiness
+snapshot with handoff path, evidence package path, goal-completion flag,
+external blockers, and next actions. The same Module
 Setup panel lists the latest downloaded feature-method benchmark JSON reports
 with recommended method and accepted rates, lists field-evidence JSON reports
 with per-condition coverage, then lists autonomy-readiness JSON reports with
 pass, degraded, and fail counts plus the support-bundle, PX4 receiver,
-field-evidence, feature-benchmark, and threshold-tuning gate statuses.
+field-evidence, feature-benchmark, and threshold-tuning gate statuses. The
+autonomy-readiness list detects the sibling Markdown handoff and evidence ZIP
+package beside each JSON report and exposes copy/reveal controls for support
+review. When the evidence ZIP contains the expected package manifest, the list
+also shows included, missing, and skipped artifact counts with the first
+missing/skipped artifact labels.
 The desktop support-bundle list can reveal
 downloaded ZIPs in the local file manager, copy their path, show compact
 manifest details, inspect log/replay-gate summaries and per-record JSONL

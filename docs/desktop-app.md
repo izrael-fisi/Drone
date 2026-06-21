@@ -72,9 +72,9 @@ selected adapter and checklist are included in the setup report, which helps
 diagnose whether the Pi and desktop are on the same local network after a
 failed bench install.
 When autonomy-readiness reports are available, the setup report also includes a
-compact final-audit snapshot with the latest status, handoff path,
-goal-completion flag, external blocker count, bounded blocker details, and the
-first next actions.
+compact final-audit snapshot with the latest status, handoff path, evidence
+package path, goal-completion flag, external blocker count, bounded blocker
+details, and the first next actions.
 The readiness wrappers also create
 `autonomy_readiness_report.evidence.zip`, a support-review package with the JSON
 report, Markdown handoff, package manifest, and any small referenced evidence
@@ -349,6 +349,21 @@ threshold report under the Pi replay-cases folder, and downloads it to
 Reports list shows downloaded JSON reports with coverage status, replay status,
 field-case count, and the main acceptance-rate margins.
 
+For Pi-side support sessions where a single command is easier than clicking each
+step, `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the same ordered
+path: field template, optional field-case registration, feature benchmark,
+threshold tuning, support bundle, and final readiness audit. It writes
+`autonomy_evidence_workflow.json` with per-step status, log paths, output tails,
+and emitted markers, while still failing honestly in the final readiness report
+until real PX4 and field evidence exist.
+The Module Setup `Evidence Workflow` action runs that wrapper over SSH, uses the
+current Field Evidence Case form values for optional case registration,
+downloads the workflow JSON, and also downloads any readiness report, handoff,
+evidence package, or PX4 receiver report marker emitted by the wrapper.
+Downloaded workflow reports are indexed after app restart in the Evidence
+Workflow Reports list with pass/fail/skip counts, per-step status, emitted
+artifact markers, and copy/reveal controls.
+
 Module Setup can also run `Feature Benchmark` against the latest field replay
 log and active runtime bundle. The action runs
 `scripts/pi/run_feature_method_benchmark.sh` over SSH, writes the report under
@@ -391,10 +406,16 @@ runs `scripts/pi/run_autonomy_readiness_audit.sh` over SSH against the latest
 Pi-side support bundle, then downloads the strict final audit report to
 `~/DroneTransfer/from-pi/replay-cases/` on the desktop. When the Pi emits a
 Markdown handoff marker, Module Setup downloads that handoff beside the JSON
-report and shows the local path in the Latest Output panel for support review.
-On later app launches, the Autonomy Readiness Reports list detects a sibling
-`autonomy_readiness_report.md` file beside each JSON report and exposes copy and
-reveal controls for the handoff.
+report. When the Pi emits the evidence-package marker, Module Setup also
+downloads `autonomy_readiness_report.evidence.zip` beside the JSON report and
+shows both local paths in the Latest Output panel for support review.
+On later app launches, the Autonomy Readiness Reports list detects sibling
+`autonomy_readiness_report.md` and
+`autonomy_readiness_report.evidence.zip` files beside each JSON report and
+exposes copy and reveal controls for both artifacts. When the evidence ZIP has
+the expected `manifest.json`, the list also shows included, missing, and
+skipped artifact counts plus the first missing/skipped artifact labels so
+support can tell what proof is absent without opening the archive.
 
 ## MAVLink
 

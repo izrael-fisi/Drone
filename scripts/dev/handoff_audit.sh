@@ -98,6 +98,7 @@ required_pi_scripts=(
   "scripts/pi/run_feature_method_benchmark.sh"
   "scripts/pi/run_threshold_tuning_report.sh"
   "scripts/pi/run_autonomy_readiness_audit.sh"
+  "scripts/pi/run_autonomy_evidence_workflow.sh"
   "scripts/pi/install_vision_nav_service.sh"
 )
 for path in "${required_pi_scripts[@]}"; do

@@ -2,7 +2,8 @@ mod commands;
 
 use commands::{
     config_cmd::{
-        delete_support_bundle, extract_support_bundle_artifact, list_autonomy_readiness_reports,
+        delete_support_bundle, extract_support_bundle_artifact,
+        list_autonomy_evidence_workflow_reports, list_autonomy_readiness_reports,
         list_feature_method_benchmark_reports, list_field_evidence_reports,
         list_field_evidence_templates, list_px4_receiver_reports, list_support_bundles,
         list_threshold_tuning_reports, list_yaml_configs, read_support_bundle_details,
@@ -49,6 +50,7 @@ pub fn run() {
             read_yaml_config,
             write_yaml_config,
             list_yaml_configs,
+            list_autonomy_evidence_workflow_reports,
             list_autonomy_readiness_reports,
             list_field_evidence_reports,
             list_field_evidence_templates,

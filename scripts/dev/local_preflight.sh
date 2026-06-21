@@ -57,6 +57,42 @@ VISION_NAV_FIELD_BUNDLE=preflight-bundle \
 ./scripts/pi/register_field_replay_case.sh >/tmp/vision_nav_field_register_preflight.txt 2>&1
 test -f "$field_smoke_dir/field_manifest.json"
 test -f "$field_smoke_dir/field_evidence_report.json"
+workflow_smoke_dir="$field_smoke_dir/workflow-smoke"
+VISION_NAV_PYTHON=python3 \
+VISION_NAV_EVIDENCE_WORKFLOW_DIR="$workflow_smoke_dir/workflow" \
+VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" \
+VISION_NAV_FIELD_TEMPLATE="$workflow_smoke_dir/field_manifest.template.json" \
+VISION_NAV_FIELD_MANIFEST="$workflow_smoke_dir/field_manifest.json" \
+VISION_NAV_FIELD_SITE_NAME=preflight-workflow \
+VISION_NAV_FIELD_BUNDLE=preflight-bundle \
+VISION_NAV_BUNDLE=preflight-bundle \
+VISION_NAV_FIELD_LOG="$workflow_smoke_dir/missing-terrain-matches.jsonl" \
+VISION_NAV_FIELD_EVIDENCE_REPORT="$workflow_smoke_dir/replay-cases/field_evidence_report.json" \
+VISION_NAV_FIELD_CASE_REPORT_DIR="$workflow_smoke_dir/replay-cases/field_evidence_cases" \
+VISION_NAV_FEATURE_METHOD_BENCHMARK="$workflow_smoke_dir/feature-method-bench" \
+VISION_NAV_THRESHOLD_TUNING_REPORT="$workflow_smoke_dir/replay-cases/threshold_tuning_report.json" \
+VISION_NAV_THRESHOLD_CASE_REPORT_DIR="$workflow_smoke_dir/replay-cases/threshold_tuning_cases" \
+VISION_NAV_SUPPORT_OUTPUT_DIR="$workflow_smoke_dir/support-bundles" \
+VISION_NAV_AUTONOMY_READINESS_REPORT="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.json" \
+VISION_NAV_AUTONOMY_HANDOFF="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.md" \
+VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.evidence.zip" \
+./scripts/pi/run_autonomy_evidence_workflow.sh >/tmp/vision_nav_evidence_workflow_preflight.txt 2>&1
+grep -q "__VISION_NAV_EVIDENCE_WORKFLOW_REPORT__=" /tmp/vision_nav_evidence_workflow_preflight.txt
+test -f "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json"
+python3 - "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text())
+assert report["schema_version"] == "vision_nav_autonomy_evidence_workflow_v1"
+steps = {step["name"]: step for step in report["steps"]}
+assert "create_field_evidence_template" in steps
+assert "run_autonomy_readiness_audit" in steps
+assert report["status"] in {"passed", "degraded", "failed"}
+PY
 rm -rf "$field_smoke_dir"
 
 echo "[6/8] Checking autonomy-readiness fail-closed behavior"

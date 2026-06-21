@@ -499,6 +499,23 @@ Status:
 - Done: Module Setup also parses `__VISION_NAV_AUTONOMY_HANDOFF__=...`,
   downloads the generated Markdown handoff beside the JSON report, and shows the
   local path in the Latest Output panel for support review.
+- Done: Module Setup parses `__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=...`,
+  downloads the generated evidence ZIP beside the JSON report, includes it in
+  saved setup reports, and lists/reveals the sibling package from the Autonomy
+  Readiness Reports card after restart, including package manifest counts for
+  included, missing, and skipped evidence artifacts plus bounded missing/skipped
+  artifact labels for support triage.
+- Done: `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the ordered
+  field-template, optional field-case registration, feature-benchmark,
+  threshold-tuning, support-bundle, and final-readiness sequence while writing a
+  machine-readable per-step workflow report with logs and emitted artifact
+  markers even when the final gates still fail.
+- Done: Module Setup exposes that wrapper as `Evidence Workflow`, downloads the
+  workflow JSON, and collects any final readiness, handoff, evidence-package, or
+  PX4 receiver markers emitted during the sequence.
+- Done: Module Setup lists downloaded autonomy evidence workflow JSON reports
+  after app restart with pass/fail/skip counts, per-step status, and emitted
+  artifact markers.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

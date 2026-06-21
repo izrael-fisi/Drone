@@ -296,6 +296,25 @@ pub struct AutonomyReadinessSummary {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyEvidencePackageArtifactSummary {
+    pub label: Option<String>,
+    pub path: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyEvidencePackageSummary {
+    pub schema_version: Option<String>,
+    pub readiness_status: Option<String>,
+    pub ready_for_goal_completion: Option<bool>,
+    pub included_count: Option<u64>,
+    pub missing_count: Option<u64>,
+    pub skipped_count: Option<u64>,
+    pub missing_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
+    pub skipped_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyReadinessReportFile {
     pub name: String,
     pub path: String,
@@ -304,10 +323,47 @@ pub struct AutonomyReadinessReportFile {
     pub handoff_path: Option<String>,
     pub handoff_size_bytes: Option<u64>,
     pub handoff_modified_unix_ms: Option<u128>,
+    pub evidence_package_path: Option<String>,
+    pub evidence_package_size_bytes: Option<u64>,
+    pub evidence_package_modified_unix_ms: Option<u128>,
+    pub evidence_package_summary: Option<AutonomyEvidencePackageSummary>,
     pub summary: AutonomyReadinessSummary,
     pub checks: Vec<AutonomyReadinessCheck>,
     pub next_actions: Vec<AutonomyReadinessNextAction>,
     pub evidence_manifest: Option<AutonomyReadinessEvidenceManifest>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyEvidenceWorkflowStep {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub exit_code: Option<i64>,
+    pub log_path: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyEvidenceWorkflowSummary {
+    pub passed: Option<u64>,
+    pub failed: Option<u64>,
+    pub skipped: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyEvidenceWorkflowReportFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub status: Option<String>,
+    pub generated_at: Option<String>,
+    pub workflow_dir: Option<String>,
+    pub summary: AutonomyEvidenceWorkflowSummary,
+    pub steps: Vec<AutonomyEvidenceWorkflowStep>,
+    pub marker_count: u64,
+    pub readiness_report_path: Option<String>,
+    pub evidence_package_path: Option<String>,
+    pub px4_receiver_report_path: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -739,6 +795,14 @@ pub fn list_autonomy_readiness_reports(
             .metadata()
             .ok()
             .filter(|_| handoff_path.is_file());
+        let evidence_package_path = p.with_extension("evidence.zip");
+        let evidence_package_metadata = evidence_package_path
+            .metadata()
+            .ok()
+            .filter(|_| evidence_package_path.is_file());
+        let evidence_package_summary = evidence_package_metadata
+            .as_ref()
+            .and_then(|_| read_autonomy_evidence_package_summary(&evidence_package_path));
         files.push(AutonomyReadinessReportFile {
             name: p
                 .file_name()
@@ -756,10 +820,79 @@ pub fn list_autonomy_readiness_reports(
                 .and_then(|metadata| metadata.modified().ok())
                 .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
                 .map(|duration| duration.as_millis()),
+            evidence_package_path: evidence_package_metadata
+                .as_ref()
+                .map(|_| evidence_package_path.to_string_lossy().into_owned()),
+            evidence_package_size_bytes: evidence_package_metadata
+                .as_ref()
+                .map(|metadata| metadata.len()),
+            evidence_package_modified_unix_ms: evidence_package_metadata
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis()),
+            evidence_package_summary,
             summary,
             checks,
             next_actions,
             evidence_manifest,
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn list_autonomy_evidence_workflow_reports(
+    dir: String,
+) -> Result<Vec<AutonomyEvidenceWorkflowReportFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let report = match autonomy_evidence_workflow_report_from_json(&value) {
+            Some(value) => value,
+            None => continue,
+        };
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(AutonomyEvidenceWorkflowReportFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("autonomy_evidence_workflow.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            ..report
         });
     }
     files.sort_by(|a, b| {
@@ -1114,6 +1247,60 @@ fn read_json_entry(
         .map(Some)
         .with_context(|| format!("Invalid JSON in support bundle entry {name}"))
         .map_err(|e| e.to_string())
+}
+
+fn read_autonomy_evidence_package_summary(path: &Path) -> Option<AutonomyEvidencePackageSummary> {
+    let file = File::open(path).ok()?;
+    let mut archive = ZipArchive::new(file).ok()?;
+    let manifest = read_json_entry(&mut archive, "manifest.json")
+        .ok()
+        .flatten()?;
+    let schema_version = json_string(manifest.get("schema_version"));
+    if schema_version.as_deref() != Some("vision_nav_autonomy_evidence_package_v1") {
+        return None;
+    }
+    Some(AutonomyEvidencePackageSummary {
+        schema_version,
+        readiness_status: json_string(manifest.get("readiness_status")),
+        ready_for_goal_completion: manifest
+            .get("ready_for_goal_completion")
+            .and_then(|value| value.as_bool()),
+        included_count: json_array_count(manifest.get("included")),
+        missing_count: json_array_count(manifest.get("missing")),
+        skipped_count: json_array_count(manifest.get("skipped")),
+        missing_artifacts: evidence_package_artifacts(manifest.get("missing")),
+        skipped_artifacts: evidence_package_artifacts(manifest.get("skipped")),
+    })
+}
+
+fn json_array_count(value: Option<&serde_json::Value>) -> Option<u64> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|values| values.len() as u64)
+}
+
+fn evidence_package_artifacts(
+    value: Option<&serde_json::Value>,
+) -> Vec<AutonomyEvidencePackageArtifactSummary> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .take(12)
+                .filter_map(|item| {
+                    if !item.is_object() {
+                        return None;
+                    }
+                    Some(AutonomyEvidencePackageArtifactSummary {
+                        label: json_string(item.get("label")),
+                        path: json_string(item.get("path")),
+                        reason: json_string(item.get("reason")),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn log_summary_from_json(name: &str, value: &serde_json::Value) -> SupportBundleLogSummary {
@@ -1931,6 +2118,69 @@ fn autonomy_evidence_manifest_from_json(
     })
 }
 
+fn autonomy_evidence_workflow_report_from_json(
+    value: &serde_json::Value,
+) -> Option<AutonomyEvidenceWorkflowReportFile> {
+    if value.get("schema_version").and_then(|value| value.as_str())
+        != Some("vision_nav_autonomy_evidence_workflow_v1")
+    {
+        return None;
+    }
+    let steps = value
+        .get("steps")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| AutonomyEvidenceWorkflowStep {
+                    name: json_string(item.get("name")),
+                    status: json_string(item.get("status")),
+                    exit_code: item.get("exit_code").and_then(|value| value.as_i64()),
+                    log_path: json_string(item.get("log_path")),
+                    notes: json_string(item.get("notes")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if steps.is_empty() {
+        return None;
+    }
+    let markers = value.get("markers").and_then(|value| value.as_object());
+    let marker = |name: &str| {
+        markers
+            .and_then(|items| items.get(name))
+            .and_then(|value| value.as_str())
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string())
+    };
+    Some(AutonomyEvidenceWorkflowReportFile {
+        name: String::new(),
+        path: String::new(),
+        size_bytes: 0,
+        modified_unix_ms: None,
+        status: json_string(value.get("status")),
+        generated_at: json_string(value.get("generated_at")),
+        workflow_dir: json_string(value.get("workflow_dir")),
+        summary: AutonomyEvidenceWorkflowSummary {
+            passed: value
+                .pointer("/summary/passed")
+                .and_then(|value| value.as_u64()),
+            failed: value
+                .pointer("/summary/failed")
+                .and_then(|value| value.as_u64()),
+            skipped: value
+                .pointer("/summary/skipped")
+                .and_then(|value| value.as_u64()),
+        },
+        steps,
+        marker_count: markers.map(|items| items.len() as u64).unwrap_or(0),
+        readiness_report_path: marker("__VISION_NAV_AUTONOMY_REPORT__"),
+        evidence_package_path: marker("__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__"),
+        px4_receiver_report_path: marker("__VISION_NAV_PX4_SITL_REPORT__"),
+    })
+}
+
 fn autonomy_evidence_blockers_from_value(
     value: Option<&serde_json::Value>,
 ) -> Vec<AutonomyReadinessEvidenceBlocker> {
@@ -2381,9 +2631,10 @@ fn expand_local_path(path: &str) -> Result<PathBuf> {
 mod tests {
     use super::{
         delete_support_bundle, expand_local_path, extract_support_bundle_artifact,
-        list_autonomy_readiness_reports, list_feature_method_benchmark_reports,
-        list_field_evidence_reports, list_field_evidence_templates, list_px4_receiver_reports,
-        list_threshold_tuning_reports, read_support_bundle_details, support_summary_from_manifest,
+        list_autonomy_evidence_workflow_reports, list_autonomy_readiness_reports,
+        list_feature_method_benchmark_reports, list_field_evidence_reports,
+        list_field_evidence_templates, list_px4_receiver_reports, list_threshold_tuning_reports,
+        read_support_bundle_details, support_summary_from_manifest,
     };
     use std::fs::File;
     use std::io::Write;
@@ -2642,6 +2893,35 @@ mod tests {
             "# Autonomy Readiness Handoff\n\n- Status: failed\n",
         )
         .expect("write readiness handoff");
+        let package_path = dir.join("autonomy_readiness_report.evidence.zip");
+        {
+            let file = File::create(&package_path).expect("create readiness evidence package");
+            let mut zip = zip::ZipWriter::new(file);
+            let options = SimpleFileOptions::default();
+            zip.start_file("manifest.json", options)
+                .expect("start package manifest");
+            zip.write_all(
+                serde_json::json!({
+                    "schema_version": "vision_nav_autonomy_evidence_package_v1",
+                    "readiness_status": "failed",
+                    "ready_for_goal_completion": false,
+                    "included": [
+                        {"label": "autonomy_report"},
+                        {"label": "autonomy_handoff"}
+                    ],
+                    "missing": [
+                        {"label": "px4_receiver_proof"}
+                    ],
+                    "skipped": [
+                        {"label": "large_support_bundle", "reason": "too_large"}
+                    ]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write package manifest");
+            zip.finish().expect("finish readiness evidence package");
+        }
         let reports = list_autonomy_readiness_reports(dir.to_string_lossy().into_owned())
             .expect("list reports");
         let _ = std::fs::remove_dir_all(&dir);
@@ -2657,6 +2937,36 @@ mod tests {
             Some("autonomy_readiness_report.md")
         );
         assert!(reports[0].handoff_size_bytes.is_some());
+        assert_eq!(
+            reports[0]
+                .evidence_package_path
+                .as_deref()
+                .and_then(|path| Path::new(path).file_name())
+                .and_then(|name| name.to_str()),
+            Some("autonomy_readiness_report.evidence.zip")
+        );
+        assert!(reports[0].evidence_package_size_bytes.is_some());
+        let package_summary = reports[0]
+            .evidence_package_summary
+            .as_ref()
+            .expect("evidence package summary");
+        assert_eq!(package_summary.readiness_status.as_deref(), Some("failed"));
+        assert_eq!(package_summary.ready_for_goal_completion, Some(false));
+        assert_eq!(package_summary.included_count, Some(2));
+        assert_eq!(package_summary.missing_count, Some(1));
+        assert_eq!(package_summary.skipped_count, Some(1));
+        assert_eq!(
+            package_summary.missing_artifacts[0].label.as_deref(),
+            Some("px4_receiver_proof")
+        );
+        assert_eq!(
+            package_summary.skipped_artifacts[0].label.as_deref(),
+            Some("large_support_bundle")
+        );
+        assert_eq!(
+            package_summary.skipped_artifacts[0].reason.as_deref(),
+            Some("too_large")
+        );
         assert_eq!(reports[0].summary.failed_count, Some(2));
         assert_eq!(
             reports[0]
@@ -2700,6 +3010,88 @@ mod tests {
             Some("runtime_status")
         );
         assert_eq!(evidence.external_blockers[1].missing_conditions.len(), 2);
+    }
+
+    #[test]
+    fn lists_autonomy_evidence_workflow_reports_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-autonomy-workflow-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create workflow report dir");
+        std::fs::write(
+            dir.join("autonomy_evidence_workflow.json"),
+            serde_json::json!({
+                "schema_version": "vision_nav_autonomy_evidence_workflow_v1",
+                "status": "failed",
+                "generated_at": "2026-06-21T12:00:00Z",
+                "workflow_dir": "/home/user/Drone/.vision_nav/autonomy_evidence_workflow",
+                "summary": {"passed": 3, "failed": 1, "skipped": 2},
+                "steps": [
+                    {
+                        "name": "field_template",
+                        "status": "passed",
+                        "exit_code": 0,
+                        "log_path": "/tmp/field_template.log",
+                        "notes": "created template"
+                    },
+                    {
+                        "name": "field_case",
+                        "status": "skipped",
+                        "notes": "no field case supplied"
+                    },
+                    {
+                        "name": "autonomy_readiness",
+                        "status": "failed",
+                        "exit_code": 1,
+                        "log_path": "/tmp/autonomy_readiness.log"
+                    }
+                ],
+                "markers": {
+                    "__VISION_NAV_AUTONOMY_REPORT__": "/tmp/autonomy_readiness_report.json",
+                    "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__": "/tmp/autonomy_readiness_report.evidence.zip",
+                    "__VISION_NAV_PX4_SITL_REPORT__": "/tmp/receiver_evidence.json"
+                }
+            })
+            .to_string(),
+        )
+        .expect("write workflow report");
+        std::fs::write(
+            dir.join("autonomy_readiness_report.json"),
+            serde_json::json!({"status": "failed", "checks": [], "summary": {}}).to_string(),
+        )
+        .expect("write unrelated report");
+        let reports = list_autonomy_evidence_workflow_reports(dir.to_string_lossy().into_owned())
+            .expect("list workflow reports");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].name, "autonomy_evidence_workflow.json");
+        assert_eq!(reports[0].status.as_deref(), Some("failed"));
+        assert_eq!(
+            reports[0].generated_at.as_deref(),
+            Some("2026-06-21T12:00:00Z")
+        );
+        assert_eq!(reports[0].summary.passed, Some(3));
+        assert_eq!(reports[0].summary.failed, Some(1));
+        assert_eq!(reports[0].summary.skipped, Some(2));
+        assert_eq!(reports[0].steps.len(), 3);
+        assert_eq!(reports[0].steps[0].name.as_deref(), Some("field_template"));
+        assert_eq!(reports[0].steps[0].exit_code, Some(0));
+        assert_eq!(reports[0].steps[1].status.as_deref(), Some("skipped"));
+        assert_eq!(reports[0].marker_count, 3);
+        assert_eq!(
+            reports[0].readiness_report_path.as_deref(),
+            Some("/tmp/autonomy_readiness_report.json")
+        );
+        assert_eq!(
+            reports[0].evidence_package_path.as_deref(),
+            Some("/tmp/autonomy_readiness_report.evidence.zip")
+        );
+        assert_eq!(
+            reports[0].px4_receiver_report_path.as_deref(),
+            Some("/tmp/receiver_evidence.json")
+        );
     }
 
     #[test]

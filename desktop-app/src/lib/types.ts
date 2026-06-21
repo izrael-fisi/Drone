@@ -337,6 +337,27 @@ export interface AutonomyReadinessReportFile {
   handoff_path?: string;
   handoff_size_bytes?: number;
   handoff_modified_unix_ms?: number;
+  evidence_package_path?: string;
+  evidence_package_size_bytes?: number;
+  evidence_package_modified_unix_ms?: number;
+  evidence_package_summary?: {
+    schema_version?: string;
+    readiness_status?: "passed" | "failed" | "degraded" | string;
+    ready_for_goal_completion?: boolean;
+    included_count?: number;
+    missing_count?: number;
+    skipped_count?: number;
+    missing_artifacts: Array<{
+      label?: string;
+      path?: string;
+      reason?: string;
+    }>;
+    skipped_artifacts: Array<{
+      label?: string;
+      path?: string;
+      reason?: string;
+    }>;
+  };
   summary: {
     status?: "passed" | "failed" | "degraded" | string;
     failed_count?: number;
@@ -395,6 +416,32 @@ export interface AutonomyReadinessReportFile {
       }>;
     }>;
   };
+}
+
+export interface AutonomyEvidenceWorkflowReportFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  status?: "passed" | "failed" | "degraded" | string;
+  generated_at?: string;
+  workflow_dir?: string;
+  summary: {
+    passed?: number;
+    failed?: number;
+    skipped?: number;
+  };
+  steps: Array<{
+    name?: string;
+    status?: "passed" | "failed" | "degraded" | "skipped" | string;
+    exit_code?: number;
+    log_path?: string;
+    notes?: string;
+  }>;
+  marker_count: number;
+  readiness_report_path?: string;
+  evidence_package_path?: string;
+  px4_receiver_report_path?: string;
 }
 
 export interface Px4ReceiverReportFile {

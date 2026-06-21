@@ -20,6 +20,7 @@ import type {
   Profile,
   Px4ReceiverReportFile,
   Region,
+  AutonomyEvidenceWorkflowReportFile,
   AutonomyReadinessReportFile,
   SupportBundleFile,
   SupportBundleDetails,
@@ -126,6 +127,8 @@ export const cmd = {
   listYamlConfigs: (dir: string) => invoke<string[]>("list_yaml_configs", { dir }),
   listAutonomyReadinessReports: (dir: string) =>
     invoke<AutonomyReadinessReportFile[]>("list_autonomy_readiness_reports", { dir }),
+  listAutonomyEvidenceWorkflowReports: (dir: string) =>
+    invoke<AutonomyEvidenceWorkflowReportFile[]>("list_autonomy_evidence_workflow_reports", { dir }),
   listFieldEvidenceReports: (dir: string) =>
     invoke<FieldEvidenceReportFile[]>("list_field_evidence_reports", { dir }),
   listFieldEvidenceTemplates: (dir: string) =>

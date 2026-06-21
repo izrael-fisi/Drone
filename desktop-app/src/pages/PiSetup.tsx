@@ -42,6 +42,7 @@ import {
 } from "../lib/discovery";
 import { SupportBundleList } from "../components/SupportBundleList";
 import type {
+  AutonomyEvidenceWorkflowReportFile,
   AutonomyReadinessReportFile,
   Device,
   FieldEvidenceReportFile,
@@ -233,6 +234,22 @@ function parseAutonomyReadinessHandoff(output: string) {
     ?.replace("__VISION_NAV_AUTONOMY_HANDOFF__=", "");
 }
 
+function parseAutonomyEvidencePackage(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__="))
+    ?.replace("__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=", "");
+}
+
+function parseAutonomyEvidenceWorkflowReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_EVIDENCE_WORKFLOW_REPORT__="))
+    ?.replace("__VISION_NAV_EVIDENCE_WORKFLOW_REPORT__=", "");
+}
+
 function parseThresholdTuningReport(output: string) {
   return output
     .split(/\r?\n/)
@@ -381,6 +398,21 @@ function featureMethodBenchmarkCommand(remoteProject: string, remoteBundle: stri
     "VISION_NAV_FEATURE_BENCH_METHODS=orb,akaze,sift,neural",
   ].join(" ");
   return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_feature_method_benchmark.sh`;
+}
+
+function autonomyEvidenceWorkflowCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {
+  const env = [
+    `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)}`,
+    `VISION_NAV_FIELD_BUNDLE=${shellQuote(remoteBundle)}`,
+    `VISION_NAV_FEATURE_BENCH_BUNDLE=${shellQuote(remoteBundle)}`,
+    `VISION_NAV_FIELD_CASE_NAME=${shellQuote(fieldCase.caseName)}`,
+    `VISION_NAV_FIELD_EXPECTED=${shellQuote(fieldCase.expected)}`,
+    `VISION_NAV_FIELD_CONDITIONS=${shellQuote(fieldCase.conditions)}`,
+    fieldCase.notes ? `VISION_NAV_FIELD_NOTES=${shellQuote(fieldCase.notes)}` : "",
+    fieldCase.replace ? "VISION_NAV_FIELD_REPLACE=1" : "",
+    "VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED=1",
+  ].filter(Boolean).join(" ");
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_autonomy_evidence_workflow.sh`;
 }
 
 function defaultRemotePath(username: string) {
@@ -644,6 +676,50 @@ function AutonomyReadinessReportList({
                       handoff {formatReportSize(report.handoff_size_bytes ?? 0)} / {formatReportTime(report.handoff_modified_unix_ms)}
                     </div>
                   )}
+                  {report.evidence_package_path && (
+                    <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
+                      evidence package {formatReportSize(report.evidence_package_size_bytes ?? 0)} /{" "}
+                      {formatReportTime(report.evidence_package_modified_unix_ms)}
+                    </div>
+                  )}
+                  {report.evidence_package_summary && (
+                    <div className="mt-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-500">
+                        <span className={cn(readinessBadgeClass(report.evidence_package_summary.readiness_status), "text-[10px]")}>
+                          {formatReadinessLabel(report.evidence_package_summary.readiness_status)}
+                        </span>
+                        <span>included {report.evidence_package_summary.included_count ?? 0}</span>
+                        <span>missing {report.evidence_package_summary.missing_count ?? 0}</span>
+                        <span>skipped {report.evidence_package_summary.skipped_count ?? 0}</span>
+                      </div>
+                      {report.evidence_package_summary.missing_artifacts.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {report.evidence_package_summary.missing_artifacts.slice(0, 4).map((artifact, index) => (
+                            <span
+                              key={`${report.path}-missing-artifact-${artifact.label ?? index}`}
+                              className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300"
+                              title={artifact.path ?? artifact.label ?? "missing artifact"}
+                            >
+                              missing {formatReadinessLabel(artifact.label ?? artifact.path ?? "artifact")}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {report.evidence_package_summary.skipped_artifacts.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {report.evidence_package_summary.skipped_artifacts.slice(0, 4).map((artifact, index) => (
+                            <span
+                              key={`${report.path}-skipped-artifact-${artifact.label ?? index}`}
+                              className="rounded border border-slate-600/60 bg-slate-900/60 px-1.5 py-0.5 font-mono text-[10px] text-slate-400"
+                              title={[artifact.reason, artifact.path].filter(Boolean).join(" / ") || artifact.label || "skipped artifact"}
+                            >
+                              skipped {formatReadinessLabel(artifact.label ?? artifact.path ?? "artifact")}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
@@ -677,6 +753,29 @@ function AutonomyReadinessReportList({
                         title="Show handoff file"
                       >
                         {busyPath === report.handoff_path ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />}
+                      </button>
+                    </>
+                  )}
+                  {report.evidence_package_path && (
+                    <>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(report.evidence_package_path ?? "")}
+                        className="btn-secondary text-xs py-1 px-2"
+                        title="Copy evidence package path"
+                      >
+                        <Copy size={11} />
+                      </button>
+                      <button
+                        onClick={() => reveal(report.evidence_package_path ?? "")}
+                        disabled={busyPath === report.evidence_package_path}
+                        className="btn-secondary text-xs py-1 px-2"
+                        title="Show evidence package"
+                      >
+                        {busyPath === report.evidence_package_path ? (
+                          <Loader2 size={11} className="animate-spin" />
+                        ) : (
+                          <Archive size={11} />
+                        )}
                       </button>
                     </>
                   )}
@@ -806,6 +905,129 @@ function AutonomyReadinessReportList({
                   ))}
                 </div>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AutonomyEvidenceWorkflowReportList({
+  reports,
+  downloadDir,
+  onRefresh,
+}: {
+  reports: AutonomyEvidenceWorkflowReportFile[];
+  downloadDir: string;
+  onRefresh: () => void;
+}) {
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reveal = async (path: string) => {
+    setBusyPath(path);
+    setActionError(null);
+    try {
+      await cmd.revealSupportBundle(path);
+    } catch (err) {
+      setActionError(String(err));
+    } finally {
+      setBusyPath(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="text-xs font-medium text-slate-300 flex items-center gap-2">
+            <Archive size={13} className="text-cyan-400" /> Evidence Workflow Reports
+          </h4>
+          <p className="text-[10px] text-slate-500 font-mono truncate">{downloadDir}</p>
+        </div>
+        <button onClick={onRefresh} className="btn-secondary text-xs py-1 px-2">
+          <RefreshCw size={11} />
+          Refresh
+        </button>
+      </div>
+      {actionError && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
+      {reports.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-slate-500">
+          No downloaded evidence workflow reports yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {reports.slice(0, 4).map((report) => (
+            <div key={report.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={readinessBadgeClass(report.status)}>
+                      {readinessIcon(report.status)}
+                      {formatReadinessLabel(report.status)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      pass {report.summary.passed ?? 0}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      fail {report.summary.failed ?? 0}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      skip {report.summary.skipped ?? 0}
+                    </span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
+                    {report.name} / {formatReportSize(report.size_bytes)} / {formatReportTime(report.modified_unix_ms)}
+                  </div>
+                  {report.generated_at && (
+                    <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
+                      generated {report.generated_at}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(report.path)}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Copy workflow report path"
+                  >
+                    <Copy size={11} />
+                  </button>
+                  <button
+                    onClick={() => reveal(report.path)}
+                    disabled={busyPath === report.path}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Show workflow report"
+                  >
+                    {busyPath === report.path ? <Loader2 size={11} className="animate-spin" /> : <FolderOpen size={11} />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                {report.steps.slice(0, 6).map((step) => (
+                  <div key={`${report.path}-${step.name}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <span className={cn(readinessBadgeClass(step.status), "text-[10px]")}>
+                      {formatReadinessLabel(step.status)}
+                    </span>
+                    <span className="font-mono text-slate-500">{formatReadinessLabel(step.name)}</span>
+                    {typeof step.exit_code === "number" && (
+                      <span className="font-mono text-slate-600">exit {step.exit_code}</span>
+                    )}
+                    {step.notes && <span className="text-slate-500 truncate">{step.notes}</span>}
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-slate-500">
+                <span>markers {report.marker_count}</span>
+                {report.readiness_report_path && <span>readiness report</span>}
+                {report.evidence_package_path && <span>evidence package</span>}
+                {report.px4_receiver_report_path && <span>px4 receiver</span>}
+              </div>
             </div>
           ))}
         </div>
@@ -1433,6 +1655,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [capturingCamera, setCapturingCamera] = useState(false);
   const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
   const [autonomyReports, setAutonomyReports] = useState<AutonomyReadinessReportFile[]>([]);
+  const [autonomyWorkflowReports, setAutonomyWorkflowReports] = useState<AutonomyEvidenceWorkflowReportFile[]>([]);
   const [px4ReceiverReports, setPx4ReceiverReports] = useState<Px4ReceiverReportFile[]>([]);
   const [fieldEvidenceTemplates, setFieldEvidenceTemplates] = useState<FieldEvidenceTemplateFile[]>([]);
   const [fieldEvidenceReports, setFieldEvidenceReports] = useState<FieldEvidenceReportFile[]>([]);
@@ -1442,6 +1665,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [runtimeStatusRemotePath, setRuntimeStatusRemotePath] = useState<string | null>(null);
   const [runtimeStatusLocalPath, setRuntimeStatusLocalPath] = useState<string | null>(null);
   const [autonomyHandoffLocalPath, setAutonomyHandoffLocalPath] = useState<string | null>(null);
+  const [autonomyEvidencePackageLocalPath, setAutonomyEvidencePackageLocalPath] = useState<string | null>(null);
+  const [autonomyWorkflowLocalPath, setAutonomyWorkflowLocalPath] = useState<string | null>(null);
   const [fieldTemplateLocalPath, setFieldTemplateLocalPath] = useState<string | null>(null);
   const [fieldManifestLocalPath, setFieldManifestLocalPath] = useState<string | null>(null);
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
@@ -1468,6 +1693,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       setRuntimeStatusRemotePath(null);
       setRuntimeStatusLocalPath(null);
       setAutonomyHandoffLocalPath(null);
+      setAutonomyEvidencePackageLocalPath(null);
+      setAutonomyWorkflowLocalPath(null);
       setFieldTemplateLocalPath(null);
       setFieldManifestLocalPath(null);
       setError(null);
@@ -1487,6 +1714,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       setAutonomyReports(await cmd.listAutonomyReadinessReports(AUTONOMY_REPORT_DOWNLOAD_DIR));
     } catch {
       setAutonomyReports([]);
+    }
+  };
+
+  const refreshAutonomyWorkflowReports = async () => {
+    try {
+      setAutonomyWorkflowReports(await cmd.listAutonomyEvidenceWorkflowReports(AUTONOMY_REPORT_DOWNLOAD_DIR));
+    } catch {
+      setAutonomyWorkflowReports([]);
     }
   };
 
@@ -1533,6 +1768,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   useEffect(() => {
     refreshSupportBundles();
     refreshAutonomyReports();
+    refreshAutonomyWorkflowReports();
     refreshPx4ReceiverReports();
     refreshFieldEvidenceTemplates();
     refreshFieldEvidenceReports();
@@ -1855,6 +2091,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteReport = parseAutonomyReadinessReport(output);
       const remoteHandoff = parseAutonomyReadinessHandoff(output);
+      const remoteEvidencePackage = parseAutonomyEvidencePackage(output);
       const remotePx4Report = parsePx4SitlReport(output);
       if (!remoteReport) {
         setResult("autonomy-readiness", {
@@ -1896,11 +2133,30 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       } else {
         setAutonomyHandoffLocalPath(null);
       }
+      let evidencePackageDownloadText = "";
+      if (remoteEvidencePackage) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}\n\n$ download evidence package\nDownloading ${remoteEvidencePackage}...`,
+        });
+        const downloadedPackage = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteEvidencePackage,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setAutonomyEvidencePackageLocalPath(downloadedPackage.local_path);
+        evidencePackageDownloadText = `\n\n$ download evidence package\nSaved to ${downloadedPackage.local_path}\n[${downloadedPackage.bytes_received} bytes]`;
+      } else {
+        setAutonomyEvidencePackageLocalPath(null);
+      }
       let px4DownloadText = "";
       if (remotePx4Report) {
         setResult("autonomy-readiness", {
           status: "running",
-          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}\n\n$ download PX4 receiver report\nDownloading ${remotePx4Report}...`,
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}\n\n$ download PX4 receiver report\nDownloading ${remotePx4Report}...`,
         });
         const downloadedPx4 = await cmd.sshDownloadFile(
           form.host,
@@ -1914,13 +2170,138 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       }
       setResult("autonomy-readiness", {
         status: result.exit_code === 0 ? "passed" : "failed",
-        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${px4DownloadText}\n[exit ${result.exit_code}]`,
+        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${px4DownloadText}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
       await refreshAutonomyReports();
       await refreshPx4ReceiverReports();
     } catch (err) {
       setResult("autonomy-readiness", { status: "failed", output: `$ autonomy readiness\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
+  const runAutonomyEvidenceWorkflow = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before running the autonomy evidence workflow.");
+      return;
+    }
+    setRunningStep("autonomy-evidence-workflow");
+    setError(null);
+    setResult("autonomy-evidence-workflow", { status: "running", output: "$ autonomy evidence workflow\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        autonomyEvidenceWorkflowCommand(remoteProject, remoteBundle, fieldCase),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteWorkflow = parseAutonomyEvidenceWorkflowReport(output);
+      const remoteReport = parseAutonomyReadinessReport(output);
+      const remoteHandoff = parseAutonomyReadinessHandoff(output);
+      const remoteEvidencePackage = parseAutonomyEvidencePackage(output);
+      const remotePx4Report = parsePx4SitlReport(output);
+      if (!remoteWorkflow) {
+        setResult("autonomy-evidence-workflow", {
+          status: "failed",
+          output: `$ autonomy evidence workflow\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      setResult("autonomy-evidence-workflow", {
+        status: "running",
+        output: `$ autonomy evidence workflow\n${output}\n\n$ download workflow report\nDownloading ${remoteWorkflow}...`,
+      });
+      const downloadedWorkflow = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remoteWorkflow,
+        AUTONOMY_REPORT_DOWNLOAD_DIR,
+      );
+      setAutonomyWorkflowLocalPath(downloadedWorkflow.local_path);
+      let downloadText = `\n\n$ download workflow report\nSaved to ${downloadedWorkflow.local_path}\n[${downloadedWorkflow.bytes_received} bytes]`;
+
+      if (remoteReport) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download readiness report\nDownloading ${remoteReport}...`,
+        });
+        const downloadedReport = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteReport,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download readiness report\nSaved to ${downloadedReport.local_path}\n[${downloadedReport.bytes_received} bytes]`;
+      }
+      if (remoteHandoff) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download readiness handoff\nDownloading ${remoteHandoff}...`,
+        });
+        const downloadedHandoff = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteHandoff,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setAutonomyHandoffLocalPath(downloadedHandoff.local_path);
+        downloadText += `\n\n$ download readiness handoff\nSaved to ${downloadedHandoff.local_path}\n[${downloadedHandoff.bytes_received} bytes]`;
+      }
+      if (remoteEvidencePackage) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download evidence package\nDownloading ${remoteEvidencePackage}...`,
+        });
+        const downloadedPackage = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteEvidencePackage,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setAutonomyEvidencePackageLocalPath(downloadedPackage.local_path);
+        downloadText += `\n\n$ download evidence package\nSaved to ${downloadedPackage.local_path}\n[${downloadedPackage.bytes_received} bytes]`;
+      }
+      if (remotePx4Report) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download PX4 receiver report\nDownloading ${remotePx4Report}...`,
+        });
+        const downloadedPx4 = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remotePx4Report,
+          PX4_RECEIVER_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download PX4 receiver report\nSaved to ${downloadedPx4.local_path}\n[${downloadedPx4.bytes_received} bytes]`;
+      }
+
+      setResult("autonomy-evidence-workflow", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ autonomy evidence workflow\n${output}${downloadText}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+      await refreshAutonomyWorkflowReports();
+      await refreshAutonomyReports();
+      await refreshPx4ReceiverReports();
+    } catch (err) {
+      setResult("autonomy-evidence-workflow", { status: "failed", output: `$ autonomy evidence workflow\nERROR: ${err}` });
     } finally {
       setRunningStep(null);
     }
@@ -2378,6 +2759,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       detail: "Generates and downloads the replay-gate threshold report from registered real field cases.",
     },
     {
+      id: "autonomy-evidence-workflow",
+      title: "Evidence Workflow",
+      detail: "Attempts the ordered evidence sequence and downloads a per-step workflow report for support review.",
+    },
+    {
       id: "autonomy-readiness",
       title: "Autonomy Readiness",
       detail: "Runs the strict final audit against the latest Pi support bundle and field evidence artifacts.",
@@ -2400,6 +2786,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     if (step.id === "threshold-tuning") {
       await runThresholdTuning();
+      return;
+    }
+    if (step.id === "autonomy-evidence-workflow") {
+      await runAutonomyEvidenceWorkflow();
       return;
     }
     if (step.id === "autonomy-readiness") {
@@ -2477,7 +2867,9 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         repo_path: repoPath,
         support_bundle_download_dir: SUPPORT_DOWNLOAD_DIR,
         autonomy_report_download_dir: AUTONOMY_REPORT_DOWNLOAD_DIR,
+        autonomy_workflow_local_path: autonomyWorkflowLocalPath,
         autonomy_handoff_local_path: autonomyHandoffLocalPath,
+        autonomy_evidence_package_local_path: autonomyEvidencePackageLocalPath,
         field_template_local_path: fieldTemplateLocalPath,
         field_manifest_local_path: fieldManifestLocalPath,
         feature_benchmark_download_dir: FEATURE_BENCH_DOWNLOAD_DIR,
@@ -2518,6 +2910,9 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             modified_unix_ms: latestAutonomyReport.modified_unix_ms ?? null,
             handoff_path: latestAutonomyReport.handoff_path ?? null,
             handoff_size_bytes: latestAutonomyReport.handoff_size_bytes ?? null,
+            evidence_package_path: latestAutonomyReport.evidence_package_path ?? null,
+            evidence_package_size_bytes: latestAutonomyReport.evidence_package_size_bytes ?? null,
+            evidence_package_summary: latestAutonomyReport.evidence_package_summary ?? null,
             status: latestAutonomyReport.summary.status ?? null,
             failed_count: latestAutonomyReport.summary.failed_count ?? 0,
             degraded_count: latestAutonomyReport.summary.degraded_count ?? 0,
@@ -2530,6 +2925,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             next_actions: latestAutonomyReport.next_actions.slice(0, 8),
           }
         : null,
+      downloaded_autonomy_workflow_reports: autonomyWorkflowReports.slice(0, 5),
       downloaded_autonomy_reports: autonomyReports.slice(0, 5),
       downloaded_px4_receiver_reports: px4ReceiverReports.slice(0, 5),
       downloaded_field_evidence_templates: fieldEvidenceTemplates.slice(0, 5),
@@ -3148,6 +3544,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 Setup report saved to <span className="font-mono">{setupReportPath}</span>
               </div>
             )}
+            {autonomyWorkflowLocalPath && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
+                <span className="min-w-0">
+                  Autonomy evidence workflow saved to{" "}
+                  <span className="font-mono break-all">{autonomyWorkflowLocalPath}</span>
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(autonomyWorkflowLocalPath)}
+                  className="btn-secondary text-xs py-1 px-2 shrink-0"
+                  title="Copy autonomy evidence workflow path"
+                >
+                  <Copy size={11} />
+                </button>
+              </div>
+            )}
             {autonomyHandoffLocalPath && (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
                 <span className="min-w-0">
@@ -3157,6 +3568,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   onClick={() => navigator.clipboard.writeText(autonomyHandoffLocalPath)}
                   className="btn-secondary text-xs py-1 px-2 shrink-0"
                   title="Copy autonomy handoff path"
+                >
+                  <Copy size={11} />
+                </button>
+              </div>
+            )}
+            {autonomyEvidencePackageLocalPath && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
+                <span className="min-w-0">
+                  Autonomy evidence package saved to{" "}
+                  <span className="font-mono break-all">{autonomyEvidencePackageLocalPath}</span>
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(autonomyEvidencePackageLocalPath)}
+                  className="btn-secondary text-xs py-1 px-2 shrink-0"
+                  title="Copy autonomy evidence package path"
                 >
                   <Copy size={11} />
                 </button>
@@ -3215,6 +3641,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               templates={fieldEvidenceTemplates}
               downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
               onRefresh={refreshFieldEvidenceTemplates}
+            />
+            <AutonomyEvidenceWorkflowReportList
+              reports={autonomyWorkflowReports}
+              downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
+              onRefresh={refreshAutonomyWorkflowReports}
             />
             <FieldEvidenceReportList
               reports={fieldEvidenceReports}

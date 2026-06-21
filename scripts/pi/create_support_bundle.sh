@@ -10,9 +10,15 @@ feature_method_benchmark="${VISION_NAV_FEATURE_METHOD_BENCHMARK:-$HOME/DroneTran
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
 
-if [[ ! -x "$venv_python" ]]; then
-  echo "Missing Python venv: $venv_python" >&2
-  echo "Run ./scripts/pi/bootstrap_pi5.sh first, then reboot." >&2
+if [[ "$venv_python" == */* ]]; then
+  if [[ ! -x "$venv_python" ]]; then
+    echo "Missing Python venv: $venv_python" >&2
+    echo "Run ./scripts/pi/bootstrap_pi5.sh first, then reboot." >&2
+    exit 1
+  fi
+elif ! command -v "$venv_python" >/dev/null 2>&1; then
+  echo "Python command not found: $venv_python" >&2
+  echo "Run ./scripts/pi/bootstrap_pi5.sh first, then reboot, or set VISION_NAV_PYTHON." >&2
   exit 1
 fi
 
