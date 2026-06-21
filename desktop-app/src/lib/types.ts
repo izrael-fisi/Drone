@@ -437,6 +437,20 @@ export interface FieldEvidenceReportFile {
   };
 }
 
+export interface FieldEvidenceTemplateFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  site_name?: string;
+  case_count: number;
+  placeholder_count: number;
+  required_conditions: string[];
+  conditions: string[];
+  placeholder_conditions: string[];
+  registered_conditions: string[];
+}
+
 export interface FeatureMethodBenchmarkReportFile {
   name: string;
   path: string;

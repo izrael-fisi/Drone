@@ -375,6 +375,21 @@ Status:
 - Done: `vision-nav-register-replay-case` registers copied field, bench, or
   synthetic logs into replay manifests with dataset type, condition tags, and
   stable manifest-relative log paths.
+- Done: `vision-nav-create-field-evidence-template` writes a ready-to-fill
+  field replay manifest covering every required autonomy condition from the
+  same condition list used by the final readiness audit, so field datasets can
+  be staged and schema-checked before logs are captured.
+- Done: `scripts/pi/create_field_evidence_template.sh` wraps the template
+  generator on the Pi, writes the starter manifest into the transfer folder,
+  and emits a stable marker for desktop/support collection.
+- Done: the Pi template wrapper can seed the active field manifest, and
+  replay-case registration replaces matching template placeholders by condition
+  tag when real field logs are collected.
+- Done: Module Setup downloads both the field evidence starter template and the
+  active seeded manifest, then lists downloaded template-shaped manifests after
+  restart for offline review.
+- Done: downloaded field evidence template summaries now separate remaining
+  placeholder conditions from conditions that already have registered real logs.
 - Done: `vision-nav-benchmark-feature-methods` compares ORB, AKAZE, SIFT, and
   future neural methods on the same replay case, using the same replay gates as
   support bundles and marking neural descriptors unavailable until they are
@@ -433,6 +448,9 @@ Status:
 - Done: autonomy-readiness reports include machine-readable `next_actions` for
   failed or degraded proof gates, with the relevant Module Setup action and
   shell command to collect the missing artifact.
+- Done: field-evidence readiness next actions now point operators to
+  `Create Template, then Register`, so missing real-world replay evidence starts
+  with the eight-condition starter manifest instead of ad hoc case entry.
 - Done: autonomy-readiness reports now preserve failed/degraded
   bench-readiness subchecks and expand them into specific next actions, so a
   missing `runtime_status.json` points to Module Setup > Runtime Status instead

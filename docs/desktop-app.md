@@ -43,6 +43,7 @@ The flow is:
    - calibration image capture
    - synthetic vision smoke test
    - deployed runtime bundle validation
+   - field evidence template creation for required real-world replay cases
    - field replay-case registration for terrain evidence gates
    - bench-report support bundle creation and desktop download
 9. Save a local setup report from the collected checks when you need an audit
@@ -315,9 +316,25 @@ Module Setup uses the same support-bundle path for its `Bench Report` action,
 after validating the deployed terrain bundle at the configured runtime bundle
 path.
 
+Module Setup can create a ready-to-fill field evidence template before the
+first field run. The app runs `scripts/pi/create_field_evidence_template.sh`
+over SSH, writes the starter manifest under the Pi replay-cases transfer
+folder, downloads it to `~/DroneTransfer/from-pi/replay-cases/`, and shows the
+local path in Latest Output. The template contains one placeholder
+`dataset_type=field` case for each required autonomy-readiness condition. The
+Field Evidence Templates list indexes downloaded starter manifests after app
+restart with site name, case count, placeholder count, and required condition
+tags. On the Pi, the same action seeds the active `field_manifest.json` if it
+does not already exist; later field-case registration replaces matching
+template placeholders by condition tag. Module Setup downloads both the starter
+template and the active manifest when the Pi wrapper emits
+`__VISION_NAV_FIELD_TEMPLATE__=...` and `__VISION_NAV_FIELD_MANIFEST__=...`.
+The template list separates remaining placeholder conditions from conditions
+that already have registered logs.
+
 Module Setup can also register the latest Pi terrain runtime log as a field
-evidence case. The operator selects expected behavior, condition tags, notes,
-and whether to replace an existing case. The app runs
+evidence case after capture. The operator selects expected behavior, condition
+tags, notes, and whether to replace an existing case. The app runs
 `scripts/pi/register_field_replay_case.sh` over SSH, which updates the Pi-side
 field replay manifest and writes the field-evidence report that the next
 support bundle will include automatically. The same action downloads

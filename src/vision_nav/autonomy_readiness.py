@@ -14,19 +14,9 @@ from vision_nav.bench_readiness import (
     passed,
     readiness_status,
 )
+from vision_nav.field_conditions import REQUIRED_FIELD_CONDITIONS
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 
-
-REQUIRED_FIELD_CONDITIONS = [
-    "good_texture",
-    "low_texture",
-    "blur",
-    "seasonal_change",
-    "lighting_change",
-    "altitude_scale_change",
-    "repeated_patterns",
-    "wrong_map",
-]
 
 RESEARCH_DOC_MARKERS = [
     "Highest-Value References",
@@ -281,10 +271,10 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "notes": "The final report must show fresh vehicle_visual_odometry samples and covariance/variance fields.",
         },
         "field_evidence_proof": {
-            "title": "Register real field replay cases.",
-            "desktop_action": "Module Setup > Field Evidence Case",
-            "command": "./scripts/pi/register_field_replay_case.sh",
-            "notes": "Cover good texture, low texture, blur, seasonal change, lighting change, altitude/scale change, repeated patterns, and wrong map.",
+            "title": "Create the field evidence template, then register real replay cases.",
+            "desktop_action": "Module Setup > Field Evidence Case > Create Template, then Register",
+            "command": "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/register_field_replay_case.sh",
+            "notes": "Start with the field evidence template so every required condition has a placeholder, then replace placeholders with real logs for good texture, low texture, blur, seasonal change, lighting change, altitude/scale change, repeated patterns, and wrong map.",
         },
         "feature_method_benchmark": {
             "title": "Benchmark feature methods on field logs.",
@@ -394,9 +384,9 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
             "notes": "Use real field logs to choose the low-compute and high-compute feature methods.",
         },
         "field_evidence": {
-            "title": "Register real field replay cases.",
-            "desktop_action": "Module Setup > Field Evidence Case",
-            "command": "./scripts/pi/register_field_replay_case.sh",
+            "title": "Create the field evidence template, then register real replay cases.",
+            "desktop_action": "Module Setup > Field Evidence Case > Create Template, then Register",
+            "command": "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/register_field_replay_case.sh",
             "notes": "Field evidence must cover all required terrain conditions.",
         },
         "threshold_tuning": {

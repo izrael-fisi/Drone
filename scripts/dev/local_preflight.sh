@@ -23,6 +23,23 @@ PYTHONPATH=src python3 -m vision_nav.replay_dataset_audit \
   --skip-log-exists >/tmp/vision_nav_replay_coverage_template.txt
 tail -n 10 /tmp/vision_nav_replay_coverage_template.txt
 field_smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-field-case-preflight.XXXXXX")"
+PYTHONPATH=src python3 -m vision_nav.field_evidence_template \
+  --output "$field_smoke_dir/field_manifest.template.json" \
+  --site-name preflight \
+  --bundle preflight-bundle >/tmp/vision_nav_field_template_preflight.txt
+VISION_NAV_PYTHON=python3 \
+VISION_NAV_FIELD_TEMPLATE="$field_smoke_dir/pi_field_manifest.template.json" \
+VISION_NAV_FIELD_MANIFEST="$field_smoke_dir/pi_field_manifest.json" \
+VISION_NAV_FIELD_SITE_NAME=preflight-pi-wrapper \
+VISION_NAV_FIELD_BUNDLE=preflight-bundle \
+./scripts/pi/create_field_evidence_template.sh >/tmp/vision_nav_pi_field_template_preflight.txt
+grep -q "__VISION_NAV_FIELD_TEMPLATE__=" /tmp/vision_nav_pi_field_template_preflight.txt
+grep -q "__VISION_NAV_FIELD_MANIFEST__=" /tmp/vision_nav_pi_field_template_preflight.txt
+test -f "$field_smoke_dir/pi_field_manifest.template.json"
+test -f "$field_smoke_dir/pi_field_manifest.json"
+PYTHONPATH=src python3 -m vision_nav.replay_case_manifest \
+  --manifest "$field_smoke_dir/field_manifest.template.json" \
+  --schema-only >/tmp/vision_nav_field_template_schema_preflight.txt
 mkdir -p "$field_smoke_dir/logs"
 cat >"$field_smoke_dir/logs/terrain_matches.jsonl" <<'EOF'
 {"sequence":1,"timestamp_us":1000000,"result":{"status":"accepted","confidence":0.82,"inliers":34,"reprojection_error_px":1.6,"scale_confidence":0.74,"local_enu_m":{"x":0.0,"y":0.0,"z":null},"covariance":{"x_m2":4.0,"y_m2":4.0,"z_m2":null,"yaw_rad2":null}}}

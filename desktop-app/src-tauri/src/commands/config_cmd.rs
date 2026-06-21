@@ -185,6 +185,21 @@ pub struct FieldEvidenceReportFile {
 }
 
 #[derive(Serialize)]
+pub struct FieldEvidenceTemplateFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub site_name: Option<String>,
+    pub case_count: u64,
+    pub placeholder_count: u64,
+    pub required_conditions: Vec<String>,
+    pub conditions: Vec<String>,
+    pub placeholder_conditions: Vec<String>,
+    pub registered_conditions: Vec<String>,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleThresholdTuningReport {
     pub status: Option<String>,
     pub method: Option<String>,
@@ -804,6 +819,105 @@ pub fn list_field_evidence_reports(dir: String) -> Result<Vec<FieldEvidenceRepor
             size_bytes: metadata.len(),
             modified_unix_ms,
             report: field_evidence_report_from_json(&value),
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn list_field_evidence_templates(
+    dir: String,
+) -> Result<Vec<FieldEvidenceTemplateFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let template = match value.get("template").and_then(|value| value.as_object()) {
+            Some(value) => value,
+            None => continue,
+        };
+        if template
+            .get("schema_version")
+            .and_then(|value| value.as_str())
+            != Some("vision_nav_field_evidence_template_v1")
+        {
+            continue;
+        }
+        let cases = value
+            .get("cases")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut conditions = vec![];
+        let mut placeholder_conditions = vec![];
+        let mut registered_conditions = vec![];
+        for case in &cases {
+            let case_conditions = json_string_array(case.get("conditions"));
+            let is_placeholder = case.get("template_status").is_some();
+            for condition in case_conditions {
+                if !conditions.contains(&condition) {
+                    conditions.push(condition.clone());
+                }
+                if is_placeholder {
+                    if !placeholder_conditions.contains(&condition) {
+                        placeholder_conditions.push(condition);
+                    }
+                } else if !registered_conditions.contains(&condition) {
+                    registered_conditions.push(condition);
+                }
+            }
+        }
+        let placeholder_count = cases
+            .iter()
+            .filter(|case| case.get("template_status").is_some())
+            .count() as u64;
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(FieldEvidenceTemplateFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("field_manifest.template.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            site_name: json_string(template.get("site_name")),
+            case_count: cases.len() as u64,
+            placeholder_count,
+            required_conditions: json_string_array(template.get("required_conditions")),
+            conditions,
+            placeholder_conditions,
+            registered_conditions,
         });
     }
     files.sort_by(|a, b| {
@@ -2268,8 +2382,8 @@ mod tests {
     use super::{
         delete_support_bundle, expand_local_path, extract_support_bundle_artifact,
         list_autonomy_readiness_reports, list_feature_method_benchmark_reports,
-        list_field_evidence_reports, list_px4_receiver_reports, list_threshold_tuning_reports,
-        read_support_bundle_details, support_summary_from_manifest,
+        list_field_evidence_reports, list_field_evidence_templates, list_px4_receiver_reports,
+        list_threshold_tuning_reports, read_support_bundle_details, support_summary_from_manifest,
     };
     use std::fs::File;
     use std::io::Write;
@@ -2642,6 +2756,75 @@ mod tests {
         assert_eq!(
             reports[0].report.requirements[1].status.as_deref(),
             Some("missing")
+        );
+    }
+
+    #[test]
+    fn lists_field_evidence_templates_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-field-template-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create field template dir");
+        std::fs::write(
+            dir.join("field_manifest.template.json"),
+            serde_json::json!({
+                "version": "0.1.0",
+                "template": {
+                    "schema_version": "vision_nav_field_evidence_template_v1",
+                    "site_name": "site-a",
+                    "required_conditions": ["good_texture", "wrong_map"]
+                },
+                "cases": [
+                    {
+                        "case_name": "site-a-good-texture",
+                        "expected": "good_map",
+                        "dataset_type": "field",
+                        "conditions": ["good_texture"],
+                        "log": "field/good_texture/terrain_matches.jsonl",
+                        "template_status": "replace_log_path_and_notes_after_capture"
+                    },
+                    {
+                        "case_name": "site-a-wrong-map",
+                        "expected": "wrong_map",
+                        "dataset_type": "field",
+                        "conditions": ["wrong_map"],
+                        "log": "field/wrong_map/terrain_matches.jsonl"
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("write field evidence template");
+        std::fs::write(
+            dir.join("field_evidence_report.json"),
+            serde_json::json!({"status": "failed", "coverage": {}, "replay_gates": {}}).to_string(),
+        )
+        .expect("write unrelated report");
+        let templates = list_field_evidence_templates(dir.to_string_lossy().into_owned())
+            .expect("list templates");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(templates.len(), 1);
+        assert_eq!(templates[0].name, "field_manifest.template.json");
+        assert_eq!(templates[0].site_name.as_deref(), Some("site-a"));
+        assert_eq!(templates[0].case_count, 2);
+        assert_eq!(templates[0].placeholder_count, 1);
+        assert_eq!(
+            templates[0].required_conditions,
+            vec!["good_texture".to_string(), "wrong_map".to_string()]
+        );
+        assert_eq!(
+            templates[0].conditions,
+            vec!["good_texture".to_string(), "wrong_map".to_string()]
+        );
+        assert_eq!(
+            templates[0].placeholder_conditions,
+            vec!["good_texture".to_string()]
+        );
+        assert_eq!(
+            templates[0].registered_conditions,
+            vec!["wrong_map".to_string()]
         );
     }
 

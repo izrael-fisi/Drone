@@ -26,10 +26,35 @@ blocking smoke tests.
 To check manifest shape before every referenced log has been copied into place:
 
 ```bash
+vision-nav-create-field-evidence-template \
+  --output data/replay_cases/field_manifest.template.json \
+  --site-name site-a \
+  --bundle field-bundles/site-a/mission_bundle
+
 vision-nav-evaluate-replay-manifest \
   --manifest data/replay_cases/field_manifest.json \
   --schema-only
 ```
+
+The template command creates one placeholder `dataset_type=field` case for
+each autonomy-readiness condition. It is intentionally only a starter file:
+replace each placeholder `log` path and notes after capture, then run
+`vision-nav-field-evidence-gate` once the JSONL logs exist.
+
+On the Pi, the wrapper writes the same starter file to the transfer folder and
+prints `__VISION_NAV_FIELD_TEMPLATE__=...`. It also seeds the active
+`field_manifest.json` when that manifest does not already exist:
+
+```bash
+VISION_NAV_FIELD_SITE_NAME=site-a \
+VISION_NAV_FIELD_BUNDLE=~/drone-data/map_bundles/mission_bundle \
+./scripts/pi/create_field_evidence_template.sh
+```
+
+When the active manifest was seeded from the template,
+`register_field_replay_case.sh` replaces the matching placeholder case by
+condition tag as each real log is registered. Existing active manifests are
+left unchanged unless `VISION_NAV_FIELD_TEMPLATE_SEED_FORCE=1` is set.
 
 Evaluate a case with:
 

@@ -45,6 +45,7 @@ import type {
   AutonomyReadinessReportFile,
   Device,
   FieldEvidenceReportFile,
+  FieldEvidenceTemplateFile,
   FeatureMethodBenchmarkReportFile,
   LocalNetworkHint,
   PiDiscoveryCandidate,
@@ -248,6 +249,22 @@ function parseFieldEvidenceReport(output: string) {
     ?.replace("__VISION_NAV_FIELD_EVIDENCE_REPORT__=", "");
 }
 
+function parseFieldEvidenceTemplate(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_FIELD_TEMPLATE__="))
+    ?.replace("__VISION_NAV_FIELD_TEMPLATE__=", "");
+}
+
+function parseFieldEvidenceManifest(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_FIELD_MANIFEST__="))
+    ?.replace("__VISION_NAV_FIELD_MANIFEST__=", "");
+}
+
 function parseFeatureMethodReport(output: string) {
   return output
     .split(/\r?\n/)
@@ -345,6 +362,15 @@ function fieldEvidenceCommand(remoteProject: string, remoteBundle: string, field
     fieldCase.strict ? "VISION_NAV_FIELD_GATE_STRICT=1" : "",
   ].filter(Boolean).join(" ");
   return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/register_field_replay_case.sh`;
+}
+
+function fieldEvidenceTemplateCommand(remoteProject: string, remoteBundle: string, siteName: string) {
+  const env = [
+    `VISION_NAV_FIELD_SITE_NAME=${shellQuote(siteName)}`,
+    `VISION_NAV_FIELD_BUNDLE=${shellQuote(remoteBundle)}`,
+    "VISION_NAV_FIELD_TEMPLATE_FORCE=1",
+  ].join(" ");
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/create_field_evidence_template.sh`;
 }
 
 function featureMethodBenchmarkCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {
@@ -903,6 +929,136 @@ function FieldEvidenceReportList({
   );
 }
 
+function FieldEvidenceTemplateList({
+  templates,
+  downloadDir,
+  onRefresh,
+}: {
+  templates: FieldEvidenceTemplateFile[];
+  downloadDir: string;
+  onRefresh: () => void;
+}) {
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reveal = async (path: string) => {
+    setBusyPath(path);
+    setActionError(null);
+    try {
+      await cmd.revealSupportBundle(path);
+    } catch (err) {
+      setActionError(String(err));
+    } finally {
+      setBusyPath(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="text-xs font-medium text-slate-300 flex items-center gap-2">
+            <FileText size={13} className="text-cyan-400" /> Field Evidence Templates
+          </h4>
+          <p className="text-[10px] text-slate-500 font-mono truncate">{downloadDir}</p>
+        </div>
+        <button onClick={onRefresh} className="btn-secondary text-xs py-1 px-2">
+          <RefreshCw size={11} />
+          Refresh
+        </button>
+      </div>
+      {actionError && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
+      {templates.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-slate-500">
+          No downloaded field evidence template yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {templates.slice(0, 3).map((file) => {
+            const required = file.required_conditions.length || file.conditions.length;
+            return (
+              <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-mono text-[10px] text-cyan-300">{file.case_count} cases</span>
+                      <span className="font-mono text-[10px] text-slate-500">{file.placeholder_count} placeholders</span>
+                      <span className="font-mono text-[10px] text-slate-500">{file.conditions.length}/{required} conditions</span>
+                      {file.site_name && <span className="font-mono text-[10px] text-slate-500">{file.site_name}</span>}
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
+                      {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
+                    </div>
+                    <div className="mt-1 text-[10px] text-slate-500 truncate">{file.path}</div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => navigator.clipboard.writeText(file.path)}
+                      className="btn-secondary text-xs py-1 px-2"
+                      title="Copy template path"
+                    >
+                      <Copy size={11} />
+                    </button>
+                    <button
+                      onClick={() => reveal(file.path)}
+                      disabled={busyPath === file.path}
+                      className="btn-secondary text-xs py-1 px-2"
+                      title="Show template file"
+                    >
+                      {busyPath === file.path ? <Loader2 size={11} className="animate-spin" /> : <FolderOpen size={11} />}
+                    </button>
+                  </div>
+                </div>
+                {file.required_conditions.length > 0 && (
+                  <div className="space-y-1.5">
+                    {file.placeholder_conditions.length > 0 && (
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1">Remaining placeholders</div>
+                        <div className="flex flex-wrap gap-1">
+                          {file.placeholder_conditions.map((condition) => (
+                            <span key={`${file.path}-placeholder-${condition}`} className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-mono text-amber-300">
+                              {condition}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {file.registered_conditions.length > 0 && (
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1">Registered logs</div>
+                        <div className="flex flex-wrap gap-1">
+                          {file.registered_conditions.map((condition) => (
+                            <span key={`${file.path}-registered-${condition}`} className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-mono text-emerald-300">
+                              {condition}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {file.placeholder_conditions.length === 0 && file.registered_conditions.length === 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {file.required_conditions.map((condition) => (
+                          <span key={`${file.path}-${condition}`} className="rounded border border-border bg-bg-base px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
+                            {condition}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatAcceptedRate(value?: number) {
   return value == null ? "n/a" : `${Math.round(value * 100)}%`;
 }
@@ -1278,6 +1434,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
   const [autonomyReports, setAutonomyReports] = useState<AutonomyReadinessReportFile[]>([]);
   const [px4ReceiverReports, setPx4ReceiverReports] = useState<Px4ReceiverReportFile[]>([]);
+  const [fieldEvidenceTemplates, setFieldEvidenceTemplates] = useState<FieldEvidenceTemplateFile[]>([]);
   const [fieldEvidenceReports, setFieldEvidenceReports] = useState<FieldEvidenceReportFile[]>([]);
   const [featureBenchmarkReports, setFeatureBenchmarkReports] = useState<FeatureMethodBenchmarkReportFile[]>([]);
   const [thresholdTuningReports, setThresholdTuningReports] = useState<ThresholdTuningReportFile[]>([]);
@@ -1285,6 +1442,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [runtimeStatusRemotePath, setRuntimeStatusRemotePath] = useState<string | null>(null);
   const [runtimeStatusLocalPath, setRuntimeStatusLocalPath] = useState<string | null>(null);
   const [autonomyHandoffLocalPath, setAutonomyHandoffLocalPath] = useState<string | null>(null);
+  const [fieldTemplateLocalPath, setFieldTemplateLocalPath] = useState<string | null>(null);
+  const [fieldManifestLocalPath, setFieldManifestLocalPath] = useState<string | null>(null);
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
   const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
   const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => defaultFieldCaseForm());
@@ -1309,6 +1468,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       setRuntimeStatusRemotePath(null);
       setRuntimeStatusLocalPath(null);
       setAutonomyHandoffLocalPath(null);
+      setFieldTemplateLocalPath(null);
+      setFieldManifestLocalPath(null);
       setError(null);
     }
   }, [selectedDeviceId]);
@@ -1345,6 +1506,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const refreshFieldEvidenceTemplates = async () => {
+    try {
+      setFieldEvidenceTemplates(await cmd.listFieldEvidenceTemplates(AUTONOMY_REPORT_DOWNLOAD_DIR));
+    } catch {
+      setFieldEvidenceTemplates([]);
+    }
+  };
+
   const refreshFeatureBenchmarkReports = async () => {
     try {
       setFeatureBenchmarkReports(await cmd.listFeatureMethodBenchmarkReports(FEATURE_BENCH_DOWNLOAD_DIR));
@@ -1365,6 +1534,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     refreshSupportBundles();
     refreshAutonomyReports();
     refreshPx4ReceiverReports();
+    refreshFieldEvidenceTemplates();
     refreshFieldEvidenceReports();
     refreshFeatureBenchmarkReports();
     refreshThresholdTuningReports();
@@ -1919,6 +2089,81 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const createFieldEvidenceTemplate = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before creating a field evidence template.");
+      return;
+    }
+    const siteName = safeReportName(form.name || form.host || "field-site");
+    setRunningStep("field-template");
+    setError(null);
+    setResult("field-template", { status: "running", output: "$ Create Field Evidence Template\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        fieldEvidenceTemplateCommand(remoteProject, remoteBundle, siteName),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteTemplate = parseFieldEvidenceTemplate(output);
+      const remoteManifest = parseFieldEvidenceManifest(output);
+      if (!remoteTemplate) {
+        setResult("field-template", {
+          status: result.exit_code === 0 ? "passed" : "failed",
+          output: `$ Create Field Evidence Template\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      setResult("field-template", {
+        status: "running",
+        output: `$ Create Field Evidence Template\n${output}\n\n$ download field evidence template\nDownloading ${remoteTemplate}...`,
+      });
+      const downloaded = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remoteTemplate,
+        AUTONOMY_REPORT_DOWNLOAD_DIR,
+      );
+      setFieldTemplateLocalPath(downloaded.local_path);
+      let manifestDownloadText = "";
+      if (remoteManifest) {
+        setResult("field-template", {
+          status: "running",
+          output: `$ Create Field Evidence Template\n${output}\n\n$ download field evidence template\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n\n$ download active field manifest\nDownloading ${remoteManifest}...`,
+        });
+        const downloadedManifest = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteManifest,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldManifestLocalPath(downloadedManifest.local_path);
+        manifestDownloadText = `\n\n$ download active field manifest\nSaved to ${downloadedManifest.local_path}\n[${downloadedManifest.bytes_received} bytes]`;
+      } else {
+        setFieldManifestLocalPath(null);
+      }
+      setResult("field-template", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ Create Field Evidence Template\n${output}\n\n$ download field evidence template\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${manifestDownloadText}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+      await refreshFieldEvidenceTemplates();
+    } catch (err) {
+      setResult("field-template", { status: "failed", output: `$ Create Field Evidence Template\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const syncProject = async () => {
     const resolvedAuth = auth();
     if (!resolvedAuth || !form.host) {
@@ -2233,6 +2478,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         support_bundle_download_dir: SUPPORT_DOWNLOAD_DIR,
         autonomy_report_download_dir: AUTONOMY_REPORT_DOWNLOAD_DIR,
         autonomy_handoff_local_path: autonomyHandoffLocalPath,
+        field_template_local_path: fieldTemplateLocalPath,
+        field_manifest_local_path: fieldManifestLocalPath,
         feature_benchmark_download_dir: FEATURE_BENCH_DOWNLOAD_DIR,
         px4_receiver_download_dir: PX4_RECEIVER_DOWNLOAD_DIR,
         runtime_status_download_dir: RUNTIME_STATUS_DOWNLOAD_DIR,
@@ -2285,6 +2532,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         : null,
       downloaded_autonomy_reports: autonomyReports.slice(0, 5),
       downloaded_px4_receiver_reports: px4ReceiverReports.slice(0, 5),
+      downloaded_field_evidence_templates: fieldEvidenceTemplates.slice(0, 5),
       downloaded_field_evidence_reports: fieldEvidenceReports.slice(0, 5),
       downloaded_feature_benchmark_reports: featureBenchmarkReports.slice(0, 5),
       downloaded_threshold_tuning_reports: thresholdTuningReports.slice(0, 5),
@@ -2722,14 +2970,24 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                     <ShieldCheck size={14} className="text-cyan-400" /> Field Evidence Case
                   </div>
                 </div>
-                <button
-                  onClick={registerFieldEvidenceCase}
-                  disabled={!connectionReady || !!runningStep || !fieldCase.caseName.trim() || !fieldCase.conditions.trim()}
-                  className="btn-secondary text-xs py-1 px-3"
-                >
-                  {runningStep === "field-evidence" ? <Loader2 size={11} className="animate-spin" /> : <ShieldCheck size={11} />}
-                  Register
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={createFieldEvidenceTemplate}
+                    disabled={!connectionReady || !!runningStep}
+                    className="btn-secondary text-xs py-1 px-3"
+                  >
+                    {runningStep === "field-template" ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />}
+                    Create Template
+                  </button>
+                  <button
+                    onClick={registerFieldEvidenceCase}
+                    disabled={!connectionReady || !!runningStep || !fieldCase.caseName.trim() || !fieldCase.conditions.trim()}
+                    className="btn-secondary text-xs py-1 px-3"
+                  >
+                    {runningStep === "field-evidence" ? <Loader2 size={11} className="animate-spin" /> : <ShieldCheck size={11} />}
+                    Register
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2796,6 +3054,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               {results["field-evidence"]?.output && selectedOutputId !== "field-evidence" && (
                 <button onClick={() => setSelectedOutputId("field-evidence")} className="text-[10px] text-cyan-400 hover:text-cyan-300">
                   Show field evidence output
+                </button>
+              )}
+              {results["field-template"]?.output && selectedOutputId !== "field-template" && (
+                <button onClick={() => setSelectedOutputId("field-template")} className="text-[10px] text-cyan-400 hover:text-cyan-300">
+                  Show field template output
                 </button>
               )}
             </div>
@@ -2899,6 +3162,34 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 </button>
               </div>
             )}
+            {fieldTemplateLocalPath && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
+                <span className="min-w-0">
+                  Field evidence template saved to <span className="font-mono break-all">{fieldTemplateLocalPath}</span>
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(fieldTemplateLocalPath)}
+                  className="btn-secondary text-xs py-1 px-2 shrink-0"
+                  title="Copy field evidence template path"
+                >
+                  <Copy size={11} />
+                </button>
+              </div>
+            )}
+            {fieldManifestLocalPath && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
+                <span className="min-w-0">
+                  Active field manifest saved to <span className="font-mono break-all">{fieldManifestLocalPath}</span>
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(fieldManifestLocalPath)}
+                  className="btn-secondary text-xs py-1 px-2 shrink-0"
+                  title="Copy active field manifest path"
+                >
+                  <Copy size={11} />
+                </button>
+              </div>
+            )}
             {output ? (
               <pre className="bg-bg-base border border-border rounded-lg px-3 py-2.5 text-[11px] font-mono text-slate-300 whitespace-pre-wrap max-h-80 overflow-y-auto leading-relaxed">
                 {runningStep && results[selectedOutputId ?? ""]?.status === "running" ? `${output}▋` : output}
@@ -2919,6 +3210,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               reports={featureBenchmarkReports}
               downloadDir={FEATURE_BENCH_DOWNLOAD_DIR}
               onRefresh={refreshFeatureBenchmarkReports}
+            />
+            <FieldEvidenceTemplateList
+              templates={fieldEvidenceTemplates}
+              downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
+              onRefresh={refreshFieldEvidenceTemplates}
             />
             <FieldEvidenceReportList
               reports={fieldEvidenceReports}

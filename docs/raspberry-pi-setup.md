@@ -503,12 +503,24 @@ Register each field run as a replay case from the Pi after a terrain runtime or
 replay log exists:
 
 ```bash
+./scripts/pi/create_field_evidence_template.sh
+
 VISION_NAV_FIELD_CASE_NAME=field-good-texture \
 VISION_NAV_FIELD_EXPECTED=good_map \
 VISION_NAV_FIELD_CONDITION=good_texture \
 VISION_NAV_FIELD_NOTES="clear texture, matching map, nominal lighting" \
 ./scripts/pi/register_field_replay_case.sh
 ```
+
+The template wrapper writes
+`~/DroneTransfer/outgoing/replay-cases/field_manifest.template.json`, includes
+one placeholder field case for each required autonomy-readiness condition, and
+prints `__VISION_NAV_FIELD_TEMPLATE__=...` so Module Setup can download the
+starter manifest. It also prints `__VISION_NAV_FIELD_MANIFEST__=...` and seeds
+`~/DroneTransfer/outgoing/replay-cases/field_manifest.json` if the active
+manifest does not already exist. Use it before the first field run, then
+register captured logs with `register_field_replay_case.sh`; matching template
+placeholders are replaced by condition tag as real logs are registered.
 
 Use `VISION_NAV_FIELD_CONDITIONS="low_texture blur"` for runs that cover
 multiple tags. The wrapper updates

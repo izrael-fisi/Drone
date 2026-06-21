@@ -38,6 +38,7 @@ from vision_nav.external_position import (
 )
 from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
 from vision_nav.feature_method_benchmark import benchmark_feature_methods
+from vision_nav.field_evidence_template import create_field_evidence_template
 from vision_nav.field_evidence_gate import evaluate_field_evidence_gate
 from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health_report
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
@@ -2053,6 +2054,39 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         ]
         assert_equal(len(feature_blockers), 1, "autonomy readiness feature benchmark evidence blocker")
 
+        missing_field_direct = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=direct_report_support_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+        )
+        missing_field_actions = [
+            action
+            for action in missing_field_direct["next_actions"]
+            if action.get("check") == "field_evidence_proof"
+        ]
+        assert_equal(len(missing_field_actions), 1, "autonomy readiness field evidence next action")
+        assert_equal(
+            missing_field_actions[0]["desktop_action"],
+            "Module Setup > Field Evidence Case > Create Template, then Register",
+            "autonomy readiness field evidence desktop action",
+        )
+        if "create_field_evidence_template.sh" not in missing_field_actions[0]["command"]:
+            raise AssertionError("autonomy readiness field evidence action should start with template creation")
+        support_field_actions = [
+            action
+            for action in missing_field_direct["next_actions"]
+            if action.get("check") == "support_bundle_bench_readiness.field_evidence"
+        ]
+        assert_equal(len(support_field_actions), 1, "autonomy readiness support field evidence subcheck action")
+        assert_equal(
+            support_field_actions[0]["desktop_action"],
+            "Module Setup > Field Evidence Case > Create Template, then Register",
+            "autonomy readiness support field evidence desktop action",
+        )
+
         missing_runtime_status_manifest = root / "support_manifest_without_runtime_status.json"
         missing_runtime_status_data = json.loads(direct_report_support_manifest.read_text())
         missing_runtime_status_data["logs"]["runtime_statuses"] = []
@@ -2443,6 +2477,62 @@ def test_replay_case_manifest_schema_only_skips_log_evaluation() -> None:
             raise AssertionError(f"Expected missing log issue, got {full['reports']}")
 
 
+def test_field_evidence_template_matches_required_conditions() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        output = Path(tmp) / "field_manifest.template.json"
+        result = create_field_evidence_template(
+            output_path=output,
+            site_name="Site A",
+            bundle="field-bundles/site-a/mission_bundle",
+        )
+        assert_equal(result["status"], "written", "field evidence template status")
+        assert_equal(result["case_count"], len(REQUIRED_FIELD_CONDITIONS), "field evidence template case count")
+        manifest = json.loads(output.read_text())
+        cases = manifest["cases"]
+        conditions = [case["conditions"][0] for case in cases]
+        assert_equal(conditions, REQUIRED_FIELD_CONDITIONS, "field evidence template required conditions")
+        expected_by_condition = {case["conditions"][0]: case["expected"] for case in cases}
+        assert_equal(expected_by_condition["good_texture"], "good_map", "field template good texture expected")
+        assert_equal(expected_by_condition["wrong_map"], "wrong_map", "field template wrong map expected")
+        assert_equal(expected_by_condition["low_texture"], "degraded", "field template low texture expected")
+        assert_equal({case["dataset_type"] for case in cases}, {"field"}, "field template dataset type")
+        assert_equal({case["bundle"] for case in cases}, {"field-bundles/site-a/mission_bundle"}, "field template bundle")
+        schema_only = evaluate_replay_case_manifest(output, schema_only=True)
+        assert_equal(schema_only["status"], "passed", "field template schema-only status")
+        full = evaluate_replay_case_manifest(output)
+        assert_equal(full["status"], "failed", "field template full gate waits for logs")
+
+        try:
+            create_field_evidence_template(output_path=output)
+        except FileExistsError:
+            pass
+        else:
+            raise AssertionError("field evidence template should refuse to overwrite without force")
+
+        seeded_template = Path(tmp) / "field_manifest_seeded.template.json"
+        active_manifest = Path(tmp) / "field_manifest.json"
+        seeded = create_field_evidence_template(
+            output_path=seeded_template,
+            site_name="Site A",
+            bundle="field-bundles/site-a/mission_bundle",
+            seed_manifest_path=active_manifest,
+        )
+        assert_equal(seeded["seed_manifest"]["written"], True, "field template active manifest seeded")
+        assert_equal(seeded["seed_manifest"]["path"], str(active_manifest), "field template seed path")
+        active = json.loads(active_manifest.read_text())
+        assert_equal(len(active["cases"]), len(REQUIRED_FIELD_CONDITIONS), "seeded active manifest case count")
+        schema_seeded = evaluate_replay_case_manifest(active_manifest, schema_only=True)
+        assert_equal(schema_seeded["status"], "passed", "seeded active manifest schema-only status")
+
+        active_manifest.write_text(json.dumps({"version": "0.1.0", "cases": []}))
+        not_seeded = create_field_evidence_template(
+            output_path=Path(tmp) / "field_manifest_second.template.json",
+            seed_manifest_path=active_manifest,
+        )
+        assert_equal(not_seeded["seed_manifest"]["written"], False, "field template does not overwrite active manifest")
+        assert_equal(not_seeded["seed_manifest"]["reason"], "already_exists", "field template seed skip reason")
+
+
 def test_replay_dataset_coverage_audit_requires_real_field_cases() -> None:
     root = Path(__file__).resolve().parents[1]
     synthetic_manifest = root / "data" / "replay_cases" / "synthetic_smoke" / "manifest.json"
@@ -2683,6 +2773,49 @@ def test_replay_case_registry_registers_and_replaces_cases() -> None:
         assert_equal(replaced_case["conditions"], ["low_texture"], "replaced replay conditions")
         if not Path(replaced_case["log"]).is_absolute():
             raise AssertionError("Expected external non-copied log path to be stored as absolute path")
+
+        template_base = tmp_root / "template_dataset"
+        template_base.mkdir()
+        template_manifest = template_base / "field_manifest.template.json"
+        active_manifest = template_base / "field_manifest.json"
+        create_field_evidence_template(
+            output_path=template_manifest,
+            site_name="field-site",
+            bundle="field-bundle",
+            seed_manifest_path=active_manifest,
+        )
+        template_data = json.loads(active_manifest.read_text())
+        assert_equal(len(template_data["cases"]), len(REQUIRED_FIELD_CONDITIONS), "template seed case count")
+        log2 = template_base / "captured_good_texture.jsonl"
+        log2.write_text(json.dumps({"result": {"status": "accepted", "confidence": 0.92}}) + "\n")
+        registered_from_template = register_replay_case(
+            manifest_path=active_manifest,
+            case_name="field-good-texture",
+            expected="good_map",
+            dataset_type="field",
+            conditions=["good_texture"],
+            log_path=log2,
+            bundle="field-bundle",
+            notes="real good texture log",
+        )
+        assert_equal(
+            registered_from_template["replaced_template_placeholders"],
+            1,
+            "template placeholder replacement count",
+        )
+        assert_equal(
+            registered_from_template["case_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "template placeholder replacement preserves case count",
+        )
+        registered_data = json.loads(active_manifest.read_text())
+        good_texture_cases = [
+            case for case in registered_data["cases"] if case.get("conditions") == ["good_texture"]
+        ]
+        assert_equal(len(good_texture_cases), 1, "single good texture case after placeholder replacement")
+        assert_equal(good_texture_cases[0]["case_name"], "field-good-texture", "registered case replaced placeholder name")
+        if "template_status" in good_texture_cases[0]:
+            raise AssertionError("Registered real case should not retain template_status")
 
 
 def test_geospatial_health_blocks_missing_georef() -> None:
@@ -3085,6 +3218,7 @@ def main() -> None:
         test_synthetic_replay_case_manifest_passes_all_cases,
         test_replay_case_manifest_schema_flags_malformed_cases,
         test_replay_case_manifest_schema_only_skips_log_evaluation,
+        test_field_evidence_template_matches_required_conditions,
         test_replay_dataset_coverage_audit_requires_real_field_cases,
         test_field_evidence_gate_combines_coverage_and_replay_gates,
         test_threshold_tuning_report_requires_full_field_coverage,

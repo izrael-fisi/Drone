@@ -53,11 +53,27 @@ def register_replay_case(
     manifest_file.parent.mkdir(parents=True, exist_ok=True)
     manifest = load_or_create_manifest(manifest_file)
     cases = [case for case in manifest.get("cases") or [] if isinstance(case, dict)]
+    normalized_conditions = normalize_conditions(conditions)
     duplicate_indexes = [index for index, case in enumerate(cases) if case.get("case_name") == case_name]
     if duplicate_indexes and not replace:
         raise ValueError(f"Replay case already exists: {case_name}. Use --replace to update it.")
     if duplicate_indexes:
         cases = [case for case in cases if case.get("case_name") != case_name]
+    template_replacements = 0
+    if not duplicate_indexes and dataset_type == "field":
+        kept_cases = []
+        for case in cases:
+            case_conditions = normalize_conditions([str(value) for value in case.get("conditions") or []])
+            is_matching_template = (
+                case.get("template_status")
+                and case.get("dataset_type") == "field"
+                and case_conditions == normalized_conditions
+            )
+            if is_matching_template:
+                template_replacements += 1
+                continue
+            kept_cases.append(case)
+        cases = kept_cases
 
     source_log = Path(log_path).expanduser()
     if not source_log.exists():
@@ -77,7 +93,7 @@ def register_replay_case(
         "case_name": case_name,
         "expected": expected,
         "dataset_type": dataset_type,
-        "conditions": normalize_conditions(conditions),
+        "conditions": normalized_conditions,
         "bundle": bundle or "",
         "log": stored_log,
         "notes": notes or "",
@@ -95,6 +111,7 @@ def register_replay_case(
         "case": case,
         "case_count": len(cases),
         "copied_log": copy_log,
+        "replaced_template_placeholders": template_replacements,
     }
 
 
