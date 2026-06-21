@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/izrael-fisi/Drone/data/replay_cases/replay_case_manifest.schema.json",
+  "title": "Drone Vision Replay Case Manifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "cases"],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["case_name", "expected", "dataset_type", "conditions", "log"],
+        "properties": {
+          "case_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected": {
+            "type": "string",
+            "enum": ["degraded", "good_map", "wrong_map"]
+          },
+          "dataset_type": {
+            "type": "string",
+            "enum": ["bench", "field", "synthetic"]
+          },
+          "conditions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "condition_tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "bundle": {
+            "type": "string"
+          },
+          "log": {
+            "type": "string",
+            "minLength": 1
+          },
+          "notes": {
+            "type": "string"
+          },
+          "registered_at": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

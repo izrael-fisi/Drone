@@ -359,6 +359,239 @@ def export_rosbag_jsonl(
     }
 
 
+def export_rosbag_mcap(
+    records: list[dict[str, Any]],
+    output_path: str | Path,
+    *,
+    source_log: str | Path | None = None,
+    odometry_topic: str = "/vision_nav/odometry",
+    diagnostics_topic: str = "/diagnostics",
+    frame_topic: str | None = None,
+    camera_frame_id: str = "down_camera",
+    frame_root: str | Path | None = None,
+    max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
+    writer_factory: Any | None = None,
+) -> dict[str, Any]:
+    writer_cls = writer_factory or _load_mcap_writer()
+    path = Path(output_path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    effective_frame_root = frame_root
+    if effective_frame_root is None and source_log is not None:
+        effective_frame_root = Path(source_log).expanduser().parent
+    events = rosbag_jsonl_events_from_records(
+        records,
+        odometry_topic=odometry_topic,
+        diagnostics_topic=diagnostics_topic,
+        frame_topic=frame_topic,
+        camera_frame_id=camera_frame_id,
+        frame_root=effective_frame_root,
+        max_frame_bytes=max_frame_bytes,
+    )
+    topic_counts: dict[str, int] = {}
+    for event in events:
+        topic = str(event["topic"])
+        topic_counts[topic] = topic_counts.get(topic, 0) + 1
+
+    with path.open("wb") as stream:
+        writer = writer_cls(stream)
+        writer.start()
+        channels: dict[tuple[str, str], int] = {}
+        schemas: dict[str, int] = {}
+        for event in events:
+            message_type = str(event["type"])
+            if message_type not in schemas:
+                schemas[message_type] = writer.register_schema(
+                    name=message_type,
+                    encoding="jsonschema",
+                    data=json.dumps(_mcap_json_schema(message_type), sort_keys=True).encode("utf-8"),
+                )
+            key = (str(event["topic"]), message_type)
+            if key not in channels:
+                channels[key] = writer.register_channel(
+                    topic=key[0],
+                    message_encoding="json",
+                    schema_id=schemas[message_type],
+                )
+            writer.add_message(
+                channel_id=channels[key],
+                log_time=int(event["timestamp_ns"]),
+                publish_time=int(event["timestamp_ns"]),
+                data=json.dumps(event["message"], sort_keys=True, allow_nan=True).encode("utf-8"),
+            )
+        writer.finish()
+
+    metadata = {
+        "format": "vision_nav_mcap_json_v1",
+        "message_encoding": "json",
+        "schema_encoding": "jsonschema",
+        "source_log": str(source_log) if source_log is not None else None,
+        "mcap_path": str(path),
+        "message_count": len(events),
+        "source_record_count": len(records),
+        "topics": [
+            {
+                "name": topic,
+                "type": next(str(event["type"]) for event in events if str(event["topic"]) == topic),
+                "message_count": count,
+            }
+            for topic, count in sorted(topic_counts.items())
+        ],
+        "frame_export": {
+            "enabled": bool(frame_topic),
+            "topic": frame_topic,
+            "camera_frame_id": camera_frame_id if frame_topic else None,
+            "frame_root": str(effective_frame_root) if effective_frame_root is not None and frame_topic else None,
+            "max_frame_bytes": max_frame_bytes if frame_topic else None,
+        },
+    }
+    metadata_path = path.with_suffix(path.suffix + ".metadata.json")
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {"mcap_path": str(path), "metadata_path": str(metadata_path), "metadata": metadata}
+
+
+def export_rosbag2(
+    records: list[dict[str, Any]],
+    output_dir: str | Path,
+    *,
+    source_log: str | Path | None = None,
+    odometry_topic: str = "/vision_nav/odometry",
+    diagnostics_topic: str = "/diagnostics",
+    frame_topic: str | None = None,
+    camera_frame_id: str = "down_camera",
+    frame_root: str | Path | None = None,
+    max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
+    storage_id: str = "sqlite3",
+    writer_factory: Any | None = None,
+    storage_options_cls: Any | None = None,
+    converter_options_cls: Any | None = None,
+    topic_metadata_cls: Any | None = None,
+    message_classes: dict[str, Any] | None = None,
+    serializer: Any | None = None,
+) -> dict[str, Any]:
+    runtime = (
+        {
+            "writer_cls": writer_factory,
+            "storage_options_cls": storage_options_cls,
+            "converter_options_cls": converter_options_cls,
+            "topic_metadata_cls": topic_metadata_cls,
+            "message_classes": message_classes,
+            "serializer": serializer,
+        }
+        if writer_factory
+        and storage_options_cls
+        and converter_options_cls
+        and topic_metadata_cls
+        and message_classes
+        and serializer
+        else _load_rosbag2_runtime()
+    )
+    path = Path(output_dir).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    effective_frame_root = frame_root
+    if effective_frame_root is None and source_log is not None:
+        effective_frame_root = Path(source_log).expanduser().parent
+    events = rosbag_jsonl_events_from_records(
+        records,
+        odometry_topic=odometry_topic,
+        diagnostics_topic=diagnostics_topic,
+        frame_topic=frame_topic,
+        camera_frame_id=camera_frame_id,
+        frame_root=effective_frame_root,
+        max_frame_bytes=max_frame_bytes,
+    )
+
+    writer = runtime["writer_cls"]()
+    writer.open(
+        runtime["storage_options_cls"](uri=str(path), storage_id=storage_id),
+        runtime["converter_options_cls"](input_serialization_format="cdr", output_serialization_format="cdr"),
+    )
+    topics: dict[tuple[str, str], dict[str, Any]] = {}
+    for event in events:
+        key = (str(event["topic"]), str(event["type"]))
+        if key in topics:
+            continue
+        metadata = _make_rosbag2_topic_metadata(runtime["topic_metadata_cls"], topic=key[0], message_type=key[1])
+        writer.create_topic(metadata)
+        topics[key] = {"name": key[0], "type": key[1], "message_count": 0}
+
+    for event in events:
+        message = _rosbag2_message_from_event(event, runtime["message_classes"])
+        serialized = runtime["serializer"](message)
+        writer.write(str(event["topic"]), serialized, int(event["timestamp_ns"]))
+        topics[(str(event["topic"]), str(event["type"]))]["message_count"] += 1
+
+    path.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "format": "vision_nav_rosbag2_v1",
+        "storage_id": storage_id,
+        "serialization_format": "cdr",
+        "source_log": str(source_log) if source_log is not None else None,
+        "output_dir": str(path),
+        "message_count": len(events),
+        "source_record_count": len(records),
+        "topics": sorted(topics.values(), key=lambda item: str(item["name"])),
+        "frame_export": {
+            "enabled": bool(frame_topic),
+            "topic": frame_topic,
+            "camera_frame_id": camera_frame_id if frame_topic else None,
+            "frame_root": str(effective_frame_root) if effective_frame_root is not None and frame_topic else None,
+            "max_frame_bytes": max_frame_bytes if frame_topic else None,
+        },
+    }
+    metadata_path = path / "vision_nav_rosbag2_metadata.json"
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {"output_dir": str(path), "metadata_path": str(metadata_path), "metadata": metadata}
+
+
+def _load_mcap_writer() -> Any:
+    try:
+        from mcap.writer import Writer
+    except ImportError as exc:
+        raise RuntimeError(
+            "MCAP export requires the optional 'mcap' Python package. "
+            "Install with `pip install .[rosbag]` or use --export-rosbag-jsonl."
+        ) from exc
+    return Writer
+
+
+def _load_rosbag2_runtime() -> dict[str, Any]:
+    try:
+        import rosbag2_py
+        from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+        from nav_msgs.msg import Odometry
+        from rclpy.serialization import serialize_message
+        from sensor_msgs.msg import CompressedImage
+    except ImportError as exc:
+        raise RuntimeError(
+            "Native rosbag2 export requires a sourced ROS 2 Python environment "
+            "with rosbag2_py, rclpy, nav_msgs, diagnostic_msgs, and sensor_msgs. "
+            "Use --export-rosbag-jsonl or --export-mcap outside ROS 2."
+        ) from exc
+    return {
+        "writer_cls": rosbag2_py.SequentialWriter,
+        "storage_options_cls": rosbag2_py.StorageOptions,
+        "converter_options_cls": rosbag2_py.ConverterOptions,
+        "topic_metadata_cls": rosbag2_py.TopicMetadata,
+        "message_classes": {
+            "nav_msgs/msg/Odometry": Odometry,
+            "diagnostic_msgs/msg/DiagnosticArray": DiagnosticArray,
+            "diagnostic_msgs/msg/DiagnosticStatus": DiagnosticStatus,
+            "diagnostic_msgs/msg/KeyValue": KeyValue,
+            "sensor_msgs/msg/CompressedImage": CompressedImage,
+        },
+        "serializer": serialize_message,
+    }
+
+
+def _mcap_json_schema(message_type: str) -> dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": message_type,
+        "type": "object",
+        "additionalProperties": True,
+    }
+
+
 class Ros2RuntimePublisher:
     def __init__(
         self,
@@ -417,11 +650,20 @@ def parse_args() -> argparse.Namespace:
         "--export-rosbag-jsonl",
         help="Write a dependency-free ROS-bag-like directory with metadata.json and topic messages.jsonl.",
     )
-    parser.add_argument("--include-frame-topic", action="store_true", help="Include bounded camera frame messages in --export-rosbag-jsonl output.")
+    parser.add_argument(
+        "--export-mcap",
+        help="Write an optional MCAP archive with JSON-encoded ROS-shaped topic messages.",
+    )
+    parser.add_argument(
+        "--export-rosbag2",
+        help="Write a native rosbag2 directory with serialized ROS messages. Requires a sourced ROS 2 Python environment.",
+    )
+    parser.add_argument("--include-frame-topic", action="store_true", help="Include bounded camera frame messages in exported replay artifacts.")
     parser.add_argument("--frame-topic", default="/vision_nav/camera/image/compressed")
     parser.add_argument("--camera-frame-id", default="down_camera")
     parser.add_argument("--frame-root", help="Resolve relative frame_path entries from this directory. Defaults to the log directory.")
     parser.add_argument("--max-frame-bytes", type=int, default=DEFAULT_MAX_FRAME_BYTES)
+    parser.add_argument("--rosbag2-storage-id", default="sqlite3", help="Native rosbag2 storage id for --export-rosbag2.")
     return parser.parse_args()
 
 
@@ -432,6 +674,35 @@ def main() -> None:
         result = export_rosbag_jsonl(
             records,
             args.export_rosbag_jsonl,
+            source_log=args.log,
+            odometry_topic=args.odometry_topic,
+            diagnostics_topic=args.diagnostics_topic,
+            frame_topic=args.frame_topic if args.include_frame_topic else None,
+            camera_frame_id=args.camera_frame_id,
+            frame_root=args.frame_root,
+            max_frame_bytes=args.max_frame_bytes,
+        )
+        print(json.dumps(result["metadata"], indent=2, sort_keys=True))
+        return
+    if args.export_rosbag2:
+        result = export_rosbag2(
+            records,
+            args.export_rosbag2,
+            source_log=args.log,
+            odometry_topic=args.odometry_topic,
+            diagnostics_topic=args.diagnostics_topic,
+            frame_topic=args.frame_topic if args.include_frame_topic else None,
+            camera_frame_id=args.camera_frame_id,
+            frame_root=args.frame_root,
+            max_frame_bytes=args.max_frame_bytes,
+            storage_id=args.rosbag2_storage_id,
+        )
+        print(json.dumps(result["metadata"], indent=2, sort_keys=True))
+        return
+    if args.export_mcap:
+        result = export_rosbag_mcap(
+            records,
+            args.export_mcap,
             source_log=args.log,
             odometry_topic=args.odometry_topic,
             diagnostics_topic=args.diagnostics_topic,
@@ -617,13 +888,55 @@ def _odometry_msg_from_dict(odometry_cls: Any, data: dict[str, Any]) -> Any:
     return msg
 
 
-def _diagnostic_array_from_dict(
+def _make_rosbag2_topic_metadata(topic_metadata_cls: Any, *, topic: str, message_type: str) -> Any:
+    try:
+        return topic_metadata_cls(
+            name=topic,
+            type=message_type,
+            serialization_format="cdr",
+            offered_qos_profiles="",
+        )
+    except TypeError:
+        return topic_metadata_cls(name=topic, type=message_type, serialization_format="cdr")
+
+
+def _rosbag2_message_from_event(event: dict[str, Any], message_classes: dict[str, Any]) -> Any:
+    message_type = str(event["type"])
+    message = event["message"]
+    if message_type == "nav_msgs/msg/Odometry":
+        return _odometry_msg_from_dict(message_classes[message_type], message)
+    if message_type == "diagnostic_msgs/msg/DiagnosticArray":
+        return _diagnostic_array_msg_from_dict(
+            message_classes["diagnostic_msgs/msg/DiagnosticArray"],
+            message_classes["diagnostic_msgs/msg/DiagnosticStatus"],
+            message_classes["diagnostic_msgs/msg/KeyValue"],
+            message,
+        )
+    if message_type == "sensor_msgs/msg/CompressedImage":
+        return _compressed_image_msg_from_dict(message_classes[message_type], message)
+    raise ValueError(f"Unsupported rosbag2 message type: {message_type}")
+
+
+def _diagnostic_array_msg_from_dict(
     diagnostic_array_cls: Any,
     diagnostic_status_cls: Any,
     key_value_cls: Any,
     data: dict[str, Any],
 ) -> Any:
     msg = diagnostic_array_cls()
+    header = data.get("header") or {}
+    stamp = header.get("stamp") or {"sec": 0, "nanosec": 0}
+    msg.header.stamp.sec = int(stamp.get("sec") or 0)
+    msg.header.stamp.nanosec = int(stamp.get("nanosec") or 0)
+    msg.header.frame_id = str(header.get("frame_id") or "")
+    msg.status = [
+        _diagnostic_status_msg_from_dict(diagnostic_status_cls, key_value_cls, status)
+        for status in data.get("status", [])
+    ]
+    return msg
+
+
+def _diagnostic_status_msg_from_dict(diagnostic_status_cls: Any, key_value_cls: Any, data: dict[str, Any]) -> Any:
     status = diagnostic_status_cls()
     status.level = int(data["level"])
     status.name = data["name"]
@@ -635,7 +948,28 @@ def _diagnostic_array_from_dict(
         pair.key = key
         pair.value = str(value)
         status.values.append(pair)
-    msg.status = [status]
+    return status
+
+
+def _compressed_image_msg_from_dict(compressed_image_cls: Any, data: dict[str, Any]) -> Any:
+    msg = compressed_image_cls()
+    stamp = data["header"]["stamp"]
+    msg.header.stamp.sec = int(stamp["sec"])
+    msg.header.stamp.nanosec = int(stamp["nanosec"])
+    msg.header.frame_id = data["header"]["frame_id"]
+    msg.format = data["format"]
+    msg.data = base64.b64decode(data.get("data_base64") or "")
+    return msg
+
+
+def _diagnostic_array_from_dict(
+    diagnostic_array_cls: Any,
+    diagnostic_status_cls: Any,
+    key_value_cls: Any,
+    data: dict[str, Any],
+) -> Any:
+    msg = diagnostic_array_cls()
+    msg.status = [_diagnostic_status_msg_from_dict(diagnostic_status_cls, key_value_cls, data)]
     return msg
 
 

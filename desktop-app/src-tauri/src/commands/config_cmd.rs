@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -11,6 +12,9 @@ use zip::ZipArchive;
 const LOG_PREVIEW_LIMIT: usize = 5;
 const IMAGE_PREVIEW_LIMIT: usize = 4;
 const IMAGE_PREVIEW_MAX_BYTES: u64 = 1_500_000;
+const SUPPORT_ARTIFACT_MAX_BYTES: u64 = 50 * 1024 * 1024;
+const LOG_TIMELINE_SEGMENTS: usize = 24;
+const LOG_TIMELINE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 
 #[derive(Serialize)]
 pub struct SupportBundleSummary {
@@ -226,6 +230,13 @@ pub struct AutonomyReadinessCheck {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyReadinessBenchSubcheck {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyReadinessNextAction {
     pub check: Option<String>,
     pub status: Option<String>,
@@ -234,6 +245,26 @@ pub struct AutonomyReadinessNextAction {
     pub command: Option<String>,
     pub notes: Option<String>,
     pub missing_conditions: Vec<String>,
+    pub bench_subcheck: Option<String>,
+    pub bench_message: Option<String>,
+    pub bench_subchecks: Vec<AutonomyReadinessBenchSubcheck>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessEvidenceBlocker {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub message: Option<String>,
+    pub missing_conditions: Vec<String>,
+    pub bench_subchecks: Vec<AutonomyReadinessBenchSubcheck>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessEvidenceManifest {
+    pub schema_version: Option<String>,
+    pub ready_for_goal_completion: Option<bool>,
+    pub completion_blockers: Vec<AutonomyReadinessEvidenceBlocker>,
+    pub external_blockers: Vec<AutonomyReadinessEvidenceBlocker>,
 }
 
 #[derive(Serialize)]
@@ -255,9 +286,13 @@ pub struct AutonomyReadinessReportFile {
     pub path: String,
     pub size_bytes: u64,
     pub modified_unix_ms: Option<u128>,
+    pub handoff_path: Option<String>,
+    pub handoff_size_bytes: Option<u64>,
+    pub handoff_modified_unix_ms: Option<u128>,
     pub summary: AutonomyReadinessSummary,
     pub checks: Vec<AutonomyReadinessCheck>,
     pub next_actions: Vec<AutonomyReadinessNextAction>,
+    pub evidence_manifest: Option<AutonomyReadinessEvidenceManifest>,
 }
 
 #[derive(Serialize)]
@@ -285,6 +320,41 @@ pub struct SupportBundleLogPreview {
 }
 
 #[derive(Serialize)]
+pub struct SupportBundleLogTimelineSegment {
+    pub index: usize,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub total_records: u64,
+    pub accepted_rate: Option<f64>,
+    pub dominant_status: Option<String>,
+    pub average_confidence: Option<f64>,
+    pub average_inliers: Option<f64>,
+    pub average_reprojection_error_px: Option<f64>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleLogTimeline {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub total_records: Option<u64>,
+    pub invalid_records: u64,
+    pub accepted_rate: Option<f64>,
+    pub status_counts: Option<serde_json::Value>,
+    pub reason_counts: Option<serde_json::Value>,
+    pub external_position_status_counts: Option<serde_json::Value>,
+    pub first_sequence: Option<u64>,
+    pub last_sequence: Option<u64>,
+    pub first_timestamp_us: Option<u64>,
+    pub last_timestamp_us: Option<u64>,
+    pub average_confidence: Option<f64>,
+    pub average_inliers: Option<f64>,
+    pub average_reprojection_error_px: Option<f64>,
+    pub segments: Vec<SupportBundleLogTimelineSegment>,
+    pub truncated: bool,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleImagePreview {
     pub name: String,
     pub path: String,
@@ -293,13 +363,31 @@ pub struct SupportBundleImagePreview {
     pub base64_data: String,
 }
 
+#[derive(Serialize, Clone)]
+pub struct SupportBundleArtifactEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Serialize)]
+pub struct ExtractedSupportBundleArtifact {
+    pub name: String,
+    pub entry_path: String,
+    pub path: String,
+    pub size_bytes: u64,
+}
+
 #[derive(Serialize)]
 pub struct SupportBundleDetails {
     pub manifest: serde_json::Value,
     pub metadata: Option<serde_json::Value>,
     pub bundle_health: Option<serde_json::Value>,
     pub logs: Vec<SupportBundleLogSummary>,
+    pub runtime_statuses: Vec<serde_json::Value>,
     pub log_previews: Vec<SupportBundleLogPreview>,
+    pub log_timelines: Vec<SupportBundleLogTimeline>,
     pub image_previews: Vec<SupportBundleImagePreview>,
     pub replay_reports: Vec<SupportBundleReplayReport>,
     pub px4_evidence_reports: Vec<SupportBundlePx4EvidenceReport>,
@@ -309,6 +397,7 @@ pub struct SupportBundleDetails {
     pub field_evidence_reports: Vec<SupportBundleFieldEvidenceReport>,
     pub threshold_tuning_reports: Vec<SupportBundleThresholdTuningReport>,
     pub bench_readiness: Option<SupportBundleBenchReadinessReport>,
+    pub artifacts: Vec<SupportBundleArtifactEntry>,
     pub entry_count: usize,
 }
 
@@ -426,7 +515,13 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let manifest = read_json_entry(&mut archive, "support_manifest.json")?
         .ok_or_else(|| "Missing support_manifest.json".to_string())?;
     let mut logs = Vec::new();
+    let mut runtime_statuses: Vec<serde_json::Value> = manifest
+        .pointer("/logs/runtime_statuses")
+        .and_then(|value| value.as_array())
+        .cloned()
+        .unwrap_or_default();
     let mut log_previews = Vec::new();
+    let mut log_timelines = Vec::new();
     let mut image_previews = Vec::new();
     let mut replay_reports = Vec::new();
     let mut px4_evidence_reports = Vec::new();
@@ -435,6 +530,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut feature_method_benchmark_reports = Vec::new();
     let mut field_evidence_reports = Vec::new();
     let mut threshold_tuning_reports = Vec::new();
+    let mut artifacts = Vec::new();
     let mut bench_readiness = manifest
         .get("bench_readiness")
         .map(bench_readiness_report_from_json);
@@ -443,6 +539,9 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             let entry = archive.by_index(index).map_err(|e| e.to_string())?;
             (entry.name().to_string(), entry.size())
         };
+        if let Some(artifact) = support_artifact_entry(&name, size_bytes) {
+            artifacts.push(artifact);
+        }
         if name.starts_with("summaries/")
             && name.ends_with(".summary.json")
             && !name.contains("/replay_gates/")
@@ -450,9 +549,19 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 logs.push(log_summary_from_json(&name, &value));
             }
+        } else if runtime_statuses.is_empty()
+            && name.starts_with("logs/")
+            && name.ends_with(".runtime_status.json")
+        {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                runtime_statuses.push(value);
+            }
         } else if name.starts_with("logs/") && name.ends_with(".jsonl") {
             if let Some(preview) = read_log_preview_entry(&mut archive, &name)? {
                 log_previews.push(preview);
+            }
+            if let Some(timeline) = read_log_timeline_entry(&mut archive, &name, size_bytes)? {
+                log_timelines.push(timeline);
             }
         } else if name.starts_with("summaries/replay_gates/") && name.ends_with(".gate.json") {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
@@ -500,7 +609,9 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         metadata: manifest.get("metadata").cloned(),
         bundle_health: manifest.pointer("/bundle/health").cloned(),
         logs,
+        runtime_statuses,
         log_previews,
+        log_timelines,
         image_previews,
         replay_reports,
         px4_evidence_reports,
@@ -510,8 +621,62 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         field_evidence_reports,
         threshold_tuning_reports,
         bench_readiness,
+        artifacts,
         entry_count,
         manifest,
+    })
+}
+
+#[tauri::command]
+pub fn extract_support_bundle_artifact(
+    path: String,
+    entry_path: String,
+) -> Result<ExtractedSupportBundleArtifact, String> {
+    let bundle_path = expand_local_path(&path).map_err(|e| e.to_string())?;
+    if bundle_path.extension().and_then(|ext| ext.to_str()) != Some("zip") {
+        return Err("Only support bundle ZIP files can be extracted from the app.".to_string());
+    }
+    let file = File::open(&bundle_path)
+        .with_context(|| format!("Cannot open support bundle {}", bundle_path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
+    let mut entry = archive
+        .by_name(&entry_path)
+        .with_context(|| format!("Support bundle entry not found: {entry_path}"))
+        .map_err(|e| e.to_string())?;
+    if entry.is_dir() {
+        return Err("Support bundle directories cannot be extracted directly.".to_string());
+    }
+    let size_bytes = entry.size();
+    let artifact = support_artifact_entry(&entry_path, size_bytes).ok_or_else(|| {
+        "This support bundle entry is not an extractable diagnostic artifact.".to_string()
+    })?;
+    let rel_path = safe_zip_entry_rel_path(&entry_path)?;
+    let stem = bundle_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("support-bundle");
+    let output_root = bundle_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(format!("{stem}-artifacts"));
+    let output_path = output_root.join(rel_path);
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Cannot create {}", parent.display()))
+            .map_err(|e| e.to_string())?;
+    }
+    let mut output = File::create(&output_path)
+        .with_context(|| format!("Cannot write {}", output_path.display()))
+        .map_err(|e| e.to_string())?;
+    std::io::copy(&mut entry, &mut output)
+        .with_context(|| format!("Cannot extract support bundle entry {entry_path}"))
+        .map_err(|e| e.to_string())?;
+    Ok(ExtractedSupportBundleArtifact {
+        name: artifact.name,
+        entry_path,
+        path: output_path.to_string_lossy().into_owned(),
+        size_bytes,
     })
 }
 
@@ -544,15 +709,21 @@ pub fn list_autonomy_readiness_reports(
             Ok(value) => value,
             Err(_) => continue,
         };
-        let (summary, checks, next_actions) = match autonomy_readiness_report_from_json(&value) {
-            Some(value) => value,
-            None => continue,
-        };
+        let (summary, checks, next_actions, evidence_manifest) =
+            match autonomy_readiness_report_from_json(&value) {
+                Some(value) => value,
+                None => continue,
+            };
         let modified_unix_ms = metadata
             .modified()
             .ok()
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .map(|duration| duration.as_millis());
+        let handoff_path = p.with_extension("md");
+        let handoff_metadata = handoff_path
+            .metadata()
+            .ok()
+            .filter(|_| handoff_path.is_file());
         files.push(AutonomyReadinessReportFile {
             name: p
                 .file_name()
@@ -562,9 +733,18 @@ pub fn list_autonomy_readiness_reports(
             path: p.to_string_lossy().into_owned(),
             size_bytes: metadata.len(),
             modified_unix_ms,
+            handoff_path: handoff_metadata
+                .as_ref()
+                .map(|_| handoff_path.to_string_lossy().into_owned()),
+            handoff_size_bytes: handoff_metadata.as_ref().map(|metadata| metadata.len()),
+            handoff_modified_unix_ms: handoff_metadata
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis()),
             summary,
             checks,
             next_actions,
+            evidence_manifest,
         });
     }
     files.sort_by(|a, b| {
@@ -824,17 +1004,21 @@ fn read_json_entry(
 
 fn log_summary_from_json(name: &str, value: &serde_json::Value) -> SupportBundleLogSummary {
     SupportBundleLogSummary {
-        name: Path::new(name)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or(name)
-            .to_string(),
+        name: display_entry_name(name),
         total_records: value.get("total_records").and_then(|value| value.as_u64()),
         accepted_rate: value.get("accepted_rate").and_then(|value| value.as_f64()),
         status_counts: value.get("status_counts").cloned(),
         reason_counts: value.get("reason_counts").cloned(),
         external_position: value.get("external_position").cloned(),
     }
+}
+
+fn display_entry_name(name: &str) -> String {
+    Path::new(name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(name)
+        .to_string()
 }
 
 fn read_log_preview_entry(
@@ -883,11 +1067,7 @@ fn read_log_preview_entry(
         records.push(log_record_preview_from_json(line_index + 1, &value));
     }
     Ok(Some(SupportBundleLogPreview {
-        name: Path::new(name)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or(name)
-            .to_string(),
+        name: display_entry_name(name),
         records,
         truncated,
     }))
@@ -928,6 +1108,335 @@ fn log_record_preview_from_json(
         external_position_message_type: external_position
             .and_then(|value| json_string(value.get("message_type"))),
     }
+}
+
+#[derive(Default)]
+struct TimelineAccumulator {
+    total_records: u64,
+    invalid_records: u64,
+    accepted_records: u64,
+    status_counts: BTreeMap<String, u64>,
+    reason_counts: BTreeMap<String, u64>,
+    external_position_status_counts: BTreeMap<String, u64>,
+    first_sequence: Option<u64>,
+    last_sequence: Option<u64>,
+    first_timestamp_us: Option<u64>,
+    last_timestamp_us: Option<u64>,
+    confidence_sum: f64,
+    confidence_count: u64,
+    inliers_sum: f64,
+    inliers_count: u64,
+    reprojection_sum: f64,
+    reprojection_count: u64,
+}
+
+#[derive(Default)]
+struct TimelineSegmentAccumulator {
+    start_line: usize,
+    end_line: usize,
+    total_records: u64,
+    accepted_records: u64,
+    status_counts: BTreeMap<String, u64>,
+    confidence_sum: f64,
+    confidence_count: u64,
+    inliers_sum: f64,
+    inliers_count: u64,
+    reprojection_sum: f64,
+    reprojection_count: u64,
+}
+
+struct TimelineRecordMetrics {
+    line_number: usize,
+    status: String,
+    reason: Option<String>,
+    external_position_status: Option<String>,
+    sequence: Option<u64>,
+    timestamp_us: Option<u64>,
+    confidence: Option<f64>,
+    inliers: Option<f64>,
+    reprojection_error_px: Option<f64>,
+    invalid_json: bool,
+}
+
+fn read_log_timeline_entry(
+    archive: &mut ZipArchive<File>,
+    name: &str,
+    size_bytes: u64,
+) -> Result<Option<SupportBundleLogTimeline>, String> {
+    if size_bytes > LOG_TIMELINE_MAX_BYTES {
+        return Ok(Some(SupportBundleLogTimeline {
+            name: display_entry_name(name),
+            path: name.to_string(),
+            size_bytes,
+            total_records: None,
+            invalid_records: 0,
+            accepted_rate: None,
+            status_counts: None,
+            reason_counts: None,
+            external_position_status_counts: None,
+            first_sequence: None,
+            last_sequence: None,
+            first_timestamp_us: None,
+            last_timestamp_us: None,
+            average_confidence: None,
+            average_inliers: None,
+            average_reprojection_error_px: None,
+            segments: vec![],
+            truncated: true,
+        }));
+    }
+
+    let mut accumulator = TimelineAccumulator::default();
+    {
+        let entry = match archive.by_name(name) {
+            Ok(entry) => entry,
+            Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
+        let reader = BufReader::new(entry);
+        for (line_index, line) in reader.lines().enumerate() {
+            let line = line.map_err(|e| e.to_string())?;
+            let Some(metrics) = timeline_record_metrics_from_line(line_index + 1, &line) else {
+                continue;
+            };
+            update_timeline_accumulator(&mut accumulator, &metrics);
+        }
+    }
+
+    let segment_count = usize::min(LOG_TIMELINE_SEGMENTS, accumulator.total_records as usize);
+    let mut segment_accumulators = Vec::new();
+    if segment_count > 0 {
+        segment_accumulators.resize_with(segment_count, TimelineSegmentAccumulator::default);
+        let entry = match archive.by_name(name) {
+            Ok(entry) => entry,
+            Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
+        let reader = BufReader::new(entry);
+        let mut record_index = 0usize;
+        for (line_index, line) in reader.lines().enumerate() {
+            let line = line.map_err(|e| e.to_string())?;
+            let Some(metrics) = timeline_record_metrics_from_line(line_index + 1, &line) else {
+                continue;
+            };
+            let bucket = usize::min(
+                (record_index * segment_count) / accumulator.total_records as usize,
+                segment_count - 1,
+            );
+            update_timeline_segment(&mut segment_accumulators[bucket], &metrics);
+            record_index += 1;
+        }
+    }
+
+    Ok(Some(SupportBundleLogTimeline {
+        name: display_entry_name(name),
+        path: name.to_string(),
+        size_bytes,
+        total_records: Some(accumulator.total_records),
+        invalid_records: accumulator.invalid_records,
+        accepted_rate: ratio(accumulator.accepted_records, accumulator.total_records),
+        status_counts: counts_value(&accumulator.status_counts),
+        reason_counts: counts_value(&accumulator.reason_counts),
+        external_position_status_counts: counts_value(&accumulator.external_position_status_counts),
+        first_sequence: accumulator.first_sequence,
+        last_sequence: accumulator.last_sequence,
+        first_timestamp_us: accumulator.first_timestamp_us,
+        last_timestamp_us: accumulator.last_timestamp_us,
+        average_confidence: average(accumulator.confidence_sum, accumulator.confidence_count),
+        average_inliers: average(accumulator.inliers_sum, accumulator.inliers_count),
+        average_reprojection_error_px: average(
+            accumulator.reprojection_sum,
+            accumulator.reprojection_count,
+        ),
+        segments: segment_accumulators
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, segment)| timeline_segment_from_accumulator(index, segment))
+            .collect(),
+        truncated: false,
+    }))
+}
+
+fn timeline_record_metrics_from_line(
+    line_number: usize,
+    line: &str,
+) -> Option<TimelineRecordMetrics> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let value = match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(value) => value,
+        Err(_) => {
+            return Some(TimelineRecordMetrics {
+                line_number,
+                status: "invalid_json".to_string(),
+                reason: Some("Could not parse JSONL record".to_string()),
+                external_position_status: None,
+                sequence: None,
+                timestamp_us: None,
+                confidence: None,
+                inliers: None,
+                reprojection_error_px: None,
+                invalid_json: true,
+            });
+        }
+    };
+    let result = value.get("result").unwrap_or(&value);
+    let external_position = value.get("external_position_health");
+    Some(TimelineRecordMetrics {
+        line_number,
+        status: json_string(result.get("status")).unwrap_or_else(|| "unknown".to_string()),
+        reason: json_string(result.get("reason")),
+        external_position_status: external_position
+            .and_then(|value| json_string(value.get("status"))),
+        sequence: value
+            .get("sequence")
+            .or_else(|| result.get("sequence"))
+            .and_then(|value| value.as_u64()),
+        timestamp_us: value
+            .get("timestamp_us")
+            .or_else(|| result.get("timestamp_us"))
+            .and_then(|value| value.as_u64()),
+        confidence: result.get("confidence").and_then(|value| value.as_f64()),
+        inliers: result.get("inliers").and_then(|value| value.as_f64()),
+        reprojection_error_px: result
+            .get("reprojection_error_px")
+            .and_then(|value| value.as_f64()),
+        invalid_json: false,
+    })
+}
+
+fn update_timeline_accumulator(
+    accumulator: &mut TimelineAccumulator,
+    metrics: &TimelineRecordMetrics,
+) {
+    accumulator.total_records += 1;
+    if metrics.invalid_json {
+        accumulator.invalid_records += 1;
+    }
+    if metrics.status == "accepted" {
+        accumulator.accepted_records += 1;
+    }
+    increment_count(&mut accumulator.status_counts, &metrics.status);
+    if let Some(reason) = &metrics.reason {
+        increment_count(&mut accumulator.reason_counts, reason);
+    }
+    if let Some(status) = &metrics.external_position_status {
+        increment_count(&mut accumulator.external_position_status_counts, status);
+    }
+    if accumulator.first_sequence.is_none() {
+        accumulator.first_sequence = metrics.sequence;
+    }
+    if metrics.sequence.is_some() {
+        accumulator.last_sequence = metrics.sequence;
+    }
+    if accumulator.first_timestamp_us.is_none() {
+        accumulator.first_timestamp_us = metrics.timestamp_us;
+    }
+    if metrics.timestamp_us.is_some() {
+        accumulator.last_timestamp_us = metrics.timestamp_us;
+    }
+    if let Some(confidence) = metrics.confidence {
+        accumulator.confidence_sum += confidence;
+        accumulator.confidence_count += 1;
+    }
+    if let Some(inliers) = metrics.inliers {
+        accumulator.inliers_sum += inliers;
+        accumulator.inliers_count += 1;
+    }
+    if let Some(error) = metrics.reprojection_error_px {
+        accumulator.reprojection_sum += error;
+        accumulator.reprojection_count += 1;
+    }
+}
+
+fn update_timeline_segment(
+    segment: &mut TimelineSegmentAccumulator,
+    metrics: &TimelineRecordMetrics,
+) {
+    if segment.total_records == 0 {
+        segment.start_line = metrics.line_number;
+    }
+    segment.end_line = metrics.line_number;
+    segment.total_records += 1;
+    if metrics.status == "accepted" {
+        segment.accepted_records += 1;
+    }
+    increment_count(&mut segment.status_counts, &metrics.status);
+    if let Some(confidence) = metrics.confidence {
+        segment.confidence_sum += confidence;
+        segment.confidence_count += 1;
+    }
+    if let Some(inliers) = metrics.inliers {
+        segment.inliers_sum += inliers;
+        segment.inliers_count += 1;
+    }
+    if let Some(error) = metrics.reprojection_error_px {
+        segment.reprojection_sum += error;
+        segment.reprojection_count += 1;
+    }
+}
+
+fn timeline_segment_from_accumulator(
+    index: usize,
+    segment: TimelineSegmentAccumulator,
+) -> Option<SupportBundleLogTimelineSegment> {
+    if segment.total_records == 0 {
+        return None;
+    }
+    Some(SupportBundleLogTimelineSegment {
+        index,
+        start_line: segment.start_line,
+        end_line: segment.end_line,
+        total_records: segment.total_records,
+        accepted_rate: ratio(segment.accepted_records, segment.total_records),
+        dominant_status: dominant_status(&segment.status_counts),
+        average_confidence: average(segment.confidence_sum, segment.confidence_count),
+        average_inliers: average(segment.inliers_sum, segment.inliers_count),
+        average_reprojection_error_px: average(
+            segment.reprojection_sum,
+            segment.reprojection_count,
+        ),
+    })
+}
+
+fn increment_count(counts: &mut BTreeMap<String, u64>, key: &str) {
+    *counts.entry(key.to_string()).or_insert(0) += 1;
+}
+
+fn counts_value(counts: &BTreeMap<String, u64>) -> Option<serde_json::Value> {
+    if counts.is_empty() {
+        return None;
+    }
+    serde_json::to_value(counts).ok()
+}
+
+fn average(sum: f64, count: u64) -> Option<f64> {
+    if count == 0 {
+        None
+    } else {
+        Some(sum / count as f64)
+    }
+}
+
+fn ratio(numerator: u64, denominator: u64) -> Option<f64> {
+    if denominator == 0 {
+        None
+    } else {
+        Some(numerator as f64 / denominator as f64)
+    }
+}
+
+fn dominant_status(counts: &BTreeMap<String, u64>) -> Option<String> {
+    counts
+        .iter()
+        .max_by(|(left_key, left_value), (right_key, right_value)| {
+            left_value
+                .cmp(right_value)
+                .then_with(|| right_key.cmp(left_key))
+        })
+        .map(|(key, _)| key.clone())
 }
 
 fn replay_report_from_json(value: &serde_json::Value) -> SupportBundleReplayReport {
@@ -1214,6 +1723,7 @@ fn autonomy_readiness_report_from_json(
     AutonomyReadinessSummary,
     Vec<AutonomyReadinessCheck>,
     Vec<AutonomyReadinessNextAction>,
+    Option<AutonomyReadinessEvidenceManifest>,
 )> {
     let checks_value = value.get("checks")?.as_array()?;
     if !value
@@ -1248,16 +1758,12 @@ fn autonomy_readiness_report_from_json(
                     desktop_action: json_string(item.get("desktop_action")),
                     command: json_string(item.get("command")),
                     notes: json_string(item.get("notes")),
-                    missing_conditions: item
-                        .get("missing_conditions")
-                        .and_then(|value| value.as_array())
-                        .map(|items| {
-                            items
-                                .iter()
-                                .filter_map(|item| item.as_str().map(|text| text.to_string()))
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default(),
+                    bench_subcheck: json_string(item.get("bench_subcheck")),
+                    bench_message: json_string(item.get("bench_message")),
+                    bench_subchecks: autonomy_bench_subchecks_from_value(
+                        item.get("bench_subchecks"),
+                    ),
+                    missing_conditions: json_string_array(item.get("missing_conditions")),
                 })
                 .collect::<Vec<_>>()
         })
@@ -1288,7 +1794,81 @@ fn autonomy_readiness_report_from_json(
         },
         checks,
         next_actions,
+        autonomy_evidence_manifest_from_json(value.get("evidence_manifest")),
     ))
+}
+
+fn autonomy_evidence_manifest_from_json(
+    value: Option<&serde_json::Value>,
+) -> Option<AutonomyReadinessEvidenceManifest> {
+    let value = value?;
+    if !value.is_object() {
+        return None;
+    }
+    Some(AutonomyReadinessEvidenceManifest {
+        schema_version: json_string(value.get("schema_version")),
+        ready_for_goal_completion: value
+            .get("ready_for_goal_completion")
+            .and_then(|value| value.as_bool()),
+        completion_blockers: autonomy_evidence_blockers_from_value(
+            value.get("completion_blockers"),
+        ),
+        external_blockers: autonomy_evidence_blockers_from_value(value.get("external_blockers")),
+    })
+}
+
+fn autonomy_evidence_blockers_from_value(
+    value: Option<&serde_json::Value>,
+) -> Vec<AutonomyReadinessEvidenceBlocker> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| AutonomyReadinessEvidenceBlocker {
+                    name: json_string(item.get("name")),
+                    status: json_string(item.get("status")),
+                    message: json_string(item.get("message")),
+                    missing_conditions: json_string_array(item.get("missing_conditions")),
+                    bench_subchecks: autonomy_bench_subchecks_from_value(
+                        item.get("bench_subchecks"),
+                    ),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn autonomy_bench_subchecks_from_value(
+    value: Option<&serde_json::Value>,
+) -> Vec<AutonomyReadinessBenchSubcheck> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| AutonomyReadinessBenchSubcheck {
+                    name: json_string(item.get("name")),
+                    status: json_string(item.get("status")),
+                    message: json_string(item.get("message")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn json_string_array(value: Option<&serde_json::Value>) -> Vec<String> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(|text| text.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
 }
 
 fn image_mime_type(name: &str) -> Option<&'static str> {
@@ -1372,6 +1952,131 @@ fn read_image_preview_entry(
         size_bytes,
         base64_data: general_purpose::STANDARD.encode(bytes),
     }))
+}
+
+fn support_artifact_entry(name: &str, size_bytes: u64) -> Option<SupportBundleArtifactEntry> {
+    if size_bytes > SUPPORT_ARTIFACT_MAX_BYTES || safe_zip_entry_rel_path(name).is_err() {
+        return None;
+    }
+    let lower = name.to_ascii_lowercase();
+    let kind = support_artifact_kind(&lower)?;
+    Some(SupportBundleArtifactEntry {
+        name: Path::new(name)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(name)
+            .to_string(),
+        path: name.to_string(),
+        kind,
+        size_bytes,
+    })
+}
+
+fn support_artifact_kind(lower_name: &str) -> Option<String> {
+    if lower_name == "support_manifest.json" {
+        return Some("manifest".to_string());
+    }
+    if lower_name.starts_with("logs/")
+        && has_extension(lower_name, &["jsonl", "json", "log", "txt", "csv"])
+    {
+        return Some("runtime log".to_string());
+    }
+    if lower_name.starts_with("summaries/replay_gates/") && lower_name.ends_with(".gate.json") {
+        return Some("replay gate report".to_string());
+    }
+    if lower_name.starts_with("summaries/px4_sitl_evidence/") && lower_name.ends_with(".json") {
+        return Some("px4 receiver report".to_string());
+    }
+    if lower_name.starts_with("summaries/px4_params/") && lower_name.ends_with(".json") {
+        return Some("px4 parameter report".to_string());
+    }
+    if lower_name.starts_with("summaries/ardupilot_params/") && lower_name.ends_with(".json") {
+        return Some("ardupilot parameter report".to_string());
+    }
+    if lower_name.starts_with("summaries/feature_method_benchmarks/")
+        && lower_name.ends_with(".json")
+    {
+        return Some("feature benchmark report".to_string());
+    }
+    if lower_name.starts_with("summaries/field_evidence/") && lower_name.ends_with(".json") {
+        return Some("field evidence report".to_string());
+    }
+    if lower_name.starts_with("summaries/threshold_tuning/") && lower_name.ends_with(".json") {
+        return Some("threshold tuning report".to_string());
+    }
+    if lower_name == "summaries/bench_readiness.json" {
+        return Some("bench readiness report".to_string());
+    }
+    if lower_name.starts_with("summaries/")
+        && has_extension(lower_name, &["json", "jsonl", "txt", "log", "csv"])
+    {
+        return Some("summary".to_string());
+    }
+    if lower_name.starts_with("extras/")
+        && !is_heavy_support_asset(lower_name)
+        && has_extension(
+            lower_name,
+            &[
+                "json", "jsonl", "txt", "log", "csv", "yaml", "yml", "params", "ulg", "px4log",
+                "png", "jpg", "jpeg", "webp", "bmp",
+            ],
+        )
+    {
+        return Some("extra artifact".to_string());
+    }
+    if lower_name.starts_with("bundle/")
+        && !is_heavy_support_asset(lower_name)
+        && (lower_name.ends_with(".json")
+            || lower_name.ends_with(".yaml")
+            || lower_name.ends_with(".yml")
+            || lower_name.ends_with(".plan")
+            || lower_name.ends_with(".sha256"))
+    {
+        return Some("bundle metadata".to_string());
+    }
+    None
+}
+
+fn has_extension(lower_name: &str, extensions: &[&str]) -> bool {
+    let Some(extension) = Path::new(lower_name)
+        .extension()
+        .and_then(|value| value.to_str())
+    else {
+        return false;
+    };
+    extensions.iter().any(|candidate| extension == *candidate)
+}
+
+fn is_heavy_support_asset(lower_name: &str) -> bool {
+    lower_name.starts_with("bundle/ortho/")
+        || lower_name.starts_with("bundle/imagery/")
+        || lower_name.starts_with("bundle/index/")
+        || lower_name.starts_with("bundle/elevation/")
+        || lower_name.contains("/imagery/tiles/")
+        || lower_name.contains("/index/descriptors/")
+        || lower_name.ends_with("/satellite.png")
+        || lower_name.ends_with(".npz")
+        || lower_name.ends_with(".sqlite")
+        || lower_name.ends_with(".tif")
+        || lower_name.ends_with(".tiff")
+        || lower_name.ends_with(".cog")
+}
+
+fn safe_zip_entry_rel_path(entry_path: &str) -> Result<PathBuf, String> {
+    let mut rel = PathBuf::new();
+    for part in entry_path.split(|ch| ch == '/' || ch == '\\') {
+        if part.is_empty() || part == "." || part == ".." {
+            return Err("Support bundle entry has an unsafe path.".to_string());
+        }
+        if part.contains(':') {
+            return Err("Support bundle entry has an unsafe path.".to_string());
+        }
+        rel.push(part);
+    }
+    if rel.as_os_str().is_empty() {
+        return Err("Support bundle entry path is empty.".to_string());
+    }
+    Ok(rel)
 }
 
 fn reveal_path(path: &Path) -> Result<()> {
@@ -1561,13 +2266,14 @@ fn expand_local_path(path: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_support_bundle, expand_local_path, list_autonomy_readiness_reports,
-        list_feature_method_benchmark_reports, list_field_evidence_reports,
-        list_px4_receiver_reports, list_threshold_tuning_reports, read_support_bundle_details,
-        support_summary_from_manifest,
+        delete_support_bundle, expand_local_path, extract_support_bundle_artifact,
+        list_autonomy_readiness_reports, list_feature_method_benchmark_reports,
+        list_field_evidence_reports, list_px4_receiver_reports, list_threshold_tuning_reports,
+        read_support_bundle_details, support_summary_from_manifest,
     };
     use std::fs::File;
     use std::io::Write;
+    use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
     use zip::write::SimpleFileOptions;
 
@@ -1735,7 +2441,24 @@ mod tests {
                         "title": "Create a support bundle with bench evidence.",
                         "desktop_action": "Module Setup > Bench Report",
                         "command": "./scripts/pi/create_support_bundle.sh",
-                        "notes": "Run after evidence is available."
+                        "notes": "Run after evidence is available.",
+                        "bench_subchecks": [
+                            {
+                                "name": "runtime_status",
+                                "status": "degraded",
+                                "message": "Runtime status snapshot was not provided."
+                            }
+                        ]
+                    },
+                    {
+                        "check": "support_bundle_bench_readiness.runtime_status",
+                        "status": "degraded",
+                        "title": "Fetch a fresh runtime status snapshot.",
+                        "desktop_action": "Module Setup > Runtime Status, then Bench Report",
+                        "command": "./scripts/pi/read_runtime_status.sh",
+                        "notes": "The support bundle should include runtime_status.json.",
+                        "bench_subcheck": "runtime_status",
+                        "bench_message": "Runtime status snapshot was not provided."
                     },
                     {
                         "check": "px4_receiver_proof",
@@ -1746,7 +2469,50 @@ mod tests {
                         "notes": "Capture vehicle_visual_odometry.",
                         "missing_conditions": ["good_texture", "wrong_map"]
                     }
-                ]
+                ],
+                "evidence_manifest": {
+                    "schema_version": "vision_nav_autonomy_evidence_manifest_v1",
+                    "ready_for_goal_completion": false,
+                    "completion_blockers": [
+                        {
+                            "name": "support_bundle_bench_readiness",
+                            "status": "failed",
+                            "message": "Support bundle missing.",
+                            "bench_subchecks": [
+                                {
+                                    "name": "runtime_status",
+                                    "status": "degraded",
+                                    "message": "Runtime status snapshot was not provided."
+                                }
+                            ]
+                        },
+                        {
+                            "name": "px4_receiver_proof",
+                            "status": "failed",
+                            "message": "Receiver proof missing."
+                        }
+                    ],
+                    "external_blockers": [
+                        {
+                            "name": "support_bundle_bench_readiness",
+                            "status": "failed",
+                            "message": "Support bundle missing.",
+                            "bench_subchecks": [
+                                {
+                                    "name": "runtime_status",
+                                    "status": "degraded",
+                                    "message": "Runtime status snapshot was not provided."
+                                }
+                            ]
+                        },
+                        {
+                            "name": "px4_receiver_proof",
+                            "status": "failed",
+                            "message": "Receiver proof missing.",
+                            "missing_conditions": ["good_texture", "wrong_map"]
+                        }
+                    ]
+                }
             })
             .to_string(),
         )
@@ -1757,12 +2523,26 @@ mod tests {
                 .to_string(),
         )
         .expect("write unrelated report");
+        std::fs::write(
+            dir.join("autonomy_readiness_report.md"),
+            "# Autonomy Readiness Handoff\n\n- Status: failed\n",
+        )
+        .expect("write readiness handoff");
         let reports = list_autonomy_readiness_reports(dir.to_string_lossy().into_owned())
             .expect("list reports");
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(reports.len(), 1);
         assert_eq!(reports[0].name, "autonomy_readiness_report.json");
         assert_eq!(reports[0].summary.status.as_deref(), Some("failed"));
+        assert_eq!(
+            reports[0]
+                .handoff_path
+                .as_deref()
+                .and_then(|path| Path::new(path).file_name())
+                .and_then(|name| name.to_str()),
+            Some("autonomy_readiness_report.md")
+        );
+        assert!(reports[0].handoff_size_bytes.is_some());
         assert_eq!(reports[0].summary.failed_count, Some(2));
         assert_eq!(
             reports[0]
@@ -1776,12 +2556,36 @@ mod tests {
             Some("degraded")
         );
         assert_eq!(reports[0].checks.len(), 6);
-        assert_eq!(reports[0].next_actions.len(), 2);
+        assert_eq!(reports[0].next_actions.len(), 3);
         assert_eq!(
             reports[0].next_actions[0].desktop_action.as_deref(),
             Some("Module Setup > Bench Report")
         );
-        assert_eq!(reports[0].next_actions[1].missing_conditions.len(), 2);
+        assert_eq!(reports[0].next_actions[0].bench_subchecks.len(), 1);
+        assert_eq!(
+            reports[0].next_actions[0].bench_subchecks[0]
+                .name
+                .as_deref(),
+            Some("runtime_status")
+        );
+        assert_eq!(
+            reports[0].next_actions[1].bench_subcheck.as_deref(),
+            Some("runtime_status")
+        );
+        assert_eq!(reports[0].next_actions[2].missing_conditions.len(), 2);
+        let evidence = reports[0]
+            .evidence_manifest
+            .as_ref()
+            .expect("evidence manifest");
+        assert_eq!(evidence.ready_for_goal_completion, Some(false));
+        assert_eq!(evidence.external_blockers.len(), 2);
+        assert_eq!(
+            evidence.external_blockers[0].bench_subchecks[0]
+                .name
+                .as_deref(),
+            Some("runtime_status")
+        );
+        assert_eq!(evidence.external_blockers[1].missing_conditions.len(), 2);
     }
 
     #[test]
@@ -2009,7 +2813,18 @@ mod tests {
             zip.write_all(
                 serde_json::json!({
                     "metadata": {"vision_nav": {"project_version": "0.1.0"}},
-                    "bundle": {"health": {"status": "passed"}}
+                    "bundle": {"health": {"status": "passed"}},
+                    "logs": {
+                        "runtime_statuses": [
+                            {
+                                "schema_version": "vision_nav_runtime_status_v1",
+                                "active_map": {"bundle_id": "mission-bundle"},
+                                "output": {"log_path": "terrain_matches.jsonl"},
+                                "last_match": {"status": "accepted", "tile_id": "tile_001"},
+                                "estimator": {"health": "tracking"}
+                            }
+                        ]
+                    }
                 })
                 .to_string()
                 .as_bytes(),
@@ -2240,12 +3055,54 @@ mod tests {
         }
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
-        let _ = std::fs::remove_file(&path);
         assert_eq!(details.entry_count, 13);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
+        assert_eq!(details.runtime_statuses.len(), 1);
+        assert_eq!(
+            details.runtime_statuses[0]
+                .pointer("/last_match/status")
+                .and_then(|value| value.as_str()),
+            Some("accepted")
+        );
+        assert_eq!(
+            details.runtime_statuses[0]
+                .pointer("/estimator/health")
+                .and_then(|value| value.as_str()),
+            Some("tracking")
+        );
         assert_eq!(details.log_previews.len(), 1);
         assert_eq!(details.log_previews[0].records.len(), 2);
+        assert_eq!(details.log_timelines.len(), 1);
+        assert_eq!(details.log_timelines[0].total_records, Some(2));
+        assert_eq!(details.log_timelines[0].accepted_rate, Some(0.5));
+        assert_eq!(details.log_timelines[0].first_sequence, Some(1));
+        assert_eq!(details.log_timelines[0].last_sequence, Some(2));
+        assert_eq!(details.log_timelines[0].segments.len(), 2);
+        assert_eq!(
+            details.log_timelines[0].segments[0]
+                .dominant_status
+                .as_deref(),
+            Some("accepted")
+        );
+        assert_eq!(
+            details.log_timelines[0].segments[1]
+                .dominant_status
+                .as_deref(),
+            Some("rejected")
+        );
+        assert!(details
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.path == "logs/terrain_matches.jsonl"));
+        assert!(details
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.path == "summaries/replay_gates/unit.gate.json"));
+        assert!(!details
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.path == "bundle/ortho/map.png"));
         assert_eq!(details.image_previews.len(), 1);
         assert_eq!(details.image_previews[0].name, "frame.png");
         assert_eq!(details.image_previews[0].mime_type, "image/png");
@@ -2357,5 +3214,29 @@ mod tests {
         assert_eq!(readiness.degraded_count, Some(1));
         assert_eq!(readiness.checks.len(), 2);
         assert_eq!(readiness.checks[1].name.as_deref(), Some("px4_params"));
+        let extracted = extract_support_bundle_artifact(
+            path.to_string_lossy().into_owned(),
+            "logs/terrain_matches.jsonl".to_string(),
+        )
+        .expect("extract log artifact");
+        let extracted_path = std::path::PathBuf::from(&extracted.path);
+        assert!(extracted_path.exists());
+        let extracted_text = std::fs::read_to_string(&extracted_path).expect("read extracted log");
+        assert!(extracted_text.contains("tile_001"));
+        assert!(extract_support_bundle_artifact(
+            path.to_string_lossy().into_owned(),
+            "bundle/ortho/map.png".to_string(),
+        )
+        .is_err());
+        if let Some(root) = extracted_path.ancestors().find(|candidate| {
+            candidate
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.ends_with("-artifacts"))
+                .unwrap_or(false)
+        }) {
+            let _ = std::fs::remove_dir_all(root);
+        }
+        let _ = std::fs::remove_file(&path);
     }
 }

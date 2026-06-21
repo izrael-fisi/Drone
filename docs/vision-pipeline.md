@@ -192,8 +192,21 @@ estimate is available.
 It writes:
 
 - captured frames under `frames/`
-- optional match debug images under `viz/`
-- one JSON record per frame in `matches.jsonl`
+- one JSON record per frame in `terrain_matches.jsonl`
+- the latest operator-facing runtime snapshot in `runtime_status.json`
+
+`runtime_status.json` is rewritten after every processed frame. It shows the
+active map bundle, tile index, output/log path, latest frame, estimator health,
+last accepted/rejected match reason, external-position health, MAVLink/ROS 2
+state, telemetry sample count, timing, and status counts. Support bundles carry
+this snapshot into the bench-readiness gate, where missing runtime status
+degrades the report and missing active-map or last-match state fails the
+runtime-status check.
+
+On the Pi, `./scripts/pi/read_runtime_status.sh` finds the newest
+`runtime_status.json`, prints stable desktop-app markers, and summarizes the
+active map, latest match, estimator health, and external-position state without
+loading the full runtime log.
 
 Each JSONL record includes capture timing, match timing, status, confidence,
 inlier count, homography, geometry sanity metrics, frame quality, covariance,
@@ -247,6 +260,33 @@ Use the accepted rate, confidence range, inlier statistics, reprojection error,
 geometry summaries, rejection reasons, quality metrics, covariance estimate,
 and timing summary to decide whether to adjust thresholds, lighting, focus, map
 imagery, or calibration before trusting the measurements.
+
+Export a runtime or replay log into ROS-shaped offline review artifacts when
+you need to inspect odometry, diagnostics, and bounded camera frames outside the
+runtime loop:
+
+```bash
+vision-nav-ros2-replay-log \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl \
+  --include-frame-topic
+```
+
+For MCAP-capable desktop tooling, install the optional extra and write a
+JSON-encoded MCAP archive:
+
+```bash
+python -m pip install ".[rosbag]"
+vision-nav-ros2-replay-log \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --export-mcap ~/DroneTransfer/outgoing/terrain-match/vision-nav.mcap \
+  --include-frame-topic
+```
+
+The JSONL export is still the dependency-free fallback and is preferred for
+basic Pi setup checks.
+On a sourced ROS 2 workstation, use `--export-rosbag2` instead when you need a
+native serialized rosbag2 directory for `ros2 bag info/play`.
 
 Create a transfer-ready support bundle after a bench run:
 
@@ -321,6 +361,22 @@ vision-nav-audit-replay-coverage \
   --manifest data/replay_cases/manifest.example.json
 ```
 
+Replay manifests are schema-backed by
+`data/replay_cases/replay_case_manifest.schema.json`. The standalone evaluator,
+coverage audit, and support-bundle packager include schema status in their JSON
+reports and fail on schema errors such as duplicate case names, unsupported
+`expected` values, unsupported `dataset_type` values, empty conditions, or
+missing log paths. Use the evaluator as a quick schema and gate smoke check:
+
+```bash
+vision-nav-evaluate-replay-manifest \
+  --manifest data/replay_cases/field_manifest.json \
+  --json
+```
+
+Use `--schema-only` during dataset assembly when you want to validate manifest
+shape before all referenced logs have been copied into place.
+
 This audit fails when coverage is synthetic-only or when field replay logs are
 missing. It expects field cases for good texture, low texture, blur, seasonal
 change, lighting change, altitude/scale change, repeated patterns, and wrong-map
@@ -376,11 +432,15 @@ and threshold-tuning report exist, run the goal-level readiness audit:
 
 The wrapper scans conventional downloaded artifact folders under
 `~/DroneTransfer/from-pi/`, writes
-`~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json`, and
-prints `__VISION_NAV_AUTONOMY_REPORT__=...`. It passes standalone field,
-PX4 receiver, feature-method benchmark, and threshold-tuning reports directly
-when they were downloaded outside the support bundle. Use
-`vision-nav-autonomy-readiness` directly when custom artifact paths are needed.
+`~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json`, renders
+`~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.md`, and prints
+`__VISION_NAV_AUTONOMY_REPORT__=...` plus
+`__VISION_NAV_AUTONOMY_HANDOFF__=...`. It passes standalone field, PX4 receiver,
+feature-method benchmark, and threshold-tuning reports directly when they were
+downloaded outside the support bundle. Use `vision-nav-autonomy-readiness`
+directly when custom artifact paths are needed, or
+`vision-nav-autonomy-handoff --report <report.json> --output <handoff.md>` to
+render a handoff from an existing report.
 
 This is intentionally stricter than the synthetic smoke tests. It fails until
 PX4 receiver proof, real field coverage, feature-method benchmark evidence, and

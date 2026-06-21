@@ -412,9 +412,30 @@ Defaults:
 - captures from the Raspberry Pi Global Shutter Camera
 - undistorts frames with `config/camera/down_camera.yaml`
 - matches once per second
-- writes frames and `terrain_matches.jsonl` to
+- writes frames, `terrain_matches.jsonl`, and `runtime_status.json` to
   `~/DroneTransfer/outgoing/terrain-match/`
 - runs until you press `Ctrl+C`
+
+`runtime_status.json` is the quick operator snapshot. It names the active map
+bundle, output path, latest frame, estimator health, last match status/reason,
+external-position health, and accepted/rejected counts without opening the full
+JSONL log. Support bundles copy this file beside the runtime log, and
+`vision-nav-bench-readiness` treats it as evidence: missing runtime status
+degrades the bench report, while missing active-map or last-match state fails
+the runtime-status check.
+
+To print and mark the latest runtime snapshot for the desktop app:
+
+```bash
+cd Drone
+./scripts/pi/read_runtime_status.sh
+```
+
+The wrapper searches the normal outgoing runtime folders, prints
+`__VISION_NAV_RUNTIME_STATUS__=...` and
+`__VISION_NAV_RUNTIME_STATUS_JSON__=...` markers, and keeps the preview bounded
+so Module Setup can fetch the current operator status without building a full
+support bundle.
 
 Useful overrides:
 
@@ -551,6 +572,27 @@ The summary reports:
 - frame sharpness, entropy, and covariance sigma ranges
 - capture and match timing
 - estimated lat/lon spread when matches include georeferenced positions
+
+To review the same terrain log as ROS-style topics without requiring ROS 2 on
+the Pi, export a dependency-free bag-like JSONL directory:
+
+```bash
+vision-nav-ros2-replay-log \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl \
+  --include-frame-topic
+```
+
+On a workstation that has the optional MCAP package installed, the same command
+can write a JSON-encoded MCAP archive:
+
+```bash
+python -m pip install ".[rosbag]"
+vision-nav-ros2-replay-log \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --export-mcap ~/DroneTransfer/outgoing/terrain-match/vision-nav.mcap \
+  --include-frame-topic
+```
 
 ## Create A Support Bundle
 
@@ -732,11 +774,16 @@ Then run:
 
 The wrapper uses the latest Pi-side support bundle under
 `~/DroneTransfer/outgoing/support-bundles/` by default and writes
-`~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json`. Override
-the support bundle with `VISION_NAV_AUTONOMY_SUPPORT_BUNDLE=/path/to/bundle.zip`
-when reviewing an older artifact. The audit intentionally fails until the
-external PX4 receiver proof and real field-log evidence are present. Use it as
-the final proof artifact, not as a synthetic preflight substitute.
+`~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json` plus a
+human-readable
+`~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.md` handoff
+and `~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.evidence.zip`
+support-review package.
+Override the support bundle with
+`VISION_NAV_AUTONOMY_SUPPORT_BUNDLE=/path/to/bundle.zip` when reviewing an older
+artifact. The audit intentionally fails until the external PX4 receiver proof
+and real field-log evidence are present. Use it as the final proof artifact, not
+as a synthetic preflight substitute.
 
 After artifacts have been downloaded to the desktop, run the local wrapper to
 scan the conventional `~/DroneTransfer/from-pi/` folders and write the same
@@ -749,12 +796,20 @@ strict audit report locally:
 It uses the latest downloaded support bundle, downloaded field-evidence and
 feature-method benchmark reports, downloaded threshold-tuning reports, and a
 local PX4 SITL evidence session or receiver report when present.
-It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and writes
-`~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json` even when
-the audit fails, so the missing proof artifacts are visible in one report.
+It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and
+`__VISION_NAV_AUTONOMY_HANDOFF__=...`, then writes
+`~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json` and
+`~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.md`, plus
+`~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.evidence.zip`,
+even when the audit fails, so the missing proof artifacts are visible in both a
+machine-readable report, a support handoff, and a package manifest.
 Failed or degraded gates include `next_actions` entries with the matching
 Module Setup action or shell command to run next. Field-evidence and
 threshold-tuning next actions include the missing real-world condition keys.
+The Markdown handoff turns those missing condition keys and failed/degraded
+bench subchecks into checkbox lists for field collection and support review.
+It also includes an artifact-availability table when the referenced evidence
+paths are visible from the machine rendering the handoff.
 
 The desktop Module Setup `Bench Report` action runs the terrain bundle validator
 against the configured deployed bundle, creates this same support bundle, and
@@ -765,7 +820,9 @@ the Pi against the latest support bundle and downloads the readiness report to
 local JSON setup report containing the check results, selected discovery
 adapter, copyable discovery checklist, downloaded support-bundle summaries,
 downloaded feature-benchmark summaries, downloaded field-evidence coverage
-summaries, and downloaded autonomy-readiness report summaries. The same Module
+summaries, downloaded autonomy-readiness report summaries, and a compact
+latest-readiness snapshot with handoff path, goal-completion flag, external
+blockers, and next actions. The same Module
 Setup panel lists the latest downloaded feature-method benchmark JSON reports
 with recommended method and accepted rates, lists field-evidence JSON reports
 with per-condition coverage, then lists autonomy-readiness JSON reports with

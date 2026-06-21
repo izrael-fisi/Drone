@@ -1,9 +1,9 @@
 # ROS 2 Launch Profiles
 
-This folder contains lightweight ROS 2 launch profiles that execute the existing
-Python runtime modules. They are intentionally not a colcon package yet; the
-current goal is to make ROS 2 bench usage repeatable without restructuring the
-repo.
+This folder contains lightweight ROS 2 launch profiles and a thin
+`ament_python` wrapper that execute the existing Python runtime modules. The
+goal is to make ROS 2 bench usage repeatable without moving the main runtime
+code out of the repo package.
 
 Run from the repository root with ROS 2 sourced:
 
@@ -37,6 +37,33 @@ vision-nav-ros2-replay-log \
 The frame export resolves relative `frame_path` values from the log directory
 and writes `sensor_msgs/msg/CompressedImage` JSONL messages with base64
 compressed bytes.
+
+For tools that can read MCAP archives, install the optional package and export
+the same ROS-shaped topic stream as JSON-encoded MCAP:
+
+```bash
+python -m pip install ".[rosbag]"
+vision-nav-ros2-replay-log \
+  --log terrain-run/terrain_matches.jsonl \
+  --export-mcap terrain-run/vision-nav.mcap \
+  --include-frame-topic
+```
+
+The MCAP path is optional. The JSONL export remains the no-extra-dependency
+fallback for Pi and desktop smoke tests.
+
+On a sourced ROS 2 workstation, write native serialized rosbag2 output:
+
+```bash
+source /opt/ros/humble/setup.bash
+vision-nav-ros2-replay-log \
+  --log terrain-run/terrain_matches.jsonl \
+  --export-rosbag2 terrain-run/rosbag2-native \
+  --include-frame-topic
+```
+
+The native export uses `rosbag2_py` and ROS message packages only when that flag
+is selected.
 
 For live Pi or desktop camera runtime:
 

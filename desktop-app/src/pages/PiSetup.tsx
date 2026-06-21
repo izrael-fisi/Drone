@@ -9,6 +9,7 @@ import {
   Camera,
   Eye,
   EyeOff,
+  FileText,
   FolderOpen,
   HardDriveUpload,
   KeyRound,
@@ -48,6 +49,7 @@ import type {
   LocalNetworkHint,
   PiDiscoveryCandidate,
   Px4ReceiverReportFile,
+  SupportBundleDetails,
   SupportBundleFile,
   ThresholdTuningReportFile,
   UploadProgress,
@@ -59,6 +61,7 @@ const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
 const AUTONOMY_REPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/replay-cases";
 const FEATURE_BENCH_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/feature-method-bench";
 const PX4_RECEIVER_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/px4-sitl-evidence";
+const RUNTIME_STATUS_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/runtime-status";
 const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 const SUPPORT_EVIDENCE_ENV =
   'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
@@ -146,6 +149,65 @@ function safeReportName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "module";
 }
 
+function supportBundleDiagnosticsSnapshot(bundle: SupportBundleFile, details: SupportBundleDetails) {
+  return {
+    name: bundle.name,
+    path: bundle.path,
+    size_bytes: bundle.size_bytes,
+    entry_count: details.entry_count,
+    bench_readiness: details.bench_readiness
+      ? {
+          status: details.bench_readiness.status,
+          failed_count: details.bench_readiness.failed_count,
+          degraded_count: details.bench_readiness.degraded_count,
+          passed_count: details.bench_readiness.passed_count,
+          checks: details.bench_readiness.checks.slice(0, 12),
+        }
+      : null,
+    logs: details.logs.slice(0, 8),
+    runtime_statuses: details.runtime_statuses.slice(0, 4),
+    log_timelines: details.log_timelines.slice(0, 5).map((timeline) => ({
+      name: timeline.name,
+      path: timeline.path,
+      size_bytes: timeline.size_bytes,
+      total_records: timeline.total_records,
+      invalid_records: timeline.invalid_records,
+      accepted_rate: timeline.accepted_rate,
+      status_counts: timeline.status_counts,
+      reason_counts: timeline.reason_counts,
+      external_position_status_counts: timeline.external_position_status_counts,
+      first_sequence: timeline.first_sequence,
+      last_sequence: timeline.last_sequence,
+      first_timestamp_us: timeline.first_timestamp_us,
+      last_timestamp_us: timeline.last_timestamp_us,
+      average_confidence: timeline.average_confidence,
+      average_inliers: timeline.average_inliers,
+      average_reprojection_error_px: timeline.average_reprojection_error_px,
+      truncated: timeline.truncated,
+      segments: timeline.segments.slice(0, 24),
+    })),
+    artifacts: details.artifacts.slice(0, 24).map((artifact) => ({
+      name: artifact.name,
+      path: artifact.path,
+      kind: artifact.kind,
+      size_bytes: artifact.size_bytes,
+    })),
+    image_artifacts: details.image_previews.slice(0, 8).map((image) => ({
+      name: image.name,
+      path: image.path,
+      mime_type: image.mime_type,
+      size_bytes: image.size_bytes,
+    })),
+    replay_reports: details.replay_reports.slice(0, 12),
+    px4_evidence_reports: details.px4_evidence_reports.slice(0, 4),
+    px4_param_reports: details.px4_param_reports.slice(0, 4),
+    ardupilot_param_reports: details.ardupilot_param_reports.slice(0, 4),
+    feature_method_benchmark_reports: details.feature_method_benchmark_reports.slice(0, 4),
+    field_evidence_reports: details.field_evidence_reports.slice(0, 4),
+    threshold_tuning_reports: details.threshold_tuning_reports.slice(0, 4),
+  };
+}
+
 function parseSupportBundleZip(output: string) {
   return output
     .split(/\r?\n/)
@@ -160,6 +222,14 @@ function parseAutonomyReadinessReport(output: string) {
     .map((line) => line.trim())
     .find((line) => line.startsWith("__VISION_NAV_AUTONOMY_REPORT__="))
     ?.replace("__VISION_NAV_AUTONOMY_REPORT__=", "");
+}
+
+function parseAutonomyReadinessHandoff(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_AUTONOMY_HANDOFF__="))
+    ?.replace("__VISION_NAV_AUTONOMY_HANDOFF__=", "");
 }
 
 function parseThresholdTuningReport(output: string) {
@@ -192,6 +262,47 @@ function parsePx4SitlReport(output: string) {
     .map((line) => line.trim())
     .find((line) => line.startsWith("__VISION_NAV_PX4_SITL_REPORT__="))
     ?.replace("__VISION_NAV_PX4_SITL_REPORT__=", "");
+}
+
+function parseRuntimeStatusPath(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_RUNTIME_STATUS__="))
+    ?.replace("__VISION_NAV_RUNTIME_STATUS__=", "");
+}
+
+function parseRuntimeStatusJson(output: string): Record<string, unknown> | null {
+  const raw = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_RUNTIME_STATUS_JSON__="))
+    ?.replace("__VISION_NAV_RUNTIME_STATUS_JSON__=", "");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function runtimeStatusCommand(remoteProject: string) {
+  return `cd ${shellQuote(remoteProject)} && ./scripts/pi/read_runtime_status.sh`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function stringField(value: unknown) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
+}
+
+function numberField(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function readModuleSetupHandoff(): ModuleSetupHandoff | null {
@@ -327,6 +438,110 @@ function formatReportTime(ms?: number) {
   return new Date(ms).toLocaleString();
 }
 
+function RuntimeStatusCard({
+  status,
+  remotePath,
+  localPath,
+  onRefresh,
+  busy,
+  disabled,
+}: {
+  status: Record<string, unknown> | null;
+  remotePath: string | null;
+  localPath: string | null;
+  onRefresh: () => void;
+  busy: boolean;
+  disabled: boolean;
+}) {
+  const activeMap = asRecord(status?.["active_map"]);
+  const lastMatch = asRecord(status?.["last_match"]);
+  const estimator = asRecord(status?.["estimator"]);
+  const external = asRecord(status?.["external_position_health"]);
+  const latestFrame = asRecord(status?.["latest_frame"]);
+  const statusCounts = asRecord(status?.["status_counts"]);
+  const mapLabel = stringField(activeMap?.["bundle_id"]) || stringField(activeMap?.["map_id"]) || "n/a";
+  const matchStatus = stringField(lastMatch?.["status"]);
+  const matchReason = stringField(lastMatch?.["reason"]);
+  const confidence = numberField(lastMatch?.["confidence"]);
+  const tileId = stringField(lastMatch?.["tile_id"]);
+  const estimatorHealth = stringField(estimator?.["health"]) || stringField(estimator?.["status"]);
+  const externalStatus = stringField(external?.["status"]);
+  const messageType = stringField(external?.["message_type"]);
+  const sequence = numberField(latestFrame?.["sequence"]);
+  const acceptedCount = numberField(statusCounts?.["accepted"]);
+  const rejectedCount = numberField(statusCounts?.["rejected"]);
+
+  return (
+    <div className="rounded-lg border border-border bg-bg-card p-3 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-slate-200 flex items-center gap-2">
+            <Server size={14} className="text-cyan-400" /> Runtime Status
+          </div>
+          <p className="text-[11px] text-slate-500 mt-0.5">Fetch the current terrain runtime snapshot from the module.</p>
+        </div>
+        <button onClick={onRefresh} disabled={disabled || busy} className="btn-secondary text-xs py-1 px-3">
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+          Refresh
+        </button>
+      </div>
+      {status ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg border border-border bg-bg-base px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide text-slate-500">Last match</div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <span className={readinessBadgeClass(matchStatus)}>
+                  {readinessIcon(matchStatus)}
+                  {formatReadinessLabel(matchStatus)}
+                </span>
+                {confidence !== undefined && <span className="font-mono text-[10px] text-slate-500">conf {confidence.toFixed(2)}</span>}
+              </div>
+              <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">{matchReason || tileId || "no match detail"}</div>
+            </div>
+            <div className="rounded-lg border border-border bg-bg-base px-3 py-2">
+              <div className="text-[10px] uppercase tracking-wide text-slate-500">Health</div>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <span className={readinessBadgeClass(estimatorHealth)}>{formatReadinessLabel(estimatorHealth)}</span>
+                <span className={readinessBadgeClass(externalStatus)}>{formatReadinessLabel(externalStatus)}</span>
+              </div>
+              <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">{messageType || "external output n/a"}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <div className="flex justify-between gap-3">
+              <span className="text-slate-500">Active map</span>
+              <span className="text-slate-300 truncate">{mapLabel}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-slate-500">Frame</span>
+              <span className="font-mono text-slate-300">{sequence ?? "n/a"}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-slate-500">Accepted</span>
+              <span className="font-mono text-slate-300">{acceptedCount ?? 0}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-slate-500">Rejected</span>
+              <span className="font-mono text-slate-300">{rejectedCount ?? 0}</span>
+            </div>
+          </div>
+          {(remotePath || localPath) && (
+            <div className="space-y-1 border-t border-border pt-2">
+              {remotePath && <div className="font-mono text-[10px] text-slate-500 truncate">remote {remotePath}</div>}
+              {localPath && <div className="font-mono text-[10px] text-slate-500 truncate">saved {localPath}</div>}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-slate-500">
+          No runtime status fetched yet.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AutonomyReadinessReportList({
   reports,
   downloadDir,
@@ -398,6 +613,11 @@ function AutonomyReadinessReportList({
                   <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
                     {report.name} / {formatReportSize(report.size_bytes)} / {formatReportTime(report.modified_unix_ms)}
                   </div>
+                  {report.handoff_path && (
+                    <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
+                      handoff {formatReportSize(report.handoff_size_bytes ?? 0)} / {formatReportTime(report.handoff_modified_unix_ms)}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
@@ -415,6 +635,25 @@ function AutonomyReadinessReportList({
                   >
                     {busyPath === report.path ? <Loader2 size={11} className="animate-spin" /> : <FolderOpen size={11} />}
                   </button>
+                  {report.handoff_path && (
+                    <>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(report.handoff_path ?? "")}
+                        className="btn-secondary text-xs py-1 px-2"
+                        title="Copy handoff path"
+                      >
+                        <Copy size={11} />
+                      </button>
+                      <button
+                        onClick={() => reveal(report.handoff_path ?? "")}
+                        disabled={busyPath === report.handoff_path}
+                        className="btn-secondary text-xs py-1 px-2"
+                        title="Show handoff file"
+                      >
+                        {busyPath === report.handoff_path ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-1.5">
@@ -433,6 +672,46 @@ function AutonomyReadinessReportList({
                   </div>
                 ))}
               </div>
+              {report.evidence_manifest && (
+                <div className="rounded-md border border-border bg-slate-950/30 px-2 py-1.5 space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <span
+                      className={readinessBadgeClass(
+                        report.evidence_manifest.ready_for_goal_completion ? "passed" : report.summary.status
+                      )}
+                    >
+                      {report.evidence_manifest.ready_for_goal_completion ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
+                      {report.evidence_manifest.ready_for_goal_completion ? "ready" : "waiting"}
+                    </span>
+                    <span className="font-mono text-slate-500">goal completion proof</span>
+                    <span className="font-mono text-slate-500">
+                      external blockers {report.evidence_manifest.external_blockers.length}
+                    </span>
+                  </div>
+                  {report.evidence_manifest.external_blockers.length > 0 && (
+                    <div className="space-y-1">
+                      {report.evidence_manifest.external_blockers.slice(0, 3).map((blocker) => (
+                        <div key={`${report.path}-external-${blocker.name}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                          <span className={cn(readinessBadgeClass(blocker.status), "text-[10px]")}>
+                            {formatReadinessLabel(blocker.status)}
+                          </span>
+                          <span className="font-mono text-slate-500">{formatReadinessLabel(blocker.name)}</span>
+                          {blocker.missing_conditions.length > 0 && (
+                            <span className="text-slate-500">
+                              missing {blocker.missing_conditions.slice(0, 3).map(formatReadinessLabel).join(", ")}
+                            </span>
+                          )}
+                          {blocker.bench_subchecks.length > 0 && (
+                            <span className="text-slate-500">
+                              bench {blocker.bench_subchecks.slice(0, 3).map((item) => formatReadinessLabel(item.name)).join(", ")}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {report.checks.slice(0, 5).map((check) => (
                 <div key={`${report.path}-${check.name}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
                   <span className={cn(readinessBadgeClass(check.status), "text-[10px]")}>
@@ -475,6 +754,25 @@ function AutonomyReadinessReportList({
                               {formatReadinessLabel(condition)}
                             </span>
                           ))}
+                        </div>
+                      )}
+                      {action.bench_subchecks && action.bench_subchecks.length > 0 && (
+                        <div className="space-y-1">
+                          {action.bench_subchecks.slice(0, 6).map((subcheck) => (
+                            <div key={`${report.path}-${action.check}-${subcheck.name}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                              <span className={cn(readinessBadgeClass(subcheck.status), "text-[10px]")}>
+                                {formatReadinessLabel(subcheck.status)}
+                              </span>
+                              <span className="font-mono text-slate-500">{formatReadinessLabel(subcheck.name)}</span>
+                              {subcheck.message && <span className="text-slate-500 truncate">{subcheck.message}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {action.bench_subcheck && (
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                          <span className="font-mono text-slate-500">{formatReadinessLabel(action.bench_subcheck)}</span>
+                          {action.bench_message && <span className="text-slate-500 truncate">{action.bench_message}</span>}
                         </div>
                       )}
                       {action.notes && <div className="text-[10px] text-slate-500">{action.notes}</div>}
@@ -983,6 +1281,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [fieldEvidenceReports, setFieldEvidenceReports] = useState<FieldEvidenceReportFile[]>([]);
   const [featureBenchmarkReports, setFeatureBenchmarkReports] = useState<FeatureMethodBenchmarkReportFile[]>([]);
   const [thresholdTuningReports, setThresholdTuningReports] = useState<ThresholdTuningReportFile[]>([]);
+  const [runtimeStatus, setRuntimeStatus] = useState<Record<string, unknown> | null>(null);
+  const [runtimeStatusRemotePath, setRuntimeStatusRemotePath] = useState<string | null>(null);
+  const [runtimeStatusLocalPath, setRuntimeStatusLocalPath] = useState<string | null>(null);
+  const [autonomyHandoffLocalPath, setAutonomyHandoffLocalPath] = useState<string | null>(null);
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
   const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
   const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => defaultFieldCaseForm());
@@ -1003,6 +1305,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     if (selectedDevice) {
       setForm(formFromDevice(selectedDevice));
       setConnectionResult(null);
+      setRuntimeStatus(null);
+      setRuntimeStatusRemotePath(null);
+      setRuntimeStatusLocalPath(null);
+      setAutonomyHandoffLocalPath(null);
       setError(null);
     }
   }, [selectedDeviceId]);
@@ -1304,6 +1610,61 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const fetchRuntimeStatus = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before fetching runtime status.");
+      return;
+    }
+    setRunningStep("runtime-status");
+    setError(null);
+    setResult("runtime-status", { status: "running", output: "$ runtime status\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        runtimeStatusCommand(remoteProject),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteStatus = parseRuntimeStatusPath(output);
+      const parsedStatus = parseRuntimeStatusJson(output);
+      if (parsedStatus) {
+        setRuntimeStatus(parsedStatus);
+        setRuntimeStatusRemotePath(remoteStatus ?? null);
+      }
+
+      if (!remoteStatus) {
+        setResult("runtime-status", {
+          status: result.exit_code === 0 ? "passed" : "failed",
+          output: `$ runtime status\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      const downloaded = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remoteStatus,
+        RUNTIME_STATUS_DOWNLOAD_DIR,
+      );
+      setRuntimeStatusLocalPath(downloaded.local_path);
+      setResult("runtime-status", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ runtime status\n${output || "(no output)"}\n\n$ download runtime status\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+    } catch (err) {
+      setResult("runtime-status", { status: "failed", output: `$ runtime status\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const runAutonomyReadiness = async () => {
     const resolvedAuth = auth();
     if (!resolvedAuth || !form.host) {
@@ -1323,6 +1684,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteReport = parseAutonomyReadinessReport(output);
+      const remoteHandoff = parseAutonomyReadinessHandoff(output);
       const remotePx4Report = parsePx4SitlReport(output);
       if (!remoteReport) {
         setResult("autonomy-readiness", {
@@ -1345,11 +1707,30 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         remoteReport,
         AUTONOMY_REPORT_DOWNLOAD_DIR,
       );
+      let handoffDownloadText = "";
+      if (remoteHandoff) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n\n$ download readiness handoff\nDownloading ${remoteHandoff}...`,
+        });
+        const downloadedHandoff = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteHandoff,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setAutonomyHandoffLocalPath(downloadedHandoff.local_path);
+        handoffDownloadText = `\n\n$ download readiness handoff\nSaved to ${downloadedHandoff.local_path}\n[${downloadedHandoff.bytes_received} bytes]`;
+      } else {
+        setAutonomyHandoffLocalPath(null);
+      }
       let px4DownloadText = "";
       if (remotePx4Report) {
         setResult("autonomy-readiness", {
           status: "running",
-          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n\n$ download PX4 receiver report\nDownloading ${remotePx4Report}...`,
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}\n\n$ download PX4 receiver report\nDownloading ${remotePx4Report}...`,
         });
         const downloadedPx4 = await cmd.sshDownloadFile(
           form.host,
@@ -1363,7 +1744,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       }
       setResult("autonomy-readiness", {
         status: result.exit_code === 0 ? "passed" : "failed",
-        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${px4DownloadText}\n[exit ${result.exit_code}]`,
+        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${px4DownloadText}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
       await refreshAutonomyReports();
@@ -1732,6 +2113,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ./scripts/pi/validate_terrain_bundle.sh`,
     },
     {
+      id: "runtime-status",
+      title: "Runtime Status",
+      detail: "Fetches the latest terrain runtime snapshot with active map, match, estimator, and external-position health.",
+    },
+    {
       id: "bench-report",
       title: "Bench Report",
       detail: "Validates the deployed terrain bundle, creates a Pi support bundle, and downloads it.",
@@ -1757,6 +2143,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const runSetupStep = async (step: SetupStep) => {
     if (step.id === "bench-report") {
       await createBenchReport();
+      return;
+    }
+    if (step.id === "runtime-status") {
+      await fetchRuntimeStatus();
       return;
     }
     if (step.id === "feature-benchmark") {
@@ -1805,6 +2195,23 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         exit_code: result.exitCode ?? null,
         output: result.output ?? null,
       }));
+    const supportBundleDiagnostics = await Promise.all(
+      supportBundles.slice(0, 3).map(async (bundle) => {
+        try {
+          const details = await cmd.readSupportBundleDetails(bundle.path);
+          return supportBundleDiagnosticsSnapshot(bundle, details);
+        } catch (error) {
+          return {
+            name: bundle.name,
+            path: bundle.path,
+            size_bytes: bundle.size_bytes,
+            error: String(error),
+          };
+        }
+      }),
+    );
+    const latestAutonomyReport = autonomyReports[0] ?? null;
+    const latestExternalBlockers = latestAutonomyReport?.evidence_manifest?.external_blockers ?? [];
     const report = {
       version: "0.1.0",
       generated_at: new Date().toISOString(),
@@ -1825,9 +2232,18 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         repo_path: repoPath,
         support_bundle_download_dir: SUPPORT_DOWNLOAD_DIR,
         autonomy_report_download_dir: AUTONOMY_REPORT_DOWNLOAD_DIR,
+        autonomy_handoff_local_path: autonomyHandoffLocalPath,
         feature_benchmark_download_dir: FEATURE_BENCH_DOWNLOAD_DIR,
         px4_receiver_download_dir: PX4_RECEIVER_DOWNLOAD_DIR,
+        runtime_status_download_dir: RUNTIME_STATUS_DOWNLOAD_DIR,
       },
+      runtime_status: runtimeStatus
+        ? {
+            remote_path: runtimeStatusRemotePath,
+            local_path: runtimeStatusLocalPath,
+            snapshot: runtimeStatus,
+          }
+        : null,
       discovery: {
         candidates: discoveryCandidates.slice(0, 8),
         network_hints: networkHints,
@@ -1846,6 +2262,27 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       steps: stepResults,
       extra_results: extraResults,
       downloaded_support_bundles: supportBundles.slice(0, 5),
+      support_bundle_diagnostics: supportBundleDiagnostics,
+      autonomy_readiness_summary: latestAutonomyReport
+        ? {
+            name: latestAutonomyReport.name,
+            path: latestAutonomyReport.path,
+            size_bytes: latestAutonomyReport.size_bytes,
+            modified_unix_ms: latestAutonomyReport.modified_unix_ms ?? null,
+            handoff_path: latestAutonomyReport.handoff_path ?? null,
+            handoff_size_bytes: latestAutonomyReport.handoff_size_bytes ?? null,
+            status: latestAutonomyReport.summary.status ?? null,
+            failed_count: latestAutonomyReport.summary.failed_count ?? 0,
+            degraded_count: latestAutonomyReport.summary.degraded_count ?? 0,
+            passed_count: latestAutonomyReport.summary.passed_count ?? 0,
+            ready_for_goal_completion:
+              latestAutonomyReport.evidence_manifest?.ready_for_goal_completion ?? null,
+            external_blocker_count: latestExternalBlockers.length,
+            external_blockers: latestExternalBlockers.slice(0, 8),
+            next_action_count: latestAutonomyReport.next_actions.length,
+            next_actions: latestAutonomyReport.next_actions.slice(0, 8),
+          }
+        : null,
       downloaded_autonomy_reports: autonomyReports.slice(0, 5),
       downloaded_px4_receiver_reports: px4ReceiverReports.slice(0, 5),
       downloaded_field_evidence_reports: fieldEvidenceReports.slice(0, 5),
@@ -2269,6 +2706,15 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               </div>
             </div>
 
+            <RuntimeStatusCard
+              status={runtimeStatus}
+              remotePath={runtimeStatusRemotePath}
+              localPath={runtimeStatusLocalPath}
+              onRefresh={fetchRuntimeStatus}
+              busy={runningStep === "runtime-status"}
+              disabled={!connectionReady || !!runningStep}
+            />
+
             <div className="rounded-lg border border-border bg-bg-card p-3 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -2437,6 +2883,20 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             {setupReportPath && (
               <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
                 Setup report saved to <span className="font-mono">{setupReportPath}</span>
+              </div>
+            )}
+            {autonomyHandoffLocalPath && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
+                <span className="min-w-0">
+                  Autonomy handoff saved to <span className="font-mono break-all">{autonomyHandoffLocalPath}</span>
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(autonomyHandoffLocalPath)}
+                  className="btn-secondary text-xs py-1 px-2 shrink-0"
+                  title="Copy autonomy handoff path"
+                >
+                  <Copy size={11} />
+                </button>
               </div>
             )}
             {output ? (

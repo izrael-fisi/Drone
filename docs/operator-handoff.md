@@ -153,3 +153,31 @@ is needed:
 ```bash
 ./scripts/mac/enable_remote_login.sh
 ```
+
+## Autonomy Readiness Handoff
+
+After bench artifacts and field replay evidence have been downloaded, run:
+
+```bash
+./scripts/dev/run_local_autonomy_readiness_audit.sh
+```
+
+The wrapper writes both:
+
+```text
+~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json
+~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.md
+~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.evidence.zip
+```
+
+The JSON report is the strict machine-readable gate. The Markdown handoff is
+for human review and summarizes status, inputs, checks, external proof blockers,
+missing field conditions, bench subchecks, and next actions. It also renders
+checkbox checklists for missing field-evidence conditions and failed/degraded
+bench subchecks so the next evidence-collection pass can be tracked directly
+from the handoff. When rendered on a machine that can see the referenced
+artifacts, it also includes an artifact-availability table with present/missing
+state and file sizes.
+The evidence ZIP packages the JSON report, Markdown handoff, and small
+referenced evidence artifacts that exist locally; large or missing artifacts are
+listed in its manifest instead of being silently ignored.

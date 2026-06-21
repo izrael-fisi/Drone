@@ -9,6 +9,7 @@ from pathlib import Path
 from vision_nav.capture_frame import capture_frame
 from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
 from vision_nav.mavlink_bridge import MavlinkVisionBridge
+from vision_nav.runtime_status import runtime_status_snapshot, write_runtime_status
 from vision_nav.ros2_bridge import Ros2RuntimePublisher
 from vision_nav.terrain_bundle import load_terrain_bundle
 from vision_nav.terrain_estimator import TerrainEstimator
@@ -108,8 +109,12 @@ def main() -> None:
     frames_dir = output_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     log_path = output_dir / "terrain_matches.jsonl"
+    status_path = output_dir / "runtime_status.json"
     sequence = 0
+    status_counts: dict[str, int] = {}
+    started_at_utc = datetime.now(timezone.utc).isoformat()
     print(f"Writing terrain match log: {log_path}")
+    print(f"Writing runtime status: {status_path}")
 
     try:
         with log_path.open("a", encoding="utf-8") as log_file:
@@ -194,8 +199,22 @@ def main() -> None:
                         frame_id=args.ros2_frame_id,
                         child_frame_id=args.ros2_child_frame_id,
                     )
+                result_status = str(result.get("status") or "unknown")
+                status_counts[result_status] = status_counts.get(result_status, 0) + 1
                 log_file.write(json.dumps(record, sort_keys=True) + "\n")
                 log_file.flush()
+                write_runtime_status(
+                    status_path,
+                    runtime_status_snapshot(
+                        bundle=bundle,
+                        output_dir=output_dir,
+                        log_path=log_path,
+                        sequence=sequence,
+                        record=record,
+                        status_counts=status_counts,
+                        started_at_utc=started_at_utc,
+                    ),
+                )
                 print(status_line(sequence, result, capture_duration_s, match_duration_s))
 
                 sleep_s = args.interval_s - (time.monotonic() - loop_start)

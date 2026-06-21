@@ -42,6 +42,14 @@ IMPLEMENTATION_PLAN_MARKERS = [
     "Track 5: Validation And Product Risk Controls",
 ]
 
+EXTERNAL_PROOF_CHECKS = {
+    "support_bundle_bench_readiness",
+    "px4_receiver_proof",
+    "field_evidence_proof",
+    "feature_method_benchmark",
+    "threshold_tuning",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -124,33 +132,138 @@ def evaluate_autonomy_readiness(
         check_feature_method_proof(feature_method_benchmark_report_path, support_checks),
         check_threshold_tuning(threshold_tuning_report_path, support_manifest=support_manifest),
     ]
+    status = readiness_status(checks)
+    next_actions = next_actions_for_checks(checks)
+    inputs = {
+        "research_doc": str(Path(research_doc_path).expanduser()),
+        "implementation_plan": str(Path(implementation_plan_path).expanduser()),
+        "support_bundle": str(Path(support_bundle_path).expanduser()) if support_bundle_path else None,
+        "px4_sitl_session": str(Path(px4_sitl_session_path).expanduser()) if px4_sitl_session_path else None,
+        "px4_sitl_report": str(Path(px4_sitl_report_path).expanduser()) if px4_sitl_report_path else None,
+        "field_evidence_report": str(Path(field_evidence_report_path).expanduser()) if field_evidence_report_path else None,
+        "feature_method_benchmark_report": (
+            str(Path(feature_method_benchmark_report_path).expanduser())
+            if feature_method_benchmark_report_path
+            else None
+        ),
+        "threshold_tuning_report": str(Path(threshold_tuning_report_path).expanduser()) if threshold_tuning_report_path else None,
+    }
     report = {
-        "status": readiness_status(checks),
+        "status": status,
         "checks": checks,
-        "next_actions": next_actions_for_checks(checks),
+        "next_actions": next_actions,
         "summary": {
             "failed": sum(1 for check in checks if check["status"] == "failed"),
             "degraded": sum(1 for check in checks if check["status"] == "degraded"),
             "passed": sum(1 for check in checks if check["status"] == "passed"),
         },
-        "inputs": {
-            "research_doc": str(Path(research_doc_path).expanduser()),
-            "implementation_plan": str(Path(implementation_plan_path).expanduser()),
-            "support_bundle": str(Path(support_bundle_path).expanduser()) if support_bundle_path else None,
-            "px4_sitl_session": str(Path(px4_sitl_session_path).expanduser()) if px4_sitl_session_path else None,
-            "px4_sitl_report": str(Path(px4_sitl_report_path).expanduser()) if px4_sitl_report_path else None,
-            "field_evidence_report": str(Path(field_evidence_report_path).expanduser()) if field_evidence_report_path else None,
-            "feature_method_benchmark_report": (
-                str(Path(feature_method_benchmark_report_path).expanduser())
-                if feature_method_benchmark_report_path
-                else None
-            ),
-            "threshold_tuning_report": str(Path(threshold_tuning_report_path).expanduser()) if threshold_tuning_report_path else None,
-        },
+        "inputs": inputs,
+        "evidence_manifest": build_evidence_manifest(status, checks, inputs, next_actions),
     }
     if support_report.get("report") is not None:
         report["bench_readiness"] = support_report["report"]
     return report
+
+
+def build_evidence_manifest(
+    status: str,
+    checks: list[dict[str, Any]],
+    inputs: dict[str, Any],
+    next_actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    action_conditions: dict[str, list[str]] = {}
+    for action in next_actions:
+        if not isinstance(action, dict):
+            continue
+        check = str(action.get("check") or "")
+        if not check:
+            continue
+        raw_conditions = action.get("missing_conditions")
+        if isinstance(raw_conditions, list):
+            action_conditions.setdefault(check, [])
+            for condition in raw_conditions:
+                text = str(condition)
+                if text and text not in action_conditions[check]:
+                    action_conditions[check].append(text)
+
+    proof_items = [
+        evidence_manifest_item(check, inputs, action_conditions)
+        for check in checks
+        if isinstance(check, dict)
+    ]
+    completion_blockers = [
+        blocker_summary(item)
+        for item in proof_items
+        if item.get("status") != "passed"
+    ]
+    external_blockers = [
+        blocker_summary(item)
+        for item in proof_items
+        if item.get("requires_external_proof") and item.get("status") != "passed"
+    ]
+    return {
+        "schema_version": "vision_nav_autonomy_evidence_manifest_v1",
+        "ready_for_goal_completion": status == "passed",
+        "completion_blockers": completion_blockers,
+        "external_blockers": external_blockers,
+        "proof_items": proof_items,
+    }
+
+
+def evidence_manifest_item(
+    check: dict[str, Any],
+    inputs: dict[str, Any],
+    action_conditions: dict[str, list[str]],
+) -> dict[str, Any]:
+    name = str(check.get("name") or "")
+    details = check.get("details") if isinstance(check.get("details"), dict) else {}
+    missing_conditions = next_action_missing_conditions(name, details) or action_conditions.get(name, [])
+    item = {
+        "name": name,
+        "status": str(check.get("status") or "unknown"),
+        "message": str(check.get("message") or ""),
+        "source": evidence_source_for_check(name, details, inputs),
+        "requires_external_proof": name in EXTERNAL_PROOF_CHECKS,
+        "missing_conditions": missing_conditions,
+    }
+    if name == "support_bundle_bench_readiness":
+        subchecks = normalize_bench_subchecks(details.get("failed_or_degraded_checks"))
+        if subchecks:
+            item["bench_subchecks"] = subchecks
+    return item
+
+
+def evidence_source_for_check(name: str, details: dict[str, Any], inputs: dict[str, Any]) -> str | None:
+    input_keys = {
+        "research_doc": "research_doc",
+        "implementation_plan": "implementation_plan",
+        "support_bundle_bench_readiness": "support_bundle",
+        "px4_receiver_proof": "px4_sitl_report",
+        "field_evidence_proof": "field_evidence_report",
+        "feature_method_benchmark": "feature_method_benchmark_report",
+        "threshold_tuning": "threshold_tuning_report",
+    }
+    for key in ("source", "support_bundle_path", "report_path", "session_dir", "path"):
+        value = details.get(key)
+        if value:
+            return str(value)
+    input_value = inputs.get(input_keys.get(name, "")) if name in input_keys else None
+    if input_value:
+        return str(input_value)
+    return None
+
+
+def blocker_summary(item: dict[str, Any]) -> dict[str, Any]:
+    summary = {
+        "name": item.get("name"),
+        "status": item.get("status"),
+        "message": item.get("message"),
+    }
+    if item.get("missing_conditions"):
+        summary["missing_conditions"] = item["missing_conditions"]
+    if item.get("bench_subchecks"):
+        summary["bench_subchecks"] = item["bench_subchecks"]
+    return summary
 
 
 def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -198,11 +311,120 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "status": str(check.get("status") or "unknown"),
             **actions[name],
         }
+        if name == "support_bundle_bench_readiness":
+            bench_subchecks = normalize_bench_subchecks(details.get("failed_or_degraded_checks"))
+            if bench_subchecks:
+                action["bench_subchecks"] = bench_subchecks
+                action["notes"] = (
+                    f"{action['notes']} Bench subchecks needing attention: "
+                    f"{', '.join(item['name'] for item in bench_subchecks)}."
+                )
         if missing_conditions:
             action["missing_conditions"] = missing_conditions
             action["notes"] = f"{action['notes']} Missing conditions: {', '.join(missing_conditions)}."
+        next_actions.append(action)
+        if name == "support_bundle_bench_readiness":
+            next_actions.extend(next_actions_for_bench_subchecks(details))
+    return next_actions
+
+
+def normalize_bench_subchecks(raw: Any) -> list[dict[str, str]]:
+    if not isinstance(raw, list):
+        return []
+    subchecks: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "")
+        status = str(item.get("status") or "unknown")
+        if not name:
+            continue
+        subchecks.append(
+            {
+                "name": name,
+                "status": status,
+                "message": str(item.get("message") or ""),
+            }
+        )
+    return subchecks
+
+
+def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, Any]]:
+    actions = {
+        "bundle_health": {
+            "title": "Rebuild or validate the terrain bundle.",
+            "desktop_action": "Mission Planner > Build Bundle, then Module Setup > Bench Report",
+            "command": "./scripts/pi/validate_terrain_bundle.sh",
+            "notes": "The support bundle must include passing terrain bundle health before bench readiness can pass.",
+        },
+        "runtime_logs": {
+            "title": "Run the terrain runtime before creating the bench report.",
+            "desktop_action": "Module Setup > Runtime Bundle Check, then Bench Report",
+            "command": "./scripts/pi/run_terrain_nav_loop.sh",
+            "notes": "Create the support bundle after a runtime or replay log exists.",
+        },
+        "runtime_status": {
+            "title": "Fetch a fresh runtime status snapshot.",
+            "desktop_action": "Module Setup > Runtime Status, then Bench Report",
+            "command": "./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+            "notes": "The support bundle should include runtime_status.json beside the terrain log.",
+        },
+        "replay_gates": {
+            "title": "Evaluate replay gates for the bench log.",
+            "desktop_action": "Module Setup > Bench Report",
+            "command": "./scripts/pi/register_field_replay_case.sh",
+            "notes": "Replay-gate evidence should show accepted, degraded, and wrong-map behavior before final readiness.",
+        },
+        "px4_sitl_evidence": {
+            "title": "Capture PX4 external-vision receiver proof.",
+            "desktop_action": "PX4 SITL capture harness, then Module Setup > Bench Report",
+            "command": "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+            "notes": "Receiver proof must show fresh vehicle_visual_odometry samples.",
+        },
+        "px4_params": {
+            "title": "Export and check PX4 external-vision parameters.",
+            "desktop_action": "Module Setup > PX4 parameter check, then Bench Report",
+            "command": "./scripts/pi/check_px4_params.sh",
+            "notes": "Export PX4 parameters from QGroundControl or the PX4 shell before creating the support bundle.",
+        },
+        "feature_method_benchmarks": {
+            "title": "Benchmark feature methods on the field log.",
+            "desktop_action": "Module Setup > Feature Benchmark",
+            "command": "./scripts/pi/run_feature_method_benchmark.sh",
+            "notes": "Use real field logs to choose the low-compute and high-compute feature methods.",
+        },
+        "field_evidence": {
+            "title": "Register real field replay cases.",
+            "desktop_action": "Module Setup > Field Evidence Case",
+            "command": "./scripts/pi/register_field_replay_case.sh",
+            "notes": "Field evidence must cover all required terrain conditions.",
+        },
+        "threshold_tuning": {
+            "title": "Tune replay gates against field logs.",
+            "desktop_action": "Module Setup > Threshold Tuning",
+            "command": "./scripts/pi/run_threshold_tuning_report.sh",
+            "notes": "Threshold tuning should run after the full field-evidence manifest passes.",
+        },
+        "ardupilot_params": {
+            "title": "Review ArduPilot ExternalNav parameters.",
+            "desktop_action": "Module Setup > ArduPilot parameter check",
+            "command": "./scripts/pi/check_ardupilot_params.sh",
+            "notes": "ArduPilot is optional for the PX4-first bench path unless explicitly required.",
+        },
+    }
+    next_actions: list[dict[str, Any]] = []
+    for subcheck in normalize_bench_subchecks(details.get("failed_or_degraded_checks")):
+        spec = actions.get(subcheck["name"])
+        if not spec:
+            continue
         next_actions.append(
-            action
+            {
+                "check": f"support_bundle_bench_readiness.{subcheck['name']}",
+                "status": subcheck["status"],
+                "bench_subcheck": subcheck["name"],
+                "bench_message": subcheck["message"],
+                **spec,
+            }
         )
     return next_actions
 
@@ -250,6 +472,7 @@ def evaluate_support_bundle(
     details = {
         "support_bundle_path": report.get("support_bundle_path"),
         "summary": report.get("summary"),
+        "failed_or_degraded_checks": support_bench_subchecks(report),
     }
     if status == "passed":
         return {"check": passed("support_bundle_bench_readiness", "Support bundle bench-readiness gate passed.", details), "report": report, "manifest": manifest}
@@ -264,6 +487,25 @@ def evaluate_support_bundle(
         "report": report,
         "manifest": manifest,
     }
+
+
+def support_bench_subchecks(report: dict[str, Any]) -> list[dict[str, Any]]:
+    subchecks: list[dict[str, Any]] = []
+    for check in report.get("checks", []):
+        if not isinstance(check, dict):
+            continue
+        status = normalize_status(check.get("status"))
+        if status == "passed":
+            continue
+        subchecks.append(
+            {
+                "name": str(check.get("name") or ""),
+                "status": status or "unknown",
+                "message": str(check.get("message") or ""),
+                "details": check.get("details") if isinstance(check.get("details"), dict) else {},
+            }
+        )
+    return subchecks
 
 
 def support_checks_by_name(support_report: dict[str, Any]) -> dict[str, dict[str, Any]]:

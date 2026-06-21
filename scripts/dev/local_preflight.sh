@@ -83,11 +83,24 @@ VISION_NAV_PX4_SITL_REPORT="$local_audit_dir/px4-sitl-evidence/receiver_evidence
 VISION_NAV_AUTONOMY_ALLOW_FAILED=1 \
 ./scripts/dev/run_local_autonomy_readiness_audit.sh >/tmp/vision_nav_local_autonomy_readiness_preflight.txt 2>&1
 grep -q "__VISION_NAV_AUTONOMY_REPORT__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
+grep -q "__VISION_NAV_AUTONOMY_HANDOFF__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
+grep -q "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
 grep -q "__VISION_NAV_PX4_SITL_REPORT__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
+test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.evidence.zip"
 grep -q "preflight_feature_benchmark.json" "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 grep -q "receiver_evidence.json" "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 grep -q '"next_actions"' "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+grep -q "Autonomy Readiness Handoff" "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
+python3 - "$local_audit_dir/replay-cases/autonomy_readiness_report.evidence.zip" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    names = set(archive.namelist())
+    assert "manifest.json" in names
+    assert "reports/autonomy_readiness_report.json" in names
+    assert "reports/autonomy_readiness_report.md" in names
+PY
 rm -rf "$local_audit_dir"
 
 echo "[7/8] Preparing PX4 SITL evidence session dry-run"

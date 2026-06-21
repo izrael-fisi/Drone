@@ -72,6 +72,7 @@ def evaluate_bench_readiness(
     checks = [
         check_bundle_health(manifest),
         check_runtime_logs(manifest),
+        check_runtime_status(manifest),
         check_replay_gates(manifest, allow_missing=allow_missing_replay_gates),
         check_px4_params(manifest, allow_missing=allow_missing_px4_params),
     ]
@@ -131,6 +132,53 @@ def check_runtime_logs(manifest: dict[str, Any]) -> dict[str, Any]:
     if not copied or not summaries:
         return failed("runtime_logs", "Support bundle has no runtime/replay logs to inspect.", details)
     return passed("runtime_logs", "Runtime/replay logs were copied and summarized.", details)
+
+
+def check_runtime_status(manifest: dict[str, Any]) -> dict[str, Any]:
+    logs = manifest.get("logs") or {}
+    statuses = [item for item in logs.get("runtime_statuses") or [] if isinstance(item, dict)]
+    latest = statuses[-1] if statuses else {}
+    active_map = latest.get("active_map") if isinstance(latest.get("active_map"), dict) else {}
+    last_match = latest.get("last_match") if isinstance(latest.get("last_match"), dict) else {}
+    estimator = latest.get("estimator") if isinstance(latest.get("estimator"), dict) else {}
+    output = latest.get("output") if isinstance(latest.get("output"), dict) else {}
+    external = (
+        latest.get("external_position")
+        if isinstance(latest.get("external_position"), dict)
+        else latest.get("external_position_health")
+        if isinstance(latest.get("external_position_health"), dict)
+        else {}
+    )
+    status_counts = latest.get("status_counts") if isinstance(latest.get("status_counts"), dict) else {}
+    details = {
+        "snapshot_count": len(statuses),
+        "active_map": active_map.get("bundle_id") or active_map.get("map_id"),
+        "output_path": output.get("output_dir") or latest.get("output_path"),
+        "log_path": output.get("log_path") or latest.get("log_path"),
+        "last_match_status": last_match.get("status"),
+        "last_match_reason": last_match.get("reason"),
+        "estimator_health": estimator.get("health") or estimator.get("status"),
+        "external_position_status": external.get("status"),
+        "accepted_count": status_counts.get("accepted"),
+        "rejected_count": status_counts.get("rejected"),
+    }
+    if not statuses:
+        return degraded("runtime_status", "Runtime status snapshot was not provided.", details)
+    if not details["active_map"] or not details["last_match_status"]:
+        return failed("runtime_status", "Runtime status is missing active-map or last-match state.", details)
+
+    estimator_status = normalize_status(details["estimator_health"])
+    match_status = normalize_status(details["last_match_status"])
+    external_status = normalize_status(details["external_position_status"])
+    if estimator_status in {"failed", "error", "unhealthy"}:
+        return failed("runtime_status", "Runtime estimator health is failed.", details)
+    if match_status in {"failed", "error"}:
+        return failed("runtime_status", "Runtime last-match status is failed.", details)
+    if external_status in {"failed", "error"}:
+        return failed("runtime_status", "Runtime external-position health is failed.", details)
+    if not details["output_path"] or not details["log_path"]:
+        return degraded("runtime_status", "Runtime status is missing output or log path metadata.", details)
+    return passed("runtime_status", "Runtime status snapshot is present and usable.", details)
 
 
 def check_replay_gates(manifest: dict[str, Any], *, allow_missing: bool) -> dict[str, Any]:

@@ -160,6 +160,12 @@ export interface SupportBundleDetails {
   metadata?: Record<string, unknown>;
   bundle_health?: Record<string, unknown>;
   entry_count: number;
+  artifacts: Array<{
+    name: string;
+    path: string;
+    kind: string;
+    size_bytes: number;
+  }>;
   logs: Array<{
     name: string;
     total_records?: number;
@@ -168,6 +174,7 @@ export interface SupportBundleDetails {
     reason_counts?: Record<string, number>;
     external_position?: Record<string, unknown>;
   }>;
+  runtime_statuses: Array<Record<string, unknown>>;
   log_previews: Array<{
     name: string;
     truncated: boolean;
@@ -186,6 +193,36 @@ export interface SupportBundleDetails {
       external_position_status?: string;
       external_position_message_type?: string;
     }>;
+  }>;
+  log_timelines: Array<{
+    name: string;
+    path: string;
+    size_bytes: number;
+    total_records?: number;
+    invalid_records: number;
+    accepted_rate?: number;
+    status_counts?: Record<string, number>;
+    reason_counts?: Record<string, number>;
+    external_position_status_counts?: Record<string, number>;
+    first_sequence?: number;
+    last_sequence?: number;
+    first_timestamp_us?: number;
+    last_timestamp_us?: number;
+    average_confidence?: number;
+    average_inliers?: number;
+    average_reprojection_error_px?: number;
+    segments: Array<{
+      index: number;
+      start_line: number;
+      end_line: number;
+      total_records: number;
+      accepted_rate?: number;
+      dominant_status?: string;
+      average_confidence?: number;
+      average_inliers?: number;
+      average_reprojection_error_px?: number;
+    }>;
+    truncated: boolean;
   }>;
   image_previews: Array<{
     name: string;
@@ -285,11 +322,21 @@ export interface SupportBundleDetails {
   };
 }
 
+export interface ExtractedSupportBundleArtifact {
+  name: string;
+  entry_path: string;
+  path: string;
+  size_bytes: number;
+}
+
 export interface AutonomyReadinessReportFile {
   name: string;
   path: string;
   size_bytes: number;
   modified_unix_ms?: number;
+  handoff_path?: string;
+  handoff_size_bytes?: number;
+  handoff_modified_unix_ms?: number;
   summary: {
     status?: "passed" | "failed" | "degraded" | string;
     failed_count?: number;
@@ -314,7 +361,40 @@ export interface AutonomyReadinessReportFile {
     command?: string;
     notes?: string;
     missing_conditions: string[];
+    bench_subcheck?: string;
+    bench_message?: string;
+    bench_subchecks?: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+    }>;
   }>;
+  evidence_manifest?: {
+    schema_version?: string;
+    ready_for_goal_completion?: boolean;
+    completion_blockers: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+      missing_conditions: string[];
+      bench_subchecks: Array<{
+        name?: string;
+        status?: "passed" | "failed" | "degraded" | string;
+        message?: string;
+      }>;
+    }>;
+    external_blockers: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+      missing_conditions: string[];
+      bench_subchecks: Array<{
+        name?: string;
+        status?: "passed" | "failed" | "degraded" | string;
+        message?: string;
+      }>;
+    }>;
+  };
 }
 
 export interface Px4ReceiverReportFile {

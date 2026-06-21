@@ -48,8 +48,7 @@ vision-nav-ros2-replay-log \
 
 This writes `metadata.json` and `messages.jsonl` with ROS message type names,
 topics, timestamps, and payloads. It is intentionally dependency-free; convert
-it to native rosbag2/MCAP later on a ROS 2 workstation when that workflow is
-needed.
+it to native rosbag2 or MCAP on a workstation when that workflow is needed.
 
 To include the captured camera frames referenced by each `frame_path` in the
 runtime log, add the compressed frame topic export:
@@ -68,6 +67,38 @@ provided. Frames larger than `--max-frame-bytes` are skipped so support exports
 do not accidentally embed full map assets or huge captures. The JSONL message
 uses ROS type `sensor_msgs/msg/CompressedImage` and stores the compressed bytes
 as base64 so the artifact remains plain JSON.
+
+## Native Bag Exports
+
+On a sourced ROS 2 workstation, export the same replay stream as native rosbag2
+serialized messages:
+
+```bash
+source /opt/ros/humble/setup.bash
+vision-nav-ros2-replay-log \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --export-rosbag2 ~/DroneTransfer/outgoing/terrain-match/rosbag2-native \
+  --include-frame-topic
+```
+
+This path imports `rosbag2_py`, `rclpy.serialization`, `nav_msgs`,
+`diagnostic_msgs`, and `sensor_msgs` only when `--export-rosbag2` is used. It
+writes serialized `nav_msgs/msg/Odometry`,
+`diagnostic_msgs/msg/DiagnosticArray`, and optional
+`sensor_msgs/msg/CompressedImage` topics, plus
+`vision_nav_rosbag2_metadata.json` for the support tooling.
+
+Use the dependency-free JSONL export on the Pi or on machines without ROS 2.
+For MCAP-capable tools that do not require native ROS serialization, install the
+optional Python extra and export a JSON-encoded MCAP archive:
+
+```bash
+python -m pip install ".[rosbag]"
+vision-nav-ros2-replay-log \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --export-mcap ~/DroneTransfer/outgoing/terrain-match/vision-nav.mcap \
+  --include-frame-topic
+```
 
 ## Publish With ROS 2
 

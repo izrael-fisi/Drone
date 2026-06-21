@@ -56,7 +56,13 @@ script on the module and may require a reboot afterward.
 The setup report is exported as JSON and excludes SSH passwords, key
 passphrases, and sudo passwords. It includes device connection metadata,
 runtime paths, step status, command output, camera-preview path, and the most
-recent downloaded support-bundle summaries. Discovery results are saved in the
+recent downloaded support-bundle summaries. It also includes a bounded
+diagnostic snapshot for the newest downloaded support bundles: bench-readiness
+checks, log summaries, frame timelines, extractable artifact inventories,
+image-artifact metadata without base64 payloads, replay-gate reports, PX4 and
+ArduPilot parameter reports, PX4 receiver evidence, field-evidence reports,
+feature-method benchmark reports, and threshold-tuning reports. Discovery
+results are saved in the
 desktop app so recent local-network candidates remain visible even after a Pi
 reboots or temporarily drops offline. Discovery also shows active desktop
 IPv4 interface/subnet hints, lets the operator select the adapter that should
@@ -64,6 +70,14 @@ be on the Pi network, and provides a copyable mDNS/SSH/firewall checklist. The
 selected adapter and checklist are included in the setup report, which helps
 diagnose whether the Pi and desktop are on the same local network after a
 failed bench install.
+When autonomy-readiness reports are available, the setup report also includes a
+compact final-audit snapshot with the latest status, handoff path,
+goal-completion flag, external blocker count, bounded blocker details, and the
+first next actions.
+The readiness wrappers also create
+`autonomy_readiness_report.evidence.zip`, a support-review package with the JSON
+report, Markdown handoff, package manifest, and any small referenced evidence
+artifacts available on the local machine.
 
 ## Vision Pipeline
 
@@ -233,6 +247,13 @@ It then runs the existing Pi scripts:
 ./scripts/pi/run_terrain_nav_loop.sh
 ```
 
+Module Setup can fetch the latest Pi-side runtime snapshot with
+`./scripts/pi/read_runtime_status.sh`. The Runtime Status card shows the active
+map, last match status/reason, confidence, estimator health, external-position
+health, frame sequence, and accepted/rejected counts, then downloads the raw
+`runtime_status.json` to `~/DroneTransfer/from-pi/runtime-status/` for the
+setup report.
+
 The Runtime And MAVLink panel can also create a support bundle on the connected
 Raspberry Pi. Support bundles are written under
 `~/DroneTransfer/outgoing/support-bundles/` on the Pi, then downloaded to
@@ -254,17 +275,33 @@ threshold-tuning reports from
 `$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json` are also
 packaged automatically when present. The list can
 reveal a ZIP in the local file manager, copy the full path for support notes,
-show a compact detail view, or delete stale ZIP files after a bench session. The
-detail view reads the ZIP archive directly and shows support metadata,
+show a compact detail view, extract safe diagnostic artifacts, or delete stale
+ZIP files after a bench session. The detail view reads the ZIP archive directly
+and shows support metadata,
 git/app state, log status counts, accepted-rate summaries, bench-readiness
 checks, replay-gate case results, PX4 receiver sample counts, MAVLink
 version/link hints, PX4 external-vision parameter readiness, ArduPilot
 ExternalNav parameter readiness, feature-method benchmark recommendations,
 field-evidence case coverage, per-condition coverage status, threshold-tuning
-margins, and compact per-record previews from bundled runtime/replay JSONL logs. It also
+margins, compact per-record previews from bundled runtime/replay JSONL logs, and
+bounded frame timelines that show accepted-rate progression, dominant segment
+status, external-position health counts, sequence range, and average
+confidence/inlier/reprojection metrics across the log. When a terrain runtime
+`runtime_status.json` snapshot is present beside the log, support bundles copy
+it as `logs/<log-name>.runtime_status.json` and summarize the active map, output
+path, estimator health, external-position state, and last accepted/rejected
+reason in `support_manifest.json`. Bench readiness also evaluates that snapshot:
+missing runtime status degrades the report, while missing active-map or
+last-match state fails the runtime-status check. It also
 previews a bounded set of small image artifacts from camera, debug, replay,
 smoke, or extra-file paths while skipping full map, orthophoto, and tile
-assets.
+assets. Full artifacts such as runtime logs, replay-gate reports, PX4 receiver
+reports, parameter reports, field-evidence reports, threshold-tuning reports,
+bench-readiness reports, and lightweight bundle metadata can be extracted into a
+`*-artifacts/` folder next to the downloaded ZIP and revealed in the file
+manager. Full maps, orthophotos, tile pyramids, descriptors, elevation assets,
+GeoTIFFs, SQLite indexes, and oversized files are intentionally excluded from
+the extraction action.
 
 Desktop-created support bundles automatically pass conventional Pi evidence
 locations into `scripts/pi/create_support_bundle.sh`:
@@ -311,7 +348,16 @@ revealed in the local file manager or copied by path for support notes. Failed
 or degraded reports include next-action rows that point to the matching Module
 Setup action or shell command needed to collect the missing evidence. Field and
 threshold failures also show the missing condition checklist directly in the
-report card.
+report card. When the support-bundle bench gate is degraded or failed, the same
+next-action list includes failed/degraded bench subchecks such as runtime
+status, PX4 receiver evidence, replay gates, or parameter exports. The report
+card shows each subcheck's status and message so the operator can jump to the
+specific setup action that fixes it.
+Each final audit report also carries an `evidence_manifest` that the app renders
+as a goal-completion proof summary. It shows whether the implementation is ready
+to be treated as complete, how many external proof blockers remain, and the
+first missing PX4 receiver, field replay, feature-benchmark, threshold, or
+support-bundle evidence items.
 Module Setup also lists downloaded PX4 receiver-evidence JSON reports from
 `~/DroneTransfer/from-pi/px4-sitl-evidence/`, including sample count, latest
 sample age, MAVLink version, and issue summaries. The local readiness wrapper
@@ -326,7 +372,12 @@ validates the deployed terrain bundle, creates the support bundle on the Pi, and
 downloads it to the desktop. The following `Autonomy Readiness` setup action
 runs `scripts/pi/run_autonomy_readiness_audit.sh` over SSH against the latest
 Pi-side support bundle, then downloads the strict final audit report to
-`~/DroneTransfer/from-pi/replay-cases/` on the desktop.
+`~/DroneTransfer/from-pi/replay-cases/` on the desktop. When the Pi emits a
+Markdown handoff marker, Module Setup downloads that handoff beside the JSON
+report and shows the local path in the Latest Output panel for support review.
+On later app launches, the Autonomy Readiness Reports list detects a sibling
+`autonomy_readiness_report.md` file beside each JSON report and exposes copy and
+reveal controls for the handoff.
 
 ## MAVLink
 

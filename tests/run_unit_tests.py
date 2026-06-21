@@ -14,6 +14,8 @@ import numpy as np
 
 from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
 from vision_nav.ardupilot_params import check_ardupilot_external_nav_params, params_from_text as ardupilot_params_from_text
+from vision_nav.autonomy_evidence_package import create_evidence_package
+from vision_nav.autonomy_handoff import render_handoff_markdown
 from vision_nav.autonomy_readiness import REQUIRED_FIELD_CONDITIONS, evaluate_autonomy_readiness
 from vision_nav.bench_readiness import evaluate_bench_readiness, evaluate_bench_readiness_file
 from vision_nav.benchmark_retrieval import benchmark_retrieval
@@ -44,19 +46,24 @@ from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sit
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.px4_params import check_px4_external_vision_params, evaluate_px4_param_file, params_from_text
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
-from vision_nav.ros2_bridge import export_rosbag_jsonl, ros_records_from_log
+from vision_nav.ros2_bridge import export_rosbag_jsonl, export_rosbag_mcap, export_rosbag2, ros_records_from_log
+from vision_nav.runtime_status import runtime_status_snapshot, write_runtime_status
 from vision_nav.replay_case_manifest import evaluate_replay_case_manifest
 from vision_nav.replay_case_registry import register_replay_case
+from vision_nav.replay_case_schema import REPLAY_CASE_MANIFEST_SCHEMA, evaluate_replay_case_schema
 from vision_nav.replay_dataset_audit import audit_replay_dataset_coverage
 from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
-from vision_nav.support_bundle import create_support_bundle
+from vision_nav.support_bundle import create_support_bundle, load_replay_cases
 from vision_nav.threshold_tuning import evaluate_threshold_tuning
 from vision_nav.terrain_estimator import TerrainEstimator
+from vision_nav.terrain_bundle import load_terrain_bundle
 from vision_nav.terrain_tiles import (
+    TerrainTile,
     create_tile_schema,
     global_descriptor_distance,
     image_global_descriptor,
+    load_tile_retrieval_descriptor,
     query_tiles_with_metadata,
     save_tile_descriptor,
     tile_origins,
@@ -936,6 +943,198 @@ def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
         assert_equal(messages[2]["topic"], "/diagnostics", "third rosbag jsonl topic")
         assert_equal(messages[3]["message"]["status"][0]["message"], "terrain match rejected: low_inliers", "rejected diagnostic message")
 
+        class FakeMcapWriter:
+            instances: list["FakeMcapWriter"] = []
+
+            def __init__(self, stream) -> None:
+                self.stream = stream
+                self.schemas: list[dict[str, object]] = []
+                self.channels: list[dict[str, object]] = []
+                self.messages: list[dict[str, object]] = []
+                FakeMcapWriter.instances.append(self)
+
+            def start(self) -> None:
+                self.stream.write(b"FAKE-MCAP\n")
+
+            def register_schema(self, *, name: str, encoding: str, data: bytes) -> int:
+                self.schemas.append({"name": name, "encoding": encoding, "data": data})
+                return len(self.schemas)
+
+            def register_channel(self, *, topic: str, message_encoding: str, schema_id: int) -> int:
+                self.channels.append({"topic": topic, "message_encoding": message_encoding, "schema_id": schema_id})
+                return len(self.channels)
+
+            def add_message(self, *, channel_id: int, log_time: int, publish_time: int, data: bytes) -> None:
+                self.messages.append(
+                    {
+                        "channel_id": channel_id,
+                        "log_time": log_time,
+                        "publish_time": publish_time,
+                        "data": json.loads(data.decode("utf-8")),
+                    }
+                )
+
+            def finish(self) -> None:
+                self.stream.write(b"FINISH\n")
+
+        mcap_result = export_rosbag_mcap(
+            records,
+            root / "rosbag.mcap",
+            source_log=log,
+            frame_topic="/vision_nav/camera/image/compressed",
+            writer_factory=FakeMcapWriter,
+        )
+        mcap_metadata = json.loads(Path(mcap_result["metadata_path"]).read_text())
+        fake_writer = FakeMcapWriter.instances[-1]
+        assert_equal(mcap_metadata["format"], "vision_nav_mcap_json_v1", "mcap metadata format")
+        assert_equal(mcap_metadata["message_count"], 4, "mcap message count")
+        assert_equal(len(fake_writer.schemas), 3, "mcap schema count")
+        assert_equal(len(fake_writer.channels), 3, "mcap channel count")
+        assert_equal(len(fake_writer.messages), 4, "mcap writer message count")
+        if not Path(mcap_result["mcap_path"]).read_bytes().startswith(b"FAKE-MCAP"):
+            raise AssertionError("Expected fake MCAP writer to write output file")
+
+        class FakeStamp:
+            def __init__(self) -> None:
+                self.sec = 0
+                self.nanosec = 0
+
+        class FakeHeader:
+            def __init__(self) -> None:
+                self.stamp = FakeStamp()
+                self.frame_id = ""
+
+        class FakeVector3:
+            def __init__(self) -> None:
+                self.x = 0.0
+                self.y = 0.0
+                self.z = 0.0
+
+        class FakeQuaternion:
+            def __init__(self) -> None:
+                self.x = 0.0
+                self.y = 0.0
+                self.z = 0.0
+                self.w = 1.0
+
+        class FakePose:
+            def __init__(self) -> None:
+                self.position = FakeVector3()
+                self.orientation = FakeQuaternion()
+
+        class FakePoseWithCovariance:
+            def __init__(self) -> None:
+                self.pose = FakePose()
+                self.covariance: list[float] = []
+
+        class FakeTwist:
+            def __init__(self) -> None:
+                self.linear = FakeVector3()
+                self.angular = FakeVector3()
+
+        class FakeTwistWithCovariance:
+            def __init__(self) -> None:
+                self.twist = FakeTwist()
+                self.covariance: list[float] = []
+
+        class FakeOdometry:
+            def __init__(self) -> None:
+                self.header = FakeHeader()
+                self.child_frame_id = ""
+                self.pose = FakePoseWithCovariance()
+                self.twist = FakeTwistWithCovariance()
+
+        class FakeKeyValue:
+            def __init__(self) -> None:
+                self.key = ""
+                self.value = ""
+
+        class FakeDiagnosticStatus:
+            def __init__(self) -> None:
+                self.level = 0
+                self.name = ""
+                self.message = ""
+                self.hardware_id = ""
+                self.values: list[FakeKeyValue] = []
+
+        class FakeDiagnosticArray:
+            def __init__(self) -> None:
+                self.header = FakeHeader()
+                self.status: list[FakeDiagnosticStatus] = []
+
+        class FakeCompressedImage:
+            def __init__(self) -> None:
+                self.header = FakeHeader()
+                self.format = ""
+                self.data = b""
+
+        class FakeSequentialWriter:
+            instances: list["FakeSequentialWriter"] = []
+
+            def __init__(self) -> None:
+                self.open_args = None
+                self.topics: list[object] = []
+                self.messages: list[tuple[str, bytes, int]] = []
+                FakeSequentialWriter.instances.append(self)
+
+            def open(self, storage_options, converter_options) -> None:
+                self.open_args = (storage_options, converter_options)
+
+            def create_topic(self, metadata) -> None:
+                self.topics.append(metadata)
+
+            def write(self, topic: str, data: bytes, timestamp_ns: int) -> None:
+                self.messages.append((topic, data, timestamp_ns))
+
+        class FakeStorageOptions:
+            def __init__(self, *, uri: str, storage_id: str) -> None:
+                self.uri = uri
+                self.storage_id = storage_id
+
+        class FakeConverterOptions:
+            def __init__(self, *, input_serialization_format: str, output_serialization_format: str) -> None:
+                self.input_serialization_format = input_serialization_format
+                self.output_serialization_format = output_serialization_format
+
+        class FakeTopicMetadata:
+            def __init__(self, *, name: str, type: str, serialization_format: str, offered_qos_profiles: str = "") -> None:
+                self.name = name
+                self.type = type
+                self.serialization_format = serialization_format
+                self.offered_qos_profiles = offered_qos_profiles
+
+        def fake_serialize_message(message) -> bytes:
+            return message.__class__.__name__.encode("utf-8")
+
+        rosbag2_result = export_rosbag2(
+            records,
+            root / "rosbag2-native",
+            source_log=log,
+            frame_topic="/vision_nav/camera/image/compressed",
+            writer_factory=FakeSequentialWriter,
+            storage_options_cls=FakeStorageOptions,
+            converter_options_cls=FakeConverterOptions,
+            topic_metadata_cls=FakeTopicMetadata,
+            message_classes={
+                "nav_msgs/msg/Odometry": FakeOdometry,
+                "diagnostic_msgs/msg/DiagnosticArray": FakeDiagnosticArray,
+                "diagnostic_msgs/msg/DiagnosticStatus": FakeDiagnosticStatus,
+                "diagnostic_msgs/msg/KeyValue": FakeKeyValue,
+                "sensor_msgs/msg/CompressedImage": FakeCompressedImage,
+            },
+            serializer=fake_serialize_message,
+        )
+        rosbag2_metadata = json.loads(Path(rosbag2_result["metadata_path"]).read_text())
+        fake_rosbag2_writer = FakeSequentialWriter.instances[-1]
+        assert_equal(rosbag2_metadata["format"], "vision_nav_rosbag2_v1", "rosbag2 metadata format")
+        assert_equal(rosbag2_metadata["message_count"], 4, "rosbag2 message count")
+        assert_equal(len(fake_rosbag2_writer.topics), 3, "rosbag2 topic count")
+        assert_equal(len(fake_rosbag2_writer.messages), 4, "rosbag2 writer message count")
+        assert_equal(fake_rosbag2_writer.open_args[0].storage_id, "sqlite3", "rosbag2 storage id")
+        assert_equal(fake_rosbag2_writer.messages[0][0], "/vision_nav/camera/image/compressed", "rosbag2 first topic")
+        if fake_rosbag2_writer.messages[0][1] != b"FakeCompressedImage":
+            raise AssertionError("Expected rosbag2 frame event to serialize as FakeCompressedImage")
+
 
 def test_ros2_launch_profiles_static() -> None:
     root = Path(__file__).resolve().parents[1]
@@ -1209,10 +1408,62 @@ def test_terrain_profile_reports_agl_and_gsd_warnings() -> None:
             raise AssertionError(f"Expected low AGL warning, got {messages}")
 
 
+def test_runtime_status_snapshot_reports_active_map_and_last_match() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bundle_path = create_minimal_terrain_bundle(root)
+        bundle = load_terrain_bundle(bundle_path)
+        output_dir = root / "terrain-match"
+        log_path = output_dir / "terrain_matches.jsonl"
+        record = {
+            "timestamp_utc": "2026-06-21T00:00:00Z",
+            "frame_path": str(output_dir / "frames" / "frame.jpg"),
+            "capture_duration_s": 0.1,
+            "match_duration_s": 0.2,
+            "telemetry": [{"message_type": "ATTITUDE", "timestamp_us": 123}],
+            "external_position_health": {"status": "healthy", "message_type": "odometry"},
+            "mavlink": {"sent": True, "message": "ODOMETRY"},
+            "result": {
+                "status": "accepted",
+                "tile_id": "tile_000000",
+                "confidence": 0.82,
+                "scale_confidence": 0.74,
+                "inliers": 31,
+                "reprojection_error_px": 1.8,
+                "local_enu_m": {"x": 1.0, "y": 2.0, "z": None},
+                "lat_lon": {"lat": 40.0, "lon": -75.0},
+                "covariance": {"x_m2": 4.0, "y_m2": 5.0, "z_m2": None},
+                "estimator": {"initialized": True, "health": "tracking", "last_update_timestamp_us": 123},
+            },
+        }
+        status = runtime_status_snapshot(
+            bundle=bundle,
+            output_dir=output_dir,
+            log_path=log_path,
+            sequence=3,
+            record=record,
+            status_counts={"accepted": 2, "rejected": 1},
+            started_at_utc="2026-06-21T00:00:00+00:00",
+        )
+        status_path = output_dir / "runtime_status.json"
+        write_runtime_status(status_path, status)
+        saved = json.loads(status_path.read_text())
+        assert_equal(saved["schema_version"], "vision_nav_runtime_status_v1", "runtime status schema")
+        assert_equal(saved["active_map"]["bundle_id"], "health-test", "runtime status bundle id")
+        assert_equal(saved["active_map"]["has_tile_index"], True, "runtime status tile index")
+        assert_equal(saved["output"]["log_path"], str(log_path), "runtime status log path")
+        assert_equal(saved["last_match"]["status"], "accepted", "runtime status last match")
+        assert_equal(saved["last_match"]["tile_id"], "tile_000000", "runtime status tile id")
+        assert_equal(saved["estimator"]["health"], "tracking", "runtime status estimator health")
+        assert_equal(saved["external_position"]["status"], "healthy", "runtime status external position")
+        assert_equal(saved["status_counts"], {"accepted": 2, "rejected": 1}, "runtime status counts")
+
+
 def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         bundle = create_minimal_terrain_bundle(root, include_elevation=True)
+        terrain_bundle = load_terrain_bundle(bundle)
         log = root / "terrain_matches.jsonl"
         log.write_text(
             json.dumps(
@@ -1230,6 +1481,31 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
             )
             + "\n"
         )
+        runtime_status = runtime_status_snapshot(
+            bundle=terrain_bundle,
+            output_dir=root,
+            log_path=log,
+            sequence=1,
+            record={
+                "timestamp_utc": "2026-06-21T00:00:00Z",
+                "frame_path": str(root / "frames" / "frame.jpg"),
+                "capture_duration_s": 0.1,
+                "match_duration_s": 0.2,
+                "external_position_health": {"status": "healthy", "message_type": "odometry"},
+                "result": {
+                    "status": "accepted",
+                    "tile_id": "tile_000000",
+                    "confidence": 0.8,
+                    "scale_confidence": 0.7,
+                    "inliers": 20,
+                    "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None},
+                    "estimator": {"initialized": True, "health": "tracking"},
+                },
+            },
+            status_counts={"accepted": 1},
+            started_at_utc="2026-06-21T00:00:00+00:00",
+        )
+        write_runtime_status(root / "runtime_status.json", runtime_status)
         replay_manifest = root / "replay_cases.json"
         replay_manifest.write_text(
             json.dumps(
@@ -1239,6 +1515,9 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
                         {
                             "case_name": "unit-good",
                             "expected": "good_map",
+                            "dataset_type": "synthetic",
+                            "conditions": ["good_texture"],
+                            "bundle": str(bundle),
                             "log": str(log),
                             "notes": "Synthetic accepted support bundle case.",
                         }
@@ -1448,6 +1727,7 @@ RC8_OPTION,90
             "bundle/elevation/dem.tif",
             "bundle/elevation/dsm.tif",
             "logs/terrain_matches.jsonl",
+            "logs/terrain_matches.runtime_status.json",
             "summaries/terrain_matches.summary.json",
             "summaries/replay_gates/unit-good.gate.json",
             "summaries/px4_sitl_evidence/receiver_evidence.json",
@@ -1470,6 +1750,21 @@ RC8_OPTION,90
                 raise AssertionError(f"Missing {expected} from support bundle zip")
         manifest = json.loads(Path(result["manifest_path"]).read_text())
         assert_equal(manifest["logs"]["summaries"][0]["accepted_rate"], 1.0, "support log accepted rate")
+        assert_equal(
+            manifest["logs"]["runtime_statuses"][0]["schema_version"],
+            "vision_nav_runtime_status_v1",
+            "support runtime status schema",
+        )
+        assert_equal(
+            manifest["logs"]["runtime_statuses"][0]["last_match"]["status"],
+            "accepted",
+            "support runtime status last match",
+        )
+        assert_equal(
+            manifest["logs"]["runtime_statuses"][0]["estimator"]["health"],
+            "tracking",
+            "support runtime status estimator health",
+        )
         assert_equal(manifest["replay_gates"]["status"], "passed", "support replay gate status")
         assert_equal(manifest["replay_gates"]["reports"][0]["status"], "passed", "support replay gate report")
         assert_equal(manifest["px4_sitl_evidence"]["status"], "passed", "support px4 evidence status")
@@ -1490,6 +1785,7 @@ RC8_OPTION,90
         assert_equal(readiness["status"], "degraded", "bench readiness degraded on px4 param warning")
         readiness_checks = {check["name"]: check["status"] for check in readiness["checks"]}
         assert_equal(readiness_checks["bundle_health"], "passed", "bench readiness bundle health")
+        assert_equal(readiness_checks["runtime_status"], "passed", "bench readiness runtime status")
         assert_equal(readiness_checks["px4_sitl_evidence"], "passed", "bench readiness px4 evidence")
         assert_equal(readiness_checks["px4_params"], "degraded", "bench readiness px4 params")
         assert_equal(readiness_checks["ardupilot_params"], "passed", "bench readiness ardupilot params")
@@ -1502,6 +1798,13 @@ RC8_OPTION,90
         assert_equal(failed["status"], "failed", "bench readiness missing px4 evidence")
         allowed = evaluate_bench_readiness(missing_px4, allow_missing_px4_evidence=True)
         assert_equal(allowed["status"], "degraded", "bench readiness allow missing px4 evidence")
+
+        missing_runtime_status = json.loads(json.dumps(manifest))
+        missing_runtime_status["logs"]["runtime_statuses"] = []
+        runtime_degraded = evaluate_bench_readiness(missing_runtime_status)
+        runtime_checks = {check["name"]: check["status"] for check in runtime_degraded["checks"]}
+        assert_equal(runtime_degraded["status"], "degraded", "bench readiness missing runtime status degrades")
+        assert_equal(runtime_checks["runtime_status"], "degraded", "bench readiness runtime status degrade")
 
         failed_ardupilot = dict(manifest)
         failed_ardupilot["ardupilot_params"] = {
@@ -1587,6 +1890,18 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "copied": ["logs/terrain_matches.jsonl"],
                         "missing": [],
                         "summaries": [{"accepted_rate": 1.0}],
+                        "runtime_statuses": [
+                            {
+                                "schema_version": "vision_nav_runtime_status_v1",
+                                "active_map": {"bundle_id": "unit-bundle"},
+                                "output_path": str(root),
+                                "log_path": str(root / "terrain_matches.jsonl"),
+                                "last_match": {"status": "accepted", "confidence": 0.85},
+                                "estimator": {"health": "tracking"},
+                                "external_position_health": {"status": "healthy", "message_type": "odometry"},
+                                "status_counts": {"accepted": 2, "rejected": 0},
+                            }
+                        ],
                     },
                     "replay_gates": {"status": "passed", "case_count": 8},
                     "px4_sitl_evidence": {
@@ -1694,6 +2009,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(ready_checks["feature_method_benchmark"], "passed", "autonomy readiness feature benchmark")
         assert_equal(ready_checks["threshold_tuning"], "passed", "autonomy readiness threshold tuning")
         assert_equal(len(ready["next_actions"]), 0, "autonomy readiness passing report next actions")
+        assert_equal(
+            ready["evidence_manifest"]["ready_for_goal_completion"],
+            True,
+            "autonomy readiness evidence manifest ready flag",
+        )
+        assert_equal(
+            len(ready["evidence_manifest"]["external_blockers"]),
+            0,
+            "autonomy readiness evidence manifest no external blockers",
+        )
 
         missing_feature_direct = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
@@ -1720,6 +2045,60 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             feature_actions[0]["desktop_action"],
             "Module Setup > Feature Benchmark",
             "autonomy readiness feature benchmark desktop action",
+        )
+        feature_blockers = [
+            blocker
+            for blocker in missing_feature_direct["evidence_manifest"]["external_blockers"]
+            if blocker.get("name") == "feature_method_benchmark"
+        ]
+        assert_equal(len(feature_blockers), 1, "autonomy readiness feature benchmark evidence blocker")
+
+        missing_runtime_status_manifest = root / "support_manifest_without_runtime_status.json"
+        missing_runtime_status_data = json.loads(direct_report_support_manifest.read_text())
+        missing_runtime_status_data["logs"]["runtime_statuses"] = []
+        missing_runtime_status_manifest.write_text(json.dumps(missing_runtime_status_data))
+        missing_runtime_status_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=missing_runtime_status_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+        )
+        assert_equal(missing_runtime_status_ready["status"], "degraded", "autonomy readiness missing runtime status")
+        runtime_actions = [
+            action
+            for action in missing_runtime_status_ready["next_actions"]
+            if action.get("check") == "support_bundle_bench_readiness.runtime_status"
+        ]
+        assert_equal(len(runtime_actions), 1, "autonomy readiness runtime status next action")
+        assert_equal(
+            runtime_actions[0]["desktop_action"],
+            "Module Setup > Runtime Status, then Bench Report",
+            "autonomy readiness runtime status desktop action",
+        )
+        generic_support_actions = [
+            action
+            for action in missing_runtime_status_ready["next_actions"]
+            if action.get("check") == "support_bundle_bench_readiness"
+        ]
+        assert_equal(len(generic_support_actions), 1, "autonomy readiness support bench next action")
+        assert_equal(
+            generic_support_actions[0]["bench_subchecks"][0]["name"],
+            "runtime_status",
+            "autonomy readiness support subcheck details",
+        )
+        runtime_blockers = [
+            blocker
+            for blocker in missing_runtime_status_ready["evidence_manifest"]["external_blockers"]
+            if blocker.get("name") == "support_bundle_bench_readiness"
+        ]
+        assert_equal(len(runtime_blockers), 1, "autonomy readiness support evidence blocker")
+        assert_equal(
+            runtime_blockers[0]["bench_subchecks"][0]["name"],
+            "runtime_status",
+            "autonomy readiness support evidence subcheck",
         )
 
         bundled_threshold_manifest = root / "support_manifest_with_threshold.json"
@@ -1763,6 +2142,55 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             REQUIRED_FIELD_CONDITIONS,
             "autonomy readiness threshold missing conditions",
         )
+        threshold_blockers = [
+            blocker
+            for blocker in missing_threshold["evidence_manifest"]["external_blockers"]
+            if blocker.get("name") == "threshold_tuning"
+        ]
+        assert_equal(len(threshold_blockers), 1, "autonomy readiness threshold evidence blocker")
+        assert_equal(
+            threshold_blockers[0]["missing_conditions"],
+            REQUIRED_FIELD_CONDITIONS,
+            "autonomy readiness threshold evidence missing conditions",
+        )
+        handoff = render_handoff_markdown(missing_threshold)
+        if "Goal completion: waiting on proof" not in handoff:
+            raise AssertionError("autonomy handoff waiting state")
+        if "threshold_tuning" not in handoff:
+            raise AssertionError("autonomy handoff threshold blocker")
+        if "Module Setup > Threshold Tuning" not in handoff:
+            raise AssertionError("autonomy handoff next action")
+        if "## Field Evidence Collection Checklist" not in handoff:
+            raise AssertionError("autonomy handoff field checklist")
+        if "- [ ] Good texture (`good_texture`)" not in handoff:
+            raise AssertionError("autonomy handoff missing condition checklist")
+        if "## Artifact Availability" not in handoff:
+            raise AssertionError("autonomy handoff artifact availability")
+        missing_threshold_report = root / "autonomy_readiness_missing_threshold.json"
+        missing_threshold_handoff = root / "autonomy_readiness_missing_threshold.md"
+        missing_threshold_report.write_text(json.dumps(missing_threshold))
+        missing_threshold_handoff.write_text(handoff)
+        package_result = create_evidence_package(
+            missing_threshold_report,
+            handoff_path=missing_threshold_handoff,
+            output_path=root / "autonomy_evidence_package.zip",
+        )
+        package_path = Path(package_result["zip_path"])
+        if not package_path.exists():
+            raise AssertionError("autonomy evidence package zip was not written")
+        with zipfile.ZipFile(package_path) as archive:
+            names = set(archive.namelist())
+            for expected in {
+                "manifest.json",
+                "reports/autonomy_readiness_report.json",
+                "reports/autonomy_readiness_report.md",
+            }:
+                if expected not in names:
+                    raise AssertionError(f"autonomy evidence package missing {expected}")
+            manifest = json.loads(archive.read("manifest.json"))
+            assert_equal(manifest["readiness_status"], "failed", "autonomy evidence package status")
+            if not any(item["label"] == "input:support_bundle" for item in manifest["included"]):
+                raise AssertionError("autonomy evidence package did not include support manifest artifact")
 
 
 def test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance() -> None:
@@ -1896,6 +2324,7 @@ def test_synthetic_replay_case_manifest_passes_all_cases() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         summary = evaluate_replay_case_manifest(manifest, output_dir=Path(tmp))
         assert_equal(summary["status"], "passed", "synthetic replay manifest status")
+        assert_equal(summary["schema"]["status"], "passed", "synthetic replay manifest schema")
         assert_equal(summary["case_count"], 3, "synthetic replay manifest case count")
         statuses = {report["case_name"]: report["status"] for report in summary["reports"]}
         assert_equal(
@@ -1909,6 +2338,109 @@ def test_synthetic_replay_case_manifest_passes_all_cases() -> None:
         )
         if not Path(summary["summary_path"]).exists():
             raise AssertionError("Expected synthetic replay manifest summary to be written")
+
+
+def test_replay_case_manifest_schema_flags_malformed_cases() -> None:
+    root = Path(__file__).resolve().parents[1]
+    schema_file = root / "data" / "replay_cases" / "replay_case_manifest.schema.json"
+    assert_equal(json.loads(schema_file.read_text()), REPLAY_CASE_MANIFEST_SCHEMA, "checked-in replay schema")
+
+    malformed = {
+        "version": "0.1.0",
+        "description": 123,
+        "cases": [
+            {
+                "case_name": "field-good-texture",
+                "expected": "good_map",
+                "dataset_type": "field",
+                "conditions": ["good_texture"],
+                "log": "missing.jsonl",
+            },
+            {
+                "case_name": "field-good-texture",
+                "expected": "gps_like",
+                "dataset_type": "lab",
+                "conditions": [],
+                "condition_tags": "good_texture",
+                "tags": [""],
+                "bundle": 123,
+                "log": "",
+                "notes": [],
+                "registered_at": {},
+            },
+        ],
+    }
+    schema = evaluate_replay_case_schema(malformed)
+    assert_equal(schema["status"], "failed", "malformed replay schema status")
+    messages = " ".join(issue["message"] for issue in schema["issues"])
+    for expected in [
+        "Duplicate case_name",
+        "expected must be one of",
+        "dataset_type must be one of",
+        "conditions must be",
+        "description must be",
+        "condition_tags must be an array",
+        "entries must be non-empty strings",
+        "bundle must be a string",
+        "notes must be a string",
+        "registered_at must be a string",
+    ]:
+        if expected not in messages:
+            raise AssertionError(f"Expected schema issue containing {expected!r}, got {messages}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        manifest = Path(tmp) / "malformed_manifest.json"
+        manifest.write_text(json.dumps(malformed))
+        summary = evaluate_replay_case_manifest(manifest)
+        assert_equal(summary["status"], "failed", "malformed replay manifest status")
+        assert_equal(summary["schema"]["status"], "failed", "malformed manifest schema status")
+        coverage = audit_replay_dataset_coverage(manifest, require_log_exists=False)
+        assert_equal(coverage["status"], "failed", "malformed replay coverage audit status")
+        assert_equal(coverage["schema"]["status"], "failed", "malformed replay coverage schema")
+
+        non_object = Path(tmp) / "non_object_manifest.json"
+        non_object.write_text("[]")
+        non_object_summary = evaluate_replay_case_manifest(non_object, schema_only=True)
+        assert_equal(non_object_summary["status"], "failed", "non-object replay manifest status")
+        assert_equal(non_object_summary["case_count"], 0, "non-object replay manifest case count")
+        non_object_coverage = audit_replay_dataset_coverage(non_object, require_log_exists=False)
+        assert_equal(non_object_coverage["status"], "failed", "non-object replay coverage status")
+        non_object_support = load_replay_cases(replay_case_manifest=str(non_object))
+        assert_equal(non_object_support["schema"]["status"], "failed", "non-object support replay schema")
+        assert_equal(non_object_support["cases"], [], "non-object support replay cases")
+
+
+def test_replay_case_manifest_schema_only_skips_log_evaluation() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        manifest = Path(tmp) / "field_manifest.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "version": "0.1.0",
+                    "cases": [
+                        {
+                            "case_name": "field-good-texture",
+                            "expected": "good_map",
+                            "dataset_type": "field",
+                            "conditions": ["good_texture"],
+                            "bundle": "field-bundles/site-a/mission_bundle",
+                            "log": "field/site-a/good_texture/terrain_matches.jsonl",
+                            "notes": "shape is valid, log is not copied yet",
+                        }
+                    ],
+                }
+            )
+        )
+        schema_only = evaluate_replay_case_manifest(manifest, schema_only=True)
+        assert_equal(schema_only["status"], "passed", "schema-only manifest status")
+        assert_equal(schema_only["schema_only"], True, "schema-only flag")
+        assert_equal(schema_only["schema"]["status"], "passed", "schema-only schema status")
+        assert_equal(schema_only["reports"], [], "schema-only reports")
+
+        full = evaluate_replay_case_manifest(manifest)
+        assert_equal(full["status"], "failed", "full replay manifest missing log status")
+        if "Replay case log is missing" not in json.dumps(full["reports"]):
+            raise AssertionError(f"Expected missing log issue, got {full['reports']}")
 
 
 def test_replay_dataset_coverage_audit_requires_real_field_cases() -> None:
@@ -2193,6 +2725,44 @@ def test_global_image_descriptor_separates_simple_textures() -> None:
         raise AssertionError("Expected dark and bright global descriptors to separate")
 
 
+def test_precomputed_neural_tile_descriptor_loads_from_npz() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        descriptor_path = root / "tile_000000.npz"
+        save_tile_descriptor(
+            descriptor_path,
+            tile_id="tile_000000",
+            image_path="imagery/tiles/tile_000000.png",
+            image_shape=(8, 8),
+            method="orb",
+            keypoints_xy=np.zeros((0, 2), dtype=np.float32),
+            descriptors=np.zeros((0, 32), dtype=np.uint8),
+            offset_xy_px=(0, 0),
+            retrieval_descriptors={"neural_global_descriptor": np.array([0.0, 3.0, 4.0], dtype=np.float32)},
+        )
+        tile = TerrainTile(
+            tile_id="tile_000000",
+            row=0,
+            col=0,
+            x0_px=0,
+            y0_px=0,
+            x1_px=8,
+            y1_px=8,
+            min_east_m=None,
+            max_east_m=None,
+            min_north_m=None,
+            max_north_m=None,
+            image_path=root / "tile_000000.png",
+            descriptor_path=descriptor_path,
+            keypoint_count=0,
+            method="orb",
+        )
+        descriptor, source = load_tile_retrieval_descriptor(tile)
+        assert_equal(source, "neural_global_descriptor", "embedded neural descriptor source")
+        if descriptor is None or abs(float(np.linalg.norm(descriptor)) - 1.0) > 1e-6:
+            raise AssertionError("Expected embedded neural descriptor to load as a normalized vector")
+
+
 def test_retrieval_benchmark_ranks_expected_tile() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -2286,6 +2856,39 @@ def test_retrieval_benchmark_ranks_expected_tile() -> None:
         assert_equal(global_backend["records"][0]["rank"], 1, "retrieval benchmark expected rank")
         assert_equal(global_backend["records"][0]["top_tile_id"], "tile_000001", "retrieval benchmark top tile")
         assert_equal(report["backends"]["neural"]["status"], "not_available", "retrieval benchmark neural status")
+
+        np.save(bundle / "index" / "descriptors" / "tile_000000.neural.npy", np.array([1.0, 0.0, 0.0], dtype=np.float32))
+        np.save(bundle / "index" / "descriptors" / "tile_000001.neural.npy", np.array([0.0, 1.0, 0.0], dtype=np.float32))
+        neural_log = root / "neural_replay.jsonl"
+        neural_log.write_text(
+            json.dumps(
+                {
+                    "frame_path": frame.name,
+                    "expected_tile_id": "tile_000001",
+                    "neural_global_descriptor": [0.0, 1.0, 0.0],
+                }
+            )
+            + "\n"
+        )
+
+        neural_report = benchmark_retrieval(bundle, neural_log, top_k=[1, 2], backend="neural")
+        neural_backend = neural_report["backends"]["neural"]
+        assert_equal(neural_backend["status"], "passed", "retrieval benchmark neural status with sidecars")
+        assert_equal(neural_backend["tile_descriptor_count"], 2, "retrieval benchmark neural descriptor count")
+        assert_equal(neural_backend["recall_at_k"]["1"], 1.0, "retrieval benchmark neural recall@1")
+        assert_equal(neural_backend["records"][0]["rank"], 1, "retrieval benchmark neural expected rank")
+        assert_equal(neural_backend["records"][0]["top_tile_id"], "tile_000001", "retrieval benchmark neural top tile")
+
+        missing_query_log = root / "missing_neural_query.jsonl"
+        missing_query_log.write_text(json.dumps({"frame_path": frame.name, "expected_tile_id": "tile_000001"}) + "\n")
+        missing_query_report = benchmark_retrieval(bundle, missing_query_log, top_k=[1, 2], backend="neural")
+        missing_query_backend = missing_query_report["backends"]["neural"]
+        assert_equal(missing_query_backend["status"], "degraded", "retrieval benchmark missing neural query status")
+        assert_equal(
+            missing_query_backend["skipped"][0]["reason"],
+            "missing_expected_tile_or_query_descriptor",
+            "retrieval benchmark missing neural query reason",
+        )
 
 
 def test_feature_method_benchmark_compares_gate_results() -> None:
@@ -2474,11 +3077,14 @@ def main() -> None:
         test_geospatial_health_report_validates_stac_tiles_and_bounds,
         test_gdal_metadata_degrades_gracefully_when_unavailable,
         test_terrain_profile_reports_agl_and_gsd_warnings,
+        test_runtime_status_snapshot_reports_active_map_and_last_match,
         test_support_bundle_collects_manifest_health_logs_and_summary,
         test_autonomy_readiness_requires_external_proof_artifacts,
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
         test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance,
         test_synthetic_replay_case_manifest_passes_all_cases,
+        test_replay_case_manifest_schema_flags_malformed_cases,
+        test_replay_case_manifest_schema_only_skips_log_evaluation,
         test_replay_dataset_coverage_audit_requires_real_field_cases,
         test_field_evidence_gate_combines_coverage_and_replay_gates,
         test_threshold_tuning_report_requires_full_field_coverage,
@@ -2486,6 +3092,7 @@ def main() -> None:
         test_geospatial_health_blocks_missing_georef,
         test_terrain_tile_origins_cover_edges,
         test_global_image_descriptor_separates_simple_textures,
+        test_precomputed_neural_tile_descriptor_loads_from_npz,
         test_retrieval_benchmark_ranks_expected_tile,
         test_feature_method_benchmark_compares_gate_results,
         test_hierarchical_tile_query_uses_prior_or_spatial_coverage,

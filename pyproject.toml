@@ -23,6 +23,9 @@ geo = [
 mavlink = [
   "pymavlink>=2.4",
 ]
+rosbag = [
+  "mcap>=1.1",
+]
 
 [project.scripts]
 vision-nav-build-map = "vision_nav.build_feature_map:main"
@@ -30,6 +33,8 @@ vision-nav-build-bundle = "vision_nav.build_map_bundle:main"
 vision-nav-build-terrain-bundle = "vision_nav.build_terrain_bundle:main"
 vision-nav-bench-readiness = "vision_nav.bench_readiness:main"
 vision-nav-autonomy-readiness = "vision_nav.autonomy_readiness:main"
+vision-nav-autonomy-evidence-package = "vision_nav.autonomy_evidence_package:main"
+vision-nav-autonomy-handoff = "vision_nav.autonomy_handoff:main"
 vision-nav-benchmark-feature-methods = "vision_nav.feature_method_benchmark:main"
 vision-nav-benchmark-retrieval = "vision_nav.benchmark_retrieval:main"
 vision-nav-bundle-checksums = "vision_nav.bundle_checksums:main"

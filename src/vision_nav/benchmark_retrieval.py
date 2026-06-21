@@ -10,10 +10,14 @@ import numpy as np
 
 from vision_nav.terrain_bundle import TerrainBundle, load_terrain_bundle
 from vision_nav.terrain_tiles import (
+    NEURAL_RETRIEVAL_DESCRIPTOR_KEYS,
     TerrainTile,
     image_global_descriptor,
     load_all_tiles,
+    load_retrieval_descriptor_file,
+    load_tile_retrieval_descriptor,
     rank_tiles_by_global_descriptor,
+    rank_tiles_by_retrieval_descriptor,
 )
 
 
@@ -210,11 +214,143 @@ def benchmark_global_descriptor(
     }
 
 
-def neural_backend_unavailable() -> dict[str, Any]:
+def query_retrieval_descriptor_from_record(
+    record: dict[str, Any],
+    *,
+    log_path: Path,
+    descriptor_keys: tuple[str, ...] = NEURAL_RETRIEVAL_DESCRIPTOR_KEYS,
+) -> tuple[np.ndarray | None, str | None]:
+    containers = [record]
+    for name in ("retrieval", "retrieval_descriptors", "descriptors", "query_descriptors"):
+        value = record.get(name)
+        if isinstance(value, dict):
+            containers.append(value)
+
+    for container in containers:
+        for key in descriptor_keys:
+            value = container.get(key)
+            if isinstance(value, list):
+                return _normalize_query_descriptor(value), key
+        nested = container.get("neural")
+        if isinstance(nested, list):
+            return _normalize_query_descriptor(nested), "neural"
+        if isinstance(nested, dict):
+            for key in descriptor_keys:
+                value = nested.get(key)
+                if isinstance(value, list):
+                    return _normalize_query_descriptor(value), f"neural.{key}"
+
+    for key in (
+        "neural_descriptor_path",
+        "neural_global_descriptor_path",
+        "query_neural_descriptor_path",
+        "retrieval_descriptor_path",
+    ):
+        value = record.get(key)
+        if not value:
+            continue
+        path = resolve_frame_path(str(value), log_path=log_path)
+        try:
+            descriptor = load_retrieval_descriptor_file(path, descriptor_keys=descriptor_keys)
+        except Exception:
+            descriptor = None
+        if descriptor is not None:
+            return descriptor, key
+    return None, None
+
+
+def _normalize_query_descriptor(value: list[Any]) -> np.ndarray:
+    arr = np.asarray(value, dtype=np.float32).reshape(-1)
+    norm = float(np.linalg.norm(arr))
+    return arr / norm if norm > 0 else arr
+
+
+def benchmark_precomputed_neural_descriptor(
+    bundle: TerrainBundle,
+    records: list[dict[str, Any]],
+    *,
+    log_path: Path,
+    top_k: list[int],
+) -> dict[str, Any]:
+    if bundle.tile_index_path is None or not bundle.tile_index_path.exists():
+        return {"status": "failed", "reason": "bundle has no terrain tile index"}
+
+    tiles = load_all_tiles(bundle.tile_index_path, bundle.bundle_dir)
+    tile_descriptor_count = sum(
+        1
+        for tile in tiles
+        if load_tile_retrieval_descriptor(tile, descriptor_keys=NEURAL_RETRIEVAL_DESCRIPTOR_KEYS)[0] is not None
+    )
+    if tile_descriptor_count == 0:
+        return {
+            "status": "not_available",
+            "descriptor": "precomputed_neural_retrieval_v1",
+            "tile_count": len(tiles),
+            "tile_descriptor_count": 0,
+            "reason": "No precomputed neural retrieval descriptors were found in tile descriptor npz files or sibling sidecars.",
+        }
+
+    evaluations: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for sequence, record in enumerate(records, start=1):
+        expected_tile = expected_tile_id_from_record(record, tiles)
+        query_descriptor, query_source = query_retrieval_descriptor_from_record(record, log_path=log_path)
+        if expected_tile is None or query_descriptor is None:
+            skipped.append(
+                {
+                    "sequence": sequence,
+                    "reason": "missing_expected_tile_or_query_descriptor",
+                    "has_expected_tile": bool(expected_tile),
+                    "has_query_descriptor": query_descriptor is not None,
+                }
+            )
+            continue
+        ranking = rank_tiles_by_retrieval_descriptor(
+            tiles,
+            query_descriptor,
+            descriptor_keys=NEURAL_RETRIEVAL_DESCRIPTOR_KEYS,
+        )
+        if not ranking:
+            skipped.append(
+                {
+                    "sequence": sequence,
+                    "reason": "no_compatible_tile_descriptors",
+                    "has_expected_tile": True,
+                    "has_query_descriptor": True,
+                }
+            )
+            continue
+        rank = next((int(item["rank"]) for item in ranking if item["tile_id"] == expected_tile), None)
+        evaluations.append(
+            {
+                "sequence": sequence,
+                "expected_tile_id": expected_tile,
+                "query_descriptor_source": query_source,
+                "rank": rank,
+                "top_tile_id": ranking[0]["tile_id"] if ranking else None,
+                "top_distance": ranking[0]["distance"] if ranking else None,
+                "top_candidates": ranking[: min(max(top_k), len(ranking))],
+            }
+        )
+
+    evaluated = len(evaluations)
+    ranks = [int(item["rank"]) for item in evaluations if item.get("rank") is not None]
+    top_k_hits = {str(k): sum(1 for rank in ranks if rank <= k) for k in top_k}
+    recall_at_k = {key: (hits / evaluated if evaluated else 0.0) for key, hits in top_k_hits.items()}
     return {
-        "status": "not_available",
-        "descriptor": "neural_retrieval",
-        "reason": "Neural retrieval descriptors are not generated yet. Add SuperPoint/LightGlue or another global retrieval descriptor export before benchmarking this backend.",
+        "status": "passed" if evaluated else "degraded",
+        "descriptor": "precomputed_neural_retrieval_v1",
+        "tile_count": len(tiles),
+        "tile_descriptor_count": tile_descriptor_count,
+        "record_count": len(records),
+        "evaluated_records": evaluated,
+        "skipped_records": len(skipped),
+        "top_k_hits": top_k_hits,
+        "recall_at_k": recall_at_k,
+        "mean_rank": mean(ranks) if ranks else None,
+        "miss_count": evaluated - len(ranks),
+        "records": evaluations,
+        "skipped": skipped,
     }
 
 
@@ -227,7 +363,7 @@ def benchmark_retrieval(bundle_path: str | Path, log_path: str | Path, *, top_k:
     if backend in {"global", "all"}:
         backends["global_histogram_v1"] = benchmark_global_descriptor(bundle, records, log_path=log, top_k=top_k)
     if backend in {"neural", "all"}:
-        backends["neural"] = neural_backend_unavailable()
+        backends["neural"] = benchmark_precomputed_neural_descriptor(bundle, records, log_path=log, top_k=top_k)
     return {
         "bundle_dir": str(bundle.bundle_dir),
         "bundle_id": bundle.manifest.get("bundle_id"),
@@ -262,8 +398,7 @@ def main() -> None:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
         print_human(report)
-    global_backend = report["backends"].get("global_histogram_v1")
-    if global_backend and global_backend.get("status") == "failed":
+    if any(backend.get("status") == "failed" for backend in report["backends"].values()):
         raise SystemExit(1)
 
 

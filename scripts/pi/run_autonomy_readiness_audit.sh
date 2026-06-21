@@ -12,6 +12,8 @@ threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransf
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 output_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json}"
+output_handoff="${VISION_NAV_AUTONOMY_HANDOFF:-${output_report%.json}.md}"
+output_package="${VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE:-${output_report%.json}.evidence.zip}"
 allow_failed="${VISION_NAV_AUTONOMY_ALLOW_FAILED:-0}"
 
 if [[ "$venv_python" == */* ]]; then
@@ -81,6 +83,16 @@ PYTHONPATH="$repo_root/src" "$venv_python" "${args[@]}"
 audit_status=$?
 set -e
 
+if [[ -f "$output_report" ]]; then
+  PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.autonomy_handoff \
+    --report "$output_report" \
+    --output "$output_handoff"
+  PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.autonomy_evidence_package \
+    --report "$output_report" \
+    --handoff "$output_handoff" \
+    --output "$output_package"
+fi
+
 cat <<EOF
 
 Autonomy readiness audit outputs:
@@ -91,8 +103,12 @@ Autonomy readiness audit outputs:
   feature benchmark report:  $([[ -f "$feature_method_benchmark_report" ]] && printf '%s' "$feature_method_benchmark_report" || printf 'not found')
   threshold tuning report:   $([[ -f "$threshold_tuning_report" ]] && printf '%s' "$threshold_tuning_report" || printf 'not found')
   report:                    $output_report
+  handoff:                   $output_handoff
+  evidence package:          $output_package
 
 __VISION_NAV_AUTONOMY_REPORT__=$output_report
+__VISION_NAV_AUTONOMY_HANDOFF__=$output_handoff
+__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=$output_package
 EOF
 
 if [[ -f "$px4_sitl_report" ]]; then

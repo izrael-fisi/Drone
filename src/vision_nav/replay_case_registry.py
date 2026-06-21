@@ -7,10 +7,8 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from vision_nav.replay_case_manifest import EXPECTED_BEHAVIORS, sanitize_filename
-
-
-DATASET_TYPES = {"field", "bench", "synthetic"}
+from vision_nav.replay_case_manifest import sanitize_filename
+from vision_nav.replay_case_schema import DATASET_TYPES, EXPECTED_BEHAVIORS
 
 
 def parse_args() -> argparse.Namespace:

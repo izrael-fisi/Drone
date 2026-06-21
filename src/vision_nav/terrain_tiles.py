@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import sqlite3
-from typing import Iterable
+from typing import Any, Iterable
 
 import numpy as np
 
@@ -12,6 +12,18 @@ from vision_nav.georef import SimpleGeoReference
 
 
 GLOBAL_DESCRIPTOR_BINS = 16
+NEURAL_RETRIEVAL_DESCRIPTOR_KEYS = (
+    "neural_global_descriptor",
+    "neural_descriptor",
+    "superpoint_lightglue_descriptor",
+    "lightglue_global_descriptor",
+)
+NEURAL_RETRIEVAL_SIDECAR_SUFFIXES = (
+    ".neural.npy",
+    ".neural.npz",
+    ".superpoint_lightglue.npy",
+    ".superpoint_lightglue.npz",
+)
 
 
 @dataclass(frozen=True)
@@ -118,24 +130,35 @@ def save_tile_descriptor(
     descriptors: np.ndarray,
     offset_xy_px: tuple[int, int],
     global_descriptor: np.ndarray | None = None,
+    retrieval_descriptors: dict[str, np.ndarray] | None = None,
 ) -> None:
     global_descriptor = image_global_descriptor(np.zeros(image_shape, dtype=np.uint8)) if global_descriptor is None else global_descriptor
-    np.savez_compressed(
-        output_path,
-        tile_id=np.array(tile_id),
-        image_path=np.array(image_path),
-        image_shape=np.array(image_shape, dtype=np.int32),
-        method=np.array(method),
-        keypoints_xy=keypoints_xy.astype(np.float32),
-        descriptors=descriptors,
-        offset_xy_px=np.array(offset_xy_px, dtype=np.int32),
-        global_descriptor=global_descriptor.astype(np.float32),
-    )
+    arrays: dict[str, Any] = {
+        "tile_id": np.array(tile_id),
+        "image_path": np.array(image_path),
+        "image_shape": np.array(image_shape, dtype=np.int32),
+        "method": np.array(method),
+        "keypoints_xy": keypoints_xy.astype(np.float32),
+        "descriptors": descriptors,
+        "offset_xy_px": np.array(offset_xy_px, dtype=np.int32),
+        "global_descriptor": normalize_retrieval_descriptor(global_descriptor),
+    }
+    for name, descriptor in (retrieval_descriptors or {}).items():
+        if not name or name in arrays:
+            continue
+        arrays[name] = normalize_retrieval_descriptor(descriptor)
+    np.savez_compressed(output_path, **arrays)
 
 
 def load_tile_descriptor(path: Path) -> dict:
     with np.load(path, allow_pickle=False) as data:
         global_descriptor = data["global_descriptor"].astype(np.float32) if "global_descriptor" in data.files else None
+        retrieval_descriptors = {
+            name: normalize_retrieval_descriptor(data[name])
+            for name in data.files
+            if name
+            not in {"tile_id", "image_path", "image_shape", "method", "keypoints_xy", "descriptors", "offset_xy_px", "global_descriptor"}
+        }
         return {
             "tile_id": str(data["tile_id"]),
             "image_path": str(data["image_path"]),
@@ -145,6 +168,7 @@ def load_tile_descriptor(path: Path) -> dict:
             "descriptors": data["descriptors"],
             "offset_xy_px": tuple(int(value) for value in data["offset_xy_px"]),
             "global_descriptor": global_descriptor,
+            "retrieval_descriptors": retrieval_descriptors,
         }
 
 
@@ -174,6 +198,86 @@ def global_descriptor_distance(a: np.ndarray | None, b: np.ndarray | None) -> fl
     if a.shape != b.shape:
         return None
     return float(np.linalg.norm(a.astype(np.float32) - b.astype(np.float32)))
+
+
+def normalize_retrieval_descriptor(descriptor: np.ndarray) -> np.ndarray:
+    arr = np.asarray(descriptor, dtype=np.float32).reshape(-1)
+    norm = float(np.linalg.norm(arr))
+    return arr / norm if norm > 0 else arr
+
+
+def load_tile_retrieval_descriptor(
+    tile: TerrainTile,
+    *,
+    descriptor_keys: tuple[str, ...] = NEURAL_RETRIEVAL_DESCRIPTOR_KEYS,
+) -> tuple[np.ndarray | None, str | None]:
+    descriptor = load_tile_descriptor(tile.descriptor_path)
+    retrieval_descriptors = descriptor.get("retrieval_descriptors") or {}
+    for key in descriptor_keys:
+        value = retrieval_descriptors.get(key)
+        if value is not None:
+            return normalize_retrieval_descriptor(value), key
+
+    for suffix in NEURAL_RETRIEVAL_SIDECAR_SUFFIXES:
+        sidecar_path = tile.descriptor_path.with_suffix(suffix)
+        if not sidecar_path.exists():
+            continue
+        value = load_retrieval_descriptor_file(sidecar_path, descriptor_keys=descriptor_keys)
+        if value is not None:
+            return value, sidecar_path.name
+    return None, None
+
+
+def load_retrieval_descriptor_file(path: Path, *, descriptor_keys: tuple[str, ...] = NEURAL_RETRIEVAL_DESCRIPTOR_KEYS) -> np.ndarray | None:
+    suffix = path.suffix.lower()
+    if suffix == ".npy":
+        return normalize_retrieval_descriptor(np.load(path, allow_pickle=False))
+    if suffix == ".npz":
+        with np.load(path, allow_pickle=False) as data:
+            for key in descriptor_keys:
+                if key in data.files:
+                    return normalize_retrieval_descriptor(data[key])
+            if len(data.files) == 1:
+                return normalize_retrieval_descriptor(data[data.files[0]])
+        return None
+    if suffix == ".json":
+        raw = json.loads(path.read_text())
+        if isinstance(raw, dict):
+            for key in descriptor_keys:
+                if key in raw:
+                    return normalize_retrieval_descriptor(np.asarray(raw[key], dtype=np.float32))
+        elif isinstance(raw, list):
+            return normalize_retrieval_descriptor(np.asarray(raw, dtype=np.float32))
+    return None
+
+
+def rank_tiles_by_retrieval_descriptor(
+    tiles: list[TerrainTile],
+    query_descriptor: np.ndarray,
+    *,
+    descriptor_keys: tuple[str, ...] = NEURAL_RETRIEVAL_DESCRIPTOR_KEYS,
+) -> list[dict[str, object]]:
+    query = normalize_retrieval_descriptor(query_descriptor)
+    scored: list[tuple[float, int, str, TerrainTile, str]] = []
+    for tile in tiles:
+        descriptor, source = load_tile_retrieval_descriptor(tile, descriptor_keys=descriptor_keys)
+        distance = global_descriptor_distance(query, descriptor)
+        if distance is None:
+            continue
+        scored.append((distance, -tile.keypoint_count, tile.tile_id, tile, source or "unknown"))
+    scored.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [
+        {
+            "rank": index,
+            "tile_id": tile.tile_id,
+            "distance": distance,
+            "keypoint_count": tile.keypoint_count,
+            "row": tile.row,
+            "col": tile.col,
+            "descriptor_source": source,
+        }
+        for index, (distance, _, _, tile, source) in enumerate(scored, start=1)
+    ]
 
 
 def rank_tiles_by_global_descriptor(

@@ -16,6 +16,21 @@ Each case should include:
 - notes describing lighting, texture, blur, seasonal change, altitude/scale
   change, repeated patterns, or wrong-map setup
 
+The manifest contract is captured in
+[`replay_case_manifest.schema.json`](replay_case_manifest.schema.json). The
+standalone manifest evaluator, coverage audit, and support-bundle replay-gate
+packager all report schema issues. Schema errors fail the manifest before it can
+count as field evidence; schema warnings keep provenance gaps visible without
+blocking smoke tests.
+
+To check manifest shape before every referenced log has been copied into place:
+
+```bash
+vision-nav-evaluate-replay-manifest \
+  --manifest data/replay_cases/field_manifest.json \
+  --schema-only
+```
+
 Evaluate a case with:
 
 ```bash
@@ -113,6 +128,13 @@ The Pi wrapper writes feature-method benchmark reports under
 `~/DroneTransfer/outgoing/feature-method-bench/`, emits
 `__VISION_NAV_FEATURE_METHOD_REPORT__=...` for Module Setup downloads, and lets
 support bundles include method-comparison evidence automatically when present.
+
+For coarse tile retrieval benchmarking, replay records can also include
+precomputed higher-compute query descriptors. Use inline keys such as
+`neural_global_descriptor` or path keys such as `query_neural_descriptor_path`
+when tile descriptor `.npz` files or sibling sidecars contain matching
+precomputed neural descriptor vectors. Missing neural descriptors are reported
+as unavailable/degraded; ORB/AKAZE replay gates remain the low-compute default.
 
 Then tune replay thresholds:
 

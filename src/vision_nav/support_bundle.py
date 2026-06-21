@@ -19,6 +19,7 @@ from vision_nav.px4_params import evaluate_px4_param_file
 from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sitl_evidence
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.replay_gates import ReplayGateConfig, evaluate_replay_log
+from vision_nav.replay_case_schema import evaluate_replay_case_schema
 from vision_nav.summarize_match_log import summarize_log
 
 
@@ -239,6 +240,7 @@ def copy_bundle_metadata(bundle_path: str | Path, support_dir: Path, *, include_
 def copy_logs(logs: list[str], support_dir: Path, *, max_log_bytes: int) -> dict[str, Any]:
     copied: list[dict[str, Any]] = []
     summaries: list[dict[str, Any]] = []
+    runtime_statuses: list[dict[str, Any]] = []
     missing: list[str] = []
     logs_dir = support_dir / "logs"
     summaries_dir = support_dir / "summaries"
@@ -258,7 +260,28 @@ def copy_logs(logs: list[str], support_dir: Path, *, max_log_bytes: int) -> dict
         summary_path = summaries_dir / f"{src.stem}.summary.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
-    return {"copied": copied, "summaries": summaries, "missing": missing}
+        status_path = src.parent / "runtime_status.json"
+        if status_path.exists() and status_path.is_file():
+            status_dst = logs_dir / f"{src.stem}.runtime_status.json"
+            status_info = copy_file(status_path, status_dst)
+            try:
+                status_summary = json.loads(status_path.read_text())
+            except Exception as exc:
+                status_summary = {"status": "failed", "error": str(exc)}
+            runtime_statuses.append(
+                {
+                    **status_info,
+                    "schema_version": status_summary.get("schema_version") if isinstance(status_summary, dict) else None,
+                    "active_map": status_summary.get("active_map") if isinstance(status_summary, dict) else None,
+                    "output": status_summary.get("output") if isinstance(status_summary, dict) else None,
+                    "last_match": status_summary.get("last_match") if isinstance(status_summary, dict) else None,
+                    "estimator": status_summary.get("estimator") if isinstance(status_summary, dict) else None,
+                    "external_position": status_summary.get("external_position") if isinstance(status_summary, dict) else None,
+                    "status_counts": status_summary.get("status_counts") if isinstance(status_summary, dict) else None,
+                    "updated_at_utc": status_summary.get("updated_at_utc") if isinstance(status_summary, dict) else None,
+                }
+            )
+    return {"copied": copied, "summaries": summaries, "runtime_statuses": runtime_statuses, "missing": missing}
 
 
 def copy_extras(extras: list[str], support_dir: Path) -> dict[str, Any]:
@@ -295,9 +318,13 @@ def load_replay_cases(
     inline_replay_cases = inline_replay_cases or []
     cases: list[dict[str, Any]] = []
     sources: list[str] = []
+    schema: dict[str, Any] | None = None
     if replay_case_manifest:
         manifest_path = Path(replay_case_manifest).expanduser()
         raw = json.loads(manifest_path.read_text())
+        schema = evaluate_replay_case_schema(raw, manifest_path=manifest_path)
+        if not isinstance(raw, dict):
+            raw = {}
         sources.append(str(manifest_path))
         manifest_cases = raw.get("cases") or []
         for case in manifest_cases:
@@ -313,7 +340,7 @@ def load_replay_cases(
             cases.append(normalized)
     for inline in inline_replay_cases:
         cases.append(parse_inline_replay_case(inline))
-    return {"sources": sources, "cases": cases}
+    return {"sources": sources, "cases": cases, "schema": schema}
 
 
 def evaluate_replay_cases(replay_cases: dict[str, Any], support_dir: Path) -> dict[str, Any]:
@@ -356,10 +383,14 @@ def evaluate_replay_cases(replay_cases: dict[str, Any], support_dir: Path) -> di
         reports.append(report)
     return {
         "sources": replay_cases.get("sources") or [],
+        "schema": replay_cases.get("schema"),
         "case_count": len(replay_cases.get("cases") or []),
         "reports": reports,
         "missing_logs": missing,
-        "status": "failed" if any(report.get("status") == "failed" for report in reports) else "passed",
+        "status": "failed"
+        if any(report.get("status") == "failed" for report in reports)
+        or ((replay_cases.get("schema") or {}).get("status") == "failed")
+        else "passed",
     }
 
 

@@ -125,8 +125,18 @@ support bundle can explain how candidate tiles were chosen.
 descriptor against replay logs. Replay records can provide `expected_tile_id`
 directly or a ground-truth `local_enu_m` / `map_pixel` value that maps back to a
 tile. The report includes top-k hits, recall@k, mean rank, per-record candidate
-rankings, and a `neural.status=not_available` placeholder until higher-compute
-retrieval descriptors are exported.
+rankings, and an optional `neural` backend for higher-compute devices.
+
+The neural retrieval backend does not run model inference in the Pi runtime. It
+expects precomputed descriptor vectors from a desktop/AI-HAT/Jetson workflow.
+Tile descriptors may include arrays such as `neural_global_descriptor`,
+`neural_descriptor`, or `superpoint_lightglue_descriptor` inside the tile `.npz`
+file, or sibling sidecars such as `tile_000123.neural.npy` /
+`tile_000123.neural.npz`. Replay records can carry the query vector inline with
+the same keys or reference it with `neural_descriptor_path`,
+`query_neural_descriptor_path`, or `retrieval_descriptor_path`. If tile or query
+descriptors are absent, the backend reports `not_available` or `degraded`
+without affecting the ORB/AKAZE Pi default.
 
 `vision-nav-benchmark-feature-methods` compares local matching behavior across
 ORB, AKAZE, SIFT, and future neural methods on the same replay case. It can

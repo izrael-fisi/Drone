@@ -119,6 +119,12 @@ Status:
 - In progress: the same JSONL export can include bounded
   `sensor_msgs/msg/CompressedImage` camera-frame topic records from runtime
   `frame_path` entries, with relative paths resolved from the log directory.
+- Done: `vision-nav-ros2-replay-log --export-mcap` writes an optional
+  JSON-encoded MCAP archive with odometry, diagnostics, and bounded compressed
+  camera-frame topics when the `mcap` Python package is installed.
+- Done: `vision-nav-ros2-replay-log --export-rosbag2` writes a native rosbag2
+  directory with serialized ROS messages when run in a sourced ROS 2 Python
+  environment with `rosbag2_py` and message packages available.
 - Done: `ros2/drone_vision_nav/` provides a thin `ament_python` package wrapper
   with package metadata, installed launch profiles, and `terrain_nav_live` /
   `terrain_nav_replay` console scripts for colcon-based ROS 2 workstations.
@@ -127,8 +133,8 @@ Tasks:
 
 1. Add PX4 SITL launch profile arguments once SITL receiver verification is
    available.
-2. Add native rosbag2/MCAP conversion after a ROS 2 workstation workflow is
-   available.
+2. Validate native rosbag2 export on a sourced ROS 2 workstation with real
+   `ros2 bag info/play` commands and save the resulting review artifact.
 
 Acceptance checks:
 
@@ -184,10 +190,11 @@ Status:
   build.
 - Done: downloaded support-bundle browsing shows parsed checksum status, map
   source provenance, georeference confidence, and replay-gate state.
-- In progress: `vision-nav-benchmark-retrieval` benchmarks the current
-  lightweight grayscale global descriptor on replay logs, reporting top-k
-  recall and mean rank while marking the optional neural retrieval backend as
-  unavailable until neural descriptors are generated.
+- Done: `vision-nav-benchmark-retrieval` benchmarks both the lightweight
+  grayscale global descriptor and optional precomputed neural retrieval
+  descriptors on replay logs, reporting top-k recall, mean rank, and clean
+  unavailable/degraded status when descriptor sidecars or query descriptors are
+  absent.
 
 Tasks:
 
@@ -246,13 +253,21 @@ Status:
   records with split coordinates, cumulative distances, longest segment length,
   and split reasons in the app mission JSON and QGC `visionNavigation`
   metadata.
+- Done: the terrain runtime writes `runtime_status.json` beside
+  `terrain_matches.jsonl` with active map, output path, estimator health,
+  external-position health, latest frame, last match status/reason, and status
+  counts; support bundles copy and summarize that snapshot for desktop review.
+- Done: Module Setup can fetch the latest Pi-side `runtime_status.json` over
+  SSH, download the snapshot, and show active map, last match, estimator health,
+  external-position health, frame sequence, and accepted/rejected counts before
+  the operator creates a full bench report.
 
 Tasks:
 
 1. Tune route splitting defaults after field replay data confirms the preferred
    segmentation rule.
-2. Wire GNSS-denied readiness actions to live runtime telemetry and autopilot
-   checklist validation.
+2. Wire GNSS-denied reset actions to autopilot checklist validation after live
+   PX4 receiver evidence is available.
 
 Acceptance checks:
 
@@ -298,9 +313,21 @@ Status:
 - In progress: support-bundle details now include compact per-record previews
   from bundled runtime/replay JSONL logs so accepted/rejected match reasons,
   confidence, tile IDs, and external-position state are visible in the app.
+- Done: support-bundle details now aggregate bundled runtime/replay JSONL logs
+  into bounded frame timelines that show accepted-rate progression, dominant
+  segment status, status counts, external-position health counts, sequence
+  range, and confidence/inlier/reprojection averages without loading the full
+  log into the WebView.
 - In progress: support-bundle details now include bounded previews for small
   camera/debug/replay image artifacts inside downloaded ZIPs while skipping
   full map, orthophoto, tile, descriptor, and elevation assets.
+- Done: support-bundle details now list safe extractable diagnostics and can
+  extract full runtime logs, replay-gate reports, PX4 receiver reports,
+  parameter reports, field-evidence reports, threshold-tuning reports,
+  bench-readiness reports, and lightweight bundle metadata into a local
+  `*-artifacts/` folder while rejecting full maps, tile pyramids, descriptors,
+  elevation assets, GeoTIFFs, SQLite indexes, path traversal, and oversized
+  entries.
 - In progress: support-bundle details now include PX4 SITL receiver evidence
   status, sample counts, latest sample age, local position, MAVLink version, UDP
   link hint, and report issues when receiver captures are provided.
@@ -311,10 +338,28 @@ Status:
 - Done: support bundles can be evaluated by `vision-nav-bench-readiness` to
   produce one pass/degraded/fail bench artifact status instead of relying on
   separate manual inspections.
+- Done: bench-readiness now evaluates bundled `runtime_status.json` snapshots
+  as evidence of active map, output/log path, estimator health, latest match
+  status/reason, external-position health, and accepted/rejected counts. Missing
+  snapshots degrade the gate; missing active-map or last-match state fails it.
 - In progress: downloaded support-bundle details now show the embedded
   bench-readiness status and per-check messages in the desktop app.
-- In progress: `data/replay_cases/` defines the replay case registry shape for
-  good texture, degraded, and wrong-map datasets.
+- Done: Module Setup saved reports now include a bounded diagnostic snapshot
+  for the newest downloaded support bundles, including bench-readiness checks,
+  log summaries, frame timelines, extractable artifact inventories, image
+  artifact metadata without base64 payloads, replay-gate reports, PX4/ArduPilot
+  parameter reports, PX4 receiver evidence, field-evidence reports,
+  feature-method benchmark reports, and threshold-tuning reports.
+- Done: Module Setup saved reports now include a compact final
+  autonomy-readiness snapshot with latest status, handoff path,
+  goal-completion flag, external blockers, and next actions.
+- Done: `data/replay_cases/` defines the replay case registry shape for good
+  texture, degraded, and wrong-map datasets, including
+  `replay_case_manifest.schema.json` plus schema checks in the standalone
+  manifest evaluator, coverage audit, and support-bundle replay-gate packager.
+- Done: `vision-nav-evaluate-replay-manifest --schema-only` validates replay
+  manifest shape without requiring referenced logs to exist, which helps build
+  field datasets incrementally while still failing malformed evidence manifests.
 - Done: `vision-nav-evaluate-replay-manifest` evaluates replay-case manifests
   outside support-bundle creation and writes per-case gate reports.
 - Done: `data/replay_cases/synthetic_smoke/` provides deterministic local
@@ -388,6 +433,21 @@ Status:
 - Done: autonomy-readiness reports include machine-readable `next_actions` for
   failed or degraded proof gates, with the relevant Module Setup action and
   shell command to collect the missing artifact.
+- Done: autonomy-readiness reports now preserve failed/degraded
+  bench-readiness subchecks and expand them into specific next actions, so a
+  missing `runtime_status.json` points to Module Setup > Runtime Status instead
+  of only saying to recreate the support bundle.
+- Done: Module Setup renders those autonomy-readiness bench subchecks in the
+  downloaded report card, including subcheck name, status, and message for
+  support-bundle failures such as missing runtime status or PX4 receiver proof.
+- Done: autonomy-readiness reports now include a strict
+  `evidence_manifest` section with completion blockers, external proof
+  blockers, missing field conditions, and failed/degraded bench subchecks so the
+  final goal cannot be marked complete from partial evidence.
+- Done: Module Setup renders the readiness `evidence_manifest` as a compact
+  goal-completion proof summary, including external blocker count and the first
+  missing PX4, field, feature-benchmark, threshold, or support-bundle evidence
+  items.
 - Done: field-evidence and threshold-tuning next actions carry the missing
   required condition keys so operators can see which real-world cases still
   need to be collected.
@@ -398,17 +458,32 @@ Status:
 - Done: `scripts/pi/run_autonomy_readiness_audit.sh` runs the same final audit
   on the Pi against the latest support bundle and writes
   `autonomy_readiness_report.json` for transfer or support review.
+- Done: `vision-nav-autonomy-handoff` renders
+  `autonomy_readiness_report.json` into a Markdown handoff with status, inputs,
+  checks, external proof blockers, missing field conditions, bench subchecks,
+  and next actions.
+- Done: `vision-nav-autonomy-evidence-package` creates a support-review ZIP
+  containing the strict readiness JSON, Markdown handoff, package manifest, and
+  small referenced evidence artifacts that exist locally while listing missing
+  or oversized artifacts in the manifest.
 - Done: the Pi and local autonomy-readiness wrappers emit
   `__VISION_NAV_PX4_SITL_REPORT__=...` when direct receiver proof is available,
   letting Module Setup download the receiver report beside the final audit.
 - Done: `scripts/dev/run_local_autonomy_readiness_audit.sh` scans the
   conventional downloaded desktop artifact folders, writes the same strict
   autonomy-readiness report locally, includes the latest downloaded
-  feature-method benchmark report, and fails closed while preserving a report
-  that explains which proof artifacts are missing.
+  feature-method benchmark report, renders a Markdown handoff beside the JSON
+  report, and fails closed while preserving artifacts that explain which proof
+  items are missing.
 - Done: Module Setup exposes an `Autonomy Readiness` SSH action after the bench
   report step, so operators can run the strict final audit from the desktop app
   and download the JSON report to `~/DroneTransfer/from-pi/replay-cases/`.
+- Done: Module Setup also parses `__VISION_NAV_AUTONOMY_HANDOFF__=...`,
+  downloads the generated Markdown handoff beside the JSON report, and shows the
+  local path in the Latest Output panel for support review.
+- Done: Module Setup detects sibling Markdown handoffs beside downloaded
+  autonomy-readiness JSON reports after app restart and exposes copy/reveal
+  controls in the Autonomy Readiness Reports list.
 - Done: Module Setup lists downloaded autonomy-readiness JSON reports from
   `~/DroneTransfer/from-pi/replay-cases/` with pass/degraded/fail counts and
   the support-bundle, PX4 receiver, field-evidence, feature-benchmark, and
@@ -427,8 +502,9 @@ Tasks:
 3. Tune replay-gate thresholds against real field logs for blur, seasonal
    change, altitude/scale change, repeated patterns, and wrong-map cases, then
    save the generated `threshold_tuning_report.json` artifact.
-4. Add native replay artifact views for full extracted support-bundle logs and
-   frame timelines after real field datasets exist.
+4. Tune frame-timeline markers after real field datasets exist if additional
+   field-specific events need to be highlighted beyond accepted/rejected,
+   confidence, inliers, reprojection error, and external-position health.
 5. Run `vision-nav-autonomy-readiness` against the final support bundle, PX4
    receiver-evidence report, field evidence report, feature-method benchmark
    report, and threshold-tuning report before calling the autonomy and

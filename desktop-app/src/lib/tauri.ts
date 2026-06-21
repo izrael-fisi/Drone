@@ -7,6 +7,7 @@ import type {
   Device,
   DownloadFileResult,
   DownloadProgress,
+  ExtractedSupportBundleArtifact,
   FieldEvidenceReportFile,
   FeatureMethodBenchmarkReportFile,
   ImportElevationAssetsRequest,
@@ -137,6 +138,8 @@ export const cmd = {
   deleteSupportBundle: (path: string) => invoke<void>("delete_support_bundle", { path }),
   readSupportBundleDetails: (path: string) =>
     invoke<SupportBundleDetails>("read_support_bundle_details", { path }),
+  extractSupportBundleArtifact: (path: string, entryPath: string) =>
+    invoke<ExtractedSupportBundleArtifact>("extract_support_bundle_artifact", { path, entryPath }),
 };
 
 export type { DownloadProgress };

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, Archive, CheckCircle2, Clipboard, Eye, FolderOpen, Trash2 } from "lucide-react";
+import { AlertTriangle, Archive, CheckCircle2, Clipboard, Eye, FileDown, FolderOpen, Trash2 } from "lucide-react";
 import { cmd } from "../lib/tauri";
 import type { SupportBundleDetails, SupportBundleFile } from "../lib/types";
 
@@ -23,6 +23,17 @@ function statusClass(status?: string) {
 function statusIcon(status?: string) {
   if (status === "passed" || status === "healthy") return <CheckCircle2 size={11} />;
   return <AlertTriangle size={11} />;
+}
+
+function timelineSegmentClass(status?: string) {
+  if (status === "accepted" || status === "passed" || status === "healthy") {
+    return "bg-emerald-400/70 border-emerald-300/70";
+  }
+  if (status === "rejected" || status === "failed" || status === "error" || status === "invalid_json") {
+    return "bg-red-400/70 border-red-300/70";
+  }
+  if (status === "degraded") return "bg-amber-300/70 border-amber-200/70";
+  return "bg-slate-500/50 border-slate-400/50";
 }
 
 function formatPercent(value?: number) {
@@ -63,7 +74,23 @@ function nestedString(root: unknown, path: string[]) {
   return typeof current === "string" && current ? current : null;
 }
 
-function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }) {
+function nestedNumber(root: unknown, path: string[]) {
+  let current: unknown = root;
+  for (const key of path) {
+    current = asRecord(current)?.[key];
+  }
+  return typeof current === "number" ? current : null;
+}
+
+function SupportBundleDetailPanel({
+  details,
+  onExtractArtifact,
+  extractingEntry,
+}: {
+  details: SupportBundleDetails;
+  onExtractArtifact: (entryPath: string) => void | Promise<void>;
+  extractingEntry?: string | null;
+}) {
   const projectVersion = nestedString(details.metadata, ["vision_nav", "project_version"]);
   const gitBranch = nestedString(details.metadata, ["vision_nav", "git", "branch"]);
   const gitCommit = nestedString(details.metadata, ["vision_nav", "git", "commit"]);
@@ -126,6 +153,45 @@ function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }
         </div>
       )}
 
+      {details.runtime_statuses.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Runtime status</div>
+          {details.runtime_statuses.slice(0, 2).map((status, index) => {
+            const activeMap = asRecord(status.active_map);
+            const output = asRecord(status.output);
+            const lastMatch = asRecord(status.last_match);
+            const estimator = asRecord(status.estimator);
+            const externalPosition = asRecord(status.external_position);
+            const confidence = nestedNumber(lastMatch, ["confidence"]);
+            const matchStatus = typeof lastMatch?.status === "string" ? lastMatch.status : undefined;
+            const matchReason = typeof lastMatch?.reason === "string" ? lastMatch.reason : null;
+            const bundleId = typeof activeMap?.bundle_id === "string" ? activeMap.bundle_id : undefined;
+            const estimatorHealth = typeof estimator?.health === "string" ? estimator.health : undefined;
+            const externalStatus = typeof externalPosition?.status === "string" ? externalPosition.status : null;
+            const logPath = typeof output?.log_path === "string" ? output.log_path : undefined;
+            const sequence = typeof status.sequence === "number" || typeof status.sequence === "string" ? status.sequence : undefined;
+            return (
+              <div key={`runtime-status-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={statusClass(matchStatus)}>
+                    {statusIcon(matchStatus)}
+                    {formatLabel(matchStatus)}
+                  </span>
+                  <span className="font-mono text-slate-500">seq {formatLabel(sequence)}</span>
+                  {matchReason && <span className="font-mono text-amber-200/80 truncate">{formatLabel(matchReason)}</span>}
+                  {confidence != null && <span className="font-mono text-slate-500">conf {confidence.toFixed(2)}</span>}
+                </div>
+                <div className="font-mono text-slate-500 truncate">
+                  map {formatLabel(bundleId)} / estimator {formatLabel(estimatorHealth)}
+                  {externalStatus ? ` / ext ${formatLabel(externalStatus)}` : ""}
+                </div>
+                <div className="font-mono text-slate-500 truncate">log {formatLabel(logPath)}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {details.log_previews.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Log preview</div>
@@ -158,6 +224,81 @@ function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }
               ))}
             </div>
           ))}
+        </div>
+      )}
+
+      {details.log_timelines.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Frame timelines</div>
+          {details.log_timelines.slice(0, 3).map((timeline) => (
+            <div key={timeline.path} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-1">
+              <div className="flex items-center justify-between gap-2 font-mono text-slate-400">
+                <span className="truncate" title={timeline.path}>{timeline.name}</span>
+                <span>{timeline.total_records ?? "skipped"} rec, {formatPercent(timeline.accepted_rate)} accepted</span>
+              </div>
+              <div className="flex h-5 gap-0.5">
+                {timeline.segments.map((segment) => (
+                  <div
+                    key={`${timeline.path}-${segment.index}`}
+                    className={`min-w-[4px] flex-1 rounded-sm border ${timelineSegmentClass(segment.dominant_status)}`}
+                    title={[
+                      `lines ${segment.start_line}-${segment.end_line}`,
+                      `records ${segment.total_records}`,
+                      `status ${formatLabel(segment.dominant_status)}`,
+                      `accepted ${formatPercent(segment.accepted_rate)}`,
+                      `conf ${segment.average_confidence != null ? segment.average_confidence.toFixed(2) : "n/a"}`,
+                    ].join(" / ")}
+                  />
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2 font-mono text-slate-500">
+                <span>status {formatCounts(timeline.status_counts)}</span>
+                <span>ext {formatCounts(timeline.external_position_status_counts)}</span>
+                <span>conf {timeline.average_confidence != null ? timeline.average_confidence.toFixed(2) : "n/a"}</span>
+                <span>inliers {timeline.average_inliers != null ? timeline.average_inliers.toFixed(1) : "n/a"}</span>
+                <span>reproj {timeline.average_reprojection_error_px != null ? `${timeline.average_reprojection_error_px.toFixed(1)} px` : "n/a"}</span>
+                <span>seq {timeline.first_sequence ?? "n/a"}-{timeline.last_sequence ?? "n/a"}</span>
+              </div>
+              {timeline.truncated && (
+                <div className="text-amber-200/80">
+                  Timeline skipped because this log is larger than the desktop detail limit.
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {details.artifacts.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Full artifacts</div>
+          {details.artifacts.slice(0, 8).map((artifact) => (
+            <div key={artifact.path} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-mono text-slate-400 truncate" title={artifact.path}>
+                    {artifact.path}
+                  </div>
+                  <div className="font-mono text-slate-500">
+                    {formatLabel(artifact.kind)} / {formatBundleSize(artifact.size_bytes)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onExtractArtifact(artifact.path)}
+                  disabled={extractingEntry === artifact.path}
+                  className="btn-secondary text-[10px] py-1 px-2 shrink-0"
+                >
+                  <FileDown size={11} /> Extract
+                </button>
+              </div>
+            </div>
+          ))}
+          {details.artifacts.length > 8 && (
+            <div className="font-mono text-[10px] text-slate-500">
+              {details.artifacts.length - 8} more extractable artifacts in this bundle
+            </div>
+          )}
         </div>
       )}
 
@@ -401,6 +542,7 @@ export function SupportBundleList({
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
   const [busyPath, setBusyPath] = useState<string | null>(null);
   const [detailLoadingPath, setDetailLoadingPath] = useState<string | null>(null);
+  const [extractingEntry, setExtractingEntry] = useState<string | null>(null);
   const [detailsByPath, setDetailsByPath] = useState<Record<string, SupportBundleDetails>>({});
   const [message, setMessage] = useState<string | null>(null);
   if (bundles.length === 0) return null;
@@ -442,6 +584,22 @@ export function SupportBundleList({
       setMessage(`Copied ${bundle.name}`);
     } catch (error) {
       setMessage(`Could not copy path: ${error}`);
+    }
+  };
+
+  const extractArtifact = async (bundle: SupportBundleFile, entryPath: string) => {
+    setBusyPath(bundle.path);
+    setExtractingEntry(entryPath);
+    setMessage(null);
+    try {
+      const artifact = await cmd.extractSupportBundleArtifact(bundle.path, entryPath);
+      setMessage(`Extracted ${artifact.name}`);
+      await cmd.revealSupportBundle(artifact.path);
+    } catch (error) {
+      setMessage(`Could not extract artifact: ${error}`);
+    } finally {
+      setBusyPath(null);
+      setExtractingEntry(null);
     }
   };
 
@@ -599,7 +757,11 @@ export function SupportBundleList({
                 <div className="text-slate-400">Reading bundle details...</div>
               )}
               {detailsByPath[bundle.path] && (
-                <SupportBundleDetailPanel details={detailsByPath[bundle.path]} />
+                <SupportBundleDetailPanel
+                  details={detailsByPath[bundle.path]}
+                  extractingEntry={extractingEntry}
+                  onExtractArtifact={(entryPath) => extractArtifact(bundle, entryPath)}
+                />
               )}
             </div>
           )}

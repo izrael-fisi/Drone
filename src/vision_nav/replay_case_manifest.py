@@ -5,16 +5,21 @@ import json
 from pathlib import Path
 from typing import Any
 
+from vision_nav.replay_case_schema import EXPECTED_BEHAVIORS, evaluate_replay_case_schema
 from vision_nav.replay_gates import ReplayGateConfig, evaluate_replay_log
 
 
-EXPECTED_BEHAVIORS = {"good_map", "degraded", "wrong_map"}
-
-
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate a replay-case manifest against vision-navigation gates.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate a replay-case manifest against vision-navigation gates."
+    )
     parser.add_argument("--manifest", required=True, help="Replay case manifest JSON.")
     parser.add_argument("--output-dir", help="Directory for per-case gate reports and summary.json.")
+    parser.add_argument(
+        "--schema-only",
+        action="store_true",
+        help="Validate manifest schema without evaluating replay logs.",
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON only.")
     return parser.parse_args()
 
@@ -27,6 +32,9 @@ def sanitize_filename(value: str) -> str:
 def load_replay_case_manifest(path: str | Path) -> dict[str, Any]:
     manifest_path = Path(path).expanduser()
     raw = json.loads(manifest_path.read_text())
+    schema = evaluate_replay_case_schema(raw, manifest_path=manifest_path)
+    if not isinstance(raw, dict):
+        raw = {}
     cases: list[dict[str, Any]] = []
     for index, case in enumerate(raw.get("cases") or [], start=1):
         if not isinstance(case, dict):
@@ -44,6 +52,7 @@ def load_replay_case_manifest(path: str | Path) -> dict[str, Any]:
     return {
         "version": raw.get("version"),
         "manifest_path": str(manifest_path),
+        "schema": schema,
         "cases": cases,
     }
 
@@ -53,6 +62,7 @@ def evaluate_replay_case_manifest(
     *,
     output_dir: str | Path | None = None,
     config: ReplayGateConfig | None = None,
+    schema_only: bool = False,
 ) -> dict[str, Any]:
     manifest = load_replay_case_manifest(manifest_path)
     reports: list[dict[str, Any]] = []
@@ -60,7 +70,7 @@ def evaluate_replay_case_manifest(
     if output_path is not None:
         output_path.mkdir(parents=True, exist_ok=True)
 
-    for case in manifest["cases"]:
+    for case in [] if schema_only else manifest["cases"]:
         case_name = str(case.get("case_name") or "replay-case")
         expected = str(case.get("expected") or "")
         log_path = case.get("log")
@@ -98,8 +108,13 @@ def evaluate_replay_case_manifest(
     summary = {
         "manifest_path": manifest["manifest_path"],
         "version": manifest.get("version"),
+        "schema": manifest.get("schema"),
         "case_count": len(manifest["cases"]),
-        "status": "failed" if any(report.get("status") == "failed" for report in reports) else "passed",
+        "schema_only": schema_only,
+        "status": "failed"
+        if any(report.get("status") == "failed" for report in reports)
+        or (manifest.get("schema") or {}).get("status") == "failed"
+        else "passed",
         "reports": reports,
     }
     if output_path is not None:
@@ -113,6 +128,13 @@ def print_human(summary: dict[str, Any]) -> None:
     print(f"Replay manifest: {summary['manifest_path']}")
     print(f"Status: {summary['status']}")
     print(f"Cases: {summary['case_count']}")
+    if summary.get("schema_only"):
+        print("Mode: schema only")
+    schema = summary.get("schema") or {}
+    if schema.get("status") != "passed":
+        print(f"Schema: {schema.get('status')} ({schema.get('issue_count', 0)} issues)")
+        for issue in schema.get("issues") or []:
+            print(f"  [{str(issue.get('severity', 'info')).upper()}] {issue.get('path')}: {issue.get('message')}")
     for report in summary["reports"]:
         metrics = report.get("metrics") or {}
         accepted_rate = metrics.get("accepted_rate")
@@ -124,7 +146,11 @@ def print_human(summary: dict[str, Any]) -> None:
 
 def main() -> None:
     args = parse_args()
-    summary = evaluate_replay_case_manifest(args.manifest, output_dir=args.output_dir)
+    summary = evaluate_replay_case_manifest(
+        args.manifest,
+        output_dir=args.output_dir,
+        schema_only=args.schema_only,
+    )
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:

@@ -104,7 +104,10 @@ def audit_replay_dataset_coverage(
     synthetic_only = [report for report in requirement_reports if report["status"] == "synthetic_only"]
     failed_case_paths = [issue for issue in case_issues if issue["severity"] == "error"]
 
-    if missing or synthetic_only or failed_case_paths:
+    schema = manifest.get("schema") or {}
+    schema_failed = schema.get("status") == "failed"
+
+    if missing or synthetic_only or failed_case_paths or schema_failed:
         status = "failed"
     else:
         status = "passed"
@@ -113,6 +116,7 @@ def audit_replay_dataset_coverage(
         "status": status,
         "manifest_path": manifest["manifest_path"],
         "version": manifest.get("version"),
+        "schema": schema,
         "case_count": len(cases),
         "field_case_count": sum(1 for case in cases if case["dataset_type"] == "field"),
         "synthetic_case_count": sum(1 for case in cases if case["dataset_type"] == "synthetic"),
