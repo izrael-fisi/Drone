@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import {
+  Archive,
   CheckCircle2,
   Copy,
   Camera,
@@ -23,10 +25,22 @@ import {
 import { cmd } from "../lib/tauri";
 import { useAppStore } from "../lib/store";
 import { cn, generateId } from "../lib/utils";
-import type { Device, UploadProgress } from "../lib/types";
+import {
+  candidateHost,
+  candidateName,
+  discoveryTroubleshooting,
+  loadDiscoveryHistory,
+  mergeDiscoveryHistory,
+  networkHintLabel,
+  saveDiscoveryHistory,
+} from "../lib/discovery";
+import { SupportBundleList } from "../components/SupportBundleList";
+import type { Device, LocalNetworkHint, PiDiscoveryCandidate, SupportBundleFile, UploadProgress } from "../lib/types";
 
 const DEFAULT_LOCAL_REPO = "/Users/izzyfisi/Documents/DRONE";
 const HOST_SUGGESTIONS = ["dronecompute.local", "raspberrypi.local", "192.168.1.158"];
+const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
+const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 
 type AuthForm = "password" | "key";
 type StepStatus = "idle" | "running" | "passed" | "failed";
@@ -50,8 +64,75 @@ interface PiForm {
   mavlinkEndpoint: string;
 }
 
+interface SetupStep {
+  id: string;
+  title: string;
+  detail: string;
+  command?: () => string;
+  requiresSudo?: boolean;
+  recommended?: boolean;
+}
+
+interface ModuleSetupHandoff {
+  version: number;
+  source: "mission-planner";
+  action: "bench-report";
+  created_at: string;
+  device_id: string;
+  device_name?: string;
+  remote_bundle_dir?: string;
+  local_bundle_dir?: string;
+  region_id?: string | null;
+  region_name?: string | null;
+  plan_fingerprint?: string;
+  mission_plan_state?: string;
+  built_at?: string | null;
+  uploaded_at?: string | null;
+}
+
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\"'\"'")}'`;
+}
+
+function safeReportName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "module";
+}
+
+function parseSupportBundleZip(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_SUPPORT_ZIP__="))
+    ?.replace("__VISION_NAV_SUPPORT_ZIP__=", "");
+}
+
+function readModuleSetupHandoff(): ModuleSetupHandoff | null {
+  try {
+    const raw = sessionStorage.getItem(MODULE_SETUP_HANDOFF_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ModuleSetupHandoff;
+    if (parsed.source !== "mission-planner" || parsed.action !== "bench-report") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function benchReportCommand(remoteProject: string, remoteBundle: string, mavlinkEndpoint: string) {
+  const mavlinkEnv = mavlinkEndpoint ? `VISION_NAV_MAVLINK_ENDPOINT=${shellQuote(mavlinkEndpoint)} ` : "";
+  return [
+    `cd ${shellQuote(remoteProject)}`,
+    "set +e",
+    `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ./scripts/pi/validate_terrain_bundle.sh`,
+    "validate_exit=$?",
+    `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ${mavlinkEnv}./scripts/pi/create_support_bundle.sh`,
+    "support_exit=$?",
+    `latest=$(ls -t "$HOME/DroneTransfer/outgoing/support-bundles/"*.zip 2>/dev/null | head -n 1)`,
+    `test -n "$latest" && echo "__VISION_NAV_SUPPORT_ZIP__=$latest"`,
+    `if [ "$support_exit" -ne 0 ]; then exit "$support_exit"; fi`,
+    `if [ -z "$latest" ]; then exit 1; fi`,
+    `exit "$validate_exit"`,
+  ].join("; ");
 }
 
 function defaultRemotePath(username: string) {
@@ -122,6 +203,13 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [cameraPreviewPath, setCameraPreviewPath] = useState<string | null>(null);
   const [cameraAutoRefresh, setCameraAutoRefresh] = useState(false);
   const [capturingCamera, setCapturingCamera] = useState(false);
+  const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
+  const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
+  const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryCandidates, setDiscoveryCandidates] = useState<PiDiscoveryCandidate[]>(() => loadDiscoveryHistory());
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [networkHints, setNetworkHints] = useState<LocalNetworkHint[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const selectedDevice = useMemo(
@@ -136,6 +224,24 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       setError(null);
     }
   }, [selectedDeviceId]);
+
+  const refreshSupportBundles = async () => {
+    try {
+      setSupportBundles(await cmd.listSupportBundles(SUPPORT_DOWNLOAD_DIR));
+    } catch {
+      setSupportBundles([]);
+    }
+  };
+
+  useEffect(() => {
+    refreshSupportBundles();
+    cmd.localNetworkHints().then(setNetworkHints).catch(() => setNetworkHints([]));
+  }, []);
+
+  const clearSetupHandoff = () => {
+    sessionStorage.removeItem(MODULE_SETUP_HANDOFF_KEY);
+    setSetupHandoff(null);
+  };
 
   const auth = (): NonNullable<Device["auth"]> | null => {
     if (form.authMethod === "password") {
@@ -152,7 +258,9 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
 
   const connectionReady = !!form.host && !!form.username && !!auth();
   const remoteProject = form.remotePath || defaultRemotePath(form.username);
-  const remoteBundle = `/home/${form.username || "user"}/drone-data/map_bundles/mission_bundle`;
+  const defaultRemoteBundle = `/home/${form.username || "user"}/drone-data/map_bundles/mission_bundle`;
+  const activeHandoff = setupHandoff?.device_id === selectedDeviceId ? setupHandoff : null;
+  const remoteBundle = activeHandoff?.remote_bundle_dir || defaultRemoteBundle;
 
   const setResult = (id: string, result: SetupResult) => {
     setResults((prev) => ({ ...prev, [id]: result }));
@@ -173,6 +281,42 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     if (path && typeof path === "string") {
       setRepoPath(path);
       localStorage.setItem("drone_repo_path", path);
+    }
+  };
+
+  const useDiscoveredDevice = (candidate: PiDiscoveryCandidate) => {
+    const username = form.username || "user";
+    setSelectedDeviceId("new");
+    setForm((value) => ({
+      ...value,
+      name: candidateName(candidate),
+      host: candidateHost(candidate),
+      port: candidate.port,
+      username,
+      remotePath: defaultRemotePath(username),
+    }));
+    setConnectionResult(null);
+    setError(null);
+  };
+
+  const runDiscovery = async () => {
+    setDiscovering(true);
+    setDiscoveryError(null);
+    try {
+      const seedHosts = piDevices
+        .filter((device) => device.host)
+        .map((device) => device.host!)
+        .concat(form.host ? [form.host] : []);
+      const candidates = await cmd.discoverPiDevices(seedHosts, 22);
+      const hints = await cmd.localNetworkHints().catch(() => networkHints);
+      const next = mergeDiscoveryHistory(discoveryCandidates, candidates);
+      setDiscoveryCandidates(next);
+      setNetworkHints(hints);
+      saveDiscoveryHistory(next);
+    } catch (err) {
+      setDiscoveryError(String(err));
+    } finally {
+      setDiscovering(false);
     }
   };
 
@@ -253,6 +397,59 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       });
     } catch (err) {
       setResult(id, { status: "failed", output: `$ ${label}\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
+  const createBenchReport = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before creating a bench report.");
+      return;
+    }
+    setRunningStep("bench-report");
+    setError(null);
+    setResult("bench-report", { status: "running", output: "$ create bench report\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        benchReportCommand(remoteProject, remoteBundle, form.mavlinkEndpoint),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteZip = parseSupportBundleZip(output);
+      if (!remoteZip) {
+        setResult("bench-report", {
+          status: "failed",
+          output: `$ create bench report\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      setResult("bench-report", {
+        status: "running",
+        output: `$ create bench report\n${output}\n\n$ download bench report\nDownloading ${remoteZip}...`,
+      });
+      const downloaded = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remoteZip,
+        SUPPORT_DOWNLOAD_DIR,
+      );
+      setResult("bench-report", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ create bench report\n${output}\n\n$ download bench report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+      await refreshSupportBundles();
+    } catch (err) {
+      setResult("bench-report", { status: "failed", output: `$ create bench report\nERROR: ${err}` });
     } finally {
       setRunningStep(null);
     }
@@ -371,12 +568,13 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     return `printf ${shellQuote(`${sudoPassword}\n`)} | sudo -S -p '' -v && `;
   };
 
-  const steps = [
+  const steps: SetupStep[] = [
     {
       id: "identity",
       title: "Wi-Fi SSH Identity",
       detail: "Confirms the app is talking to the expected module on the local network.",
       command: () => "whoami && hostname && hostname -I && printf '\\n'; sed -n '1,6p' /etc/os-release",
+      recommended: true,
     },
     {
       id: "repo",
@@ -384,6 +582,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       detail: "Checks that the runtime repo exists at the configured module path.",
       command: () =>
         `cd ${shellQuote(remoteProject)} && test -d src/vision_nav && test -x scripts/pi/bootstrap_pi5.sh && pwd && echo 'Drone repo files ready'`,
+      recommended: true,
     },
     {
       id: "bootstrap",
@@ -398,18 +597,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       title: "Verify System Setup",
       detail: "Checks SSH, Docker, transfer folders, and the Python vision environment.",
       command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/verify_pi_setup.sh`,
+      recommended: true,
     },
     {
       id: "camera",
       title: "Camera Health",
       detail: "Captures from the module camera and measures image quality when camera tools are available.",
       command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/check_global_shutter_camera.sh`,
+      recommended: true,
     },
     {
       id: "time-sync",
       title: "Time Sync",
       detail: "Checks system clock plausibility and NTP synchronization for timestamped external-vision output.",
       command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/check_time_sync.sh`,
+      recommended: true,
     },
     {
       id: "mavlink",
@@ -417,6 +619,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       detail: "Validates MAVLink endpoint syntax and serial-device access. Set probe mode for live telemetry.",
       command: () =>
         `cd ${shellQuote(remoteProject)} && VISION_NAV_MAVLINK_ENDPOINT=${shellQuote(form.mavlinkEndpoint)} ./scripts/pi/check_mavlink_endpoint.sh`,
+      recommended: true,
     },
     {
       id: "calibration-capture",
@@ -430,6 +633,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       title: "Vision Smoke Test",
       detail: "Builds and matches a synthetic feature-map pair on the module.",
       command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/smoke_test_vision.sh`,
+      recommended: true,
     },
     {
       id: "runtime",
@@ -438,11 +642,97 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       command: () =>
         `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ./scripts/pi/validate_terrain_bundle.sh`,
     },
+    {
+      id: "bench-report",
+      title: "Bench Report",
+      detail: "Validates the deployed terrain bundle, creates a Pi support bundle, and downloads it.",
+    },
   ];
 
+  const runSetupStep = async (step: SetupStep) => {
+    if (step.id === "bench-report") {
+      await createBenchReport();
+      return;
+    }
+    if (!step.command) return;
+    await runRemote(step.id, step.title, step.command());
+  };
+
   const runRecommendedChecks = async () => {
-    for (const step of steps.filter((candidate) => ["identity", "repo", "verify", "camera", "time-sync", "mavlink", "smoke"].includes(candidate.id))) {
-      await runRemote(step.id, step.title, step.command());
+    for (const step of steps.filter((candidate) => candidate.recommended)) {
+      await runSetupStep(step);
+    }
+  };
+
+  const saveSetupReport = async () => {
+    const stepResults = steps.map((step) => {
+      const result = results[step.id];
+      return {
+        id: step.id,
+        title: step.title,
+        status: result?.status ?? "idle",
+        exit_code: result?.exitCode ?? null,
+        output: result?.output ?? null,
+      };
+    });
+    const statusCounts = stepResults.reduce<Record<string, number>>((acc, result) => {
+      acc[result.status] = (acc[result.status] ?? 0) + 1;
+      return acc;
+    }, {});
+    const stepIds = new Set(steps.map((step) => step.id));
+    const extraResults = Object.entries(results)
+      .filter(([id]) => !stepIds.has(id))
+      .map(([id, result]) => ({
+        id,
+        status: result.status,
+        exit_code: result.exitCode ?? null,
+        output: result.output ?? null,
+      }));
+    const report = {
+      version: "0.1.0",
+      generated_at: new Date().toISOString(),
+      device: {
+        name: form.name,
+        host: form.host,
+        port: form.port,
+        username: form.username,
+        auth_method: form.authMethod,
+        remote_project_path: remoteProject,
+        remote_bundle_path: remoteBundle,
+        mavlink_endpoint: form.mavlinkEndpoint,
+        ssh_fingerprint: connectionResult?.fingerprint ?? selectedDevice?.known_fingerprint ?? null,
+      },
+      mission_planner_handoff: activeHandoff,
+      local: {
+        repo_path: repoPath,
+        support_bundle_download_dir: SUPPORT_DOWNLOAD_DIR,
+      },
+      discovery: {
+        candidates: discoveryCandidates.slice(0, 8),
+        network_hints: networkHints,
+      },
+      connection_result: connectionResult
+        ? {
+            ok: connectionResult.ok,
+            message: connectionResult.message,
+            fingerprint: connectionResult.fingerprint ?? null,
+          }
+        : null,
+      camera_preview_remote_path: cameraPreviewPath,
+      status_counts: statusCounts,
+      steps: stepResults,
+      extra_results: extraResults,
+      downloaded_support_bundles: supportBundles.slice(0, 5),
+    };
+    const defaultPath = `drone-module-setup-${safeReportName(form.host || form.name)}-${new Date().toISOString().slice(0, 10)}.json`;
+    const path = await saveDialog({
+      title: "Save module setup report",
+      defaultPath,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (path && typeof path === "string") {
+      await writeTextFile(path, JSON.stringify(report, null, 2) + "\n");
+      setSetupReportPath(path);
     }
   };
 
@@ -515,6 +805,60 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   {host}
                 </button>
               ))}
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg-card p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-200 flex items-center gap-2">
+                    <Wifi size={14} className="text-cyan-400" /> Discovery
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Scan saved hosts, mDNS names, and local SSH neighbors.</p>
+                </div>
+                <button onClick={runDiscovery} disabled={discovering} className="btn-secondary text-xs py-1 px-3">
+                  {discovering ? <Loader2 size={11} className="animate-spin" /> : <Wifi size={11} />}
+                  Scan
+                </button>
+              </div>
+              {discoveryError && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {discoveryError}
+                </div>
+              )}
+              {networkHints.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {networkHints.slice(0, 3).map((hint) => (
+                    <span key={`${hint.interface_name}-${hint.ipv4}`} className="badge-cyan text-[10px]">
+                      {networkHintLabel(hint)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {discoveryCandidates.length > 0 && (
+                <div className="space-y-2">
+                  {discoveryCandidates.slice(0, 4).map((candidate) => (
+                    <div key={`${candidate.host}:${candidate.port}`} className="flex items-center gap-2 rounded-lg border border-border/70 bg-bg-base px-2 py-1.5">
+                      <span className={candidate.ssh_open ? "badge-green text-[10px]" : "badge-red text-[10px]"}>
+                        {candidate.ssh_open ? "SSH" : "offline"}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-mono text-[11px] text-slate-300 truncate">{candidateHost(candidate)}</div>
+                        <div className="text-[10px] text-slate-500 truncate">{candidate.source} · {candidate.message}</div>
+                      </div>
+                      <button onClick={() => useDiscoveredDevice(candidate)} className="btn-secondary text-xs py-1 px-2">
+                        Use
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {discoveryTroubleshooting(discoveryCandidates, networkHints).length > 0 && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 space-y-1">
+                  {discoveryTroubleshooting(discoveryCandidates, networkHints).map((item) => (
+                    <div key={item} className="text-[11px] text-amber-200">{item}</div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-3">
@@ -665,6 +1009,39 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
           </div>
           )}
 
+          {activeHandoff && (
+            <div className="card space-y-3 border-cyan-500/30 bg-cyan-500/5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+                    <Archive size={15} className="text-cyan-400" /> Mission Bundle Handoff
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Mission Planner uploaded this bundle for bench validation.
+                  </p>
+                </div>
+                <button onClick={clearSetupHandoff} className="btn-ghost text-xs py-1 px-2">
+                  Clear
+                </button>
+              </div>
+              <div className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-1">
+                <div className="flex justify-between gap-3 text-[11px]">
+                  <span className="text-slate-500">Region</span>
+                  <span className="text-slate-300 truncate">{activeHandoff.region_name || "n/a"}</span>
+                </div>
+                <div className="flex justify-between gap-3 text-[11px]">
+                  <span className="text-slate-500">Uploaded</span>
+                  <span className="text-slate-300">{activeHandoff.uploaded_at ? new Date(activeHandoff.uploaded_at).toLocaleString() : "n/a"}</span>
+                </div>
+                <div className="text-[10px] font-mono text-slate-500 truncate">{remoteBundle}</div>
+              </div>
+              <button onClick={createBenchReport} disabled={!connectionReady || !!runningStep} className="btn-primary w-full justify-center">
+                {runningStep === "bench-report" ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
+                Create Bench Report
+              </button>
+            </div>
+          )}
+
           <div className="card space-y-3">
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
               <HardDriveUpload size={15} className="text-cyan-400" /> Module Installation
@@ -708,9 +1085,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
                 <ShieldCheck size={15} className="text-cyan-400" /> Checks And Tests
               </h3>
-              <button onClick={runRecommendedChecks} disabled={!connectionReady || !!runningStep} className="btn-secondary text-xs py-1.5 px-3">
-                <TestTube2 size={12} /> Run Checks/Tests
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={saveSetupReport} disabled={Object.keys(results).length === 0} className="btn-secondary text-xs py-1.5 px-3">
+                  <Save size={12} /> Save Report
+                </button>
+                <button onClick={runRecommendedChecks} disabled={!connectionReady || !!runningStep} className="btn-secondary text-xs py-1.5 px-3">
+                  <TestTube2 size={12} /> Run Checks/Tests
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -790,6 +1172,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5">{step.detail}</p>
                       </div>
+                      <button
+                        onClick={() => runSetupStep(step)}
+                        disabled={!connectionReady || !!runningStep || (step.requiresSudo && !sudoPassword)}
+                        className="btn-secondary text-xs py-1 px-2 shrink-0"
+                      >
+                        {runningStep === step.id ? <Loader2 size={11} className="animate-spin" /> : step.id === "bench-report" ? <Archive size={11} /> : <Terminal size={11} />}
+                        Run
+                      </button>
                       {runningStep === step.id && <Loader2 size={12} className="animate-spin text-cyan-400 shrink-0 mt-0.5" />}
                     </div>
                     {result?.output && selectedOutputId !== step.id && (
@@ -807,6 +1197,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
               <Server size={15} className="text-cyan-400" /> Latest Output
             </h3>
+            {setupReportPath && (
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+                Setup report saved to <span className="font-mono">{setupReportPath}</span>
+              </div>
+            )}
             {output ? (
               <pre className="bg-bg-base border border-border rounded-lg px-3 py-2.5 text-[11px] font-mono text-slate-300 whitespace-pre-wrap max-h-80 overflow-y-auto leading-relaxed">
                 {runningStep && results[selectedOutputId ?? ""]?.status === "running" ? `${output}▋` : output}
@@ -817,6 +1212,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 <p className="text-xs text-slate-500">Run a setup check to see command output.</p>
               </div>
             )}
+            <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} />
           </div>
         </div>
       </div>

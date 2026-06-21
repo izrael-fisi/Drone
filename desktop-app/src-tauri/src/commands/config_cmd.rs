@@ -38,15 +38,13 @@ pub fn read_yaml_config(path: String) -> Result<serde_json::Value, String> {
     let text = std::fs::read_to_string(&path)
         .with_context(|| format!("Cannot read {path}"))
         .map_err(|e| e.to_string())?;
-    let val: serde_yaml::Value = serde_yaml::from_str(&text)
-        .map_err(|e| e.to_string())?;
+    let val: serde_yaml::Value = serde_yaml::from_str(&text).map_err(|e| e.to_string())?;
     serde_json::to_value(val).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn write_yaml_config(path: String, data: serde_json::Value) -> Result<(), String> {
-    let yaml_val: serde_yaml::Value = serde_json::from_value(data)
-        .map_err(|e| e.to_string())?;
+    let yaml_val: serde_yaml::Value = serde_json::from_value(data).map_err(|e| e.to_string())?;
     let text = serde_yaml::to_string(&yaml_val).map_err(|e| e.to_string())?;
     if let Some(parent) = Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -96,14 +94,22 @@ pub fn list_support_bundles(dir: String) -> Result<Vec<SupportBundleFile>, Strin
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .map(|duration| duration.as_millis());
         files.push(SupportBundleFile {
-            name: p.file_name().and_then(|name| name.to_str()).unwrap_or("support.zip").to_string(),
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("support.zip")
+                .to_string(),
             path: p.to_string_lossy().into_owned(),
             size_bytes: metadata.len(),
             modified_unix_ms,
             summary: read_support_bundle_summary(&p),
         });
     }
-    files.sort_by(|a, b| b.modified_unix_ms.cmp(&a.modified_unix_ms).then_with(|| a.name.cmp(&b.name)));
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
     Ok(files)
 }
 
@@ -139,8 +145,12 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
             .or_else(|| manifest.pointer("/bundle/health/checksums/entry_count"))
             .and_then(|value| value.as_u64()),
         elevation_status: json_string(manifest.pointer("/bundle/health/elevation/status")),
-        elevation_asset_count: manifest.pointer("/bundle/health/elevation/asset_count").and_then(|value| value.as_u64()),
-        vertical_sanity_ready: manifest.pointer("/bundle/health/elevation/vertical_sanity_ready").and_then(|value| value.as_bool()),
+        elevation_asset_count: manifest
+            .pointer("/bundle/health/elevation/asset_count")
+            .and_then(|value| value.as_u64()),
+        vertical_sanity_ready: manifest
+            .pointer("/bundle/health/elevation/vertical_sanity_ready")
+            .and_then(|value| value.as_bool()),
         map_source: json_string(provenance.and_then(|value| value.get("map_source"))),
         source_name,
         georef_source: json_string(provenance.and_then(|value| value.get("georef_source"))),
@@ -149,7 +159,9 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
             .and_then(|value| value.get("georef_confidence"))
             .and_then(|value| value.as_f64()),
         replay_gate_status: json_string(manifest.pointer("/replay_gates/status")),
-        replay_case_count: manifest.pointer("/replay_gates/case_count").and_then(|value| value.as_u64()),
+        replay_case_count: manifest
+            .pointer("/replay_gates/case_count")
+            .and_then(|value| value.as_u64()),
     };
     if summary.bundle_id.is_none()
         && summary.bundle_health_status.is_none()

@@ -9,9 +9,18 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cmd } from "../lib/tauri";
 import { useAppStore } from "../lib/store";
 import { cn, generateId } from "../lib/utils";
+import {
+  candidateHost,
+  candidateName,
+  discoveryTroubleshooting,
+  loadDiscoveryHistory,
+  mergeDiscoveryHistory,
+  networkHintLabel,
+  saveDiscoveryHistory,
+} from "../lib/discovery";
 import { SupportBundleList } from "../components/SupportBundleList";
 import { ModuleSetup } from "./PiSetup";
-import type { Device, SupportBundleFile } from "../lib/types";
+import type { Device, LocalNetworkHint, PiDiscoveryCandidate, SupportBundleFile } from "../lib/types";
 
 type TestResult = {
   ok: boolean;
@@ -26,6 +35,19 @@ function shellQuote(value: string) {
 }
 
 const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
+const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
+
+function readModuleSetupHandoffDeviceId() {
+  try {
+    const raw = sessionStorage.getItem(MODULE_SETUP_HANDOFF_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { action?: string; device_id?: string };
+    if (parsed.action !== "bench-report" || !parsed.device_id) return null;
+    return parsed.device_id;
+  } catch {
+    return null;
+  }
+}
 
 function supportBundleCommand(remotePath: string, remoteBundle: string, mavlinkEnv: string) {
   return [
@@ -170,6 +192,10 @@ export function Devices() {
   const [cmdOutputs, setCmdOutputs] = useState<Record<string, string>>({});
   const [cmdRunning, setCmdRunning] = useState<string | null>(null);
   const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryCandidates, setDiscoveryCandidates] = useState<PiDiscoveryCandidate[]>(() => loadDiscoveryHistory());
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [networkHints, setNetworkHints] = useState<LocalNetworkHint[]>([]);
 
   const refreshSupportBundles = async () => {
     setSupportBundles(await cmd.listSupportBundles(SUPPORT_DOWNLOAD_DIR));
@@ -177,7 +203,15 @@ export function Devices() {
 
   useEffect(() => {
     refreshSupportBundles().catch(() => setSupportBundles([]));
+    cmd.localNetworkHints().then(setNetworkHints).catch(() => setNetworkHints([]));
   }, []);
+
+  useEffect(() => {
+    const handoffDeviceId = readModuleSetupHandoffDeviceId();
+    if (!handoffDeviceId || !devices.some((device) => device.id === handoffDeviceId)) return;
+    setControlOpenId(handoffDeviceId);
+    setControlTab((tabs) => ({ ...tabs, [handoffDeviceId]: "setup" }));
+  }, [devices]);
 
   const runPiCommand = async (d: Device, label: string, command: string) => {
     if (!d.host || !d.auth) return;
@@ -262,6 +296,42 @@ export function Devices() {
     autopilot: "px4" as "px4" | "ardupilot",
   };
   const [form, setForm] = useState(emptyForm);
+
+  const useDiscoveredDevice = (candidate: PiDiscoveryCandidate) => {
+    const username = form.username || "user";
+    setForm({
+      ...emptyForm,
+      kind: "pi5",
+      name: candidateName(candidate),
+      host: candidateHost(candidate),
+      port: candidate.port,
+      username,
+      remotePath: defaultRemotePath(username),
+    });
+    setEditId(null);
+    setShowForm(true);
+  };
+
+  const runDiscovery = async () => {
+    setDiscovering(true);
+    setDiscoveryError(null);
+    try {
+      const seedHosts = devices
+        .filter((device) => device.kind === "pi5" && device.host)
+        .map((device) => device.host!)
+        .concat(form.host ? [form.host] : []);
+      const candidates = await cmd.discoverPiDevices(seedHosts, 22);
+      const hints = await cmd.localNetworkHints().catch(() => networkHints);
+      const next = mergeDiscoveryHistory(discoveryCandidates, candidates);
+      setDiscoveryCandidates(next);
+      setNetworkHints(hints);
+      saveDiscoveryHistory(next);
+    } catch (error) {
+      setDiscoveryError(String(error));
+    } finally {
+      setDiscovering(false);
+    }
+  };
 
   const startAdd = () => { setForm(emptyForm); setEditId(null); setShowForm(true); };
 
@@ -378,6 +448,69 @@ export function Devices() {
         <button onClick={startAdd} className="btn-primary">
           <Plus size={15} /> Add Device
         </button>
+      </div>
+
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+              <Wifi size={15} className="text-cyan-400" /> Local Wi-Fi Discovery
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Finds saved hostnames, Raspberry Pi mDNS names, and local SSH neighbors.
+            </p>
+          </div>
+          <button onClick={runDiscovery} disabled={discovering} className="btn-secondary text-xs py-1.5 px-3">
+            {discovering ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
+            Scan
+          </button>
+        </div>
+        {discoveryError && (
+          <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {discoveryError}
+          </div>
+        )}
+        {networkHints.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {networkHints.slice(0, 4).map((hint) => (
+              <span key={`${hint.interface_name}-${hint.ipv4}`} className="badge-cyan text-[10px]">
+                {networkHintLabel(hint)}
+              </span>
+            ))}
+          </div>
+        )}
+        {discoveryCandidates.length > 0 && (
+          <div className="grid grid-cols-2 gap-2">
+            {discoveryCandidates.slice(0, 6).map((candidate) => (
+              <div key={`${candidate.host}:${candidate.port}`} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-slate-200 truncate">{candidateHost(candidate)}</div>
+                    <div className="text-[10px] text-slate-500 truncate">
+                      {candidate.host}{candidate.resolved_ip ? ` / ${candidate.resolved_ip}` : ""} · {candidate.source}
+                    </div>
+                  </div>
+                  <span className={candidate.ssh_open ? "badge-green text-[10px]" : "badge-red text-[10px]"}>
+                    {candidate.ssh_open ? "SSH" : "offline"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-500 truncate">{candidate.message}</span>
+                  <button onClick={() => useDiscoveredDevice(candidate)} className="btn-secondary text-xs py-1 px-2 shrink-0">
+                    Use
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {discoveryTroubleshooting(discoveryCandidates, networkHints).length > 0 && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 space-y-1">
+            {discoveryTroubleshooting(discoveryCandidates, networkHints).map((item) => (
+              <div key={item} className="text-[11px] text-amber-200">{item}</div>
+            ))}
+          </div>
+        )}
       </div>
 
       {devices.length === 0 && !showForm ? (

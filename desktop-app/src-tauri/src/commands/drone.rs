@@ -160,7 +160,9 @@ enum GeoTiffCrs {
 }
 
 #[tauri::command]
-pub async fn build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDroneBundleResult, String> {
+pub async fn build_drone_bundle(
+    request: BuildDroneBundleRequest,
+) -> Result<BuildDroneBundleResult, String> {
     tokio::task::spawn_blocking(move || inner_build_drone_bundle(request))
         .await
         .map_err(|e| e.to_string())?
@@ -176,7 +178,9 @@ pub async fn import_map_file(request: ImportMapFileRequest) -> Result<ImportMapF
 }
 
 #[tauri::command]
-pub async fn import_elevation_assets(request: ImportElevationAssetsRequest) -> Result<ImportElevationAssetsResult, String> {
+pub async fn import_elevation_assets(
+    request: ImportElevationAssetsRequest,
+) -> Result<ImportElevationAssetsResult, String> {
     tokio::task::spawn_blocking(move || inner_import_elevation_assets(request))
         .await
         .map_err(|e| e.to_string())?
@@ -211,7 +215,12 @@ fn inner_import_map_file(request: ImportMapFileRequest) -> Result<ImportMapFileR
     } else {
         None
     };
-    let georef = resolve_import_georef(&request, embedded_georef, embedded_error.as_deref(), is_tiff_extension(&extension))?;
+    let georef = resolve_import_georef(
+        &request,
+        embedded_georef,
+        embedded_error.as_deref(),
+        is_tiff_extension(&extension),
+    )?;
 
     std::fs::create_dir_all(&output_dir)?;
     let decoded = ImageReader::open(&map_path)
@@ -268,14 +277,19 @@ fn inner_import_map_file(request: ImportMapFileRequest) -> Result<ImportMapFileR
     })
 }
 
-fn inner_import_elevation_assets(request: ImportElevationAssetsRequest) -> Result<ImportElevationAssetsResult> {
+fn inner_import_elevation_assets(
+    request: ImportElevationAssetsRequest,
+) -> Result<ImportElevationAssetsResult> {
     let region_dir = PathBuf::from(&request.region_dir);
     let metadata_path = region_dir.join("metadata.json");
     if !region_dir.exists() {
         return Err(anyhow!("Region folder not found: {}", region_dir.display()));
     }
     if !metadata_path.exists() {
-        return Err(anyhow!("Region folder is missing metadata.json: {}", metadata_path.display()));
+        return Err(anyhow!(
+            "Region folder is missing metadata.json: {}",
+            metadata_path.display()
+        ));
     }
     if request.dem_path.is_none() && request.dsm_path.is_none() {
         return Err(anyhow!("Choose at least one DEM or DSM GeoTIFF."));
@@ -284,11 +298,15 @@ fn inner_import_elevation_assets(request: ImportElevationAssetsRequest) -> Resul
     let elevation_dir = region_dir.join("elevation");
     std::fs::create_dir_all(&elevation_dir)?;
     let dem_rel = match request.dem_path.as_deref() {
-        Some(path) if !path.trim().is_empty() => Some(copy_elevation_asset(path, &elevation_dir, "dem")?),
+        Some(path) if !path.trim().is_empty() => {
+            Some(copy_elevation_asset(path, &elevation_dir, "dem")?)
+        }
         _ => existing_elevation_asset(&region_dir, "dem"),
     };
     let dsm_rel = match request.dsm_path.as_deref() {
-        Some(path) if !path.trim().is_empty() => Some(copy_elevation_asset(path, &elevation_dir, "dsm")?),
+        Some(path) if !path.trim().is_empty() => {
+            Some(copy_elevation_asset(path, &elevation_dir, "dsm")?)
+        }
         _ => existing_elevation_asset(&region_dir, "dsm"),
     };
 
@@ -307,8 +325,14 @@ fn inner_import_elevation_assets(request: ImportElevationAssetsRequest) -> Resul
     if let Some(path) = dsm_rel.as_deref() {
         elevation_assets.insert("dsm".to_string(), json!(path));
     }
-    object.insert("elevation_assets".to_string(), serde_json::Value::Object(elevation_assets));
-    std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)? + "\n")?;
+    object.insert(
+        "elevation_assets".to_string(),
+        serde_json::Value::Object(elevation_assets),
+    );
+    std::fs::write(
+        &metadata_path,
+        serde_json::to_string_pretty(&metadata)? + "\n",
+    )?;
 
     Ok(ImportElevationAssetsResult {
         region_dir: region_dir.to_string_lossy().into_owned(),
@@ -348,14 +372,19 @@ fn resolve_import_georef(
 }
 
 fn manual_georef_from_request(request: &ImportMapFileRequest) -> Result<Option<MapGeoref>> {
-    let has_manual_core =
-        request.origin_lat.is_some() || request.origin_lon.is_some() || request.gsd_m_per_px.is_some();
+    let has_manual_core = request.origin_lat.is_some()
+        || request.origin_lon.is_some()
+        || request.gsd_m_per_px.is_some();
     if !has_manual_core {
         return Ok(None);
     }
 
-    let origin_lat = request.origin_lat.ok_or_else(|| anyhow!("Manual georef requires origin_lat."))?;
-    let origin_lon = request.origin_lon.ok_or_else(|| anyhow!("Manual georef requires origin_lon."))?;
+    let origin_lat = request
+        .origin_lat
+        .ok_or_else(|| anyhow!("Manual georef requires origin_lat."))?;
+    let origin_lon = request
+        .origin_lon
+        .ok_or_else(|| anyhow!("Manual georef requires origin_lon."))?;
     let gsd_m_per_px = request
         .gsd_m_per_px
         .ok_or_else(|| anyhow!("Manual georef requires gsd_m_per_px."))?;
@@ -381,7 +410,8 @@ fn manual_georef_from_request(request: &ImportMapFileRequest) -> Result<Option<M
 }
 
 fn extract_geotiff_georef(path: &Path) -> Result<Option<MapGeoref>> {
-    let file = File::open(path).with_context(|| format!("Cannot open TIFF metadata {}", path.display()))?;
+    let file = File::open(path)
+        .with_context(|| format!("Cannot open TIFF metadata {}", path.display()))?;
     let mut decoder = TiffDecoder::new(file).context("Cannot read TIFF directory")?;
     let keys = decoder
         .get_tag_u16_vec(Tag::GeoKeyDirectoryTag)
@@ -464,8 +494,14 @@ fn georef_from_model_vectors(
     let (origin_lat, origin_lon) = model_to_latlon(model_origin.0, model_origin.1, crs)?;
     validate_georef_values(origin_lat, origin_lon, 1.0)?;
 
-    let pixel_x_end = (model_origin.0 + pixel_x_vector.0, model_origin.1 + pixel_x_vector.1);
-    let pixel_y_end = (model_origin.0 + pixel_y_vector.0, model_origin.1 + pixel_y_vector.1);
+    let pixel_x_end = (
+        model_origin.0 + pixel_x_vector.0,
+        model_origin.1 + pixel_x_vector.1,
+    );
+    let pixel_y_end = (
+        model_origin.0 + pixel_y_vector.0,
+        model_origin.1 + pixel_y_vector.1,
+    );
     let pixel_x_latlon = model_to_latlon(pixel_x_end.0, pixel_x_end.1, crs)?;
     let pixel_y_latlon = model_to_latlon(pixel_y_end.0, pixel_y_end.1, crs)?;
     let x_enu = local_delta_m(origin_lat, origin_lon, pixel_x_latlon.0, pixel_x_latlon.1);
@@ -549,8 +585,14 @@ fn model_to_latlon(x: f64, y: f64, crs: GeoTiffCrs) -> Result<(f64, f64)> {
         GeoTiffCrs::WebMercator => web_mercator_to_latlon(x, y),
         GeoTiffCrs::Utm { zone, northern } => utm_to_latlon(x, y, zone, northern),
     };
-    if !lat.is_finite() || !lon.is_finite() || !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
-        return Err(anyhow!("GeoTIFF georeference produced invalid WGS84 coordinates."));
+    if !lat.is_finite()
+        || !lon.is_finite()
+        || !(-90.0..=90.0).contains(&lat)
+        || !(-180.0..=180.0).contains(&lon)
+    {
+        return Err(anyhow!(
+            "GeoTIFF georeference produced invalid WGS84 coordinates."
+        ));
     }
     Ok((lat, lon))
 }
@@ -601,18 +643,23 @@ fn utm_to_latlon(easting: f64, northing: f64, zone: u8, northern: bool) -> (f64,
         - (n1 * tan_phi1 / r1)
             * (d.powi(2) / 2.0
                 - (5.0 + 3.0 * t1 + 10.0 * c1 - 4.0 * c1.powi(2) - 9.0 * ep2) * d.powi(4) / 24.0
-                + (61.0 + 90.0 * t1 + 298.0 * c1 + 45.0 * t1.powi(2) - 252.0 * ep2 - 3.0 * c1.powi(2))
+                + (61.0 + 90.0 * t1 + 298.0 * c1 + 45.0 * t1.powi(2)
+                    - 252.0 * ep2
+                    - 3.0 * c1.powi(2))
                     * d.powi(6)
                     / 720.0);
     let lon = lon_origin
         + (d - (1.0 + 2.0 * t1 + c1) * d.powi(3) / 6.0
-            + (5.0 - 2.0 * c1 + 28.0 * t1 - 3.0 * c1.powi(2) + 8.0 * ep2 + 24.0 * t1.powi(2)) * d.powi(5) / 120.0)
+            + (5.0 - 2.0 * c1 + 28.0 * t1 - 3.0 * c1.powi(2) + 8.0 * ep2 + 24.0 * t1.powi(2))
+                * d.powi(5)
+                / 120.0)
             / cos_phi1;
     (lat.to_degrees(), lon.to_degrees())
 }
 
 fn local_delta_m(origin_lat: f64, origin_lon: f64, lat: f64, lon: f64) -> (f64, f64) {
-    let east = (lon - origin_lon).to_radians() * EARTH_RADIUS_M * origin_lat.to_radians().cos().max(1e-9);
+    let east =
+        (lon - origin_lon).to_radians() * EARTH_RADIUS_M * origin_lat.to_radians().cos().max(1e-9);
     let north = (lat - origin_lat).to_radians() * EARTH_RADIUS_M;
     (east, north)
 }
@@ -628,7 +675,9 @@ fn affine_georef_confidence(crs: GeoTiffCrs, x_enu: (f64, f64), y_enu: (f64, f64
     let dot = (x_enu.0 * y_enu.0 + x_enu.1 * y_enu.1).abs() / (gsd_x * gsd_y).max(1e-9);
     let base = match crs {
         GeoTiffCrs::Geographic { epsg: None } => 0.85,
-        GeoTiffCrs::Geographic { epsg: Some(4326) } | GeoTiffCrs::WebMercator | GeoTiffCrs::Utm { .. } => 0.98,
+        GeoTiffCrs::Geographic { epsg: Some(4326) }
+        | GeoTiffCrs::WebMercator
+        | GeoTiffCrs::Utm { .. } => 0.98,
         GeoTiffCrs::Geographic { epsg: Some(_) } => 0.90,
     };
     let anisotropy_penalty = ((anisotropy - 1.0) / 0.25).clamp(0.0, 0.25);
@@ -647,13 +696,22 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
     let metadata_path = region_dir.join("metadata.json");
 
     if !satellite_path.exists() {
-        return Err(anyhow!("Missing region satellite.png: {}", satellite_path.display()));
+        return Err(anyhow!(
+            "Missing region satellite.png: {}",
+            satellite_path.display()
+        ));
     }
     if !metadata_path.exists() {
-        return Err(anyhow!("Missing region metadata.json: {}", metadata_path.display()));
+        return Err(anyhow!(
+            "Missing region metadata.json: {}",
+            metadata_path.display()
+        ));
     }
     if !repo_path.join("src").join("vision_nav").exists() {
-        return Err(anyhow!("Drone repo path does not look right: {}", repo_path.display()));
+        return Err(anyhow!(
+            "Drone repo path does not look right: {}",
+            repo_path.display()
+        ));
     }
 
     let metadata_text = std::fs::read_to_string(&metadata_path)
@@ -677,8 +735,14 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
     let orthophoto_path = ortho_dir.join("map.png");
     std::fs::copy(&satellite_path, &orthophoto_path)
         .with_context(|| format!("Cannot copy {}", satellite_path.display()))?;
-    std::fs::copy(&satellite_path, high_compute_region_dir.join("satellite.png"))?;
-    std::fs::copy(&metadata_path, high_compute_region_dir.join("metadata.json"))?;
+    std::fs::copy(
+        &satellite_path,
+        high_compute_region_dir.join("satellite.png"),
+    )?;
+    std::fs::copy(
+        &metadata_path,
+        high_compute_region_dir.join("metadata.json"),
+    )?;
     if elevation_bundle_dir.exists() {
         std::fs::remove_dir_all(&elevation_bundle_dir)
             .with_context(|| format!("Cannot clear {}", elevation_bundle_dir.display()))?;
@@ -688,12 +752,18 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
     }
 
     let down_camera_rel = copy_if_exists(
-        &repo_path.join("config").join("camera").join("down_camera.yaml"),
+        &repo_path
+            .join("config")
+            .join("camera")
+            .join("down_camera.yaml"),
         &calibration_dir.join("down_camera.yaml"),
         "calibration/down_camera.yaml",
     )?;
     let camera_to_body_rel = copy_if_exists(
-        &repo_path.join("config").join("camera").join("camera_to_body.yaml"),
+        &repo_path
+            .join("config")
+            .join("camera")
+            .join("camera_to_body.yaml"),
         &calibration_dir.join("camera_to_body.yaml"),
         "calibration/camera_to_body.yaml",
     )?;
@@ -817,7 +887,10 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
             "High-compute runtimes can use high_compute_region/satellite.png and metadata.json with SuperPoint + LightGlue."
         ]
     });
-    std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)? + "\n")?;
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest)? + "\n",
+    )?;
 
     let python = std::env::var("DRONE_DESKTOP_PYTHON").unwrap_or_else(|_| "python3".to_string());
     let command_display = format!(
@@ -894,7 +967,11 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         manifest_path: manifest_path.to_string_lossy().into_owned(),
         stac_manifest_path,
         orthophoto_path: orthophoto_path.to_string_lossy().into_owned(),
-        features_path: bundle_dir.join("features").join("map_features.npz").to_string_lossy().into_owned(),
+        features_path: bundle_dir
+            .join("features")
+            .join("map_features.npz")
+            .to_string_lossy()
+            .into_owned(),
         terrain_index_path,
         terrain_config_path,
         terrain_tile_count,
@@ -902,7 +979,10 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         terrain_gsd_m,
         terrain_tile_size_px,
         geospatial_health,
-        checksums_path: bundle_dir.join("checksums.sha256").to_string_lossy().into_owned(),
+        checksums_path: bundle_dir
+            .join("checksums.sha256")
+            .to_string_lossy()
+            .into_owned(),
         mission_plan_path: mission_plan_path.map(|path| path.to_string_lossy().into_owned()),
         qgc_plan_path: qgc_plan_path.map(|path| path.to_string_lossy().into_owned()),
         command: command_display,
@@ -943,9 +1023,13 @@ fn validate_elevation_extension(extension: &str) -> Result<()> {
     if is_tiff_extension(extension) {
         Ok(())
     } else if extension.is_empty() {
-        Err(anyhow!("Elevation file has no extension. Use a TIFF/GeoTIFF file."))
+        Err(anyhow!(
+            "Elevation file has no extension. Use a TIFF/GeoTIFF file."
+        ))
     } else {
-        Err(anyhow!("Unsupported elevation file extension .{extension}. Use a TIFF/GeoTIFF file."))
+        Err(anyhow!(
+            "Unsupported elevation file extension .{extension}. Use a TIFF/GeoTIFF file."
+        ))
     }
 }
 
@@ -965,7 +1049,10 @@ fn copy_elevation_asset(src: &str, elevation_dir: &Path, kind: &str) -> Result<S
         return Err(anyhow!("Elevation file not found: {}", src_path.display()));
     }
     if !src_path.is_file() {
-        return Err(anyhow!("Elevation path is not a file: {}", src_path.display()));
+        return Err(anyhow!(
+            "Elevation path is not a file: {}",
+            src_path.display()
+        ));
     }
     let extension = src_path
         .extension()
@@ -997,8 +1084,7 @@ fn copy_if_exists(src: &Path, dst: &Path, rel: &str) -> Result<Option<String>> {
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
-    std::fs::create_dir_all(dst)
-        .with_context(|| format!("Cannot create {}", dst.display()))?;
+    std::fs::create_dir_all(dst).with_context(|| format!("Cannot create {}", dst.display()))?;
     for entry in std::fs::read_dir(src).with_context(|| format!("Cannot read {}", src.display()))? {
         let entry = entry?;
         let source_path = entry.path();
@@ -1006,8 +1092,13 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         if source_path.is_dir() {
             copy_dir_recursive(&source_path, &dest_path)?;
         } else if source_path.is_file() {
-            std::fs::copy(&source_path, &dest_path)
-                .with_context(|| format!("Cannot copy {} to {}", source_path.display(), dest_path.display()))?;
+            std::fs::copy(&source_path, &dest_path).with_context(|| {
+                format!(
+                    "Cannot copy {} to {}",
+                    source_path.display(),
+                    dest_path.display()
+                )
+            })?;
         }
     }
     Ok(())
@@ -1045,10 +1136,7 @@ mod tests {
     #[test]
     fn parses_geotiff_epsg_keys() {
         let keys = parse_geotiff_keys(&[
-            1, 1, 0, 3,
-            1024, 0, 1, 2,
-            2048, 0, 1, 4326,
-            3072, 0, 1, 32618,
+            1, 1, 0, 3, 1024, 0, 1, 2, 2048, 0, 1, 4326, 3072, 0, 1, 32618,
         ]);
 
         assert_eq!(keys.model_type, Some(2));
@@ -1108,24 +1196,28 @@ mod tests {
                 .expect("create TIFF image");
             image
                 .encoder()
-                .write_tag(Tag::ModelPixelScaleTag, &[0.00001_f64, 0.00000766044, 0.0][..])
+                .write_tag(
+                    Tag::ModelPixelScaleTag,
+                    &[0.00001_f64, 0.00000766044, 0.0][..],
+                )
                 .expect("write pixel scale");
             image
                 .encoder()
-                .write_tag(Tag::ModelTiepointTag, &[0.0_f64, 0.0, 0.0, -75.0, 40.0, 0.0][..])
+                .write_tag(
+                    Tag::ModelTiepointTag,
+                    &[0.0_f64, 0.0, 0.0, -75.0, 40.0, 0.0][..],
+                )
                 .expect("write tiepoint");
             image
                 .encoder()
                 .write_tag(
                     Tag::GeoKeyDirectoryTag,
-                    &[
-                        1_u16, 1, 0, 2,
-                        1024, 0, 1, 2,
-                        2048, 0, 1, 4326,
-                    ][..],
+                    &[1_u16, 1, 0, 2, 1024, 0, 1, 2, 2048, 0, 1, 4326][..],
                 )
                 .expect("write geokeys");
-            image.write_data(&[0_u8, 32, 128, 255]).expect("write pixels");
+            image
+                .write_data(&[0_u8, 32, 128, 255])
+                .expect("write pixels");
         }
 
         let georef = extract_geotiff_georef(&path)
@@ -1186,11 +1278,15 @@ mod tests {
         )
         .expect("parse metadata");
         assert_eq!(
-            metadata.pointer("/elevation_assets/dem").and_then(|value| value.as_str()),
+            metadata
+                .pointer("/elevation_assets/dem")
+                .and_then(|value| value.as_str()),
             Some("elevation/dem.tif")
         );
         assert_eq!(
-            metadata.pointer("/elevation_assets/dsm").and_then(|value| value.as_str()),
+            metadata
+                .pointer("/elevation_assets/dsm")
+                .and_then(|value| value.as_str()),
             Some("elevation/dsm.tiff")
         );
 

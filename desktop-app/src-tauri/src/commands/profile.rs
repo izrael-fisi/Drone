@@ -45,7 +45,9 @@ pub fn save_profile(profile: Profile) -> Result<(), String> {
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "type")]
 pub enum DeviceAuth {
-    Password { password: String },
+    Password {
+        password: String,
+    },
     Key {
         key_path: String,
         #[serde(default)]

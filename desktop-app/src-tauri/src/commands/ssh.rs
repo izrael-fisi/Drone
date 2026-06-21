@@ -16,7 +16,9 @@ pub struct CommandResult {
 #[derive(Deserialize, Clone)]
 #[serde(tag = "type")]
 pub enum SshAuth {
-    Password { password: String },
+    Password {
+        password: String,
+    },
     Key {
         key_path: String,
         #[serde(default)]
@@ -58,8 +60,7 @@ pub struct CameraFrameResult {
 
 fn connect_session(host: &str, port: u16, username: &str, auth: &SshAuth) -> Result<Session> {
     let addr = format!("{host}:{port}");
-    let tcp = TcpStream::connect(&addr)
-        .with_context(|| format!("Cannot reach {addr}"))?;
+    let tcp = TcpStream::connect(&addr).with_context(|| format!("Cannot reach {addr}"))?;
     tcp.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
 
     let mut sess = Session::new()?;
@@ -71,15 +72,13 @@ fn connect_session(host: &str, port: u16, username: &str, auth: &SshAuth) -> Res
             sess.userauth_password(username, password)
                 .context("Password authentication failed")?;
         }
-        SshAuth::Key { key_path, passphrase } => {
+        SshAuth::Key {
+            key_path,
+            passphrase,
+        } => {
             let key = Path::new(key_path);
-            sess.userauth_pubkey_file(
-                username,
-                None,
-                key,
-                passphrase.as_deref(),
-            )
-            .context("Key authentication failed")?;
+            sess.userauth_pubkey_file(username, None, key, passphrase.as_deref())
+                .context("Key authentication failed")?;
         }
     }
 
@@ -96,19 +95,17 @@ pub async fn test_ssh_connection(
     username: String,
     auth: SshAuth,
 ) -> Result<TestConnectionResult, String> {
-    tokio::task::spawn_blocking(move || {
-        match connect_session(&host, port, &username, &auth) {
+    tokio::task::spawn_blocking(
+        move || match connect_session(&host, port, &username, &auth) {
             Ok(sess) => {
                 let banner = sess.banner().map(|s| s.to_string());
-                let fingerprint = sess
-                    .host_key_hash(ssh2::HashType::Sha256)
-                    .map(|bytes| {
-                        use base64::Engine;
-                        format!(
-                            "SHA256:{}",
-                            base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes)
-                        )
-                    });
+                let fingerprint = sess.host_key_hash(ssh2::HashType::Sha256).map(|bytes| {
+                    use base64::Engine;
+                    format!(
+                        "SHA256:{}",
+                        base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes)
+                    )
+                });
                 Ok(TestConnectionResult {
                     ok: true,
                     message: format!("Connected to {host}:{port} as {username}"),
@@ -122,8 +119,8 @@ pub async fn test_ssh_connection(
                 server_banner: None,
                 fingerprint: None,
             }),
-        }
-    })
+        },
+    )
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e: anyhow::Error| e.to_string())
@@ -138,8 +135,7 @@ pub async fn ssh_run_command(
     command: String,
 ) -> Result<CommandResult, String> {
     tokio::task::spawn_blocking(move || {
-        let sess = connect_session(&host, port, &username, &auth)
-            .map_err(|e| e.to_string())?;
+        let sess = connect_session(&host, port, &username, &auth).map_err(|e| e.to_string())?;
         let mut channel = sess.channel_session().map_err(|e| e.to_string())?;
         channel.exec(&command).map_err(|e| e.to_string())?;
 
@@ -150,7 +146,11 @@ pub async fn ssh_run_command(
         channel.wait_close().ok();
         let exit_code = channel.exit_status().unwrap_or(-1);
 
-        Ok(CommandResult { exit_code, stdout, stderr })
+        Ok(CommandResult {
+            exit_code,
+            stdout,
+            stderr,
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -198,7 +198,15 @@ pub async fn ssh_upload_files(
     remote_dir: String,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        inner_upload(&app, &host, port, &username, &auth, &local_paths, &remote_dir)
+        inner_upload(
+            &app,
+            &host,
+            port,
+            &username,
+            &auth,
+            &local_paths,
+            &remote_dir,
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -252,7 +260,15 @@ pub async fn ssh_download_file(
     local_dir: String,
 ) -> Result<DownloadFileResult, String> {
     tokio::task::spawn_blocking(move || {
-        inner_download_file(&app, &host, port, &username, &auth, &remote_path, &local_dir)
+        inner_download_file(
+            &app,
+            &host,
+            port,
+            &username,
+            &auth,
+            &remote_path,
+            &local_dir,
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -374,10 +390,7 @@ fn inner_upload(
 
     for local_str in local_paths {
         let local = Path::new(local_str);
-        let filename = local
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("file");
+        let filename = local.file_name().and_then(|n| n.to_str()).unwrap_or("file");
         let remote_path = format!("{remote_dir}/{filename}");
         let total = std::fs::metadata(local)?.len();
 
@@ -418,12 +431,18 @@ fn inner_upload_directory(
     let sess = connect_session(host, port, username, auth)?;
     let root = Path::new(local_dir);
     if !root.is_dir() {
-        return Err(anyhow!("Local bundle directory not found: {}", root.display()));
+        return Err(anyhow!(
+            "Local bundle directory not found: {}",
+            root.display()
+        ));
     }
     ensure_remote_dir(&sess, remote_dir)?;
 
     for file in collect_files(root)? {
-        let rel = file.strip_prefix(root)?.to_string_lossy().replace('\\', "/");
+        let rel = file
+            .strip_prefix(root)?
+            .to_string_lossy()
+            .replace('\\', "/");
         let remote_path = format!("{}/{}", remote_dir.trim_end_matches('/'), rel);
         if let Some(parent) = Path::new(&remote_path).parent().and_then(|p| p.to_str()) {
             ensure_remote_dir(&sess, parent)?;
@@ -464,12 +483,18 @@ fn inner_upload_project(
     let sess = connect_session(host, port, username, auth)?;
     let root = Path::new(local_dir);
     if !root.is_dir() {
-        return Err(anyhow!("Local project directory not found: {}", root.display()));
+        return Err(anyhow!(
+            "Local project directory not found: {}",
+            root.display()
+        ));
     }
     ensure_remote_dir(&sess, remote_dir)?;
 
     for file in collect_project_files(root)? {
-        let rel = file.strip_prefix(root)?.to_string_lossy().replace('\\', "/");
+        let rel = file
+            .strip_prefix(root)?
+            .to_string_lossy()
+            .replace('\\', "/");
         let remote_path = format!("{}/{}", remote_dir.trim_end_matches('/'), rel);
         if let Some(parent) = Path::new(&remote_path).parent().and_then(|p| p.to_str()) {
             ensure_remote_dir(&sess, parent)?;
@@ -603,7 +628,10 @@ fn collect_project_files_into(root: &Path, path: &Path, files: &mut Vec<PathBuf>
 
 fn should_skip_project_path(root: &Path, path: &Path) -> bool {
     let rel = path.strip_prefix(root).unwrap_or(path);
-    let first = rel.components().next().and_then(|component| component.as_os_str().to_str());
+    let first = rel
+        .components()
+        .next()
+        .and_then(|component| component.as_os_str().to_str());
     if matches!(
         first,
         Some(".git")
@@ -660,8 +688,8 @@ mod tests {
 
     #[test]
     fn expands_home_prefixed_download_paths() {
-        let expanded = expand_local_path("~/DroneTransfer/from-pi/support-bundles")
-            .expect("expand home path");
+        let expanded =
+            expand_local_path("~/DroneTransfer/from-pi/support-bundles").expect("expand home path");
         assert!(expanded.ends_with("DroneTransfer/from-pi/support-bundles"));
     }
 }

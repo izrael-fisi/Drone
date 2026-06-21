@@ -149,24 +149,40 @@ Status:
 - In progress: plan-state checks include mission/map readiness, selected map
   source, output bundle path, remote bundle path, QGC plan content, and desktop
   mission JSON content.
+- Done: Mission Planner persists build/upload fingerprints and timestamps
+  across app restarts and shows whether the active imported/exported `.plan`
+  file has unsaved local changes.
+- In progress: Mission Planner now records GNSS-denied readiness actions in the
+  mission bundle metadata: satellite-source disabled state, map-position reset,
+  heading reset, home reset, and estimator-health status.
 - In progress: Module Setup chains Wi-Fi SSH identity, repo sync/install,
   runtime verification, camera preview/health, time sync, MAVLink endpoint
   validation, calibration image capture, synthetic smoke testing, and deployed
   bundle validation from the app.
+- In progress: Module Setup now has per-check run actions, a bench-report
+  action that validates the deployed terrain bundle and downloads the Pi support
+  bundle, plus a local JSON setup-report export for install/bench audit trails.
+- In progress: Mission Planner now hands an uploaded Pi mission bundle directly
+  to the matching Module Setup tab for one-click bench-report creation.
+- In progress: Devices and Module Setup now provide local Wi-Fi discovery for
+  saved Pi hosts, common Raspberry Pi mDNS names, and local SSH neighbors, with
+  recent discoveries persisted in desktop storage.
+- In progress: Discovery now shows active desktop IPv4 interface/subnet hints
+  and guided troubleshooting when no SSH-reachable Pi is found.
 - In progress: Mission Planner bundle results show imported DEM/DSM terrain
   profile, estimated minimum AGL, AGL/GSD warnings, and map-quality heatmaps.
+- In progress: Mission Planner now exposes terrain planning constraints,
+  offline cache state, and route segmentation metadata, then compares the
+  configured terrain limits against bundle terrain-profile health after build.
 
 Tasks:
 
-1. Add automatic Pi discovery, map-upload-to-bench-report handoff, and a saved
-   setup report.
-2. Persist plan-state history across app restarts and add an explicit unsaved
-   file indicator for imported/exported `.plan` files.
-3. Add remaining UgCS-style terrain planning pieces: offline cache state,
-   terrain-aware route segmentation, and operator controls for terrain profile
-   constraints.
-4. Add GNSS-denied readiness actions: set/reset map position, heading, home,
-   and estimator health.
+1. Add deeper discovery diagnostics for mDNS/firewall failures, including
+   adapter selection and an operator-facing copyable checklist.
+2. Add route splitting/export behavior for long terrain-aware segments after
+   field replay data confirms the preferred segmentation rule.
+3. Wire GNSS-denied readiness actions to live runtime telemetry and autopilot
+   checklist validation.
 
 Acceptance checks:
 

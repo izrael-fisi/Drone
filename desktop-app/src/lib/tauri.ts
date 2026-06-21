@@ -11,6 +11,8 @@ import type {
   ImportElevationAssetsResult,
   ImportMapFileRequest,
   ImportMapFileResult,
+  LocalNetworkHint,
+  PiDiscoveryCandidate,
   Profile,
   Region,
   SupportBundleFile,
@@ -34,6 +36,9 @@ export const cmd = {
     invoke<ImportMapFileResult>("import_map_file", { request }),
   importElevationAssets: (request: ImportElevationAssetsRequest) =>
     invoke<ImportElevationAssetsResult>("import_elevation_assets", { request }),
+  discoverPiDevices: (seedHosts: string[], port = 22) =>
+    invoke<PiDiscoveryCandidate[]>("discover_pi_devices", { seedHosts, port }),
+  localNetworkHints: () => invoke<LocalNetworkHint[]>("local_network_hints"),
   testSshConnection: (
     host: string,
     port: number,

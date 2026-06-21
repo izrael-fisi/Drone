@@ -49,15 +49,17 @@ fn latlon_to_tile(lat: f64, lon: f64, zoom: u32) -> (i32, i32) {
     let n = (2u64.pow(zoom)) as f64;
     let x = ((lon + 180.0) / 360.0 * n) as i32;
     let lat_rad = lat.to_radians();
-    let y = ((1.0 - (lat_rad.tan() + 1.0 / lat_rad.cos()).ln() / std::f64::consts::PI) / 2.0
-        * n) as i32;
+    let y = ((1.0 - (lat_rad.tan() + 1.0 / lat_rad.cos()).ln() / std::f64::consts::PI) / 2.0 * n)
+        as i32;
     (x, y)
 }
 
 fn tile_to_latlon(x: i32, y: i32, zoom: u32) -> (f64, f64) {
     let n = (2u64.pow(zoom)) as f64;
     let lon = x as f64 / n * 360.0 - 180.0;
-    let lat_rad = (std::f64::consts::PI * (1.0 - 2.0 * y as f64 / n)).sinh().atan();
+    let lat_rad = (std::f64::consts::PI * (1.0 - 2.0 * y as f64 / n))
+        .sinh()
+        .atan();
     (lat_rad.to_degrees(), lon)
 }
 
@@ -71,8 +73,12 @@ fn tile_to_quadkey(x: i32, y: i32, zoom: u32) -> String {
         .map(|i| {
             let mut d = 0u8;
             let mask = 1i32 << (i - 1);
-            if x & mask != 0 { d += 1; }
-            if y & mask != 0 { d += 2; }
+            if x & mask != 0 {
+                d += 1;
+            }
+            if y & mask != 0 {
+                d += 2;
+            }
             char::from_digit(d as u32, 10).unwrap()
         })
         .collect()
@@ -190,7 +196,8 @@ async fn inner_download(
     if total > MAX_TILES {
         return Err(anyhow!(
             "Region too large: {} tiles (max {}). Keep your area under ~18 km × 18 km at zoom 17.",
-            total, MAX_TILES
+            total,
+            MAX_TILES
         ));
     }
     let nx = nx as u32;

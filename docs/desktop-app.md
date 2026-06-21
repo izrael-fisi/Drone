@@ -21,13 +21,16 @@ Raspberry Pi runtime computer on the same Wi-Fi network as the desktop app.
 The flow is:
 
 1. Connect the desktop computer and Raspberry Pi to the same Wi-Fi network.
-2. Open Devices, expand the module, then choose `Module setup`.
-3. Add the module hostname or IP, username, and SSH authentication.
-4. Run `Test Wi-Fi SSH` and save the module as the active device.
-5. Open the expanded device menu to adjust runtime paths, MAVLink, and flight
+2. Open Devices and use `Local Wi-Fi Discovery` to scan saved hostnames,
+   Raspberry Pi mDNS names, and local SSH neighbors.
+3. Add or select the discovered module, then expand it and choose
+   `Module setup`.
+4. Add or confirm the module hostname or IP, username, and SSH authentication.
+5. Run `Test Wi-Fi SSH` and save the module as the active device.
+6. Open the expanded device menu to adjust runtime paths, MAVLink, and flight
    controller settings only after connection exists.
-6. Run `Install Module` to sync runtime files and execute the module bootstrap.
-7. Run setup and vision checks from the app:
+7. Run `Install Module` to sync runtime files and execute the module bootstrap.
+8. Run setup and vision checks from the app:
    - Wi-Fi SSH identity
    - project file check
    - module dependency bootstrap
@@ -39,11 +42,23 @@ The flow is:
    - calibration image capture
    - synthetic vision smoke test
    - deployed runtime bundle validation
+   - bench-report support bundle creation and desktop download
+9. Save a local setup report from the collected checks when you need an audit
+   trail for a bench run or customer install.
 
 The project sync command intentionally excludes desktop-only and generated
 folders such as `.git`, `desktop-app`, `node_modules`, `target`, `data`, `logs`,
 and `map_bundles`. Bootstrap uses the existing `scripts/pi/bootstrap_pi5.sh`
 script on the module and may require a reboot afterward.
+
+The setup report is exported as JSON and excludes SSH passwords, key
+passphrases, and sudo passwords. It includes device connection metadata,
+runtime paths, step status, command output, camera-preview path, and the most
+recent downloaded support-bundle summaries. Discovery results are saved in the
+desktop app so recent local-network candidates remain visible even after a Pi
+reboots or temporarily drops offline. Discovery also shows active desktop
+IPv4 interface/subnet hints so the operator can quickly confirm whether the Pi
+and desktop are on the same local network.
 
 ## Vision Pipeline
 
@@ -147,11 +162,27 @@ plan as invalid when required inputs are missing, not built before a bundle has
 been created, stale when the map/mission/output settings change after a build,
 not uploaded when the current bundle exists only locally, and uploaded when the
 current plan fingerprint has been sent to the active Raspberry Pi. Local-only
-devices show a bundle-ready state instead of upload status.
+devices show a bundle-ready state instead of upload status. Build/upload
+fingerprints and timestamps are saved locally, so the Mission Planner can show
+the previous bundle state after the app restarts.
 
 Mission plans can be imported from the app's JSON format or QGroundControl-style
 `.plan` files. Export writes a `.plan` file with QGC mission, geofence, rally,
-and `visionNavigation` metadata for this project.
+and `visionNavigation` metadata for this project. The Mission state panel also
+shows whether the active imported/exported plan file has unsaved local changes.
+
+Mission Planner also includes a GNSS-denied readiness block. The operator can
+record that satellite-source assumptions are disabled, set map-position and
+home resets from the selected mission item, set or derive heading, and mark
+estimator health. Those values are exported in the app mission JSON and in the
+QGroundControl `.plan` file under `visionNavigation.gnss_denied`.
+
+Mission Planner also records terrain planning constraints before bundle build.
+The operator can confirm the offline map-cache path, set minimum AGL, maximum
+terrain relief, minimum AGL-to-GSD ratio, and maximum route-segment length. The
+same metadata is exported in the app mission JSON and in the QGroundControl
+`.plan` file under `visionNavigation.terrain_planning`. After a bundle build,
+the app compares those limits with `bundle_health.json` terrain-profile values.
 
 The mission bundle action builds the selected map source, writes the desktop
 mission JSON to `mission/mission_plan.json`, writes the QGC-style file to
@@ -202,6 +233,16 @@ and the configured MAVLink endpoint. The panel lists recent downloaded support
 bundle ZIPs with parsed bundle health, checksum status, map source provenance,
 georeference confidence, and replay-gate status so the operator can confirm what
 was captured without manually opening the archive.
+
+Module Setup uses the same support-bundle path for its `Bench Report` action,
+after validating the deployed terrain bundle at the configured runtime bundle
+path.
+
+After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
+`Open Bench Report In Module Setup` action opens that device's setup tab with
+the uploaded bundle path already handed off. From there, `Create Bench Report`
+validates the deployed terrain bundle, creates the support bundle on the Pi, and
+downloads it to the desktop.
 
 ## MAVLink
 

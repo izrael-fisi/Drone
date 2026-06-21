@@ -2,6 +2,7 @@ mod commands;
 
 use commands::{
     config_cmd::{list_support_bundles, list_yaml_configs, read_yaml_config, write_yaml_config},
+    discovery::{discover_pi_devices, local_network_hints},
     drone::{build_drone_bundle, import_elevation_assets, import_map_file},
     profile::{load_devices, load_profile, load_regions, save_devices, save_profile, save_regions},
     satellite::{download_tiles, estimate_tiles},
@@ -30,6 +31,8 @@ pub fn run() {
             build_drone_bundle,
             import_map_file,
             import_elevation_assets,
+            discover_pi_devices,
+            local_network_hints,
             test_ssh_connection,
             ssh_run_command,
             ssh_upload_files,

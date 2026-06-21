@@ -94,6 +94,25 @@ export interface DownloadFileResult {
   bytes_received: number;
 }
 
+export interface PiDiscoveryCandidate {
+  host: string;
+  port: number;
+  source: "saved" | "mdns" | "arp" | string;
+  ssh_open: boolean;
+  resolved_ip?: string;
+  ssh_banner?: string;
+  message: string;
+  last_seen_unix_ms: number;
+}
+
+export interface LocalNetworkHint {
+  interface_name: string;
+  ipv4: string;
+  network_hint: string;
+  source: string;
+  likely_active: boolean;
+}
+
 export interface SupportBundleFile {
   name: string;
   path: string;

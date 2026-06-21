@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { readFile, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { CircleMarker, ImageOverlay, MapContainer, Polygon, Polyline, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -65,6 +65,45 @@ type MissionDefaults = {
   altitudeM: number;
   speedMps: number;
 };
+type EstimatorHealthState = "unchecked" | "ready" | "degraded";
+type GnssDeniedReadiness = {
+  satellite_source_disabled: boolean;
+  map_position_reset: PlanPoint | null;
+  heading_deg: number | null;
+  home_position: PlanPoint | null;
+  estimator_health: EstimatorHealthState;
+  updated_at: string | null;
+};
+type TerrainPlanningConstraints = {
+  min_agl_m: number;
+  max_terrain_relief_m: number;
+  min_agl_to_gsd_ratio: number;
+  max_route_segment_m: number;
+};
+type TerrainPlanningMetadata = {
+  constraints: TerrainPlanningConstraints;
+  offline_cache: {
+    map_path: string | null;
+    status: "ready" | "missing" | "not_selected";
+  };
+  route_segmentation: {
+    max_segment_m: number;
+    estimated_segment_count: number;
+    mission_distance_m: number;
+  };
+};
+type TerrainConstraintStatus = "passed" | "failed" | "unknown";
+type PlanFileSource = "imported" | "exported";
+type PersistedMissionPlannerState = {
+  lastBuiltFingerprint?: string | null;
+  lastUploadedFingerprint?: string | null;
+  lastBuiltAt?: string | null;
+  lastUploadedAt?: string | null;
+  planFilePath?: string | null;
+  planFileFingerprint?: string | null;
+  planFileSavedAt?: string | null;
+  planFileSource?: PlanFileSource | null;
+};
 type MissionBounds = [[number, number], [number, number]];
 type MissionPlanPayload = {
   version: string;
@@ -98,13 +137,30 @@ type MissionPlanPayload = {
     feature_method: PipelineConfig["featureMethod"];
     max_features: number;
   };
+  gnss_denied: GnssDeniedReadiness;
+  terrain_planning: TerrainPlanningMetadata;
 };
 
 const DEFAULT_LOCAL_REPO = "/Users/izzyfisi/Documents/DRONE";
 const PLAN_VERSION = "0.2.0";
+const MISSION_PLANNER_STATE_KEY = "drone_mission_planner_state_v1";
 const DEFAULT_MISSION_DEFAULTS: MissionDefaults = {
   altitudeM: 35,
   speedMps: 4,
+};
+const DEFAULT_GNSS_DENIED_READINESS: GnssDeniedReadiness = {
+  satellite_source_disabled: false,
+  map_position_reset: null,
+  heading_deg: null,
+  home_position: null,
+  estimator_health: "unchecked",
+  updated_at: null,
+};
+const DEFAULT_TERRAIN_CONSTRAINTS: TerrainPlanningConstraints = {
+  min_agl_m: 20,
+  max_terrain_relief_m: 40,
+  min_agl_to_gsd_ratio: 40,
+  max_route_segment_m: 500,
 };
 const LAYER_META: Record<PlanLayer, { label: string; hint: string; icon: typeof Route }> = {
   mission: { label: "Mission", hint: "Takeoff, waypoints, and landing", icon: Route },
@@ -118,6 +174,7 @@ function shellQuote(value: string) {
 }
 
 const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
+const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 
 function supportBundleCommand(remoteProject: string, remoteBundle: string, mavlinkEnv: string) {
   return [
@@ -162,6 +219,46 @@ function terrainProfileLabel(profile?: BundleTerrainProfile) {
   const minAgl = profile.estimated_agl_m?.min;
   if (typeof minAgl === "number") return `${minAgl.toFixed(1)} m`;
   return formatHealthLabel(profile.status);
+}
+
+function terrainConstraintClass(status: TerrainConstraintStatus) {
+  if (status === "passed") return "badge-green";
+  if (status === "failed") return "badge-red";
+  return "badge-yellow";
+}
+
+function terrainConstraintChecks(profile: BundleTerrainProfile | undefined, constraints: TerrainPlanningConstraints) {
+  const minAgl = profile?.estimated_agl_m?.min;
+  const relief = profile?.terrain_elevation_m?.relief;
+  const aglToGsd = profile?.min_agl_to_map_gsd_ratio;
+  const available = profile && profile.status !== "not_provided" && profile.status !== "not_available";
+
+  return [
+    {
+      label: "Min AGL",
+      value: typeof minAgl === "number" ? `${minAgl.toFixed(1)} m` : "n/a",
+      target: `>= ${constraints.min_agl_m} m`,
+      status: available && typeof minAgl === "number"
+        ? (minAgl >= constraints.min_agl_m ? "passed" : "failed")
+        : "unknown",
+    },
+    {
+      label: "Terrain relief",
+      value: typeof relief === "number" ? `${relief.toFixed(1)} m` : "n/a",
+      target: `<= ${constraints.max_terrain_relief_m} m`,
+      status: available && typeof relief === "number"
+        ? (relief <= constraints.max_terrain_relief_m ? "passed" : "failed")
+        : "unknown",
+    },
+    {
+      label: "AGL/GSD",
+      value: typeof aglToGsd === "number" ? `${aglToGsd.toFixed(1)}x` : "n/a",
+      target: `>= ${constraints.min_agl_to_gsd_ratio}x`,
+      status: available && typeof aglToGsd === "number"
+        ? (aglToGsd >= constraints.min_agl_to_gsd_ratio ? "passed" : "failed")
+        : "unknown",
+    },
+  ] satisfies Array<{ label: string; value: string; target: string; status: TerrainConstraintStatus }>;
 }
 
 function qualityCellClass(quality?: string) {
@@ -284,6 +381,14 @@ function missionBounds(region?: { lat_min: number; lat_max: number; lon_min: num
   return [[region.lat_min, region.lon_min], [region.lat_max, region.lon_max]];
 }
 
+function toRad(value: number) {
+  return value * Math.PI / 180;
+}
+
+function toDeg(value: number) {
+  return value * 180 / Math.PI;
+}
+
 function waypointDistanceM(a: Waypoint, b: Waypoint): number {
   const latCenter = ((a.lat + b.lat) / 2) * Math.PI / 180;
   const north = (b.lat - a.lat) * 111_320;
@@ -333,6 +438,11 @@ function planItemLabel(type: MissionItemType, index: number) {
   return `WP${index + 1}`;
 }
 
+function planPointLabel(point?: PlanPoint | null) {
+  if (!point) return "unset";
+  return `${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}`;
+}
+
 function qgcCommandForItem(type: MissionItemType) {
   if (type === "takeoff") return 22;
   if (type === "land") return 21;
@@ -359,9 +469,38 @@ function missionPlanStateCopy(status: MissionPlanStateStatus, activeDevice?: Dev
   return { label: "Bundle ready", detail: "Current bundle is built for local validation." };
 }
 
+function loadMissionPlannerState(): PersistedMissionPlannerState {
+  try {
+    return JSON.parse(localStorage.getItem(MISSION_PLANNER_STATE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveMissionPlannerState(state: PersistedMissionPlannerState) {
+  localStorage.setItem(MISSION_PLANNER_STATE_KEY, JSON.stringify(state));
+}
+
 function formatMissionStateTime(value: string | null) {
   if (!value) return "n/a";
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function planFileStateCopy(path: string | null, dirty: boolean, savedAt: string | null, source: PlanFileSource | null) {
+  if (!path) return { label: "No plan file", detail: "Import or export a .plan file to track file-save status." };
+  const name = path.split(/[\\/]/).pop() || path;
+  if (dirty) return { label: "Unsaved changes", detail: `${name} has local edits that have not been exported.` };
+  const verb = source === "imported" ? "Imported" : "Exported";
+  return { label: "Saved", detail: `${verb} ${name}${savedAt ? ` at ${formatMissionStateTime(savedAt)}` : ""}.` };
+}
+
+function bearingDegrees(from: Waypoint, to: Waypoint) {
+  const lat1 = toRad(from.lat);
+  const lat2 = toRad(to.lat);
+  const deltaLon = toRad(to.lon - from.lon);
+  const y = Math.sin(deltaLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
 function buildMissionPlanPayload({
@@ -374,6 +513,8 @@ function buildMissionPlanPayload({
   rallyPoints,
   visionCheckpoints,
   pipelineConfig,
+  gnssDeniedReadiness,
+  terrainPlanning,
 }: {
   activeLayer: PlanLayer;
   activeDevice?: Device;
@@ -384,6 +525,8 @@ function buildMissionPlanPayload({
   rallyPoints: PlanPoint[];
   visionCheckpoints: PlanPoint[];
   pipelineConfig: PipelineConfig;
+  gnssDeniedReadiness: GnssDeniedReadiness;
+  terrainPlanning: TerrainPlanningMetadata;
 }): MissionPlanPayload {
   return {
     version: PLAN_VERSION,
@@ -424,6 +567,8 @@ function buildMissionPlanPayload({
       feature_method: pipelineConfig.featureMethod,
       max_features: pipelineConfig.maxFeatures,
     },
+    gnss_denied: gnssDeniedReadiness,
+    terrain_planning: terrainPlanning,
   };
 }
 
@@ -473,6 +618,65 @@ function buildQgcPlan(plan: MissionPlanPayload) {
       feature_method: plan.vision.feature_method,
       max_features: plan.vision.max_features,
       checkpoints: plan.vision.checkpoints,
+      gnss_denied: plan.gnss_denied,
+      terrain_planning: plan.terrain_planning,
+    },
+  };
+}
+
+function normalizeGnssDeniedReadiness(value: unknown): GnssDeniedReadiness {
+  const source = value && typeof value === "object" ? value as Partial<GnssDeniedReadiness> : {};
+  const pointOrNull = (point: unknown): PlanPoint | null => {
+    if (!point || typeof point !== "object") return null;
+    const candidate = point as Partial<PlanPoint>;
+    if (!Number.isFinite(candidate.lat) || !Number.isFinite(candidate.lon)) return null;
+    return {
+      id: candidate.id || generateId(),
+      lat: Number(candidate.lat),
+      lon: Number(candidate.lon),
+    };
+  };
+  const estimatorHealth = ["unchecked", "ready", "degraded"].includes(String(source.estimator_health))
+    ? source.estimator_health as EstimatorHealthState
+    : "unchecked";
+  return {
+    satellite_source_disabled: source.satellite_source_disabled === true,
+    map_position_reset: pointOrNull(source.map_position_reset),
+    heading_deg: Number.isFinite(source.heading_deg) ? Number(source.heading_deg) : null,
+    home_position: pointOrNull(source.home_position),
+    estimator_health: estimatorHealth,
+    updated_at: typeof source.updated_at === "string" ? source.updated_at : null,
+  };
+}
+
+function normalizeTerrainPlanningConstraints(value: unknown): TerrainPlanningConstraints {
+  const source = value && typeof value === "object" ? value as Partial<TerrainPlanningConstraints> : {};
+  const safeNumber = (candidate: unknown, fallback: number) => {
+    const value = Number(candidate);
+    return Number.isFinite(value) && value >= 0 ? value : fallback;
+  };
+  return {
+    min_agl_m: safeNumber(source.min_agl_m, DEFAULT_TERRAIN_CONSTRAINTS.min_agl_m),
+    max_terrain_relief_m: safeNumber(source.max_terrain_relief_m, DEFAULT_TERRAIN_CONSTRAINTS.max_terrain_relief_m),
+    min_agl_to_gsd_ratio: safeNumber(source.min_agl_to_gsd_ratio, DEFAULT_TERRAIN_CONSTRAINTS.min_agl_to_gsd_ratio),
+    max_route_segment_m: safeNumber(source.max_route_segment_m, DEFAULT_TERRAIN_CONSTRAINTS.max_route_segment_m),
+  };
+}
+
+function normalizeTerrainPlanningMetadata(value: unknown): TerrainPlanningMetadata {
+  const source = value && typeof value === "object" ? value as Partial<TerrainPlanningMetadata> : {};
+  return {
+    constraints: normalizeTerrainPlanningConstraints(source.constraints ?? source),
+    offline_cache: {
+      map_path: typeof source.offline_cache?.map_path === "string" ? source.offline_cache.map_path : null,
+      status: source.offline_cache?.status === "ready" || source.offline_cache?.status === "missing" || source.offline_cache?.status === "not_selected"
+        ? source.offline_cache.status
+        : "not_selected",
+    },
+    route_segmentation: {
+      max_segment_m: Number(source.route_segmentation?.max_segment_m) || DEFAULT_TERRAIN_CONSTRAINTS.max_route_segment_m,
+      estimated_segment_count: Number(source.route_segmentation?.estimated_segment_count) || 0,
+      mission_distance_m: Number(source.route_segmentation?.mission_distance_m) || 0,
     },
   };
 }
@@ -509,6 +713,8 @@ function parseImportedPlan(text: string): Partial<MissionPlanPayload> {
           .map((point: Partial<PlanPoint>) => ({ id: point.id || generateId(), lat: Number(point.lat), lon: Number(point.lon) }))
         : [],
       vision: parsed.vision,
+      gnss_denied: normalizeGnssDeniedReadiness(parsed.gnss_denied ?? parsed.gnssDenied),
+      terrain_planning: normalizeTerrainPlanningMetadata(parsed.terrain_planning ?? parsed.terrainPlanning),
     };
   }
 
@@ -542,6 +748,9 @@ function parseImportedPlan(text: string): Partial<MissionPlanPayload> {
       },
       geofence: { polygon: fencePolygon },
       rally_points: rallyPoints,
+      vision: parsed.visionNavigation,
+      gnss_denied: normalizeGnssDeniedReadiness(parsed.visionNavigation?.gnss_denied ?? parsed.visionNavigation?.gnssDenied),
+      terrain_planning: normalizeTerrainPlanningMetadata(parsed.visionNavigation?.terrain_planning ?? parsed.visionNavigation?.terrainPlanning),
     };
   }
 
@@ -670,9 +879,11 @@ function MissionMap({
 
 export function MissionPlanner() {
   const { devices, regions, activeDeviceId, setActiveDevice } = useAppStore();
+  const navigate = useNavigate();
   const activeDevice = devices.find((d) => d.id === activeDeviceId);
   const pipelineConfig = useMemo(() => loadPipelineConfig(), []);
   const downloadedRegions = regions.filter((r) => r.last_downloaded);
+  const persistedPlannerState = useMemo(() => loadMissionPlannerState(), []);
 
   const [selectedRegionId, setSelectedRegionId] = useState("");
   const selectedRegion = useMemo(
@@ -694,6 +905,8 @@ export function MissionPlanner() {
   const [fencePoints, setFencePoints] = useState<PlanPoint[]>([]);
   const [rallyPoints, setRallyPoints] = useState<PlanPoint[]>([]);
   const [visionCheckpoints, setVisionCheckpoints] = useState<PlanPoint[]>([]);
+  const [gnssDeniedReadiness, setGnssDeniedReadiness] = useState<GnssDeniedReadiness>(DEFAULT_GNSS_DENIED_READINESS);
+  const [terrainConstraints, setTerrainConstraints] = useState<TerrainPlanningConstraints>(DEFAULT_TERRAIN_CONSTRAINTS);
   const [planMessage, setPlanMessage] = useState("");
   const [mosaicState, setMosaicState] = useState<{
     url: string | null;
@@ -710,10 +923,15 @@ export function MissionPlanner() {
   const [commandOutput, setCommandOutput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
-  const [lastBuiltFingerprint, setLastBuiltFingerprint] = useState<string | null>(null);
-  const [lastUploadedFingerprint, setLastUploadedFingerprint] = useState<string | null>(null);
-  const [lastBuiltAt, setLastBuiltAt] = useState<string | null>(null);
-  const [lastUploadedAt, setLastUploadedAt] = useState<string | null>(null);
+  const [lastBuiltFingerprint, setLastBuiltFingerprint] = useState<string | null>(() => persistedPlannerState.lastBuiltFingerprint ?? null);
+  const [lastUploadedFingerprint, setLastUploadedFingerprint] = useState<string | null>(() => persistedPlannerState.lastUploadedFingerprint ?? null);
+  const [lastBuiltAt, setLastBuiltAt] = useState<string | null>(() => persistedPlannerState.lastBuiltAt ?? null);
+  const [lastUploadedAt, setLastUploadedAt] = useState<string | null>(() => persistedPlannerState.lastUploadedAt ?? null);
+  const [planFilePath, setPlanFilePath] = useState<string | null>(() => persistedPlannerState.planFilePath ?? null);
+  const [planFileFingerprint, setPlanFileFingerprint] = useState<string | null>(() => persistedPlannerState.planFileFingerprint ?? null);
+  const [planFileSavedAt, setPlanFileSavedAt] = useState<string | null>(() => persistedPlannerState.planFileSavedAt ?? null);
+  const [planFileSource, setPlanFileSource] = useState<PlanFileSource | null>(() => persistedPlannerState.planFileSource ?? null);
+  const [pendingPlanFile, setPendingPlanFile] = useState<{ path: string; source: PlanFileSource; savedAt: string } | null>(null);
 
   const refreshSupportBundles = async () => {
     setSupportBundles(await cmd.listSupportBundles(SUPPORT_DOWNLOAD_DIR));
@@ -775,6 +993,9 @@ export function MissionPlanner() {
   );
   const missionDistance = useMemo(() => missionDistanceM(missionPath), [missionPath]);
   const selectedMissionItem = missionItems.find((item) => item.id === selectedMissionItemId);
+  const gnssReferenceItem = selectedMissionItem
+    ?? missionItems.find((item) => item.type === "takeoff")
+    ?? missionItems[0];
   const effectiveMissionPlacementType = missionItems.length === 0 ? "takeoff" : missionPlacementType;
   const regionSize = useMemo(() => regionDimensionsM(selectedRegion), [selectedRegion]);
   const estimatedTimeMin = missionDefaults.speedMps > 0
@@ -782,6 +1003,28 @@ export function MissionPlanner() {
     : 0;
   const georefConfidence = selectedRegion?.georef_confidence ?? (selectedRegion ? 1 : 0);
   const hasVisionReadyMap = !!selectedRegion && georefConfidence >= 0.7 && (selectedRegion.gsd_m_per_px ?? 1) <= 1;
+  const terrainPlanningMetadata = useMemo<TerrainPlanningMetadata>(() => {
+    const maxSegment = terrainConstraints.max_route_segment_m;
+    const estimatedSegments = maxSegment > 0 && missionDistance > 0
+      ? Math.max(1, Math.ceil(missionDistance / maxSegment))
+      : 0;
+    return {
+      constraints: terrainConstraints,
+      offline_cache: {
+        map_path: selectedRegion ? mosaicState.path || null : null,
+        status: !selectedRegion ? "not_selected" : mosaicState.error ? "missing" : "ready",
+      },
+      route_segmentation: {
+        max_segment_m: maxSegment,
+        estimated_segment_count: estimatedSegments,
+        mission_distance_m: Number(missionDistance.toFixed(2)),
+      },
+    };
+  }, [terrainConstraints, missionDistance, selectedRegion, mosaicState.error, mosaicState.path]);
+  const terrainChecks = useMemo(
+    () => terrainConstraintChecks(bundleResult?.geospatial_health?.terrain_profile, terrainConstraints),
+    [bundleResult?.geospatial_health?.terrain_profile, terrainConstraints],
+  );
   const planPayload = useMemo(
     () => buildMissionPlanPayload({
       activeLayer,
@@ -793,6 +1036,8 @@ export function MissionPlanner() {
       rallyPoints,
       visionCheckpoints,
       pipelineConfig,
+      gnssDeniedReadiness,
+      terrainPlanning: terrainPlanningMetadata,
     }),
     [
       activeLayer,
@@ -806,6 +1051,8 @@ export function MissionPlanner() {
       rallyPoints,
       visionCheckpoints,
       pipelineConfig,
+      gnssDeniedReadiness,
+      terrainPlanningMetadata,
     ],
   );
   const qgcPlan = useMemo(() => buildQgcPlan(planPayload), [planPayload]);
@@ -841,6 +1088,39 @@ export function MissionPlanner() {
             : "not_uploaded"
           : "bundle_ready";
   const missionPlanState = missionPlanStateCopy(missionPlanStateStatus, activeDevice);
+  const planFileDirty = !!planFilePath && planFileFingerprint !== qgcPlanJson;
+  const planFileState = planFileStateCopy(planFilePath, planFileDirty, planFileSavedAt, planFileSource);
+
+  useEffect(() => {
+    if (!pendingPlanFile) return;
+    setPlanFilePath(pendingPlanFile.path);
+    setPlanFileSource(pendingPlanFile.source);
+    setPlanFileSavedAt(pendingPlanFile.savedAt);
+    setPlanFileFingerprint(qgcPlanJson);
+    setPendingPlanFile(null);
+  }, [pendingPlanFile, qgcPlanJson]);
+
+  useEffect(() => {
+    saveMissionPlannerState({
+      lastBuiltFingerprint,
+      lastUploadedFingerprint,
+      lastBuiltAt,
+      lastUploadedAt,
+      planFilePath,
+      planFileFingerprint,
+      planFileSavedAt,
+      planFileSource,
+    });
+  }, [
+    lastBuiltFingerprint,
+    lastUploadedFingerprint,
+    lastBuiltAt,
+    lastUploadedAt,
+    planFilePath,
+    planFileFingerprint,
+    planFileSavedAt,
+    planFileSource,
+  ]);
 
   const pickRepo = async () => {
     const dir = await open({ directory: true, multiple: false, title: "Select Drone repo folder" });
@@ -890,6 +1170,53 @@ export function MissionPlanner() {
     }
   };
 
+  const updateGnssDeniedReadiness = (patch: Partial<GnssDeniedReadiness>) => {
+    setGnssDeniedReadiness((current) => ({
+      ...current,
+      ...patch,
+      updated_at: new Date().toISOString(),
+    }));
+    setBundleResult(null);
+  };
+
+  const updateTerrainConstraint = (key: keyof TerrainPlanningConstraints, value: number) => {
+    setTerrainConstraints((current) => ({
+      ...current,
+      [key]: Number.isFinite(value) && value >= 0 ? value : current[key],
+    }));
+    setBundleResult(null);
+  };
+
+  const setGnssMapPosition = () => {
+    if (!gnssReferenceItem) {
+      setPlanMessage("Select or create a mission item before setting map position.");
+      return;
+    }
+    updateGnssDeniedReadiness({
+      map_position_reset: makePoint(gnssReferenceItem.lat, gnssReferenceItem.lon),
+    });
+  };
+
+  const setGnssHomePosition = () => {
+    if (!gnssReferenceItem) {
+      setPlanMessage("Select or create a mission item before setting home position.");
+      return;
+    }
+    updateGnssDeniedReadiness({
+      home_position: makePoint(gnssReferenceItem.lat, gnssReferenceItem.lon),
+    });
+  };
+
+  const setGnssHeadingFromPath = () => {
+    if (missionItems.length < 2) {
+      setPlanMessage("Add at least two mission items before deriving heading from the path.");
+      return;
+    }
+    updateGnssDeniedReadiness({
+      heading_deg: Number(bearingDegrees(missionItems[0], missionItems[1]).toFixed(1)),
+    });
+  };
+
   const updateMissionItem = (id: string, patch: Partial<MissionItem>) => {
     setMissionItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
     setBundleResult(null);
@@ -936,6 +1263,11 @@ export function MissionPlanner() {
     });
     if (!path) return;
     await writeTextFile(path, qgcPlanJson);
+    const savedAt = new Date().toISOString();
+    setPlanFilePath(path);
+    setPlanFileSource("exported");
+    setPlanFileSavedAt(savedAt);
+    setPlanFileFingerprint(qgcPlanJson);
     setPlanMessage(`Exported mission plan to ${path}`);
   };
 
@@ -960,7 +1292,10 @@ export function MissionPlanner() {
       if (imported.geofence?.polygon) setFencePoints(imported.geofence.polygon);
       if (imported.rally_points) setRallyPoints(imported.rally_points);
       if (imported.vision?.checkpoints) setVisionCheckpoints(imported.vision.checkpoints);
+      setGnssDeniedReadiness(imported.gnss_denied ?? DEFAULT_GNSS_DENIED_READINESS);
+      setTerrainConstraints(imported.terrain_planning?.constraints ?? DEFAULT_TERRAIN_CONSTRAINTS);
       setBundleResult(null);
+      setPendingPlanFile({ path, source: "imported", savedAt: new Date().toISOString() });
       setPlanMessage(`Imported mission plan from ${path}`);
     } catch (e) {
       setError(String(e));
@@ -1030,6 +1365,30 @@ export function MissionPlanner() {
     const bundle = await buildBundle();
     if (!bundle) return;
     if (activeDevice.kind === "pi5") await uploadBundle(bundle);
+  };
+
+  const openBenchReportSetup = () => {
+    if (!activeDevice || activeDevice.kind !== "pi5") return;
+    sessionStorage.setItem(
+      MODULE_SETUP_HANDOFF_KEY,
+      JSON.stringify({
+        version: 1,
+        source: "mission-planner",
+        action: "bench-report",
+        created_at: new Date().toISOString(),
+        device_id: activeDevice.id,
+        device_name: activeDevice.name,
+        remote_bundle_dir: remoteBundleDir,
+        local_bundle_dir: bundleResult?.bundle_dir ?? effectiveBundleDir,
+        region_id: selectedRegion?.id ?? null,
+        region_name: selectedRegion?.name ?? null,
+        plan_fingerprint: planFingerprint,
+        mission_plan_state: missionPlanStateStatus,
+        built_at: lastBuiltAt,
+        uploaded_at: lastUploadedAt,
+      }),
+    );
+    navigate("/devices");
   };
 
   const runPiCommand = async (label: string, command: string) => {
@@ -1408,6 +1767,14 @@ export function MissionPlanner() {
               </span>
             </div>
             <p className="text-[11px] text-slate-500">{missionPlanState.detail}</p>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-bg-card px-2 py-1.5">
+              <span className="text-[11px] text-slate-500">Plan file</span>
+              <span className={planFileDirty ? "badge-yellow" : planFilePath ? "badge-green" : "badge-yellow"}>
+                {planFileDirty || !planFilePath ? <AlertTriangle size={11} /> : <CheckCircle2 size={11} />}
+                {planFileState.label}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">{planFileState.detail}</p>
             <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-500">
               <span>built {formatMissionStateTime(lastBuiltAt)}</span>
               <span>uploaded {formatMissionStateTime(lastUploadedAt)}</span>
@@ -1503,6 +1870,169 @@ export function MissionPlanner() {
 
           <div className="card space-y-3">
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+              <Navigation size={14} className="text-cyan-400" /> GNSS-Denied Readiness
+            </h3>
+            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+              <div>
+                <div className="text-sm text-slate-200">Satellite source disabled</div>
+                <div className="text-[11px] text-slate-500">
+                  Reference {gnssReferenceItem ? planItemLabel(gnssReferenceItem.type, missionItems.indexOf(gnssReferenceItem)) : "unset"}
+                </div>
+              </div>
+              <button
+                onClick={() => updateGnssDeniedReadiness({ satellite_source_disabled: !gnssDeniedReadiness.satellite_source_disabled })}
+                className={cn(
+                  "w-11 h-6 rounded-full border transition-colors relative",
+                  gnssDeniedReadiness.satellite_source_disabled ? "bg-cyan-500/20 border-cyan-500/50" : "bg-bg-elevated border-border",
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute top-0.5 h-5 w-5 rounded-full bg-slate-300 transition-transform",
+                    gnssDeniedReadiness.satellite_source_disabled ? "translate-x-5" : "translate-x-0.5",
+                  )}
+                />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="rounded-lg border border-border bg-bg-card px-2 py-1.5">
+                <span className="block text-slate-500">Map reset</span>
+                <span className="font-mono text-slate-300">{planPointLabel(gnssDeniedReadiness.map_position_reset)}</span>
+              </div>
+              <div className="rounded-lg border border-border bg-bg-card px-2 py-1.5">
+                <span className="block text-slate-500">Home reset</span>
+                <span className="font-mono text-slate-300">{planPointLabel(gnssDeniedReadiness.home_position)}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="label">Heading deg</label>
+                <input
+                  className="input-field"
+                  type="number"
+                  value={gnssDeniedReadiness.heading_deg ?? ""}
+                  onChange={(event) => updateGnssDeniedReadiness({
+                    heading_deg: event.target.value === "" ? null : Number(event.target.value),
+                  })}
+                />
+              </div>
+              <div>
+                <label className="label">Estimator health</label>
+                <select
+                  className="input-field"
+                  value={gnssDeniedReadiness.estimator_health}
+                  onChange={(event) => updateGnssDeniedReadiness({ estimator_health: event.target.value as EstimatorHealthState })}
+                >
+                  <option value="unchecked">Unchecked</option>
+                  <option value="ready">Ready</option>
+                  <option value="degraded">Degraded</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              <button onClick={setGnssMapPosition} className="btn-secondary justify-center text-xs py-1.5 px-2">
+                Map
+              </button>
+              <button onClick={setGnssHomePosition} className="btn-secondary justify-center text-xs py-1.5 px-2">
+                Home
+              </button>
+              <button onClick={setGnssHeadingFromPath} className="btn-secondary justify-center text-xs py-1.5 px-2">
+                Heading
+              </button>
+              <button onClick={() => updateGnssDeniedReadiness(DEFAULT_GNSS_DENIED_READINESS)} className="btn-secondary justify-center text-xs py-1.5 px-2 text-red-400 border-red-500/20">
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div className="card space-y-3">
+            <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+              <ScanSearch size={14} className="text-cyan-400" /> Terrain Planning
+            </h3>
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-bg-surface px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-sm text-slate-200">Offline map cache</div>
+                <div className="text-[11px] text-slate-500 font-mono truncate">
+                  {terrainPlanningMetadata.offline_cache.map_path ?? "No map selected"}
+                </div>
+              </div>
+              <span className={terrainPlanningMetadata.offline_cache.status === "ready" ? "badge-green" : "badge-yellow"}>
+                {terrainPlanningMetadata.offline_cache.status === "ready" ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />}
+                {formatHealthLabel(terrainPlanningMetadata.offline_cache.status)}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="label">Min AGL m</label>
+                <input
+                  className="input-field"
+                  type="number"
+                  min={0}
+                  value={terrainConstraints.min_agl_m}
+                  onChange={(event) => updateTerrainConstraint("min_agl_m", Number(event.target.value))}
+                />
+              </div>
+              <div>
+                <label className="label">Max relief m</label>
+                <input
+                  className="input-field"
+                  type="number"
+                  min={0}
+                  value={terrainConstraints.max_terrain_relief_m}
+                  onChange={(event) => updateTerrainConstraint("max_terrain_relief_m", Number(event.target.value))}
+                />
+              </div>
+              <div>
+                <label className="label">Min AGL/GSD</label>
+                <input
+                  className="input-field"
+                  type="number"
+                  min={0}
+                  value={terrainConstraints.min_agl_to_gsd_ratio}
+                  onChange={(event) => updateTerrainConstraint("min_agl_to_gsd_ratio", Number(event.target.value))}
+                />
+              </div>
+              <div>
+                <label className="label">Max segment m</label>
+                <input
+                  className="input-field"
+                  type="number"
+                  min={0}
+                  value={terrainConstraints.max_route_segment_m}
+                  onChange={(event) => updateTerrainConstraint("max_route_segment_m", Number(event.target.value))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px]">
+              <div className="rounded-lg border border-border bg-bg-surface px-2 py-1.5">
+                <span className="block text-slate-500">Distance</span>
+                <span className="text-slate-200 font-medium">{(terrainPlanningMetadata.route_segmentation.mission_distance_m / 1000).toFixed(2)} km</span>
+              </div>
+              <div className="rounded-lg border border-border bg-bg-surface px-2 py-1.5">
+                <span className="block text-slate-500">Segments</span>
+                <span className="text-slate-200 font-medium">{terrainPlanningMetadata.route_segmentation.estimated_segment_count || "n/a"}</span>
+              </div>
+              <div className="rounded-lg border border-border bg-bg-surface px-2 py-1.5">
+                <span className="block text-slate-500">Profile</span>
+                <span className="text-slate-200 font-medium">{terrainProfileLabel(bundleResult?.geospatial_health?.terrain_profile)}</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              {terrainChecks.map((check) => (
+                <div key={check.label} className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-bg-card px-2 py-1.5 text-[11px]">
+                  <span className="text-slate-500">{check.label}</span>
+                  <span className="text-slate-300 font-mono">{check.value}</span>
+                  <span className={terrainConstraintClass(check.status)}>
+                    {check.status === "passed" ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />}
+                    {check.target}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card space-y-3">
+            <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
               <UploadIcon size={14} className="text-cyan-400" /> Mission Bundle
             </h3>
             <div>
@@ -1537,6 +2067,16 @@ export function MissionPlanner() {
               {building || uploading ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
               {activeDevice.kind === "pi5" ? "Build and Upload Mission Bundle" : "Build Mission Bundle"}
             </button>
+            {activeDevice.kind === "pi5" && (
+              <button
+                onClick={openBenchReportSetup}
+                disabled={missionPlanStateStatus !== "uploaded" || !bundleResult}
+                className="btn-secondary w-full justify-center"
+              >
+                <Archive size={14} />
+                Open Bench Report In Module Setup
+              </button>
+            )}
             {uploading && Object.keys(fileProgress).length > 0 && (
               <div className="space-y-2 max-h-40 overflow-y-auto">
                 {Object.entries(fileProgress).map(([file, pct]) => (

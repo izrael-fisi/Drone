@@ -30,6 +30,13 @@ sudo reboot
 Run the bootstrap script as your normal Pi user, not with `sudo`. The script
 uses `sudo` internally only for the package/service steps that require it.
 
+After the Pi is on the same Wi-Fi network as the desktop app, the app's Devices
+page can scan common Raspberry Pi mDNS hostnames and local SSH neighbors. The
+scan stores recent discoveries locally so the module can be selected again even
+if it later resolves through a different hostname or IP. The scan also shows
+the desktop's active private/link-local IPv4 interfaces and subnet hints to help
+diagnose wrong-Wi-Fi, guest-network, or mDNS failures.
+
 The bootstrap script installs:
 
 - camera tools when available
@@ -491,3 +498,9 @@ VISION_NAV_REPLAY_CASE_MANIFEST="$HOME/Drone/replay_cases.json" \
 
 Replay-gate reports are written under `summaries/replay_gates/` inside the
 support bundle.
+
+The desktop Module Setup `Bench Report` action runs the terrain bundle validator
+against the configured deployed bundle, creates this same support bundle, and
+downloads the latest zip back to `~/DroneTransfer/from-pi/support-bundles/` on
+the desktop. It also lets you save a local JSON setup report containing the
+check results and downloaded support-bundle summaries.
