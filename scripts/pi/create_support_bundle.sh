@@ -8,6 +8,7 @@ output_dir="${VISION_NAV_SUPPORT_OUTPUT_DIR:-$HOME/DroneTransfer/outgoing/suppor
 mavlink_endpoint="${VISION_NAV_MAVLINK_ENDPOINT:-}"
 feature_method_benchmark="${VISION_NAV_FEATURE_METHOD_BENCHMARK:-$HOME/DroneTransfer/outgoing/feature-method-bench}"
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json}"
+field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.json}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
 
 if [[ "$venv_python" == */* ]]; then
@@ -80,6 +81,10 @@ fi
 
 if [[ -n "$field_evidence_report" && -e "$field_evidence_report" ]]; then
   args+=(--field-evidence-report "$field_evidence_report")
+fi
+
+if [[ -n "$field_collection_plan" && -e "$field_collection_plan" ]]; then
+  args+=(--field-collection-plan "$field_collection_plan")
 fi
 
 if [[ -n "$threshold_tuning_report" && -e "$threshold_tuning_report" ]]; then

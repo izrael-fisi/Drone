@@ -45,6 +45,7 @@ import type {
   AutonomyEvidenceWorkflowReportFile,
   AutonomyReadinessReportFile,
   Device,
+  FieldCollectionPlanFile,
   FieldEvidenceReportFile,
   FieldEvidenceTemplateFile,
   FeatureMethodBenchmarkReportFile,
@@ -282,6 +283,22 @@ function parseFieldEvidenceManifest(output: string) {
     ?.replace("__VISION_NAV_FIELD_MANIFEST__=", "");
 }
 
+function parseFieldCollectionPlan(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_FIELD_COLLECTION_PLAN__="))
+    ?.replace("__VISION_NAV_FIELD_COLLECTION_PLAN__=", "");
+}
+
+function parseFieldCollectionPlanMarkdown(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_FIELD_COLLECTION_PLAN_MD__="))
+    ?.replace("__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=", "");
+}
+
 function parseFeatureMethodReport(output: string) {
   return output
     .split(/\r?\n/)
@@ -388,6 +405,14 @@ function fieldEvidenceTemplateCommand(remoteProject: string, remoteBundle: strin
     "VISION_NAV_FIELD_TEMPLATE_FORCE=1",
   ].join(" ");
   return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/create_field_evidence_template.sh`;
+}
+
+function fieldCollectionPlanCommand(remoteProject: string, remoteBundle: string, siteName: string) {
+  const env = [
+    `VISION_NAV_FIELD_SITE_NAME=${shellQuote(siteName)}`,
+    `VISION_NAV_FIELD_BUNDLE=${shellQuote(remoteBundle)}`,
+  ].join(" ");
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/create_field_collection_plan.sh`;
 }
 
 function featureMethodBenchmarkCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {
@@ -1026,6 +1051,8 @@ function AutonomyEvidenceWorkflowReportList({
                 <span>markers {report.marker_count}</span>
                 {report.readiness_report_path && <span>readiness report</span>}
                 {report.evidence_package_path && <span>evidence package</span>}
+                {report.field_collection_plan_path && <span>field plan</span>}
+                {report.field_collection_plan_markdown_path && <span>field checklist</span>}
                 {report.px4_receiver_report_path && <span>px4 receiver</span>}
               </div>
             </div>
@@ -1283,6 +1310,132 @@ function FieldEvidenceTemplateList({
 
 function formatAcceptedRate(value?: number) {
   return value == null ? "n/a" : `${Math.round(value * 100)}%`;
+}
+
+function FieldCollectionPlanList({
+  plans,
+  downloadDir,
+  onRefresh,
+}: {
+  plans: FieldCollectionPlanFile[];
+  downloadDir: string;
+  onRefresh: () => void;
+}) {
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reveal = async (path: string) => {
+    setBusyPath(path);
+    setActionError(null);
+    try {
+      await cmd.revealSupportBundle(path);
+    } catch (err) {
+      setActionError(String(err));
+    } finally {
+      setBusyPath(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="text-xs font-medium text-slate-300 flex items-center gap-2">
+            <FileText size={13} className="text-cyan-400" /> Field Collection Plans
+          </h4>
+          <p className="text-[10px] text-slate-500 font-mono truncate">{downloadDir}</p>
+        </div>
+        <button onClick={onRefresh} className="btn-secondary text-xs py-1 px-2">
+          <RefreshCw size={11} />
+          Refresh
+        </button>
+      </div>
+      {actionError && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
+      {plans.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-slate-500">
+          No downloaded field collection plan yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {plans.slice(0, 3).map((file) => {
+            const registered = file.summary.registered_count ?? 0;
+            const required = file.summary.required_count ?? file.conditions.length;
+            const remaining =
+              (file.summary.placeholder_count ?? 0) +
+              (file.summary.missing_count ?? 0) +
+              (file.summary.registered_missing_log_count ?? 0);
+            const revealPath = file.markdown_path ?? file.path;
+            return (
+              <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className={readinessBadgeClass(file.status)}>
+                        {readinessIcon(file.status)}
+                        {formatReadinessLabel(file.status)}
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-500">
+                        registered {registered}/{required}
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-500">
+                        remaining {remaining}
+                      </span>
+                      {file.site_name && <span className="font-mono text-[10px] text-slate-500">{file.site_name}</span>}
+                      {file.markdown_path && <span className="font-mono text-[10px] text-cyan-400">markdown</span>}
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
+                      {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
+                    </div>
+                    <div className="mt-1 text-[10px] text-slate-500 truncate">{file.path}</div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => navigator.clipboard.writeText(file.path)}
+                      className="btn-secondary text-xs py-1 px-2"
+                      title="Copy plan path"
+                    >
+                      <Copy size={11} />
+                    </button>
+                    {file.markdown_path && (
+                      <button
+                        onClick={() => navigator.clipboard.writeText(file.markdown_path ?? "")}
+                        className="btn-secondary text-xs py-1 px-2"
+                        title="Copy Markdown checklist path"
+                      >
+                        MD
+                      </button>
+                    )}
+                    <button
+                      onClick={() => reveal(revealPath)}
+                      disabled={busyPath === revealPath}
+                      className="btn-secondary text-xs py-1 px-2"
+                      title="Show collection plan"
+                    >
+                      {busyPath === revealPath ? <Loader2 size={11} className="animate-spin" /> : <FolderOpen size={11} />}
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {file.conditions.slice(0, 8).map((condition) => (
+                    <div key={`${file.path}-${condition.condition}`} className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500">
+                      <span className={cn(readinessBadgeClass(condition.status), "text-[10px]")}>
+                        {formatReadinessLabel(condition.status)}
+                      </span>
+                      <span className="truncate">{formatReadinessLabel(condition.condition)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function formatPosition(value: unknown) {
@@ -1658,6 +1811,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [autonomyWorkflowReports, setAutonomyWorkflowReports] = useState<AutonomyEvidenceWorkflowReportFile[]>([]);
   const [px4ReceiverReports, setPx4ReceiverReports] = useState<Px4ReceiverReportFile[]>([]);
   const [fieldEvidenceTemplates, setFieldEvidenceTemplates] = useState<FieldEvidenceTemplateFile[]>([]);
+  const [fieldCollectionPlans, setFieldCollectionPlans] = useState<FieldCollectionPlanFile[]>([]);
   const [fieldEvidenceReports, setFieldEvidenceReports] = useState<FieldEvidenceReportFile[]>([]);
   const [featureBenchmarkReports, setFeatureBenchmarkReports] = useState<FeatureMethodBenchmarkReportFile[]>([]);
   const [thresholdTuningReports, setThresholdTuningReports] = useState<ThresholdTuningReportFile[]>([]);
@@ -1669,6 +1823,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [autonomyWorkflowLocalPath, setAutonomyWorkflowLocalPath] = useState<string | null>(null);
   const [fieldTemplateLocalPath, setFieldTemplateLocalPath] = useState<string | null>(null);
   const [fieldManifestLocalPath, setFieldManifestLocalPath] = useState<string | null>(null);
+  const [fieldCollectionPlanLocalPath, setFieldCollectionPlanLocalPath] = useState<string | null>(null);
+  const [fieldCollectionPlanMarkdownLocalPath, setFieldCollectionPlanMarkdownLocalPath] = useState<string | null>(null);
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
   const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
   const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => defaultFieldCaseForm());
@@ -1697,6 +1853,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       setAutonomyWorkflowLocalPath(null);
       setFieldTemplateLocalPath(null);
       setFieldManifestLocalPath(null);
+      setFieldCollectionPlanLocalPath(null);
+      setFieldCollectionPlanMarkdownLocalPath(null);
       setError(null);
     }
   }, [selectedDeviceId]);
@@ -1749,6 +1907,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const refreshFieldCollectionPlans = async () => {
+    try {
+      setFieldCollectionPlans(await cmd.listFieldCollectionPlans(AUTONOMY_REPORT_DOWNLOAD_DIR));
+    } catch {
+      setFieldCollectionPlans([]);
+    }
+  };
+
   const refreshFeatureBenchmarkReports = async () => {
     try {
       setFeatureBenchmarkReports(await cmd.listFeatureMethodBenchmarkReports(FEATURE_BENCH_DOWNLOAD_DIR));
@@ -1771,6 +1937,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     refreshAutonomyWorkflowReports();
     refreshPx4ReceiverReports();
     refreshFieldEvidenceTemplates();
+    refreshFieldCollectionPlans();
     refreshFieldEvidenceReports();
     refreshFeatureBenchmarkReports();
     refreshThresholdTuningReports();
@@ -2204,6 +2371,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const remoteReport = parseAutonomyReadinessReport(output);
       const remoteHandoff = parseAutonomyReadinessHandoff(output);
       const remoteEvidencePackage = parseAutonomyEvidencePackage(output);
+      const remoteFieldCollectionPlan = parseFieldCollectionPlan(output);
+      const remoteFieldCollectionPlanMarkdown = parseFieldCollectionPlanMarkdown(output);
       const remotePx4Report = parsePx4SitlReport(output);
       if (!remoteWorkflow) {
         setResult("autonomy-evidence-workflow", {
@@ -2276,6 +2445,38 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         setAutonomyEvidencePackageLocalPath(downloadedPackage.local_path);
         downloadText += `\n\n$ download evidence package\nSaved to ${downloadedPackage.local_path}\n[${downloadedPackage.bytes_received} bytes]`;
       }
+      if (remoteFieldCollectionPlan) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download field collection plan\nDownloading ${remoteFieldCollectionPlan}...`,
+        });
+        const downloadedPlan = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteFieldCollectionPlan,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldCollectionPlanLocalPath(downloadedPlan.local_path);
+        downloadText += `\n\n$ download field collection plan\nSaved to ${downloadedPlan.local_path}\n[${downloadedPlan.bytes_received} bytes]`;
+      }
+      if (remoteFieldCollectionPlanMarkdown) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download field collection checklist\nDownloading ${remoteFieldCollectionPlanMarkdown}...`,
+        });
+        const downloadedMarkdown = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteFieldCollectionPlanMarkdown,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldCollectionPlanMarkdownLocalPath(downloadedMarkdown.local_path);
+        downloadText += `\n\n$ download field collection checklist\nSaved to ${downloadedMarkdown.local_path}\n[${downloadedMarkdown.bytes_received} bytes]`;
+      }
       if (remotePx4Report) {
         setResult("autonomy-evidence-workflow", {
           status: "running",
@@ -2298,6 +2499,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         exitCode: result.exit_code,
       });
       await refreshAutonomyWorkflowReports();
+      await refreshFieldCollectionPlans();
       await refreshAutonomyReports();
       await refreshPx4ReceiverReports();
     } catch (err) {
@@ -2545,6 +2747,82 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const createFieldCollectionPlan = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before creating a field collection plan.");
+      return;
+    }
+    const siteName = safeReportName(form.name || form.host || "field-site");
+    setRunningStep("field-collection-plan");
+    setError(null);
+    setResult("field-collection-plan", { status: "running", output: "$ Create Field Collection Plan\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        fieldCollectionPlanCommand(remoteProject, remoteBundle, siteName),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remotePlan = parseFieldCollectionPlan(output);
+      const remoteMarkdown = parseFieldCollectionPlanMarkdown(output);
+      if (!remotePlan) {
+        setResult("field-collection-plan", {
+          status: result.exit_code === 0 ? "passed" : "failed",
+          output: `$ Create Field Collection Plan\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      setResult("field-collection-plan", {
+        status: "running",
+        output: `$ Create Field Collection Plan\n${output}\n\n$ download field collection plan\nDownloading ${remotePlan}...`,
+      });
+      const downloadedPlan = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remotePlan,
+        AUTONOMY_REPORT_DOWNLOAD_DIR,
+      );
+      setFieldCollectionPlanLocalPath(downloadedPlan.local_path);
+      let markdownDownloadText = "";
+      if (remoteMarkdown) {
+        setResult("field-collection-plan", {
+          status: "running",
+          output: `$ Create Field Collection Plan\n${output}\n\n$ download field collection plan\nSaved to ${downloadedPlan.local_path}\n[${downloadedPlan.bytes_received} bytes]\n\n$ download field checklist\nDownloading ${remoteMarkdown}...`,
+        });
+        const downloadedMarkdown = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteMarkdown,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldCollectionPlanMarkdownLocalPath(downloadedMarkdown.local_path);
+        markdownDownloadText = `\n\n$ download field checklist\nSaved to ${downloadedMarkdown.local_path}\n[${downloadedMarkdown.bytes_received} bytes]`;
+      } else {
+        setFieldCollectionPlanMarkdownLocalPath(null);
+      }
+
+      setResult("field-collection-plan", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ Create Field Collection Plan\n${output}\n\n$ download field collection plan\nSaved to ${downloadedPlan.local_path}\n[${downloadedPlan.bytes_received} bytes]${markdownDownloadText}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+      await refreshFieldCollectionPlans();
+    } catch (err) {
+      setResult("field-collection-plan", { status: "failed", output: `$ Create Field Collection Plan\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const syncProject = async () => {
     const resolvedAuth = auth();
     if (!resolvedAuth || !form.host) {
@@ -2749,6 +3027,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       detail: "Validates the deployed terrain bundle, creates a Pi support bundle, and downloads it.",
     },
     {
+      id: "field-collection-plan",
+      title: "Field Collection Plan",
+      detail: "Creates and downloads a JSON/Markdown checklist for the remaining real-world replay cases.",
+    },
+    {
       id: "feature-benchmark",
       title: "Feature Benchmark",
       detail: "Compares ORB, AKAZE, SIFT, and neural placeholders on the latest field replay log.",
@@ -2786,6 +3069,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     if (step.id === "threshold-tuning") {
       await runThresholdTuning();
+      return;
+    }
+    if (step.id === "field-collection-plan") {
+      await createFieldCollectionPlan();
       return;
     }
     if (step.id === "autonomy-evidence-workflow") {
@@ -2872,6 +3159,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         autonomy_evidence_package_local_path: autonomyEvidencePackageLocalPath,
         field_template_local_path: fieldTemplateLocalPath,
         field_manifest_local_path: fieldManifestLocalPath,
+        field_collection_plan_local_path: fieldCollectionPlanLocalPath,
+        field_collection_plan_markdown_local_path: fieldCollectionPlanMarkdownLocalPath,
         feature_benchmark_download_dir: FEATURE_BENCH_DOWNLOAD_DIR,
         px4_receiver_download_dir: PX4_RECEIVER_DOWNLOAD_DIR,
         runtime_status_download_dir: RUNTIME_STATUS_DOWNLOAD_DIR,
@@ -2929,6 +3218,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       downloaded_autonomy_reports: autonomyReports.slice(0, 5),
       downloaded_px4_receiver_reports: px4ReceiverReports.slice(0, 5),
       downloaded_field_evidence_templates: fieldEvidenceTemplates.slice(0, 5),
+      downloaded_field_collection_plans: fieldCollectionPlans.slice(0, 5),
       downloaded_field_evidence_reports: fieldEvidenceReports.slice(0, 5),
       downloaded_feature_benchmark_reports: featureBenchmarkReports.slice(0, 5),
       downloaded_threshold_tuning_reports: thresholdTuningReports.slice(0, 5),
@@ -3376,6 +3666,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                     Create Template
                   </button>
                   <button
+                    onClick={createFieldCollectionPlan}
+                    disabled={!connectionReady || !!runningStep}
+                    className="btn-secondary text-xs py-1 px-3"
+                  >
+                    {runningStep === "field-collection-plan" ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />}
+                    Create Plan
+                  </button>
+                  <button
                     onClick={registerFieldEvidenceCase}
                     disabled={!connectionReady || !!runningStep || !fieldCase.caseName.trim() || !fieldCase.conditions.trim()}
                     className="btn-secondary text-xs py-1 px-3"
@@ -3455,6 +3753,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               {results["field-template"]?.output && selectedOutputId !== "field-template" && (
                 <button onClick={() => setSelectedOutputId("field-template")} className="text-[10px] text-cyan-400 hover:text-cyan-300">
                   Show field template output
+                </button>
+              )}
+              {results["field-collection-plan"]?.output && selectedOutputId !== "field-collection-plan" && (
+                <button onClick={() => setSelectedOutputId("field-collection-plan")} className="text-[10px] text-cyan-400 hover:text-cyan-300">
+                  Show field plan output
                 </button>
               )}
             </div>
@@ -3616,6 +3919,35 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 </button>
               </div>
             )}
+            {fieldCollectionPlanLocalPath && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
+                <span className="min-w-0">
+                  Field collection plan saved to <span className="font-mono break-all">{fieldCollectionPlanLocalPath}</span>
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(fieldCollectionPlanLocalPath)}
+                  className="btn-secondary text-xs py-1 px-2 shrink-0"
+                  title="Copy field collection plan path"
+                >
+                  <Copy size={11} />
+                </button>
+              </div>
+            )}
+            {fieldCollectionPlanMarkdownLocalPath && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
+                <span className="min-w-0">
+                  Field collection checklist saved to{" "}
+                  <span className="font-mono break-all">{fieldCollectionPlanMarkdownLocalPath}</span>
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(fieldCollectionPlanMarkdownLocalPath)}
+                  className="btn-secondary text-xs py-1 px-2 shrink-0"
+                  title="Copy field collection checklist path"
+                >
+                  <Copy size={11} />
+                </button>
+              </div>
+            )}
             {output ? (
               <pre className="bg-bg-base border border-border rounded-lg px-3 py-2.5 text-[11px] font-mono text-slate-300 whitespace-pre-wrap max-h-80 overflow-y-auto leading-relaxed">
                 {runningStep && results[selectedOutputId ?? ""]?.status === "running" ? `${output}▋` : output}
@@ -3641,6 +3973,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               templates={fieldEvidenceTemplates}
               downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
               onRefresh={refreshFieldEvidenceTemplates}
+            />
+            <FieldCollectionPlanList
+              plans={fieldCollectionPlans}
+              downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
+              onRefresh={refreshFieldCollectionPlans}
             />
             <AutonomyEvidenceWorkflowReportList
               reports={autonomyWorkflowReports}

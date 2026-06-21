@@ -8,6 +8,7 @@ import type {
   DownloadFileResult,
   DownloadProgress,
   ExtractedSupportBundleArtifact,
+  FieldCollectionPlanFile,
   FieldEvidenceReportFile,
   FieldEvidenceTemplateFile,
   FeatureMethodBenchmarkReportFile,
@@ -131,6 +132,8 @@ export const cmd = {
     invoke<AutonomyEvidenceWorkflowReportFile[]>("list_autonomy_evidence_workflow_reports", { dir }),
   listFieldEvidenceReports: (dir: string) =>
     invoke<FieldEvidenceReportFile[]>("list_field_evidence_reports", { dir }),
+  listFieldCollectionPlans: (dir: string) =>
+    invoke<FieldCollectionPlanFile[]>("list_field_collection_plans", { dir }),
   listFieldEvidenceTemplates: (dir: string) =>
     invoke<FieldEvidenceTemplateFile[]>("list_field_evidence_templates", { dir }),
   listFeatureMethodBenchmarkReports: (dir: string) =>

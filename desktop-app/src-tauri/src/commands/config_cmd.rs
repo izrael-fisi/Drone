@@ -200,6 +200,44 @@ pub struct FieldEvidenceTemplateFile {
 }
 
 #[derive(Serialize)]
+pub struct FieldCollectionPlanSummary {
+    pub required_count: Option<u64>,
+    pub registered_count: Option<u64>,
+    pub registered_missing_log_count: Option<u64>,
+    pub placeholder_count: Option<u64>,
+    pub missing_count: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct FieldCollectionPlanCondition {
+    pub condition: Option<String>,
+    pub label: Option<String>,
+    pub expected: Option<String>,
+    pub status: Option<String>,
+    pub case_name: Option<String>,
+    pub manifest_log_path: Option<String>,
+    pub manifest_log_exists: Option<bool>,
+    pub register_command: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct FieldCollectionPlanFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub markdown_path: Option<String>,
+    pub markdown_size_bytes: Option<u64>,
+    pub markdown_modified_unix_ms: Option<u128>,
+    pub status: Option<String>,
+    pub site_name: Option<String>,
+    pub manifest_path: Option<String>,
+    pub bundle: Option<String>,
+    pub summary: FieldCollectionPlanSummary,
+    pub conditions: Vec<FieldCollectionPlanCondition>,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleThresholdTuningReport {
     pub status: Option<String>,
     pub method: Option<String>,
@@ -363,6 +401,8 @@ pub struct AutonomyEvidenceWorkflowReportFile {
     pub marker_count: u64,
     pub readiness_report_path: Option<String>,
     pub evidence_package_path: Option<String>,
+    pub field_collection_plan_path: Option<String>,
+    pub field_collection_plan_markdown_path: Option<String>,
     pub px4_receiver_report_path: Option<String>,
 }
 
@@ -1052,6 +1092,78 @@ pub fn list_field_evidence_templates(
             placeholder_conditions,
             registered_conditions,
         });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn list_field_collection_plans(dir: String) -> Result<Vec<FieldCollectionPlanFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let mut plan = match field_collection_plan_from_json(&value) {
+            Some(value) => value,
+            None => continue,
+        };
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        let markdown_path = p.with_extension("md");
+        let (markdown_path, markdown_size_bytes, markdown_modified_unix_ms) =
+            if markdown_path.exists() {
+                let markdown_metadata = std::fs::metadata(&markdown_path).ok();
+                (
+                    Some(markdown_path.to_string_lossy().into_owned()),
+                    markdown_metadata.as_ref().map(|metadata| metadata.len()),
+                    markdown_metadata
+                        .and_then(|metadata| metadata.modified().ok())
+                        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                        .map(|duration| duration.as_millis()),
+                )
+            } else {
+                (None, None, None)
+            };
+        plan.name = p
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("field_collection_plan.json")
+            .to_string();
+        plan.path = p.to_string_lossy().into_owned();
+        plan.size_bytes = metadata.len();
+        plan.modified_unix_ms = modified_unix_ms;
+        plan.markdown_path = markdown_path;
+        plan.markdown_size_bytes = markdown_size_bytes;
+        plan.markdown_modified_unix_ms = markdown_modified_unix_ms;
+        files.push(plan);
     }
     files.sort_by(|a, b| {
         b.modified_unix_ms
@@ -2177,7 +2289,70 @@ fn autonomy_evidence_workflow_report_from_json(
         marker_count: markers.map(|items| items.len() as u64).unwrap_or(0),
         readiness_report_path: marker("__VISION_NAV_AUTONOMY_REPORT__"),
         evidence_package_path: marker("__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__"),
+        field_collection_plan_path: marker("__VISION_NAV_FIELD_COLLECTION_PLAN__"),
+        field_collection_plan_markdown_path: marker("__VISION_NAV_FIELD_COLLECTION_PLAN_MD__"),
         px4_receiver_report_path: marker("__VISION_NAV_PX4_SITL_REPORT__"),
+    })
+}
+
+fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCollectionPlanFile> {
+    if value.get("schema_version").and_then(|value| value.as_str())
+        != Some("vision_nav_field_collection_plan_v1")
+    {
+        return None;
+    }
+    let conditions = value
+        .get("conditions")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| FieldCollectionPlanCondition {
+                    condition: json_string(item.get("condition")),
+                    label: json_string(item.get("label")),
+                    expected: json_string(item.get("expected")),
+                    status: json_string(item.get("status")),
+                    case_name: json_string(item.get("case_name")),
+                    manifest_log_path: json_string(item.get("manifest_log_path")),
+                    manifest_log_exists: item
+                        .get("manifest_log_exists")
+                        .and_then(|value| value.as_bool()),
+                    register_command: json_string(item.get("register_command")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Some(FieldCollectionPlanFile {
+        name: String::new(),
+        path: String::new(),
+        size_bytes: 0,
+        modified_unix_ms: None,
+        markdown_path: None,
+        markdown_size_bytes: None,
+        markdown_modified_unix_ms: None,
+        status: json_string(value.get("status")),
+        site_name: json_string(value.get("site_name")),
+        manifest_path: json_string(value.get("manifest_path")),
+        bundle: json_string(value.get("bundle")),
+        summary: FieldCollectionPlanSummary {
+            required_count: value
+                .pointer("/summary/required_count")
+                .and_then(|value| value.as_u64()),
+            registered_count: value
+                .pointer("/summary/registered_count")
+                .and_then(|value| value.as_u64()),
+            registered_missing_log_count: value
+                .pointer("/summary/registered_missing_log_count")
+                .and_then(|value| value.as_u64()),
+            placeholder_count: value
+                .pointer("/summary/placeholder_count")
+                .and_then(|value| value.as_u64()),
+            missing_count: value
+                .pointer("/summary/missing_count")
+                .and_then(|value| value.as_u64()),
+        },
+        conditions,
     })
 }
 
@@ -2632,9 +2807,9 @@ mod tests {
     use super::{
         delete_support_bundle, expand_local_path, extract_support_bundle_artifact,
         list_autonomy_evidence_workflow_reports, list_autonomy_readiness_reports,
-        list_feature_method_benchmark_reports, list_field_evidence_reports,
-        list_field_evidence_templates, list_px4_receiver_reports, list_threshold_tuning_reports,
-        read_support_bundle_details, support_summary_from_manifest,
+        list_feature_method_benchmark_reports, list_field_collection_plans,
+        list_field_evidence_reports, list_field_evidence_templates, list_px4_receiver_reports,
+        list_threshold_tuning_reports, read_support_bundle_details, support_summary_from_manifest,
     };
     use std::fs::File;
     use std::io::Write;
@@ -3218,6 +3393,93 @@ mod tests {
             templates[0].registered_conditions,
             vec!["wrong_map".to_string()]
         );
+    }
+
+    #[test]
+    fn lists_field_collection_plans_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-field-collection-plans-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create field collection plan dir");
+        std::fs::write(
+            dir.join("field_collection_plan.json"),
+            serde_json::json!({
+                "schema_version": "vision_nav_field_collection_plan_v1",
+                "status": "degraded",
+                "site_name": "site-a",
+                "manifest_path": "/home/user/DroneTransfer/outgoing/replay-cases/field_manifest.json",
+                "bundle": "/home/user/drone-data/map_bundles/mission_bundle",
+                "summary": {
+                    "required_count": 8,
+                    "registered_count": 1,
+                    "registered_missing_log_count": 1,
+                    "placeholder_count": 6,
+                    "missing_count": 0
+                },
+                "conditions": [
+                    {
+                        "condition": "good_texture",
+                        "label": "Good texture, matching map",
+                        "expected": "good_map",
+                        "status": "registered",
+                        "case_name": "site-a-good-texture",
+                        "manifest_log_path": "field/good_texture/terrain_matches.jsonl",
+                        "manifest_log_exists": true,
+                        "register_command": "VISION_NAV_FIELD_CASE_NAME=site-a-good-texture ./scripts/pi/register_field_replay_case.sh"
+                    },
+                    {
+                        "condition": "low_texture",
+                        "label": "Low texture",
+                        "expected": "degraded",
+                        "status": "placeholder",
+                        "case_name": "site-a-low-texture",
+                        "manifest_log_exists": false
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("write field collection plan");
+        std::fs::write(
+            dir.join("field_collection_plan.md"),
+            "# Field Evidence Collection Plan\n\n- [x] Good texture\n",
+        )
+        .expect("write field collection markdown");
+        std::fs::write(
+            dir.join("field_manifest.template.json"),
+            serde_json::json!({"template": {"schema_version": "vision_nav_field_evidence_template_v1"}, "cases": []})
+                .to_string(),
+        )
+        .expect("write unrelated template");
+        let plans =
+            list_field_collection_plans(dir.to_string_lossy().into_owned()).expect("list plans");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].name, "field_collection_plan.json");
+        assert_eq!(plans[0].status.as_deref(), Some("degraded"));
+        assert_eq!(plans[0].site_name.as_deref(), Some("site-a"));
+        assert_eq!(plans[0].summary.required_count, Some(8));
+        assert_eq!(plans[0].summary.registered_count, Some(1));
+        assert_eq!(plans[0].summary.placeholder_count, Some(6));
+        assert_eq!(plans[0].conditions.len(), 2);
+        assert_eq!(
+            plans[0].conditions[0].condition.as_deref(),
+            Some("good_texture")
+        );
+        assert_eq!(plans[0].conditions[0].status.as_deref(), Some("registered"));
+        assert_eq!(plans[0].conditions[0].manifest_log_exists, Some(true));
+        assert!(plans[0].conditions[0].register_command.is_some());
+        assert_eq!(
+            plans[0]
+                .markdown_path
+                .as_deref()
+                .and_then(|path| Path::new(path).file_name())
+                .and_then(|name| name.to_str()),
+            Some("field_collection_plan.md")
+        );
+        assert!(plans[0].markdown_size_bytes.is_some());
     }
 
     #[test]

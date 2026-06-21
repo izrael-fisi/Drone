@@ -379,15 +379,25 @@ Status:
   field replay manifest covering every required autonomy condition from the
   same condition list used by the final readiness audit, so field datasets can
   be staged and schema-checked before logs are captured.
+- Done: `vision-nav-create-field-collection-plan` renders the active field
+  manifest into a JSON/Markdown operator checklist with per-condition status and
+  exact Pi registration commands for each required real-world case.
 - Done: `scripts/pi/create_field_evidence_template.sh` wraps the template
   generator on the Pi, writes the starter manifest into the transfer folder,
   and emits a stable marker for desktop/support collection.
+- Done: `scripts/pi/create_field_collection_plan.sh` wraps the checklist
+  generator on the Pi, writes `field_collection_plan.json` and
+  `field_collection_plan.md` into the replay-cases transfer folder, and emits
+  stable markers for workflow/support collection.
 - Done: the Pi template wrapper can seed the active field manifest, and
   replay-case registration replaces matching template placeholders by condition
   tag when real field logs are collected.
 - Done: Module Setup downloads both the field evidence starter template and the
   active seeded manifest, then lists downloaded template-shaped manifests after
   restart for offline review.
+- Done: Module Setup can run `Create Plan` to generate and download the
+  field-collection JSON/Markdown checklist, lists downloaded plans after
+  restart, and includes collection-plan paths in saved setup reports.
 - Done: downloaded field evidence template summaries now separate remaining
   placeholder conditions from conditions that already have registered real logs.
 - Done: `vision-nav-benchmark-feature-methods` compares ORB, AKAZE, SIFT, and
@@ -409,6 +419,13 @@ Status:
   them under `extras/field_evidence/`, publish parsed JSON under
   `summaries/field_evidence/`, and count the result in bench readiness when
   present.
+- Done: support bundles ingest field collection plans, copy the JSON and
+  Markdown checklist under `extras/field_collection_plans/`, publish parsed
+  plan JSON under `summaries/field_collection_plans/`, and preserve the
+  intended field-coverage plan for support review.
+- Done: autonomy readiness audits record field collection plan/checklist paths
+  when present so `autonomy_readiness_report.evidence.zip` includes the
+  operator plan beside the final handoff and machine-readable report.
 - Done: `scripts/pi/register_field_replay_case.sh` registers Pi terrain
   runtime/replay logs into the outgoing field replay manifest, writes the
   combined field-evidence report, and leaves it at the default path that support
@@ -506,13 +523,14 @@ Status:
   included, missing, and skipped evidence artifacts plus bounded missing/skipped
   artifact labels for support triage.
 - Done: `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the ordered
-  field-template, optional field-case registration, feature-benchmark,
-  threshold-tuning, support-bundle, and final-readiness sequence while writing a
-  machine-readable per-step workflow report with logs and emitted artifact
-  markers even when the final gates still fail.
+  field-template, field-collection checklist, optional field-case registration,
+  feature-benchmark, threshold-tuning, support-bundle, and final-readiness
+  sequence while writing a machine-readable per-step workflow report with logs
+  and emitted artifact markers even when the final gates still fail.
 - Done: Module Setup exposes that wrapper as `Evidence Workflow`, downloads the
-  workflow JSON, and collects any final readiness, handoff, evidence-package, or
-  PX4 receiver markers emitted during the sequence.
+  workflow JSON, and collects any field-collection plan, final readiness,
+  handoff, evidence-package, or PX4 receiver markers emitted during the
+  sequence.
 - Done: Module Setup lists downloaded autonomy evidence workflow JSON reports
   after app restart with pass/fail/skip counts, per-step status, and emitted
   artifact markers.

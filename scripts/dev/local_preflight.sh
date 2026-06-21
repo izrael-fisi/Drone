@@ -37,6 +37,30 @@ grep -q "__VISION_NAV_FIELD_TEMPLATE__=" /tmp/vision_nav_pi_field_template_prefl
 grep -q "__VISION_NAV_FIELD_MANIFEST__=" /tmp/vision_nav_pi_field_template_preflight.txt
 test -f "$field_smoke_dir/pi_field_manifest.template.json"
 test -f "$field_smoke_dir/pi_field_manifest.json"
+VISION_NAV_PYTHON=python3 \
+VISION_NAV_FIELD_MANIFEST="$field_smoke_dir/pi_field_manifest.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN="$field_smoke_dir/field_collection_plan.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN_MD="$field_smoke_dir/field_collection_plan.md" \
+VISION_NAV_FIELD_SITE_NAME=preflight-pi-wrapper \
+VISION_NAV_FIELD_BUNDLE=preflight-bundle \
+./scripts/pi/create_field_collection_plan.sh >/tmp/vision_nav_field_collection_plan_preflight.txt
+grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN__=" /tmp/vision_nav_field_collection_plan_preflight.txt
+grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=" /tmp/vision_nav_field_collection_plan_preflight.txt
+test -f "$field_smoke_dir/field_collection_plan.json"
+test -f "$field_smoke_dir/field_collection_plan.md"
+python3 - "$field_smoke_dir/field_collection_plan.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+plan = json.loads(Path(sys.argv[1]).read_text())
+assert plan["schema_version"] == "vision_nav_field_collection_plan_v1"
+assert plan["summary"]["required_count"] == 8
+assert plan["summary"]["placeholder_count"] == 8
+assert plan["summary"]["registered_count"] == 0
+PY
 PYTHONPATH=src python3 -m vision_nav.replay_case_manifest \
   --manifest "$field_smoke_dir/field_manifest.template.json" \
   --schema-only >/tmp/vision_nav_field_template_schema_preflight.txt
@@ -63,6 +87,8 @@ VISION_NAV_EVIDENCE_WORKFLOW_DIR="$workflow_smoke_dir/workflow" \
 VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" \
 VISION_NAV_FIELD_TEMPLATE="$workflow_smoke_dir/field_manifest.template.json" \
 VISION_NAV_FIELD_MANIFEST="$workflow_smoke_dir/field_manifest.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN="$workflow_smoke_dir/replay-cases/field_collection_plan.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN_MD="$workflow_smoke_dir/replay-cases/field_collection_plan.md" \
 VISION_NAV_FIELD_SITE_NAME=preflight-workflow \
 VISION_NAV_FIELD_BUNDLE=preflight-bundle \
 VISION_NAV_BUNDLE=preflight-bundle \
@@ -79,6 +105,8 @@ VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE="$workflow_smoke_dir/replay-cases/autonomy_
 ./scripts/pi/run_autonomy_evidence_workflow.sh >/tmp/vision_nav_evidence_workflow_preflight.txt 2>&1
 grep -q "__VISION_NAV_EVIDENCE_WORKFLOW_REPORT__=" /tmp/vision_nav_evidence_workflow_preflight.txt
 test -f "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json"
+test -f "$workflow_smoke_dir/replay-cases/field_collection_plan.json"
+test -f "$workflow_smoke_dir/replay-cases/field_collection_plan.md"
 python3 - "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" <<'PY'
 from __future__ import annotations
 
@@ -90,7 +118,10 @@ report = json.loads(Path(sys.argv[1]).read_text())
 assert report["schema_version"] == "vision_nav_autonomy_evidence_workflow_v1"
 steps = {step["name"]: step for step in report["steps"]}
 assert "create_field_evidence_template" in steps
+assert "create_field_collection_plan" in steps
 assert "run_autonomy_readiness_audit" in steps
+assert "__VISION_NAV_FIELD_COLLECTION_PLAN__" in report["markers"]
+assert "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__" in report["markers"]
 assert report["status"] in {"passed", "degraded", "failed"}
 PY
 rm -rf "$field_smoke_dir"
@@ -104,6 +135,7 @@ tail -n 18 /tmp/vision_nav_autonomy_readiness_preflight.txt
 local_audit_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-local-audit-preflight.XXXXXX")"
 mkdir -p "$local_audit_dir/feature-method-bench"
 mkdir -p "$local_audit_dir/px4-sitl-evidence"
+mkdir -p "$local_audit_dir/replay-cases"
 cat >"$local_audit_dir/feature-method-bench/preflight_feature_benchmark.json" <<'EOF'
 {
   "status": "passed",
@@ -129,6 +161,23 @@ cat >"$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" <<'EOF'
   "issues": []
 }
 EOF
+cat >"$local_audit_dir/replay-cases/field_collection_plan.json" <<'EOF'
+{
+  "schema_version": "vision_nav_field_collection_plan_v1",
+  "status": "degraded",
+  "summary": {
+    "required_count": 8,
+    "registered_count": 0,
+    "registered_missing_log_count": 0,
+    "placeholder_count": 8,
+    "missing_count": 0
+  },
+  "conditions": []
+}
+EOF
+cat >"$local_audit_dir/replay-cases/field_collection_plan.md" <<'EOF'
+# Field Evidence Collection Plan
+EOF
 VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
@@ -139,6 +188,8 @@ grep -q "__VISION_NAV_AUTONOMY_REPORT__=" /tmp/vision_nav_local_autonomy_readine
 grep -q "__VISION_NAV_AUTONOMY_HANDOFF__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
 grep -q "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
 grep -q "__VISION_NAV_PX4_SITL_REPORT__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
+grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
+grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.evidence.zip"
@@ -153,6 +204,8 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     assert "manifest.json" in names
     assert "reports/autonomy_readiness_report.json" in names
     assert "reports/autonomy_readiness_report.md" in names
+    assert any(name.startswith("artifacts/input_field_collection_plan-") for name in names)
+    assert any(name.startswith("artifacts/input_field_collection_plan_markdown-") for name in names)
 PY
 rm -rf "$local_audit_dir"
 

@@ -72,6 +72,10 @@ def parse_args() -> argparse.Namespace:
         help="Optional field-evidence gate report to evaluate directly.",
     )
     parser.add_argument(
+        "--field-collection-plan",
+        help="Optional field collection plan JSON generated before real replay cases are complete.",
+    )
+    parser.add_argument(
         "--feature-method-benchmark-report",
         help="Optional feature-method benchmark report to evaluate directly.",
     )
@@ -92,6 +96,7 @@ def evaluate_autonomy_readiness(
     px4_sitl_session_path: str | Path | None = None,
     px4_sitl_report_path: str | Path | None = None,
     field_evidence_report_path: str | Path | None = None,
+    field_collection_plan_path: str | Path | None = None,
     feature_method_benchmark_report_path: str | Path | None = None,
     threshold_tuning_report_path: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -124,6 +129,11 @@ def evaluate_autonomy_readiness(
     ]
     status = readiness_status(checks)
     next_actions = next_actions_for_checks(checks)
+    field_collection_markdown_path = None
+    if field_collection_plan_path:
+        candidate = Path(field_collection_plan_path).expanduser().with_suffix(".md")
+        if candidate.exists():
+            field_collection_markdown_path = candidate
     inputs = {
         "research_doc": str(Path(research_doc_path).expanduser()),
         "implementation_plan": str(Path(implementation_plan_path).expanduser()),
@@ -131,6 +141,8 @@ def evaluate_autonomy_readiness(
         "px4_sitl_session": str(Path(px4_sitl_session_path).expanduser()) if px4_sitl_session_path else None,
         "px4_sitl_report": str(Path(px4_sitl_report_path).expanduser()) if px4_sitl_report_path else None,
         "field_evidence_report": str(Path(field_evidence_report_path).expanduser()) if field_evidence_report_path else None,
+        "field_collection_plan": str(Path(field_collection_plan_path).expanduser()) if field_collection_plan_path else None,
+        "field_collection_plan_markdown": str(field_collection_markdown_path) if field_collection_markdown_path else None,
         "feature_method_benchmark_report": (
             str(Path(feature_method_benchmark_report_path).expanduser())
             if feature_method_benchmark_report_path
@@ -767,6 +779,7 @@ def main() -> None:
         px4_sitl_session_path=args.px4_sitl_session,
         px4_sitl_report_path=args.px4_sitl_report,
         field_evidence_report_path=args.field_evidence_report,
+        field_collection_plan_path=args.field_collection_plan,
         feature_method_benchmark_report_path=args.feature_method_benchmark_report,
         threshold_tuning_report_path=args.threshold_tuning_report,
     )

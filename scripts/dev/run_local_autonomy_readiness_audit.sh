@@ -9,6 +9,7 @@ replay_dir="${VISION_NAV_LOCAL_REPLAY_DIR:-$download_root/replay-cases}"
 feature_benchmark_dir="${VISION_NAV_LOCAL_FEATURE_BENCH_DIR:-$download_root/feature-method-bench}"
 support_bundle="${VISION_NAV_AUTONOMY_SUPPORT_BUNDLE:-}"
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$replay_dir/field_evidence_report.json}"
+field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$replay_dir/field_collection_plan.json}"
 feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$replay_dir/threshold_tuning_report.json}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
@@ -101,6 +102,10 @@ if [[ -f "$field_evidence_report" ]]; then
   args+=(--field-evidence-report "$field_evidence_report")
 fi
 
+if [[ -f "$field_collection_plan" ]]; then
+  args+=(--field-collection-plan "$field_collection_plan")
+fi
+
 if [[ -f "$feature_method_benchmark_report" ]]; then
   args+=(--feature-method-benchmark-report "$feature_method_benchmark_report")
 fi
@@ -131,6 +136,7 @@ Local autonomy readiness audit inputs:
   px4 sitl session:        ${px4_sitl_session:-not found}
   px4 sitl report:         $([[ -f "$px4_sitl_report" ]] && printf '%s' "$px4_sitl_report" || printf 'not found')
   field evidence report:   $([[ -f "$field_evidence_report" ]] && printf '%s' "$field_evidence_report" || printf 'not found')
+  field collection plan:   $([[ -f "$field_collection_plan" ]] && printf '%s' "$field_collection_plan" || printf 'not found')
   feature benchmark report: $([[ -f "$feature_method_benchmark_report" ]] && printf '%s' "$feature_method_benchmark_report" || printf 'not found')
   threshold tuning report: $([[ -f "$threshold_tuning_report" ]] && printf '%s' "$threshold_tuning_report" || printf 'not found')
   output report:           $output_report
@@ -144,6 +150,13 @@ EOF
 
 if [[ -f "$px4_sitl_report" ]]; then
   echo "__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report"
+fi
+
+if [[ -f "$field_collection_plan" ]]; then
+  echo "__VISION_NAV_FIELD_COLLECTION_PLAN__=$field_collection_plan"
+  if [[ -f "${field_collection_plan%.json}.md" ]]; then
+    echo "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=${field_collection_plan%.json}.md"
+  fi
 fi
 
 if [[ "$audit_status" -ne 0 ]]; then

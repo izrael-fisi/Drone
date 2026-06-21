@@ -61,6 +61,12 @@ def parse_args() -> argparse.Namespace:
         help="Field evidence gate JSON report. Can be repeated.",
     )
     parser.add_argument(
+        "--field-collection-plan",
+        action="append",
+        default=[],
+        help="Field collection plan JSON report. Can be repeated. Sibling Markdown checklists are copied when present.",
+    )
+    parser.add_argument(
         "--threshold-tuning-report",
         action="append",
         default=[],
@@ -696,6 +702,100 @@ def copy_field_evidence_reports(paths: list[str], support_dir: Path) -> dict[str
     }
 
 
+def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    conditions = []
+    for item in report.get("conditions") or []:
+        if not isinstance(item, dict):
+            continue
+        conditions.append(
+            {
+                "condition": item.get("condition"),
+                "label": item.get("label"),
+                "status": item.get("status"),
+                "expected": item.get("expected"),
+                "case_name": item.get("case_name"),
+                "manifest_log_exists": item.get("manifest_log_exists"),
+            }
+        )
+    return {
+        "path": str(report_path),
+        "status": report.get("status"),
+        "site_name": report.get("site_name"),
+        "manifest_path": report.get("manifest_path"),
+        "bundle": report.get("bundle"),
+        "source_log": report.get("source_log"),
+        "required_count": summary.get("required_count"),
+        "registered_count": summary.get("registered_count"),
+        "registered_missing_log_count": summary.get("registered_missing_log_count"),
+        "placeholder_count": summary.get("placeholder_count"),
+        "missing_count": summary.get("missing_count"),
+        "conditions": conditions,
+    }
+
+
+def copy_field_collection_plans(paths: list[str], support_dir: Path) -> dict[str, Any]:
+    if not paths:
+        return {"status": "not_provided", "report_count": 0}
+
+    summary_dir = support_dir / "summaries" / "field_collection_plans"
+    raw_dir = support_dir / "extras" / "field_collection_plans"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"Field collection plan is missing: {source}"})
+            continue
+        if source.is_dir():
+            copied.append(copy_tree(source, raw_dir / safe_relpath(source)))
+            json_files = sorted(source.rglob("*.json"))
+        else:
+            copied.append(copy_file(source, raw_dir / source.name))
+            markdown_sibling = source.with_suffix(".md")
+            if markdown_sibling.exists() and markdown_sibling.is_file():
+                copied.append(copy_file(markdown_sibling, raw_dir / markdown_sibling.name))
+            json_files = [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception as exc:
+                issues.append({"severity": "warning", "message": f"Could not parse field collection plan {report_file}: {exc}"})
+                continue
+            if not isinstance(report, dict) or report.get("schema_version") != "vision_nav_field_collection_plan_v1":
+                continue
+            report_summary = summarize_field_collection_plan(report, report_path=report_file)
+            reports.append(report_summary)
+            output_name = f"{sanitize_filename(Path(str(report_summary.get('manifest_path') or report_file.stem)).stem)}-{len(reports):02d}.json"
+            (summary_dir / output_name).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+    statuses = {str(report.get("status") or "").lower() for report in reports}
+    if missing or "failed" in statuses:
+        status = "failed"
+    elif not reports:
+        status = "degraded" if issues else "not_provided"
+    elif statuses.intersection({"degraded", "warming_up"}):
+        status = "degraded"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "report_count": len(reports),
+        "reports": reports,
+        "registered_count": max((int(report.get("registered_count") or 0) for report in reports), default=0),
+        "required_count": max((int(report.get("required_count") or 0) for report in reports), default=0),
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
 def summarize_threshold_tuning_report(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     margins = {}
@@ -810,6 +910,7 @@ def create_support_bundle(
     inline_replay_cases: list[str] | None = None,
     feature_method_benchmark_paths: list[str] | None = None,
     field_evidence_report_paths: list[str] | None = None,
+    field_collection_plan_paths: list[str] | None = None,
     threshold_tuning_report_paths: list[str] | None = None,
     include_map_assets: bool = False,
     max_log_bytes: int = DEFAULT_MAX_LOG_BYTES,
@@ -868,6 +969,10 @@ def create_support_bundle(
         field_evidence_report_paths or [],
         support_dir,
     )
+    field_collection_plans = copy_field_collection_plans(
+        field_collection_plan_paths or [],
+        support_dir,
+    )
     threshold_tuning = copy_threshold_tuning_reports(
         threshold_tuning_report_paths or [],
         support_dir,
@@ -884,6 +989,7 @@ def create_support_bundle(
         "ardupilot_params": ardupilot_params_summary,
         "feature_method_benchmarks": feature_method_benchmarks,
         "field_evidence": field_evidence,
+        "field_collection_plans": field_collection_plans,
         "threshold_tuning": threshold_tuning,
         "extras": extra_summary,
     }
@@ -938,6 +1044,12 @@ def print_human(result: dict[str, Any]) -> None:
     field_evidence = manifest.get("field_evidence") or {}
     if field_evidence.get("status") not in {None, "not_provided"}:
         print(f"Field evidence: {field_evidence.get('status')} ({field_evidence.get('report_count')} report(s))")
+    field_collection_plans = manifest.get("field_collection_plans") or {}
+    if field_collection_plans.get("status") not in {None, "not_provided"}:
+        print(
+            "Field collection plans: "
+            f"{field_collection_plans.get('status')} ({field_collection_plans.get('report_count')} plan(s))"
+        )
     threshold_tuning = manifest.get("threshold_tuning") or {}
     if threshold_tuning.get("status") not in {None, "not_provided"}:
         print(f"Threshold tuning: {threshold_tuning.get('status')} ({threshold_tuning.get('report_count')} report(s))")
@@ -966,6 +1078,7 @@ def main() -> None:
         inline_replay_cases=args.replay_case,
         feature_method_benchmark_paths=args.feature_method_benchmark,
         field_evidence_report_paths=args.field_evidence_report,
+        field_collection_plan_paths=args.field_collection_plan,
         threshold_tuning_report_paths=args.threshold_tuning_report,
         include_map_assets=args.include_map_assets,
         max_log_bytes=args.max_log_bytes,

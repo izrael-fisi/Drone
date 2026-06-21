@@ -38,6 +38,7 @@ from vision_nav.external_position import (
 )
 from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
 from vision_nav.feature_method_benchmark import benchmark_feature_methods
+from vision_nav.field_collection_plan import create_field_collection_plan, render_field_collection_markdown
 from vision_nav.field_evidence_template import create_field_evidence_template
 from vision_nav.field_evidence_gate import evaluate_field_evidence_gate
 from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health_report
@@ -1671,6 +1672,38 @@ RC8_OPTION,90
                 }
             )
         )
+        field_collection_plan = root / "field_collection_plan.json"
+        field_collection_plan.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_field_collection_plan_v1",
+                    "status": "passed",
+                    "manifest_path": "field_manifest.json",
+                    "site_name": "unit-field",
+                    "bundle": str(bundle),
+                    "source_log": str(log),
+                    "summary": {
+                        "required_count": len(REQUIRED_FIELD_CONDITIONS),
+                        "registered_count": len(REQUIRED_FIELD_CONDITIONS),
+                        "registered_missing_log_count": 0,
+                        "placeholder_count": 0,
+                        "missing_count": 0,
+                    },
+                    "conditions": [
+                        {
+                            "condition": condition,
+                            "label": condition.replace("_", " ").title(),
+                            "status": "registered",
+                            "expected": "good_map",
+                            "case_name": f"unit-{condition}",
+                            "manifest_log_exists": True,
+                        }
+                        for condition in REQUIRED_FIELD_CONDITIONS
+                    ],
+                }
+            )
+        )
+        field_collection_plan.with_suffix(".md").write_text("# Field Evidence Collection Plan\n")
         threshold_tuning_report = root / "threshold_tuning_report.json"
         threshold_tuning_report.write_text(
             json.dumps(
@@ -1712,6 +1745,7 @@ RC8_OPTION,90
             replay_case_manifest_path=str(replay_manifest),
             feature_method_benchmark_paths=[str(feature_benchmark_dir)],
             field_evidence_report_paths=[str(field_evidence_report)],
+            field_collection_plan_paths=[str(field_collection_plan)],
             threshold_tuning_report_paths=[str(threshold_tuning_report)],
             include_map_assets=True,
         )
@@ -1736,8 +1770,11 @@ RC8_OPTION,90
             "summaries/ardupilot_params/param_check.json",
             "summaries/feature_method_benchmarks/unit-method-benchmark-01.json",
             "summaries/field_evidence/field_manifest-01.json",
+            "summaries/field_collection_plans/field_manifest-01.json",
             "summaries/threshold_tuning/field_manifest-01.json",
             "summaries/bench_readiness.json",
+            "extras/field_collection_plans/field_collection_plan.json",
+            "extras/field_collection_plans/field_collection_plan.md",
             "extras/px4_sitl_session/px4_sitl_evidence_session.json",
             "extras/px4_sitl_session/receiver_capture/vehicle_visual_odometry.txt",
             "extras/px4_sitl_session/receiver_capture/mavlink_status.txt",
@@ -1751,6 +1788,13 @@ RC8_OPTION,90
                 raise AssertionError(f"Missing {expected} from support bundle zip")
         manifest = json.loads(Path(result["manifest_path"]).read_text())
         assert_equal(manifest["logs"]["summaries"][0]["accepted_rate"], 1.0, "support log accepted rate")
+        assert_equal(manifest["field_collection_plans"]["status"], "passed", "support field collection plan status")
+        assert_equal(manifest["field_collection_plans"]["report_count"], 1, "support field collection plan count")
+        assert_equal(
+            manifest["field_collection_plans"]["registered_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "support field collection plan registered count",
+        )
         assert_equal(
             manifest["logs"]["runtime_statuses"][0]["schema_version"],
             "vision_nav_runtime_status_v1",
@@ -1943,6 +1987,26 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 }
             )
         )
+        field_collection_plan = root / "field_collection_plan.json"
+        field_collection_plan.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_field_collection_plan_v1",
+                    "status": "degraded",
+                    "manifest_path": str(root / "field_manifest.json"),
+                    "site_name": "unit-field",
+                    "summary": {
+                        "required_count": len(REQUIRED_FIELD_CONDITIONS),
+                        "registered_count": 1,
+                        "registered_missing_log_count": 0,
+                        "placeholder_count": len(REQUIRED_FIELD_CONDITIONS) - 1,
+                        "missing_count": 0,
+                    },
+                    "conditions": [],
+                }
+            )
+        )
+        field_collection_plan.with_suffix(".md").write_text("# Field Evidence Collection Plan\n")
         feature_report = root / "feature_method_benchmark.json"
         feature_report.write_text(
             json.dumps(
@@ -1999,10 +2063,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=direct_report_support_manifest,
             px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
         )
         assert_equal(ready["status"], "passed", "autonomy readiness full proof status")
+        assert_equal(
+            ready["inputs"]["field_collection_plan_markdown"],
+            str(field_collection_plan.with_suffix(".md")),
+            "autonomy readiness field collection markdown input",
+        )
         ready_checks = {check["name"]: check["status"] for check in ready["checks"]}
         assert_equal(ready_checks["support_bundle_bench_readiness"], "passed", "autonomy readiness support bundle")
         assert_equal(ready_checks["px4_receiver_proof"], "passed", "autonomy readiness direct px4 receiver proof")
@@ -2163,6 +2233,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             implementation_plan_path=implementation_plan,
             support_bundle_path=support_manifest,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
         )
         assert_equal(missing_threshold["status"], "failed", "autonomy readiness missing threshold report")
         missing_checks = {check["name"]: check["status"] for check in missing_threshold["checks"]}
@@ -2225,6 +2296,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             assert_equal(manifest["readiness_status"], "failed", "autonomy evidence package status")
             if not any(item["label"] == "input:support_bundle" for item in manifest["included"]):
                 raise AssertionError("autonomy evidence package did not include support manifest artifact")
+            if not any(item["label"] == "input:field_collection_plan" for item in manifest["included"]):
+                raise AssertionError("autonomy evidence package did not include field collection plan artifact")
+            if not any(item["label"] == "input:field_collection_plan_markdown" for item in manifest["included"]):
+                raise AssertionError("autonomy evidence package did not include field collection checklist artifact")
 
 
 def test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance() -> None:
@@ -2531,6 +2606,83 @@ def test_field_evidence_template_matches_required_conditions() -> None:
         )
         assert_equal(not_seeded["seed_manifest"]["written"], False, "field template does not overwrite active manifest")
         assert_equal(not_seeded["seed_manifest"]["reason"], "already_exists", "field template seed skip reason")
+
+
+def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        active_manifest = base / "field_manifest.json"
+        create_field_evidence_template(
+            output_path=base / "field_manifest.template.json",
+            site_name="Site A",
+            bundle="field-bundles/site-a/mission_bundle",
+            seed_manifest_path=active_manifest,
+        )
+        plan = create_field_collection_plan(
+            manifest_path=active_manifest,
+            output_path=base / "field_collection_plan.json",
+            markdown_output_path=base / "field_collection_plan.md",
+            site_name="Site A",
+            bundle="field-bundles/site-a/mission_bundle",
+            source_log="$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
+        )
+        assert_equal(plan["schema_version"], "vision_nav_field_collection_plan_v1", "field collection plan schema")
+        assert_equal(plan["status"], "degraded", "field collection plan waits for field logs")
+        assert_equal(plan["summary"]["required_count"], len(REQUIRED_FIELD_CONDITIONS), "field collection required count")
+        assert_equal(plan["summary"]["placeholder_count"], len(REQUIRED_FIELD_CONDITIONS), "field collection placeholder count")
+        assert_equal(plan["summary"]["registered_count"], 0, "field collection registered count")
+        good_texture = next(item for item in plan["conditions"] if item["condition"] == "good_texture")
+        assert_equal(good_texture["status"], "placeholder", "field collection placeholder status")
+        if "VISION_NAV_FIELD_CASE_NAME" not in good_texture["register_command"]:
+            raise AssertionError("Expected generated registration command to include case name")
+        if not (base / "field_collection_plan.md").exists():
+            raise AssertionError("Expected Markdown field collection plan")
+
+        log_dir = base / "captures"
+        log_dir.mkdir()
+        log = log_dir / "terrain_matches.jsonl"
+        log.write_text(
+            json.dumps(
+                {
+                    "result": {
+                        "status": "accepted",
+                        "confidence": 0.82,
+                        "inliers": 34,
+                        "reprojection_error_px": 1.6,
+                        "scale_confidence": 0.74,
+                        "local_enu_m": {"x": 0.0, "y": 0.0, "z": None},
+                        "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
+                    }
+                }
+            )
+            + "\n"
+        )
+        register_replay_case(
+            manifest_path=active_manifest,
+            case_name="site-a-good-texture",
+            expected="good_map",
+            dataset_type="field",
+            conditions=["good_texture"],
+            log_path=log,
+            bundle="field-bundles/site-a/mission_bundle",
+            notes="Clear matching-map field log.",
+            copy_log=True,
+            replace=True,
+        )
+        updated = create_field_collection_plan(
+            manifest_path=active_manifest,
+            output_path=base / "field_collection_plan_after.json",
+            markdown_output_path=base / "field_collection_plan_after.md",
+            site_name="Site A",
+            bundle="field-bundles/site-a/mission_bundle",
+        )
+        assert_equal(updated["summary"]["registered_count"], 1, "field collection updated registered count")
+        assert_equal(updated["summary"]["placeholder_count"], len(REQUIRED_FIELD_CONDITIONS) - 1, "field collection updated placeholder count")
+        updated_good_texture = next(item for item in updated["conditions"] if item["condition"] == "good_texture")
+        assert_equal(updated_good_texture["status"], "registered", "field collection registered status")
+        markdown = render_field_collection_markdown(updated)
+        if "- [x] Good texture" not in markdown:
+            raise AssertionError("Expected registered condition to be checked in Markdown plan")
 
 
 def test_replay_dataset_coverage_audit_requires_real_field_cases() -> None:
@@ -3219,6 +3371,7 @@ def main() -> None:
         test_replay_case_manifest_schema_flags_malformed_cases,
         test_replay_case_manifest_schema_only_skips_log_evaluation,
         test_field_evidence_template_matches_required_conditions,
+        test_field_collection_plan_tracks_placeholders_and_registered_logs,
         test_replay_dataset_coverage_audit_requires_real_field_cases,
         test_field_evidence_gate_combines_coverage_and_replay_gates,
         test_threshold_tuning_report_requires_full_field_coverage,

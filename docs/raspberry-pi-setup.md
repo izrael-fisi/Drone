@@ -522,6 +522,29 @@ manifest does not already exist. Use it before the first field run, then
 register captured logs with `register_field_replay_case.sh`; matching template
 placeholders are replaced by condition tag as real logs are registered.
 
+Generate a field-collection checklist from the active manifest before going
+outside:
+
+```bash
+./scripts/pi/create_field_collection_plan.sh
+```
+
+This writes
+`~/DroneTransfer/outgoing/replay-cases/field_collection_plan.json` plus a
+Markdown checklist at
+`~/DroneTransfer/outgoing/replay-cases/field_collection_plan.md`. The plan marks
+each required condition as placeholder, missing, registered-missing-log, or
+registered, and includes the exact `VISION_NAV_FIELD_*` registration command to
+run after each captured terrain log. It also emits
+`__VISION_NAV_FIELD_COLLECTION_PLAN__=...` and
+`__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=...` markers.
+From the desktop app, Module Setup exposes the same step as `Create Plan`,
+downloads both files, and lists downloaded plans for restart-safe field review.
+The Pi support-bundle wrapper auto-includes
+`field_collection_plan.json` and the sibling Markdown checklist when they exist
+at the default replay-cases path, so support can review intended field coverage
+beside the captured evidence.
+
 Use `VISION_NAV_FIELD_CONDITIONS="low_texture blur"` for runs that cover
 multiple tags. The wrapper updates
 `~/DroneTransfer/outgoing/replay-cases/field_manifest.json`, copies the log by
@@ -646,6 +669,12 @@ VISION_NAV_REPLAY_CASE_MANIFEST="$HOME/Drone/replay_cases.json" \
 
 Replay-gate reports are written under `summaries/replay_gates/` inside the
 support bundle.
+
+When the default
+`~/DroneTransfer/outgoing/replay-cases/field_collection_plan.json` exists,
+`create_support_bundle.sh` also copies it and the sibling Markdown checklist
+under `extras/field_collection_plans/`, then publishes parsed JSON under
+`summaries/field_collection_plans/`.
 
 To include PX4 SITL receiver evidence, save the PX4 console outputs from
 `listener vehicle_visual_odometry 5` and `mavlink status`, then pass those files
@@ -818,6 +847,9 @@ human-readable
 `~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.md` handoff
 and `~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.evidence.zip`
 support-review package.
+If `field_collection_plan.json` and `field_collection_plan.md` are present next
+to the replay-case artifacts, the audit records them as inputs and the evidence
+ZIP includes both files.
 Override the support bundle with
 `VISION_NAV_AUTONOMY_SUPPORT_BUNDLE=/path/to/bundle.zip` when reviewing an older
 artifact. The audit intentionally fails until the external PX4 receiver proof
@@ -834,7 +866,8 @@ strict audit report locally:
 
 It uses the latest downloaded support bundle, downloaded field-evidence and
 feature-method benchmark reports, downloaded threshold-tuning reports, and a
-local PX4 SITL evidence session or receiver report when present.
+downloaded field collection plan/checklist, plus a local PX4 SITL evidence
+session or receiver report when present.
 It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and
 `__VISION_NAV_AUTONOMY_HANDOFF__=...` plus
 `__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=...`, then writes

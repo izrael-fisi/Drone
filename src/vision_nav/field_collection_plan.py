@@ -1,0 +1,303 @@
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import shlex
+from typing import Any
+
+from vision_nav.field_conditions import (
+    REQUIRED_FIELD_CONDITIONS,
+    expected_behavior_for_condition,
+    label_for_condition,
+    notes_for_condition,
+)
+from vision_nav.replay_case_manifest import sanitize_filename
+from vision_nav.replay_case_registry import normalize_conditions
+
+
+SCHEMA_VERSION = "vision_nav_field_collection_plan_v1"
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Create an operator checklist for collecting required real field replay evidence."
+    )
+    parser.add_argument(
+        "--manifest",
+        default="data/replay_cases/field_manifest.json",
+        help="Active field replay manifest to inspect. Missing files are treated as no cases registered.",
+    )
+    parser.add_argument(
+        "--output",
+        default="data/replay_cases/field_collection_plan.json",
+        help="JSON collection plan path to write.",
+    )
+    parser.add_argument(
+        "--markdown-output",
+        help="Optional Markdown checklist path to write.",
+    )
+    parser.add_argument("--site-name", default="field-site", help="Short site or test-area label.")
+    parser.add_argument(
+        "--bundle",
+        default="TODO: mission_bundle path or map provenance",
+        help="Bundle path or provenance label to use in generated registration commands.",
+    )
+    parser.add_argument(
+        "--source-log",
+        default="$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
+        help="Pi-side terrain runtime/replay log path to use in generated registration commands.",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit JSON only.")
+    return parser.parse_args()
+
+
+def create_field_collection_plan(
+    *,
+    manifest_path: str | Path,
+    output_path: str | Path | None = None,
+    markdown_output_path: str | Path | None = None,
+    site_name: str = "field-site",
+    bundle: str = "TODO: mission_bundle path or map provenance",
+    source_log: str = "$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
+) -> dict[str, Any]:
+    manifest = Path(manifest_path).expanduser()
+    manifest_data = load_manifest_or_empty(manifest)
+    cases = [case for case in manifest_data.get("cases") or [] if isinstance(case, dict)]
+    conditions = [
+        condition_plan(
+            condition=condition,
+            manifest_path=manifest,
+            cases=cases,
+            site_name=site_name,
+            bundle=bundle,
+            source_log=source_log,
+        )
+        for condition in REQUIRED_FIELD_CONDITIONS
+    ]
+    summary = {
+        "required_count": len(REQUIRED_FIELD_CONDITIONS),
+        "registered_count": sum(1 for item in conditions if item["status"] == "registered"),
+        "registered_missing_log_count": sum(1 for item in conditions if item["status"] == "registered_missing_log"),
+        "placeholder_count": sum(1 for item in conditions if item["status"] == "placeholder"),
+        "missing_count": sum(1 for item in conditions if item["status"] == "missing"),
+    }
+    all_registered = summary["registered_count"] == summary["required_count"]
+    plan = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": "passed" if all_registered else "degraded",
+        "manifest_path": str(manifest),
+        "manifest_exists": manifest.exists(),
+        "site_name": site_name,
+        "bundle": bundle,
+        "source_log": source_log,
+        "summary": summary,
+        "conditions": conditions,
+        "next_steps": next_steps(summary),
+    }
+    if output_path is not None:
+        output = Path(output_path).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        plan["output_path"] = str(output)
+    if markdown_output_path is not None:
+        markdown = Path(markdown_output_path).expanduser()
+        markdown.parent.mkdir(parents=True, exist_ok=True)
+        markdown.write_text(render_field_collection_markdown(plan), encoding="utf-8")
+        plan["markdown_output_path"] = str(markdown)
+    return plan
+
+
+def load_manifest_or_empty(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"version": "0.1.0", "cases": []}
+    raw = json.loads(path.read_text())
+    if not isinstance(raw, dict):
+        raise ValueError(f"Replay manifest must be a JSON object: {path}")
+    raw.setdefault("cases", [])
+    return raw
+
+
+def condition_plan(
+    *,
+    condition: str,
+    manifest_path: Path,
+    cases: list[dict[str, Any]],
+    site_name: str,
+    bundle: str,
+    source_log: str,
+) -> dict[str, Any]:
+    matching = [case for case in cases if condition in normalize_conditions([str(value) for value in case.get("conditions") or []])]
+    selected = select_best_case(matching, manifest_path)
+    site_slug = sanitize_filename(site_name)
+    generated_case_name = sanitize_filename(f"{site_slug}-{condition}")
+    expected = expected_behavior_for_condition(condition)
+    status = "missing"
+    manifest_log_path: str | None = None
+    log_exists: bool | None = None
+    notes = notes_for_condition(condition)
+    case_name = generated_case_name
+    if selected is not None:
+        case_name = str(selected.get("case_name") or generated_case_name)
+        expected = str(selected.get("expected") or expected)
+        manifest_log_path = str(selected.get("log") or "") or None
+        notes = str(selected.get("notes") or notes)
+        log_exists = case_log_exists(manifest_path, selected)
+        if selected.get("template_status"):
+            status = "placeholder"
+        elif log_exists:
+            status = "registered"
+        else:
+            status = "registered_missing_log"
+    register_env = {
+        "VISION_NAV_FIELD_CASE_NAME": case_name,
+        "VISION_NAV_FIELD_EXPECTED": expected,
+        "VISION_NAV_FIELD_CONDITION": condition,
+        "VISION_NAV_FIELD_LOG": source_log,
+        "VISION_NAV_FIELD_BUNDLE": bundle,
+        "VISION_NAV_FIELD_NOTES": notes,
+        "VISION_NAV_FIELD_REPLACE": "1",
+    }
+    return {
+        "condition": condition,
+        "label": label_for_condition(condition),
+        "expected": expected,
+        "status": status,
+        "notes": notes,
+        "case_name": case_name,
+        "manifest_log_path": manifest_log_path,
+        "manifest_log_exists": log_exists,
+        "source_log": source_log,
+        "bundle": bundle,
+        "register_env": register_env,
+        "register_command": shell_command(register_env, "./scripts/pi/register_field_replay_case.sh"),
+        "capture_command": "./scripts/pi/run_terrain_nav_loop.sh",
+    }
+
+
+def select_best_case(cases: list[dict[str, Any]], manifest_path: Path) -> dict[str, Any] | None:
+    if not cases:
+        return None
+    registered_existing = [case for case in cases if not case.get("template_status") and case_log_exists(manifest_path, case)]
+    if registered_existing:
+        return sorted(registered_existing, key=lambda case: str(case.get("case_name") or ""))[0]
+    registered = [case for case in cases if not case.get("template_status")]
+    if registered:
+        return sorted(registered, key=lambda case: str(case.get("case_name") or ""))[0]
+    return sorted(cases, key=lambda case: str(case.get("case_name") or ""))[0]
+
+
+def case_log_exists(manifest_path: Path, case: dict[str, Any]) -> bool:
+    log = case.get("log")
+    if not log:
+        return False
+    path = Path(str(log)).expanduser()
+    if not path.is_absolute():
+        path = manifest_path.parent / path
+    return path.exists()
+
+
+def shell_command(env: dict[str, str], command: str) -> str:
+    parts = [f"{key}={shlex.quote(str(value))}" for key, value in env.items()]
+    return " \\\n  ".join(parts + [command])
+
+
+def next_steps(summary: dict[str, int]) -> list[str]:
+    if summary["registered_count"] == summary["required_count"]:
+        return [
+            "Run ./scripts/pi/run_feature_method_benchmark.sh against the latest real field log.",
+            "Run ./scripts/pi/run_threshold_tuning_report.sh against the complete field manifest.",
+            "Run ./scripts/pi/run_autonomy_readiness_audit.sh after PX4 receiver proof is available.",
+        ]
+    return [
+        "Capture a real terrain runtime/replay log for each unchecked condition.",
+        "Run the generated registration command for each condition after capture.",
+        "Repeat until placeholder_count, missing_count, and registered_missing_log_count are all zero.",
+        "Then run ./scripts/pi/run_threshold_tuning_report.sh.",
+    ]
+
+
+def render_field_collection_markdown(plan: dict[str, Any]) -> str:
+    summary = plan.get("summary") or {}
+    lines = [
+        "# Field Evidence Collection Plan",
+        "",
+        f"- Status: {plan.get('status')}",
+        f"- Site: {plan.get('site_name')}",
+        f"- Manifest: `{plan.get('manifest_path')}`",
+        f"- Bundle: `{plan.get('bundle')}`",
+        f"- Registered: {summary.get('registered_count', 0)}/{summary.get('required_count', 0)}",
+        f"- Placeholder: {summary.get('placeholder_count', 0)}",
+        f"- Missing: {summary.get('missing_count', 0)}",
+        f"- Registered missing log: {summary.get('registered_missing_log_count', 0)}",
+        "",
+        "## Checklist",
+        "",
+    ]
+    for item in plan.get("conditions") or []:
+        checked = "x" if item.get("status") == "registered" else " "
+        lines.append(f"- [{checked}] {item.get('label')} (`{item.get('condition')}`) - {item.get('status')}")
+    lines.extend(["", "## Conditions", ""])
+    for item in plan.get("conditions") or []:
+        lines.extend(
+            [
+                f"### {item.get('label')}",
+                "",
+                f"- Condition: `{item.get('condition')}`",
+                f"- Expected behavior: `{item.get('expected')}`",
+                f"- Current status: `{item.get('status')}`",
+                f"- Notes: {item.get('notes') or 'n/a'}",
+                "",
+                "Capture or replay a representative log, then register it:",
+                "",
+                "```bash",
+                str(item.get("register_command") or ""),
+                "```",
+                "",
+            ]
+        )
+    lines.extend(["## Next Steps", ""])
+    for step in plan.get("next_steps") or []:
+        lines.append(f"- {step}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def print_human(plan: dict[str, Any]) -> None:
+    summary = plan["summary"]
+    print(f"Field collection plan: {plan.get('output_path') or '(not written)'}")
+    if plan.get("markdown_output_path"):
+        print(f"Markdown checklist: {plan['markdown_output_path']}")
+    print(f"Status: {plan['status']}")
+    print(
+        "Registered: "
+        f"{summary['registered_count']}/{summary['required_count']} "
+        f"(placeholder {summary['placeholder_count']}, missing {summary['missing_count']}, "
+        f"registered missing log {summary['registered_missing_log_count']})"
+    )
+    for item in plan["conditions"]:
+        print(f"- {item['condition']}: {item['status']} expected={item['expected']}")
+
+
+def main() -> None:
+    args = parse_args()
+    plan = create_field_collection_plan(
+        manifest_path=args.manifest,
+        output_path=args.output,
+        markdown_output_path=args.markdown_output,
+        site_name=args.site_name,
+        bundle=args.bundle,
+        source_log=args.source_log,
+    )
+    if args.json:
+        print(json.dumps(plan, indent=2, sort_keys=True))
+    else:
+        print_human(plan)
+    if plan["status"] == "passed":
+        return
+
+
+if __name__ == "__main__":
+    main()

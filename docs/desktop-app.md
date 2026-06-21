@@ -331,6 +331,15 @@ template and the active manifest when the Pi wrapper emits
 `__VISION_NAV_FIELD_TEMPLATE__=...` and `__VISION_NAV_FIELD_MANIFEST__=...`.
 The template list separates remaining placeholder conditions from conditions
 that already have registered logs.
+The `Create Plan` action runs `scripts/pi/create_field_collection_plan.sh` and
+turns that active manifest into a JSON and Markdown field checklist with one
+registration command per required condition. Module Setup downloads both files,
+shows their paths in Latest Output, and indexes downloaded plans after restart
+in the Field Collection Plans list. The Evidence Workflow wrapper also runs the
+checklist step, downloads the emitted plan artifacts, and records the emitted
+plan markers in the workflow report. Support bundles copy the JSON checklist
+and sibling Markdown file when present, and the final autonomy evidence package
+includes the plan/checklist paths recorded by the readiness audit.
 
 Module Setup can also register the latest Pi terrain runtime log as a field
 evidence case after capture. The operator selects expected behavior, condition
@@ -351,8 +360,9 @@ field-case count, and the main acceptance-rate margins.
 
 For Pi-side support sessions where a single command is easier than clicking each
 step, `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the same ordered
-path: field template, optional field-case registration, feature benchmark,
-threshold tuning, support bundle, and final readiness audit. It writes
+path: field template, field collection checklist, optional field-case
+registration, feature benchmark, threshold tuning, support bundle, and final
+readiness audit. It writes
 `autonomy_evidence_workflow.json` with per-step status, log paths, output tails,
 and emitted markers, while still failing honestly in the final readiness report
 until real PX4 and field evidence exist.
@@ -409,6 +419,9 @@ Markdown handoff marker, Module Setup downloads that handoff beside the JSON
 report. When the Pi emits the evidence-package marker, Module Setup also
 downloads `autonomy_readiness_report.evidence.zip` beside the JSON report and
 shows both local paths in the Latest Output panel for support review.
+If a field collection plan/checklist exists in the replay-cases folder, the
+audit records those paths and the evidence ZIP includes them as referenced
+artifacts.
 On later app launches, the Autonomy Readiness Reports list detects sibling
 `autonomy_readiness_report.md` and
 `autonomy_readiness_report.evidence.zip` files beside each JSON report and

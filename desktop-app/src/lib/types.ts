@@ -441,6 +441,8 @@ export interface AutonomyEvidenceWorkflowReportFile {
   marker_count: number;
   readiness_report_path?: string;
   evidence_package_path?: string;
+  field_collection_plan_path?: string;
+  field_collection_plan_markdown_path?: string;
   px4_receiver_report_path?: string;
 }
 
@@ -496,6 +498,37 @@ export interface FieldEvidenceTemplateFile {
   conditions: string[];
   placeholder_conditions: string[];
   registered_conditions: string[];
+}
+
+export interface FieldCollectionPlanFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  markdown_path?: string;
+  markdown_size_bytes?: number;
+  markdown_modified_unix_ms?: number;
+  status?: "passed" | "failed" | "degraded" | string;
+  site_name?: string;
+  manifest_path?: string;
+  bundle?: string;
+  summary: {
+    required_count?: number;
+    registered_count?: number;
+    registered_missing_log_count?: number;
+    placeholder_count?: number;
+    missing_count?: number;
+  };
+  conditions: Array<{
+    condition?: string;
+    label?: string;
+    expected?: "good_map" | "degraded" | "wrong_map" | string;
+    status?: "registered" | "registered_missing_log" | "placeholder" | "missing" | string;
+    case_name?: string;
+    manifest_log_path?: string;
+    manifest_log_exists?: boolean;
+    register_command?: string;
+  }>;
 }
 
 export interface FeatureMethodBenchmarkReportFile {

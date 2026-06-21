@@ -9,9 +9,14 @@ log_dir="$workflow_dir/logs"
 allow_failed="${VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED:-1}"
 field_template="${VISION_NAV_FIELD_TEMPLATE:-$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.template.json}"
 field_manifest="${VISION_NAV_FIELD_MANIFEST:-$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json}"
+field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$(dirname "$field_manifest")/field_collection_plan.json}"
+field_collection_plan_md="${VISION_NAV_FIELD_COLLECTION_PLAN_MD:-${field_collection_plan%.json}.md}"
 field_log="${VISION_NAV_FIELD_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}"
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
 steps_jsonl=""
+
+export VISION_NAV_FIELD_COLLECTION_PLAN="$field_collection_plan"
+export VISION_NAV_FIELD_COLLECTION_PLAN_MD="$field_collection_plan_md"
 
 usage() {
   cat >&2 <<EOF
@@ -31,6 +36,8 @@ Common optional overrides:
   VISION_NAV_EVIDENCE_WORKFLOW_REPORT     Default: $report
   VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED=0  Exit nonzero when any required step fails
   VISION_NAV_FIELD_CASE_NAME / VISION_NAV_FIELD_EXPECTED / VISION_NAV_FIELD_CONDITION
+  VISION_NAV_FIELD_COLLECTION_PLAN       Default: $field_collection_plan
+  VISION_NAV_FIELD_COLLECTION_PLAN_MD    Default: $field_collection_plan_md
   VISION_NAV_FIELD_LOG                    Default: $field_log
   VISION_NAV_BUNDLE                       Default: $bundle
 EOF
@@ -172,6 +179,8 @@ if [[ -f "$field_template" && -f "$field_manifest" && "${VISION_NAV_EVIDENCE_WOR
 else
   run_step "create_field_evidence_template" ./scripts/pi/create_field_evidence_template.sh
 fi
+
+run_step "create_field_collection_plan" ./scripts/pi/create_field_collection_plan.sh
 
 if [[ -n "${VISION_NAV_FIELD_CASE_NAME:-}" && -n "${VISION_NAV_FIELD_EXPECTED:-}" && -n "${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}" ]]; then
   VISION_NAV_FIELD_GATE_STRICT=0 run_step "register_field_replay_case" ./scripts/pi/register_field_replay_case.sh
