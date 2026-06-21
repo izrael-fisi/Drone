@@ -54,6 +54,10 @@ def validate_georef(manifest: dict[str, Any], issues: list[dict[str, str]]) -> d
         add_issue(issues, "error", f"origin_lon out of range: {lon}")
     if gsd <= 0:
         add_issue(issues, "error", f"gsd_m must be greater than zero: {gsd}")
+    if "georef_confidence" in georef:
+        confidence = float(georef["georef_confidence"])
+        if not 0.0 <= confidence <= 1.0:
+            add_issue(issues, "error", f"georef_confidence must be between 0 and 1: {confidence}")
     return georef
 
 

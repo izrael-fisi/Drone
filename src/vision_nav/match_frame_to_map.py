@@ -10,7 +10,12 @@ import numpy as np
 from vision_nav.camera import load_camera_calibration, validate_image_size
 from vision_nav.features import extract_features, load_feature_index, load_gray_image
 from vision_nav.matching import estimate_homography, match_descriptors
-from vision_nav.quality import estimate_position_covariance_m2, feature_density, frame_quality_metrics
+from vision_nav.quality import (
+    estimate_position_covariance_m2,
+    estimate_visual_position_confidence,
+    feature_density,
+    frame_quality_metrics,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,6 +137,23 @@ def match_frame_to_map(args: argparse.Namespace) -> dict:
         if georef is not None:
             east_m, north_m = georef.pixel_to_local_m(float(map_center[0]), float(map_center[1]))
             lat, lon = georef.pixel_to_latlon(float(map_center[0]), float(map_center[1]))
+            position_confidence = estimate_visual_position_confidence(
+                match_confidence=output["confidence"],
+                georef_confidence=georef.confidence,
+            )
+            output["map_georef"] = {
+                "source": georef.source,
+                "confidence": georef.confidence,
+                "crs": georef.crs,
+                "gsd_m": georef.gsd_m,
+                "origin_lat": georef.origin_lat,
+                "origin_lon": georef.origin_lon,
+                "origin_pixel_x": georef.origin_pixel_x,
+                "origin_pixel_y": georef.origin_pixel_y,
+                "rotation_deg": georef.rotation_deg,
+            }
+            output["position_confidence"] = position_confidence
+            output["confidence_model"] = "match_confidence_times_georef_confidence"
             output["estimated_position"] = {
                 "latitude": lat,
                 "longitude": lon,
@@ -145,9 +167,9 @@ def match_frame_to_map(args: argparse.Namespace) -> dict:
                 "y_m": north_m,
                 "z_m": None,
                 "yaw_rad": None,
-                "confidence": output["confidence"],
+                "confidence": position_confidence,
                 "covariance": estimate_position_covariance_m2(
-                    confidence=output["confidence"],
+                    confidence=position_confidence,
                     reprojection_error_px=output["reprojection_error_px"],
                     gsd_m=georef.gsd_m,
                 ),

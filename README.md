@@ -6,7 +6,7 @@ Raspberry Pi 5 + Raspberry Pi Global Shutter Camera navigation module.
 The project goal is narrow:
 
 - Downward camera visual map-relative localization
-- Precomputed map features from georeferenced imagery
+- Precomputed map features from georeferenced imagery, including GeoTIFF-derived map metadata
 - Runtime feature matching with confidence scoring
 - Approximate map-pixel to lat/lon conversion for simple orthophoto bundles
 - PX4/Pixhawk integration as a navigation source after bench validation
@@ -41,6 +41,7 @@ after the classical pipeline has been measured and its failure modes are known.
 - `scripts/pi/`: Raspberry Pi bootstrap, Docker, SSH, and transfer setup
 - `scripts/mac/`: Mac transfer and SSH helpers
 - `docker/pi/`: Docker runtime for the Pi vision environment
+- `desktop-app/`: Tauri + React desktop operator app for map selection/import, Mission Planner, module setup, camera preview, and MAVLink-enabled runtime checks
 - `src/vision_nav/`: First feature-map and frame-to-map matching tools
 - `transfer/`: Local staging folder for Mac-to-Pi and Pi-to-Mac file movement
 - `docs/`: Setup and architecture notes
@@ -51,6 +52,7 @@ Key docs:
 - [Camera Calibration](docs/camera-calibration.md)
 - [Vision Pipeline](docs/vision-pipeline.md)
 - [SSH And File Transfer](docs/ssh-and-transfer.md)
+- [Desktop App](docs/desktop-app.md)
 - [Operator Handoff](docs/operator-handoff.md)
 
 ## Quick Pi Setup
@@ -93,6 +95,8 @@ It captures camera frames, matches them against the bundle, and writes logs to
 `~/DroneTransfer/outgoing/runtime-match/`.
 By default, Pi runtime matching undistorts frames with
 `config/camera/down_camera.yaml`.
+When `VISION_NAV_MAVLINK_ENDPOINT` is set, accepted local map measurements are
+also sent as MAVLink `VISION_POSITION_ESTIMATE`.
 
 Replay saved frames without using the camera:
 

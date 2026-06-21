@@ -18,6 +18,9 @@ def test_georef_json_round_trip():
         origin_pixel_x=100,
         origin_pixel_y=200,
         rotation_deg=10,
+        source="geotiff_embedded",
+        confidence=0.95,
+        crs="EPSG:32618",
     )
 
     decoded = georef_from_json(georef_to_json(georef))
@@ -39,4 +42,3 @@ def test_build_georef_requires_core_fields_together():
         assert "must be provided together" in str(exc)
     else:
         raise AssertionError("Expected incomplete georef arguments to fail")
-

@@ -1,0 +1,28 @@
+node_modules/
+.npm-cache/
+dist/
+dist-ssr/
+*.local
+.env
+.env.*
+!.env.example
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+src-tauri/WixTools/
+*.dmg
+*.deb
+*.AppImage
+*.msi
+*.exe
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

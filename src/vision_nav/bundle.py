@@ -35,7 +35,7 @@ def manifest_features_path(bundle_dir: Path, manifest: dict[str, Any]) -> Path:
         raise KeyError("Manifest must contain features.path") from exc
 
 
-def manifest_georef(manifest: dict[str, Any]) -> dict[str, float]:
+def manifest_georef(manifest: dict[str, Any]) -> dict[str, Any]:
     orthophoto = manifest.get("orthophoto", {})
     keys = [
         "origin_lat",
@@ -44,6 +44,9 @@ def manifest_georef(manifest: dict[str, Any]) -> dict[str, float]:
         "origin_pixel_x",
         "origin_pixel_y",
         "rotation_deg",
+        "georef_source",
+        "georef_confidence",
+        "georef_crs",
     ]
     return {key: orthophoto[key] for key in keys if key in orthophoto}
 
@@ -54,4 +57,3 @@ def manifest_feature_options(manifest: dict[str, Any]) -> dict[str, Any]:
         "method": features.get("method", "orb"),
         "max_features": int(features.get("max_features", 3000)),
     }
-

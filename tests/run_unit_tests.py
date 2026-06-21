@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import tempfile
+import time
 
 import numpy as np
 
@@ -16,6 +17,7 @@ from vision_nav.bundle import (
 from vision_nav.bundle_checksums import verify_checksum_file, write_checksum_file
 from vision_nav.camera import load_camera_calibration, validate_image_size
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
+from vision_nav.mavlink_bridge import MavlinkVisionBridge, parse_mavlink_endpoint
 from vision_nav.summarize_match_log import summarize_records
 from vision_nav.validate_map_bundle import validate_bundle
 
@@ -44,6 +46,9 @@ def test_georef_json_round_trip() -> None:
         origin_pixel_x=100,
         origin_pixel_y=200,
         rotation_deg=10,
+        source="geotiff_embedded",
+        confidence=0.95,
+        crs="EPSG:32618",
     )
     assert_equal(georef_from_json(georef_to_json(georef)), georef, "georef round trip")
 
@@ -140,6 +145,7 @@ def test_summarize_match_records() -> None:
                 "result": {
                     "status": "accepted",
                     "confidence": 0.8,
+                    "position_confidence": 0.76,
                     "inliers": 30,
                     "inlier_ratio": 0.6,
                     "reprojection_error_px": 2.0,
@@ -151,6 +157,7 @@ def test_summarize_match_records() -> None:
                     },
                     "frame_quality": {"sharpness_laplacian_var": 12.0, "entropy_bits": 5.0},
                     "estimated_position": {"latitude": 40.0, "longitude": -75.0},
+                    "map_georef": {"confidence": 0.95, "source": "geotiff_embedded"},
                     "measurement": {"covariance": {"sigma_xy_m": 1.2}},
                 },
             },
@@ -174,6 +181,8 @@ def test_summarize_match_records() -> None:
     assert_equal(summary["reason_counts"], {"not_enough_inliers": 1}, "summary reason_counts")
     assert_equal(summary["accepted_rate"], 0.5, "summary accepted_rate")
     assert_equal(summary["confidence"]["mean"], 0.5, "summary confidence mean")
+    assert_equal(summary["position_confidence"]["mean"], 0.76, "summary position confidence mean")
+    assert_equal(summary["georef_confidence"]["mean"], 0.95, "summary georef confidence mean")
     assert_equal(summary["geometry_scale_mean"]["mean"], 1.0, "summary geometry scale mean")
     assert_equal(summary["geometry_rotation_deg"]["mean"], 2.0, "summary geometry rotation mean")
     assert_equal(summary["estimated_position"]["count"], 1, "summary estimated_position count")
@@ -182,7 +191,12 @@ def test_summarize_match_records() -> None:
 
 def test_quality_metrics_and_covariance() -> None:
     try:
-        from vision_nav.quality import estimate_position_covariance_m2, feature_density, frame_quality_metrics
+        from vision_nav.quality import (
+            estimate_position_covariance_m2,
+            estimate_visual_position_confidence,
+            feature_density,
+            frame_quality_metrics,
+        )
     except ModuleNotFoundError as exc:
         if exc.name == "cv2":
             raise SkipTest("requires cv2") from exc
@@ -200,6 +214,49 @@ def test_quality_metrics_and_covariance() -> None:
     covariance = estimate_position_covariance_m2(confidence=0.8, reprojection_error_px=2.0, gsd_m=0.25)
     if covariance["sigma_xy_m"] <= 0:
         raise AssertionError("Expected positive covariance sigma")
+    assert_equal(estimate_visual_position_confidence(0.8, 0.95), 0.76, "position confidence")
+
+
+def test_mavlink_endpoint_parsing_and_axis_mapping() -> None:
+    assert_equal(parse_mavlink_endpoint("udp:14550"), ("udpout:127.0.0.1:14550", None), "udp port alias")
+    assert_equal(
+        parse_mavlink_endpoint("serial:/dev/ttyAMA0:921600"),
+        ("/dev/ttyAMA0", 921600),
+        "serial endpoint",
+    )
+
+    calls = []
+
+    class FakeMav:
+        def vision_position_estimate_send(self, *args):
+            calls.append(args)
+
+    class FakeConnection:
+        mav = FakeMav()
+
+    bridge = MavlinkVisionBridge("udp:14550")
+    bridge._conn = FakeConnection()
+    bridge._last_heartbeat_s = time.monotonic()
+    send_result = bridge.send_match_result(
+        {
+            "status": "accepted",
+            "measurement": {
+                "frame": "local_enu",
+                "x_m": 4.0,
+                "y_m": 7.0,
+                "z_m": None,
+                "yaw_rad": None,
+                "covariance": {"x_m2": 9.0, "y_m2": 16.0, "z_m2": None, "yaw_rad2": None},
+            },
+        }
+    )
+    assert_equal(send_result.sent, True, "MAVLink send status")
+    _, x_north, y_east, z_down, *_rest, covariance = calls[0]
+    assert_equal(x_north, 7.0, "MAVLink north axis")
+    assert_equal(y_east, 4.0, "MAVLink east axis")
+    assert_equal(z_down, -0.0, "MAVLink down axis")
+    assert_equal(covariance[0], 16.0, "MAVLink north covariance")
+    assert_equal(covariance[6], 9.0, "MAVLink east covariance")
 
 
 def test_camera_health_report_on_synthetic_image() -> None:
@@ -344,6 +401,7 @@ def main() -> None:
         test_load_camera_calibration_and_validate_size,
         test_summarize_match_records,
         test_quality_metrics_and_covariance,
+        test_mavlink_endpoint_parsing_and_axis_mapping,
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,

@@ -44,6 +44,9 @@ For early tests, use a single map image with a simple local georeference:
 - `gsd_m`: ground sample distance in meters per pixel
 - `origin_pixel_x` / `origin_pixel_y`: pixel coordinate for the origin
 - `rotation_deg`: optional map-axis rotation in local ENU
+- `georef_source`: `geotiff_embedded`, `manual`, or another source label
+- `georef_confidence`: map georeference trust score from 0 to 1
+- `georef_crs`: optional CRS label such as `EPSG:4326` or `EPSG:32618`
 
 Default axis convention:
 
@@ -94,7 +97,9 @@ output includes:
 - `estimated_position.longitude`
 - local `east_m` / `north_m`
 - `frame_quality` sharpness, contrast, entropy, and feature density
-- `measurement` local ENU candidate with confidence and estimated covariance
+- `map_georef` source, CRS, GSD, and georeference confidence
+- `position_confidence`, which combines visual match confidence with georeference confidence
+- `measurement` local ENU candidate with position confidence and estimated covariance
 
 This is still a measurement candidate, not a direct state reset.
 

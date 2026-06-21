@@ -45,6 +45,9 @@ def build_map_bundle(bundle: str, metadata_json: str | None = None) -> dict:
         origin_pixel_x=float(georef.get("origin_pixel_x", 0.0)),
         origin_pixel_y=float(georef.get("origin_pixel_y", 0.0)),
         rotation_deg=float(georef.get("rotation_deg", 0.0)),
+        georef_source=str(georef.get("georef_source") or georef.get("source") or "manual"),
+        georef_confidence=float(georef.get("georef_confidence", georef.get("confidence", 1.0))),
+        georef_crs=georef.get("georef_crs") or georef.get("crs"),
     )
 
     result["bundle_dir"] = str(bundle_dir)

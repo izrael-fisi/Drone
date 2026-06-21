@@ -25,6 +25,9 @@ class SimpleGeoReference:
     origin_pixel_x: float = 0.0
     origin_pixel_y: float = 0.0
     rotation_deg: float = 0.0
+    source: str = "manual"
+    confidence: float = 1.0
+    crs: str | None = None
 
     def pixel_to_local_m(self, x_px: float, y_px: float) -> tuple[float, float]:
         dx = (x_px - self.origin_pixel_x) * self.gsd_m
@@ -64,6 +67,9 @@ class SimpleGeoReference:
             origin_pixel_x=float(value.get("origin_pixel_x", 0.0)),
             origin_pixel_y=float(value.get("origin_pixel_y", 0.0)),
             rotation_deg=float(value.get("rotation_deg", 0.0)),
+            source=str(value.get("source") or value.get("georef_source") or "manual"),
+            confidence=float(value.get("confidence", value.get("georef_confidence", 1.0))),
+            crs=value.get("crs") or value.get("georef_crs"),
         )
 
 
@@ -90,6 +96,9 @@ def build_georef_from_cli(
     origin_pixel_x: float,
     origin_pixel_y: float,
     rotation_deg: float,
+    source: str = "manual",
+    confidence: float = 1.0,
+    crs: str | None = None,
 ) -> SimpleGeoReference | None:
     values = [origin_lat, origin_lon, gsd_m]
     if all(value is None for value in values):
@@ -98,6 +107,8 @@ def build_georef_from_cli(
         raise ValueError("--origin-lat, --origin-lon, and --gsd-m must be provided together")
     if gsd_m is None or gsd_m <= 0:
         raise ValueError("--gsd-m must be greater than zero")
+    if not 0.0 <= float(confidence) <= 1.0:
+        raise ValueError("--georef-confidence must be between 0 and 1")
     return SimpleGeoReference(
         origin_lat=float(origin_lat),
         origin_lon=float(origin_lon),
@@ -105,5 +116,7 @@ def build_georef_from_cli(
         origin_pixel_x=origin_pixel_x,
         origin_pixel_y=origin_pixel_y,
         rotation_deg=rotation_deg,
+        source=source,
+        confidence=float(confidence),
+        crs=crs,
     )
-

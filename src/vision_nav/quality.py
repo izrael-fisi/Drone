@@ -32,6 +32,20 @@ def feature_density(feature_count: int, image_shape: tuple[int, int]) -> float:
     return float(feature_count / megapixels)
 
 
+def estimate_visual_position_confidence(match_confidence: float, georef_confidence: float | None) -> float:
+    """Combine visual match quality with map georeference quality.
+
+    The matcher confidence answers "did this frame match this map image?".
+    The georef confidence answers "is this map image anchored to Earth well?".
+    Flight-control consumers need both, so the position confidence is the more
+    conservative product used for measurement covariance.
+    """
+
+    match = min(max(float(match_confidence), 0.0), 1.0)
+    georef = 1.0 if georef_confidence is None else min(max(float(georef_confidence), 0.0), 1.0)
+    return float(match * georef)
+
+
 def estimate_position_covariance_m2(
     confidence: float,
     reprojection_error_px: float | None,

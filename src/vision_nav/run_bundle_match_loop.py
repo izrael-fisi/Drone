@@ -10,6 +10,7 @@ from vision_nav.build_map_bundle import build_map_bundle
 from vision_nav.bundle import load_manifest, manifest_features_path, manifest_orthophoto_path
 from vision_nav.capture_frame import capture_frame
 from vision_nav.match_frame_to_map import match_frame_to_map
+from vision_nav.mavlink_bridge import MavlinkVisionBridge
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,6 +46,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Build the bundle feature index before starting if it is missing.",
     )
+    parser.add_argument("--mavlink-endpoint", help="Optional MAVLink endpoint for accepted vision measurements.")
+    parser.add_argument("--mavlink-ev-delay-ms", type=int, default=50)
+    parser.add_argument("--mavlink-system-id", type=int, default=1)
+    parser.add_argument("--mavlink-component-id", type=int, default=197)
+    parser.add_argument("--mavlink-source-system", type=int, default=42)
+    parser.add_argument("--mavlink-source-component", type=int, default=197)
     return parser.parse_args()
 
 
@@ -86,6 +93,17 @@ def ensure_feature_index(bundle_arg: str, build_if_missing: bool) -> tuple[Path,
 def main() -> None:
     args = parse_args()
     _, map_path, features_path = ensure_feature_index(args.bundle, args.build_if_missing)
+    mavlink_bridge = None
+    if args.mavlink_endpoint:
+        mavlink_bridge = MavlinkVisionBridge(
+            args.mavlink_endpoint,
+            system_id=args.mavlink_system_id,
+            component_id=args.mavlink_component_id,
+            source_system=args.mavlink_source_system,
+            source_component=args.mavlink_source_component,
+            ev_delay_ms=args.mavlink_ev_delay_ms,
+        )
+        mavlink_bridge.connect()
 
     output_dir = Path(args.output_dir)
     frames_dir = output_dir / "frames"
@@ -98,7 +116,14 @@ def main() -> None:
     sequence = 0
     print(f"Writing match log: {log_path}")
 
-    with log_path.open("a", encoding="utf-8") as log_file:
+    try:
+        log_file_context = log_path.open("a", encoding="utf-8")
+    except Exception:
+        if mavlink_bridge:
+            mavlink_bridge.close()
+        raise
+
+    with log_file_context as log_file:
         try:
             while args.count == 0 or sequence < args.count:
                 sequence += 1
@@ -135,6 +160,9 @@ def main() -> None:
                 match_start = time.monotonic()
                 result = match_frame_to_map(match_args)
                 match_duration_s = time.monotonic() - match_start
+                mavlink_result = None
+                if mavlink_bridge is not None:
+                    mavlink_result = mavlink_bridge.send_match_result(result).to_dict()
 
                 record = {
                     "sequence": sequence,
@@ -143,6 +171,7 @@ def main() -> None:
                     "viz_path": str(viz_path) if viz_path else None,
                     "capture_duration_s": capture_duration_s,
                     "match_duration_s": match_duration_s,
+                    "mavlink": mavlink_result,
                     "result": result,
                 }
                 log_file.write(json.dumps(record, sort_keys=True) + "\n")
@@ -154,6 +183,9 @@ def main() -> None:
                     time.sleep(sleep_s)
         except KeyboardInterrupt:
             print("\nStopped by user.")
+        finally:
+            if mavlink_bridge:
+                mavlink_bridge.close()
 
 
 if __name__ == "__main__":

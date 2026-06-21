@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.DS_Store
 .venv/
 venv/
 .pytest_cache/
@@ -29,3 +30,10 @@ transfer/pi_to_mac/*
 !transfer/mac_to_pi/.gitkeep
 !transfer/pi_to_mac/.gitkeep
 !transfer/README.md
+
+# Desktop app build/dependency outputs
+desktop-app/node_modules/
+desktop-app/dist/
+desktop-app/.npm-cache/
+desktop-app/src-tauri/gen/
+desktop-app/src-tauri/target/

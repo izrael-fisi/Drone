@@ -31,6 +31,9 @@ def parse_args() -> argparse.Namespace:
         default=0.0,
         help="Counter-clockwise rotation of north-up image axes in local ENU.",
     )
+    parser.add_argument("--georef-source", default="manual", help="Source of the map georeference.")
+    parser.add_argument("--georef-confidence", type=float, default=1.0, help="Georeference trust score from 0 to 1.")
+    parser.add_argument("--georef-crs", help="Coordinate reference system label, for example EPSG:4326.")
     return parser.parse_args()
 
 
@@ -45,6 +48,9 @@ def build_feature_map(
     origin_pixel_x: float = 0.0,
     origin_pixel_y: float = 0.0,
     rotation_deg: float = 0.0,
+    georef_source: str = "manual",
+    georef_confidence: float = 1.0,
+    georef_crs: str | None = None,
 ) -> dict:
     image = load_gray_image(map_image)
     features = extract_features(image, method=method, max_features=max_features)
@@ -55,6 +61,9 @@ def build_feature_map(
         origin_pixel_x=origin_pixel_x,
         origin_pixel_y=origin_pixel_y,
         rotation_deg=rotation_deg,
+        source=georef_source,
+        confidence=georef_confidence,
+        crs=georef_crs,
     )
     save_feature_index(output, map_image, image.shape[:2], features, georef=georef)
 
@@ -83,6 +92,9 @@ def main() -> None:
         origin_pixel_x=args.origin_pixel_x,
         origin_pixel_y=args.origin_pixel_y,
         rotation_deg=args.rotation_deg,
+        georef_source=args.georef_source,
+        georef_confidence=args.georef_confidence,
+        georef_crs=args.georef_crs,
     )
 
     if args.metadata_json:

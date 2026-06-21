@@ -17,6 +17,10 @@ max_scale="${VISION_NAV_MAX_SCALE:-5.0}"
 max_rotation_deg="${VISION_NAV_MAX_ROTATION_DEG:-90.0}"
 max_scale_anisotropy="${VISION_NAV_MAX_SCALE_ANISOTROPY:-3.0}"
 max_perspective_norm="${VISION_NAV_MAX_PERSPECTIVE_NORM:-0.01}"
+mavlink_endpoint="${VISION_NAV_MAVLINK_ENDPOINT:-}"
+mavlink_ev_delay_ms="${VISION_NAV_MAVLINK_EV_DELAY_MS:-50}"
+mavlink_source_system="${VISION_NAV_MAVLINK_SOURCE_SYSTEM:-42}"
+mavlink_source_component="${VISION_NAV_MAVLINK_SOURCE_COMPONENT:-197}"
 
 if [[ ! -x "$venv_python" ]]; then
   echo "Missing Python venv: $venv_python" >&2
@@ -38,6 +42,16 @@ if [[ -n "$camera_calibration" ]]; then
   calibration_args=(--camera-calibration "$camera_calibration")
 fi
 
+mavlink_args=()
+if [[ -n "$mavlink_endpoint" ]]; then
+  mavlink_args=(
+    --mavlink-endpoint "$mavlink_endpoint"
+    --mavlink-ev-delay-ms "$mavlink_ev_delay_ms"
+    --mavlink-source-system "$mavlink_source_system"
+    --mavlink-source-component "$mavlink_source_component"
+  )
+fi
+
 PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.run_bundle_match_loop \
   --bundle "$bundle" \
   --output-dir "$out_dir" \
@@ -53,4 +67,5 @@ PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.run_bundle_match_loop \
   --max-scale-anisotropy "$max_scale_anisotropy" \
   --max-perspective-norm "$max_perspective_norm" \
   "${calibration_args[@]}" \
+  "${mavlink_args[@]}" \
   --build-if-missing

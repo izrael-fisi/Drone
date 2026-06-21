@@ -45,6 +45,8 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     statuses: Counter[str] = Counter()
     reasons: Counter[str] = Counter()
     confidences: list[float] = []
+    position_confidences: list[float] = []
+    georef_confidences: list[float] = []
     inliers: list[float] = []
     inlier_ratios: list[float] = []
     reprojection_errors: list[float] = []
@@ -69,6 +71,7 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
 
         for key, values in [
             ("confidence", confidences),
+            ("position_confidence", position_confidences),
             ("inliers", inliers),
             ("inlier_ratio", inlier_ratios),
             ("reprojection_error_px", reprojection_errors),
@@ -76,6 +79,10 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             value = result.get(key)
             if value is not None:
                 values.append(float(value))
+
+        map_georef = result.get("map_georef") or {}
+        if map_georef.get("confidence") is not None:
+            georef_confidences.append(float(map_georef["confidence"]))
 
         geometry = result.get("geometry") or {}
         if geometry.get("scale_mean") is not None:
@@ -116,6 +123,8 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "reason_counts": dict(sorted(reasons.items())),
         "accepted_rate": float(accepted / total) if total else 0.0,
         "confidence": numeric_summary(confidences),
+        "position_confidence": numeric_summary(position_confidences),
+        "georef_confidence": numeric_summary(georef_confidences),
         "inliers": numeric_summary(inliers),
         "inlier_ratio": numeric_summary(inlier_ratios),
         "reprojection_error_px": numeric_summary(reprojection_errors),
@@ -167,6 +176,8 @@ def print_human(summary: dict[str, Any]) -> None:
     print(f"Reasons: {summary['reason_counts']}")
     print(f"Accepted rate: {summary['accepted_rate']:.3f}")
     print(format_metric("Confidence", summary["confidence"]))
+    print(format_metric("Position confidence", summary["position_confidence"]))
+    print(format_metric("Georef confidence", summary["georef_confidence"]))
     print(format_metric("Inliers", summary["inliers"]))
     print(format_metric("Inlier ratio", summary["inlier_ratio"]))
     print(format_metric("Reprojection error px", summary["reprojection_error_px"]))
