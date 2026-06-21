@@ -183,7 +183,7 @@ def copy_bundle_metadata(bundle_path: str | Path, support_dir: Path, *, include_
         health = {"status": "failed", "error": str(exc)}
 
     if include_map_assets:
-        for rel in ["ortho", "imagery/tiles", "index/descriptors", "index/tiles.sqlite", "features/map_features.npz"]:
+        for rel in ["ortho", "elevation", "imagery/tiles", "index/descriptors", "index/tiles.sqlite", "features/map_features.npz"]:
             src = bundle_dir / rel
             if src.is_dir():
                 copied.append(copy_tree(src, bundle_root / rel))

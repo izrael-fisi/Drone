@@ -29,3 +29,4 @@ tiff = "0.11"
 dirs = "5"
 base64 = "0.22"
 anyhow = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }

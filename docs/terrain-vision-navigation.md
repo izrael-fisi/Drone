@@ -22,6 +22,8 @@ mission_bundle/
   manifest.json
   manifest.stac.json
   ortho/map.png
+  elevation/dem.tif                      # optional
+  elevation/dsm.tif                      # optional
   imagery/tiles/
   index/tiles.sqlite
   index/descriptors/
@@ -50,7 +52,23 @@ small STAC-style manifest, creates `config/terrain_nav.yaml`, and writes
 `bundle_health.json`. The health report checks georeference completeness, CRS,
 GSD, raster header metadata, lightweight COG/GeoTIFF readiness, STAC asset
 paths, tile-index readiness, feature count, first-pass feature-density quality,
-estimated Pi runtime cost, and local map bounds.
+estimated Pi runtime cost, local map bounds, source provenance, and checksum
+status. Missing checksums are reported without failing the health report; invalid
+checksums are reported as errors. The generated `bundle_health.json` file is
+excluded from bundle checksums so regenerating the report does not create a
+self-referential checksum mismatch.
+
+Optional DEM/DSM rasters can be placed at `elevation/dem.tif` and
+`elevation/dsm.tif` before building the terrain bundle. The builder declares
+those assets in `manifest.json`, `manifest.stac.json`, and
+`config/terrain_nav.yaml`. Bundle health reports whether DEM/DSM assets are
+present, whether their raster metadata can be inspected, and whether vertical
+terrain sanity checks are ready. Missing DEM/DSM files are fine when no asset is
+declared; declared-but-missing files fail bundle health.
+
+From the desktop app, use Maps -> Attach Elevation Assets to copy DEM/DSM
+GeoTIFFs into a saved map source. The next Mission Planner bundle build will
+carry those assets into `mission_bundle/elevation/`.
 
 ## Runtime
 
@@ -71,6 +89,15 @@ The Pi wrappers are:
 The runtime emits local ENU, optional lat/lon, covariance, confidence, tile id,
 inliers, reprojection error, scale confidence, and barometer health fields. When
 optional barometer input is unavailable, `z_m` and `z_m2` stay `null`.
+
+Tile retrieval is hierarchical. If the caller has a prior local ENU position and
+search radius, the matcher queries tiles that overlap that local radius first.
+On startup with no prior, it performs a bounded coarse search using spatially
+distributed high-feature tiles instead of only checking the most textured area,
+then reranks candidate tiles with a compact grayscale global descriptor before
+local ORB/AKAZE matching. Each runtime result includes `tile_query.strategy`,
+`tile_query.global_retrieval`, selected tile IDs, and coverage metadata so a
+support bundle can explain how candidate tiles were chosen.
 
 ## Estimator Policy
 

@@ -45,6 +45,15 @@ pub struct ImportMapFileRequest {
 }
 
 #[derive(Deserialize)]
+pub struct ImportElevationAssetsRequest {
+    pub region_dir: String,
+    #[serde(default)]
+    pub dem_path: Option<String>,
+    #[serde(default)]
+    pub dsm_path: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct RegionMetadata {
     origin_lat: f64,
     origin_lon: f64,
@@ -113,6 +122,15 @@ pub struct ImportMapFileResult {
     pub source: String,
 }
 
+#[derive(Serialize)]
+pub struct ImportElevationAssetsResult {
+    pub region_dir: String,
+    pub dem_path: Option<String>,
+    pub dsm_path: Option<String>,
+    pub asset_count: u8,
+    pub metadata_path: String,
+}
+
 #[derive(Clone, Debug)]
 struct MapGeoref {
     origin_lat: f64,
@@ -152,6 +170,14 @@ pub async fn build_drone_bundle(request: BuildDroneBundleRequest) -> Result<Buil
 #[tauri::command]
 pub async fn import_map_file(request: ImportMapFileRequest) -> Result<ImportMapFileResult, String> {
     tokio::task::spawn_blocking(move || inner_import_map_file(request))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn import_elevation_assets(request: ImportElevationAssetsRequest) -> Result<ImportElevationAssetsResult, String> {
+    tokio::task::spawn_blocking(move || inner_import_elevation_assets(request))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -239,6 +265,57 @@ fn inner_import_map_file(request: ImportMapFileRequest) -> Result<ImportMapFileR
         georef_confidence: georef.confidence,
         georef_crs: georef.crs,
         source: "uploaded".to_string(),
+    })
+}
+
+fn inner_import_elevation_assets(request: ImportElevationAssetsRequest) -> Result<ImportElevationAssetsResult> {
+    let region_dir = PathBuf::from(&request.region_dir);
+    let metadata_path = region_dir.join("metadata.json");
+    if !region_dir.exists() {
+        return Err(anyhow!("Region folder not found: {}", region_dir.display()));
+    }
+    if !metadata_path.exists() {
+        return Err(anyhow!("Region folder is missing metadata.json: {}", metadata_path.display()));
+    }
+    if request.dem_path.is_none() && request.dsm_path.is_none() {
+        return Err(anyhow!("Choose at least one DEM or DSM GeoTIFF."));
+    }
+
+    let elevation_dir = region_dir.join("elevation");
+    std::fs::create_dir_all(&elevation_dir)?;
+    let dem_rel = match request.dem_path.as_deref() {
+        Some(path) if !path.trim().is_empty() => Some(copy_elevation_asset(path, &elevation_dir, "dem")?),
+        _ => existing_elevation_asset(&region_dir, "dem"),
+    };
+    let dsm_rel = match request.dsm_path.as_deref() {
+        Some(path) if !path.trim().is_empty() => Some(copy_elevation_asset(path, &elevation_dir, "dsm")?),
+        _ => existing_elevation_asset(&region_dir, "dsm"),
+    };
+
+    let mut metadata: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&metadata_path)
+            .with_context(|| format!("Cannot read {}", metadata_path.display()))?,
+    )
+    .with_context(|| format!("Cannot parse {}", metadata_path.display()))?;
+    let object = metadata
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("metadata.json must contain a JSON object"))?;
+    let mut elevation_assets = serde_json::Map::new();
+    if let Some(path) = dem_rel.as_deref() {
+        elevation_assets.insert("dem".to_string(), json!(path));
+    }
+    if let Some(path) = dsm_rel.as_deref() {
+        elevation_assets.insert("dsm".to_string(), json!(path));
+    }
+    object.insert("elevation_assets".to_string(), serde_json::Value::Object(elevation_assets));
+    std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)? + "\n")?;
+
+    Ok(ImportElevationAssetsResult {
+        region_dir: region_dir.to_string_lossy().into_owned(),
+        dem_path: dem_rel.clone(),
+        dsm_path: dsm_rel.clone(),
+        asset_count: u8::from(dem_rel.is_some()) + u8::from(dsm_rel.is_some()),
+        metadata_path: metadata_path.to_string_lossy().into_owned(),
     })
 }
 
@@ -586,6 +663,7 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
 
     let bundle_dir = output_dir;
     let ortho_dir = bundle_dir.join("ortho");
+    let elevation_bundle_dir = bundle_dir.join("elevation");
     let features_dir = bundle_dir.join("features");
     let calibration_dir = bundle_dir.join("calibration");
     let mission_dir = bundle_dir.join("mission");
@@ -601,6 +679,13 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         .with_context(|| format!("Cannot copy {}", satellite_path.display()))?;
     std::fs::copy(&satellite_path, high_compute_region_dir.join("satellite.png"))?;
     std::fs::copy(&metadata_path, high_compute_region_dir.join("metadata.json"))?;
+    if elevation_bundle_dir.exists() {
+        std::fs::remove_dir_all(&elevation_bundle_dir)
+            .with_context(|| format!("Cannot clear {}", elevation_bundle_dir.display()))?;
+    }
+    if region_dir.join("elevation").exists() {
+        copy_dir_recursive(&region_dir.join("elevation"), &elevation_bundle_dir)?;
+    }
 
     let down_camera_rel = copy_if_exists(
         &repo_path.join("config").join("camera").join("down_camera.yaml"),
@@ -854,6 +939,54 @@ fn validate_map_extension(extension: &str) -> Result<()> {
     }
 }
 
+fn validate_elevation_extension(extension: &str) -> Result<()> {
+    if is_tiff_extension(extension) {
+        Ok(())
+    } else if extension.is_empty() {
+        Err(anyhow!("Elevation file has no extension. Use a TIFF/GeoTIFF file."))
+    } else {
+        Err(anyhow!("Unsupported elevation file extension .{extension}. Use a TIFF/GeoTIFF file."))
+    }
+}
+
+fn existing_elevation_asset(region_dir: &Path, kind: &str) -> Option<String> {
+    for extension in ["tif", "tiff"] {
+        let rel = format!("elevation/{kind}.{extension}");
+        if region_dir.join(&rel).exists() {
+            return Some(rel);
+        }
+    }
+    None
+}
+
+fn copy_elevation_asset(src: &str, elevation_dir: &Path, kind: &str) -> Result<String> {
+    let src_path = PathBuf::from(src);
+    if !src_path.exists() {
+        return Err(anyhow!("Elevation file not found: {}", src_path.display()));
+    }
+    if !src_path.is_file() {
+        return Err(anyhow!("Elevation path is not a file: {}", src_path.display()));
+    }
+    let extension = src_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    validate_elevation_extension(&extension)?;
+    for stale_extension in ["tif", "tiff"] {
+        let stale = elevation_dir.join(format!("{kind}.{stale_extension}"));
+        if stale.exists() {
+            std::fs::remove_file(&stale)
+                .with_context(|| format!("Cannot replace {}", stale.display()))?;
+        }
+    }
+    let dest_name = format!("{kind}.{extension}");
+    let dest = elevation_dir.join(&dest_name);
+    std::fs::copy(&src_path, &dest)
+        .with_context(|| format!("Cannot copy {} to {}", src_path.display(), dest.display()))?;
+    Ok(format!("elevation/{dest_name}"))
+}
+
 fn copy_if_exists(src: &Path, dst: &Path, rel: &str) -> Result<Option<String>> {
     if !src.exists() {
         return Ok(None);
@@ -861,6 +994,23 @@ fn copy_if_exists(src: &Path, dst: &Path, rel: &str) -> Result<Option<String>> {
     std::fs::copy(src, dst)
         .with_context(|| format!("Cannot copy {} to {}", src.display(), dst.display()))?;
     Ok(Some(rel.to_string()))
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    std::fs::create_dir_all(dst)
+        .with_context(|| format!("Cannot create {}", dst.display()))?;
+    for entry in std::fs::read_dir(src).with_context(|| format!("Cannot read {}", src.display()))? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let dest_path = dst.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_dir_recursive(&source_path, &dest_path)?;
+        } else if source_path.is_file() {
+            std::fs::copy(&source_path, &dest_path)
+                .with_context(|| format!("Cannot copy {} to {}", source_path.display(), dest_path.display()))?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_feature_method(method: &str) -> Result<()> {
@@ -987,5 +1137,63 @@ mod tests {
         assert_close(georef.origin_lon, -75.0, 1e-9);
         assert_eq!(georef.crs.as_deref(), Some("EPSG:4326"));
         assert_eq!(georef.source, "geotiff_embedded");
+    }
+
+    #[test]
+    fn imports_elevation_assets_and_updates_metadata() {
+        let root = std::env::temp_dir().join(format!(
+            "drone_vision_nav_elevation_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
+        ));
+        let region_dir = root.join("region");
+        std::fs::create_dir_all(&region_dir).expect("create region dir");
+        std::fs::write(
+            region_dir.join("metadata.json"),
+            r#"{
+  "origin_lat": 40.0,
+  "origin_lon": -75.0,
+  "gsd_m_per_px": 0.25,
+  "width_px": 64,
+  "height_px": 64
+}
+"#,
+        )
+        .expect("write metadata");
+        let dem_src = root.join("source_dem.tif");
+        let dsm_src = root.join("source_dsm.tiff");
+        std::fs::write(&dem_src, b"dem").expect("write dem");
+        std::fs::write(&dsm_src, b"dsm").expect("write dsm");
+
+        let result = inner_import_elevation_assets(ImportElevationAssetsRequest {
+            region_dir: region_dir.to_string_lossy().into_owned(),
+            dem_path: Some(dem_src.to_string_lossy().into_owned()),
+            dsm_path: Some(dsm_src.to_string_lossy().into_owned()),
+        })
+        .expect("import elevation assets");
+
+        assert_eq!(result.asset_count, 2);
+        assert_eq!(result.dem_path.as_deref(), Some("elevation/dem.tif"));
+        assert_eq!(result.dsm_path.as_deref(), Some("elevation/dsm.tiff"));
+        assert!(region_dir.join("elevation").join("dem.tif").exists());
+        assert!(region_dir.join("elevation").join("dsm.tiff").exists());
+
+        let metadata: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(region_dir.join("metadata.json")).expect("read metadata"),
+        )
+        .expect("parse metadata");
+        assert_eq!(
+            metadata.pointer("/elevation_assets/dem").and_then(|value| value.as_str()),
+            Some("elevation/dem.tif")
+        );
+        assert_eq!(
+            metadata.pointer("/elevation_assets/dsm").and_then(|value| value.as_str()),
+            Some("elevation/dsm.tiff")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

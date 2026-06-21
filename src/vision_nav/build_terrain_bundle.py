@@ -17,6 +17,7 @@ from vision_nav.terrain_bundle import (
     TERRAIN_BUNDLE_VERSION,
     georef_from_manifest,
     load_terrain_bundle,
+    normalize_elevation_assets,
     stac_manifest,
     terrain_manifest_fields,
 )
@@ -54,6 +55,7 @@ def build_terrain_bundle(
     selected_method = method or feature_options["method"]
     selected_max_features = int(max_features or feature_options["max_features"])
     georef = georef_from_manifest(manifest)
+    elevation_assets = normalize_elevation_assets(bundle_dir, manifest.get("terrain_bundle") or {})
 
     tile_index_path = bundle_dir / DEFAULT_TERRAIN_TILE_INDEX
     tiles_dir = bundle_dir / "imagery" / "tiles"
@@ -82,6 +84,7 @@ def build_terrain_bundle(
             overlap_px=overlap_px,
             tile_count=int(index_summary["tile_count"]),
             feature_count=int(index_summary["feature_count"]),
+            elevation_assets=elevation_assets,
         ),
         "built_at": datetime.now(timezone.utc).isoformat(),
         "builder": "vision_nav.build_terrain_bundle",
@@ -106,6 +109,7 @@ def build_terrain_bundle(
             "startup_search": "bounded_region",
             "vertical_source": "barometer_optional",
             "covariance_policy": "inflate_when_visual_scale_is_weak_or_stale",
+            "elevation_assets": elevation_assets,
         },
         "sensors": {
             "barometer": {
@@ -127,6 +131,11 @@ def build_terrain_bundle(
     terrain_bundle = load_terrain_bundle(bundle_dir)
     stac_path = bundle_dir / "manifest.stac.json"
     stac_path.write_text(json.dumps(stac_manifest(terrain_bundle), indent=2) + "\n")
+    checksums = None
+    if write_checksums:
+        from vision_nav.bundle_checksums import write_checksum_file
+
+        checksums = write_checksum_file(bundle_dir)
     geospatial_health = write_geospatial_health_report(bundle_dir)
 
     result = {
@@ -145,10 +154,8 @@ def build_terrain_bundle(
         },
         "config_path": str(config_path),
     }
-    if write_checksums:
-        from vision_nav.bundle_checksums import write_checksum_file
-
-        result["checksums"] = write_checksum_file(bundle_dir)
+    if checksums is not None:
+        result["checksums"] = checksums
     return result
 
 

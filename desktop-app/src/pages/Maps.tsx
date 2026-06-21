@@ -8,6 +8,7 @@ import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 import { homeDir, join } from "@tauri-apps/api/path";
 import {
   Download, FileImage, FolderOpen, Layers, Info, CheckCircle2, Loader2, X, FolderInput, Upload,
+  Mountain,
 } from "lucide-react";
 import { cmd } from "../lib/tauri";
 import { useAppStore } from "../lib/store";
@@ -41,6 +42,7 @@ const DRAW_MODES: { mode: DrawMode; label: string; hint: string }[] = [
 ];
 
 const MAP_FILE_EXTENSIONS = ["png", "jpg", "jpeg", "tif", "tiff", "bmp", "webp", "gif"];
+const ELEVATION_FILE_EXTENSIONS = ["tif", "tiff"];
 const EARTH_RADIUS_M = 6378137;
 
 function pixelToLatLon(
@@ -276,7 +278,7 @@ function DrawControlInner({
 
 // ── Main Maps page ────────────────────────────────────────────────────────────
 export function Maps() {
-  const { profile, regions, addRegion } = useAppStore();
+  const { profile, regions, setRegions, addRegion } = useAppStore();
   const featureGroupRef = useRef<L.FeatureGroup | null>(null);
 
   const [source,     setSource]     = useState<TileSource>("esri");
@@ -303,11 +305,16 @@ export function Maps() {
   const [mapOriginLon,setMapOriginLon]= useState("");
   const [mapGsd,setMapGsd]= useState("");
   const [mapRotationDeg,setMapRotationDeg]= useState("0");
+  const [elevationRegionId,setElevationRegionId]= useState("");
+  const [demFilePath,setDemFilePath]= useState("");
+  const [dsmFilePath,setDsmFilePath]= useState("");
+  const [importingElevation,setImportingElevation]= useState(false);
 
   const sourceConfig = SOURCES[source];
   const apiKey   = source === "mapbox" ? (profile?.mapbox_key ?? "") : (profile?.bing_key ?? "");
   const missingKey = !sourceConfig.free && !apiKey;
   const currentMode = DRAW_MODES.find((d) => d.mode === drawMode)!;
+  const elevationRegion = regions.find((region) => region.id === elevationRegionId) ?? regions[0];
 
   useEffect(() => {
     if (!bbox) { setEstimate(null); return; }
@@ -336,6 +343,16 @@ export function Maps() {
     if (!defaultOutputRoot || customMapImportOutput || !mapFilePath) return;
     setMapImportOutputDir(`${defaultOutputRoot}/${slugifyPathSegment(mapImportName || "uploaded-map")}`);
   }, [defaultOutputRoot, mapImportName, mapFilePath, customMapImportOutput]);
+
+  useEffect(() => {
+    if (!regions.length) {
+      setElevationRegionId("");
+      return;
+    }
+    if (!regions.some((region) => region.id === elevationRegionId)) {
+      setElevationRegionId(regions[0].id);
+    }
+  }, [regions, elevationRegionId]);
 
   const handleSourceChange = (s: TileSource) => {
     setSource(s);
@@ -395,6 +412,19 @@ export function Maps() {
     }
   };
 
+  const pickElevationFile = async (kind: "dem" | "dsm") => {
+    const file = await open({
+      multiple: false,
+      title: kind === "dem" ? "Select DEM GeoTIFF" : "Select DSM GeoTIFF",
+      filters: [{ name: "Elevation GeoTIFF", extensions: ELEVATION_FILE_EXTENSIONS }],
+    });
+    if (!file || typeof file !== "string") return;
+    if (kind === "dem") setDemFilePath(file);
+    else setDsmFilePath(file);
+    setDone(false);
+    setError(null);
+  };
+
   const importFromFolder = async () => {
     const dir = await open({ directory: true, multiple: false, title: "Select region folder (must contain metadata.json)" });
     if (!dir) return;
@@ -422,6 +452,7 @@ export function Maps() {
         georef_crs,
         zoom: z = 0,
         source: src = "folder",
+        elevation_assets,
       } = meta;
       const bbox = bboxFromGeoref(
         origin_lat,
@@ -450,6 +481,9 @@ export function Maps() {
         georef_confidence,
         georef_crs,
         location_label: locationLabel,
+        elevation_dem_path: elevation_assets?.dem,
+        elevation_dsm_path: elevation_assets?.dsm,
+        elevation_asset_count: Number(Boolean(elevation_assets?.dem)) + Number(Boolean(elevation_assets?.dsm)),
       };
       addRegion(region);
       await cmd.saveRegions([...regions, region]);
@@ -458,6 +492,46 @@ export function Maps() {
       setError(null);
     } catch (e) {
       setError(`Import failed: ${e}`);
+    }
+  };
+
+  const handleImportElevationAssets = async () => {
+    const target = elevationRegion;
+    if (!target) {
+      setError("Add or import a map source before attaching elevation assets.");
+      return;
+    }
+    if (!demFilePath && !dsmFilePath) {
+      setError("Choose a DEM or DSM GeoTIFF first.");
+      return;
+    }
+    setImportingElevation(true);
+    setDone(false);
+    setError(null);
+    try {
+      const result = await cmd.importElevationAssets({
+        region_dir: target.output_path,
+        dem_path: demFilePath || undefined,
+        dsm_path: dsmFilePath || undefined,
+      });
+      const next = regions.map((region) => region.id === target.id
+        ? {
+            ...region,
+            elevation_dem_path: result.dem_path,
+            elevation_dsm_path: result.dsm_path,
+            elevation_asset_count: result.asset_count,
+          }
+        : region
+      );
+      setRegions(next);
+      await cmd.saveRegions(next);
+      setElevationRegionId(target.id);
+      setDone(true);
+      setDoneMessage(`Elevation assets attached to ${target.name}.`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setImportingElevation(false);
     }
   };
 
@@ -940,6 +1014,72 @@ export function Maps() {
               className="btn-secondary w-full justify-center text-xs"
             >
               {importingMap ? <><Loader2 size={13} className="animate-spin" /> Importing...</> : <><Upload size={13} /> Import Map File</>}
+            </button>
+          </div>
+
+          <div className="bg-bg-card border border-border rounded-lg p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <Mountain size={14} className="text-cyan-400" />
+              <span className="text-xs font-medium text-slate-300">Attach Elevation Assets</span>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Optional DEM/DSM GeoTIFFs are copied into the selected map source and carried into terrain mission bundles.
+            </p>
+            <div>
+              <label className="label">Map source</label>
+              <select
+                className="input-field text-xs"
+                value={elevationRegion?.id ?? ""}
+                onChange={(e) => setElevationRegionId(e.target.value)}
+                disabled={!regions.length}
+              >
+                {regions.length ? regions.map((region) => (
+                  <option key={region.id} value={region.id}>
+                    {region.name}
+                  </option>
+                )) : (
+                  <option value="">No saved maps</option>
+                )}
+              </select>
+            </div>
+            <div>
+              <label className="label">DEM GeoTIFF</label>
+              <div className="flex gap-2">
+                <input className="input-field flex-1 text-xs font-mono" value={demFilePath} readOnly placeholder="Optional terrain elevation..." />
+                <button onClick={() => pickElevationFile("dem")} className="btn-secondary px-3">
+                  <FolderOpen size={14} />
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="label">DSM GeoTIFF</label>
+              <div className="flex gap-2">
+                <input className="input-field flex-1 text-xs font-mono" value={dsmFilePath} readOnly placeholder="Optional surface elevation..." />
+                <button onClick={() => pickElevationFile("dsm")} className="btn-secondary px-3">
+                  <FolderOpen size={14} />
+                </button>
+              </div>
+            </div>
+            {elevationRegion && (
+              <div className="bg-bg-elevated rounded-lg px-2.5 py-2 text-[10px] text-slate-400 space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span>Attached assets</span>
+                  <span className="text-slate-200">{elevationRegion.elevation_asset_count ?? 0}</span>
+                </div>
+                {elevationRegion.elevation_dem_path && (
+                  <div className="font-mono truncate">DEM {elevationRegion.elevation_dem_path}</div>
+                )}
+                {elevationRegion.elevation_dsm_path && (
+                  <div className="font-mono truncate">DSM {elevationRegion.elevation_dsm_path}</div>
+                )}
+              </div>
+            )}
+            <button
+              onClick={handleImportElevationAssets}
+              disabled={importingElevation || !elevationRegion || (!demFilePath && !dsmFilePath)}
+              className="btn-secondary w-full justify-center text-xs"
+            >
+              {importingElevation ? <><Loader2 size={13} className="animate-spin" /> Attaching...</> : <><Mountain size={13} /> Attach Elevation Assets</>}
             </button>
           </div>
         </div>

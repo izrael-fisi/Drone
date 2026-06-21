@@ -13,6 +13,10 @@ TERRAIN_BUNDLE_VERSION = "0.1.0"
 DEFAULT_TERRAIN_TILE_INDEX = "index/tiles.sqlite"
 DEFAULT_TERRAIN_TILE_SIZE_PX = 512
 DEFAULT_TERRAIN_OVERLAP_PX = 64
+ELEVATION_ASSET_CANDIDATES = {
+    "dem": ("elevation/dem.tif", "elevation/dem.tiff", "terrain/dem.tif", "terrain/dem.tiff"),
+    "dsm": ("elevation/dsm.tif", "elevation/dsm.tiff", "terrain/dsm.tif", "terrain/dsm.tiff"),
+}
 
 
 @dataclass(frozen=True)
@@ -27,6 +31,7 @@ class TerrainBundle:
     overlap_px: int
     gsd_m: float | None
     crs: str | None
+    elevation_assets: dict[str, str]
 
     @property
     def has_tile_index(self) -> bool:
@@ -52,6 +57,7 @@ def load_terrain_bundle(bundle_path: str | Path) -> TerrainBundle:
     overlap_px = int(terrain.get("overlap_px", DEFAULT_TERRAIN_OVERLAP_PX))
     gsd_m = terrain.get("gsd_m") or (georef.gsd_m if georef else None)
     crs = terrain.get("crs") or (georef.crs if georef else None)
+    elevation_assets = normalize_elevation_assets(bundle_dir, terrain)
     return TerrainBundle(
         bundle_dir=bundle_dir,
         manifest_path=manifest_path,
@@ -63,7 +69,33 @@ def load_terrain_bundle(bundle_path: str | Path) -> TerrainBundle:
         overlap_px=overlap_px,
         gsd_m=float(gsd_m) if gsd_m is not None else None,
         crs=str(crs) if crs else None,
+        elevation_assets=elevation_assets,
     )
+
+
+def normalize_elevation_assets(bundle_dir: Path, terrain: dict[str, Any]) -> dict[str, str]:
+    raw = terrain.get("elevation_assets")
+    assets: dict[str, str] = {}
+    if isinstance(raw, dict):
+        for kind in ("dem", "dsm"):
+            value = raw.get(kind)
+            if isinstance(value, dict):
+                value = value.get("path") or value.get("href")
+            if isinstance(value, str) and value:
+                assets[kind] = str(Path(value)).replace("\\", "/")
+
+    for kind, candidates in ELEVATION_ASSET_CANDIDATES.items():
+        if kind in assets:
+            continue
+        for candidate in candidates:
+            if (bundle_dir / candidate).exists():
+                assets[kind] = candidate
+                break
+    return assets
+
+
+def discover_elevation_assets(bundle_dir: Path) -> dict[str, str]:
+    return normalize_elevation_assets(bundle_dir, {})
 
 
 def terrain_manifest_fields(
@@ -74,6 +106,7 @@ def terrain_manifest_fields(
     overlap_px: int = DEFAULT_TERRAIN_OVERLAP_PX,
     tile_count: int | None = None,
     feature_count: int | None = None,
+    elevation_assets: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     local_origin = None
     if georef is not None:
@@ -105,12 +138,28 @@ def terrain_manifest_fields(
         fields["tile_count"] = int(tile_count)
     if feature_count is not None:
         fields["feature_count"] = int(feature_count)
+    if elevation_assets:
+        fields["elevation_assets"] = elevation_assets
     return fields
 
 
 def stac_manifest(bundle: TerrainBundle) -> dict[str, Any]:
     georef = bundle.georef
     center = [georef.origin_lon, georef.origin_lat] if georef else None
+    assets = {
+        "orthophoto": {"href": str(bundle.orthophoto_path.relative_to(bundle.bundle_dir))},
+        "tile_index": {
+            "href": str(bundle.tile_index_path.relative_to(bundle.bundle_dir))
+            if bundle.tile_index_path and bundle.tile_index_path.is_relative_to(bundle.bundle_dir)
+            else DEFAULT_TERRAIN_TILE_INDEX
+        },
+    }
+    for kind, href in bundle.elevation_assets.items():
+        assets[kind] = {
+            "href": href,
+            "roles": ["data", "elevation", kind],
+            "type": "image/tiff; application=geotiff",
+        }
     return {
         "stac_version": "1.0.0",
         "type": "Feature",
@@ -122,14 +171,7 @@ def stac_manifest(bundle: TerrainBundle) -> dict[str, Any]:
         },
         "geometry": {"type": "Point", "coordinates": center} if center else None,
         "links": [],
-        "assets": {
-            "orthophoto": {"href": str(bundle.orthophoto_path.relative_to(bundle.bundle_dir))},
-            "tile_index": {
-                "href": str(bundle.tile_index_path.relative_to(bundle.bundle_dir))
-                if bundle.tile_index_path and bundle.tile_index_path.is_relative_to(bundle.bundle_dir)
-                else DEFAULT_TERRAIN_TILE_INDEX
-            },
-        },
+        "assets": assets,
     }
 
 
@@ -164,6 +206,7 @@ def summarize_terrain_bundle(bundle_path: str | Path) -> dict[str, Any]:
         "gsd_m": bundle.gsd_m,
         "crs": bundle.crs,
         "has_tile_index": bundle.has_tile_index,
+        "elevation_assets": bundle.elevation_assets,
         "geospatial_health": health,
         "issues": issues,
         "status": "failed"

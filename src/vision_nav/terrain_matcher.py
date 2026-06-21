@@ -17,7 +17,13 @@ from vision_nav.quality import (
     frame_quality_metrics,
 )
 from vision_nav.terrain_bundle import TerrainBundle
-from vision_nav.terrain_tiles import TerrainTile, load_tile_descriptor, query_tiles
+from vision_nav.terrain_tiles import (
+    TerrainTile,
+    global_descriptor_distance,
+    image_global_descriptor,
+    load_tile_descriptor,
+    query_tiles_with_metadata,
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,7 @@ class TerrainMatchOptions:
     max_scale_anisotropy: float = 3.0
     max_perspective_norm: float = 0.01
     max_candidates: int = 64
+    global_retrieval_multiplier: int = 4
     prior_east_m: float | None = None
     prior_north_m: float | None = None
     search_radius_m: float | None = None
@@ -208,6 +215,41 @@ def _candidate_result(
     return output
 
 
+def _rank_candidates_by_global_descriptor(
+    candidates: list[TerrainTile],
+    *,
+    frame_global_descriptor: np.ndarray,
+    max_candidates: int,
+) -> tuple[list[tuple[TerrainTile, dict]], dict[str, Any]]:
+    scored: list[tuple[float, int, str, TerrainTile, dict]] = []
+    unscored: list[tuple[TerrainTile, dict]] = []
+    for tile in candidates:
+        descriptor = load_tile_descriptor(tile.descriptor_path)
+        distance = global_descriptor_distance(frame_global_descriptor, descriptor.get("global_descriptor"))
+        if distance is None:
+            unscored.append((tile, descriptor))
+        else:
+            scored.append((distance, -tile.keypoint_count, tile.tile_id, tile, descriptor))
+
+    scored.sort(key=lambda item: (item[0], item[1], item[2]))
+    selected: list[tuple[TerrainTile, dict]] = [(tile, descriptor) for _, _, _, tile, descriptor in scored[:max_candidates]]
+    if len(selected) < max_candidates:
+        selected.extend(unscored[: max_candidates - len(selected)])
+    distances = [
+        {"tile_id": tile.tile_id, "distance": distance}
+        for distance, _, _, tile, _ in scored[: min(len(scored), 10)]
+    ]
+    return selected, {
+        "enabled": True,
+        "descriptor": "grayscale_histogram_v1",
+        "input_tiles": len(candidates),
+        "scored_tiles": len(scored),
+        "selected_tiles": len(selected),
+        "selected_tile_ids": [tile.tile_id for tile, _ in selected],
+        "best_distances": distances,
+    }
+
+
 def match_terrain_frame(bundle: TerrainBundle, frame_path: str, options: TerrainMatchOptions) -> dict[str, Any]:
     if not bundle.has_tile_index:
         return _wrap_legacy_result(bundle, match_frame_to_map(_terrain_args_for_legacy(bundle, frame_path, options)))
@@ -218,19 +260,34 @@ def match_terrain_frame(bundle: TerrainBundle, frame_path: str, options: Terrain
     frame_features = extract_features(frame, method=method, max_features=options.max_features)  # type: ignore[arg-type]
     height, width = frame.shape[:2]
     frame_center = np.float32([[[width / 2.0, height / 2.0]]])
-    candidates = query_tiles(
+    query_max_candidates = max(int(options.max_candidates), 0)
+    has_prior = options.prior_east_m is not None and options.prior_north_m is not None and options.search_radius_m is not None
+    if not has_prior:
+        query_max_candidates = max(query_max_candidates, int(options.max_candidates) * max(int(options.global_retrieval_multiplier), 1))
+    query_result = query_tiles_with_metadata(
         bundle.tile_index_path,
         bundle.bundle_dir,
         prior_east_m=options.prior_east_m,
         prior_north_m=options.prior_north_m,
         search_radius_m=options.search_radius_m,
+        max_candidates=query_max_candidates,
+    )
+    candidate_descriptors, global_retrieval = _rank_candidates_by_global_descriptor(
+        query_result.tiles,
+        frame_global_descriptor=image_global_descriptor(frame),
         max_candidates=options.max_candidates,
     )
+    query_metadata = {
+        **query_result.metadata,
+        "pre_global_candidate_tiles": len(query_result.tiles),
+        "selected_tiles": len(candidate_descriptors),
+        "selected_tile_ids": [tile.tile_id for tile, _ in candidate_descriptors],
+        "global_retrieval": global_retrieval,
+    }
 
     best: dict[str, Any] | None = None
     rejected: list[dict[str, Any]] = []
-    for tile in candidates:
-        descriptor = load_tile_descriptor(tile.descriptor_path)
+    for tile, descriptor in candidate_descriptors:
         matches = match_descriptors(
             map_descriptors=descriptor["descriptors"],
             frame_descriptors=frame_features.descriptors,
@@ -286,7 +343,8 @@ def match_terrain_frame(bundle: TerrainBundle, frame_path: str, options: Terrain
     if best is not None:
         best["timestamp_us"] = int(time.time() * 1_000_000)
         best["map_id"] = bundle.manifest.get("bundle_id") or bundle.bundle_dir.name
-        best["candidate_tiles"] = len(candidates)
+        best["candidate_tiles"] = len(candidate_descriptors)
+        best["tile_query"] = query_metadata
         return best
 
     return {
@@ -295,7 +353,8 @@ def match_terrain_frame(bundle: TerrainBundle, frame_path: str, options: Terrain
         "reason": "no_candidate_tile_accepted",
         "map_id": bundle.manifest.get("bundle_id") or bundle.bundle_dir.name,
         "tile_id": None,
-        "candidate_tiles": len(candidates),
+        "candidate_tiles": len(candidate_descriptors),
+        "tile_query": query_metadata,
         "frame_keypoints": int(frame_features.keypoints_xy.shape[0]),
         "frame_quality": {
             **quality,

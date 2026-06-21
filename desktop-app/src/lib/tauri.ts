@@ -7,6 +7,8 @@ import type {
   Device,
   DownloadFileResult,
   DownloadProgress,
+  ImportElevationAssetsRequest,
+  ImportElevationAssetsResult,
   ImportMapFileRequest,
   ImportMapFileResult,
   Profile,
@@ -30,6 +32,8 @@ export const cmd = {
     invoke<BuildDroneBundleResult>("build_drone_bundle", { request }),
   importMapFile: (request: ImportMapFileRequest) =>
     invoke<ImportMapFileResult>("import_map_file", { request }),
+  importElevationAssets: (request: ImportElevationAssetsRequest) =>
+    invoke<ImportElevationAssetsResult>("import_elevation_assets", { request }),
   testSshConnection: (
     host: string,
     port: number,

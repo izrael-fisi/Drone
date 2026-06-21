@@ -1,7 +1,28 @@
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
+use zip::ZipArchive;
+
+#[derive(Serialize)]
+pub struct SupportBundleSummary {
+    pub bundle_id: Option<String>,
+    pub bundle_health_status: Option<String>,
+    pub checksum_status: Option<String>,
+    pub covered_file_count: Option<u64>,
+    pub elevation_status: Option<String>,
+    pub elevation_asset_count: Option<u64>,
+    pub vertical_sanity_ready: Option<bool>,
+    pub map_source: Option<String>,
+    pub source_name: Option<String>,
+    pub georef_source: Option<String>,
+    pub georef_crs: Option<String>,
+    pub georef_confidence: Option<f64>,
+    pub replay_gate_status: Option<String>,
+    pub replay_case_count: Option<u64>,
+}
 
 #[derive(Serialize)]
 pub struct SupportBundleFile {
@@ -9,6 +30,7 @@ pub struct SupportBundleFile {
     pub path: String,
     pub size_bytes: u64,
     pub modified_unix_ms: Option<u128>,
+    pub summary: Option<SupportBundleSummary>,
 }
 
 #[tauri::command]
@@ -78,10 +100,66 @@ pub fn list_support_bundles(dir: String) -> Result<Vec<SupportBundleFile>, Strin
             path: p.to_string_lossy().into_owned(),
             size_bytes: metadata.len(),
             modified_unix_ms,
+            summary: read_support_bundle_summary(&p),
         });
     }
     files.sort_by(|a, b| b.modified_unix_ms.cmp(&a.modified_unix_ms).then_with(|| a.name.cmp(&b.name)));
     Ok(files)
+}
+
+fn read_support_bundle_summary(path: &Path) -> Option<SupportBundleSummary> {
+    let file = File::open(path).ok()?;
+    let mut archive = ZipArchive::new(file).ok()?;
+    let mut manifest_entry = archive.by_name("support_manifest.json").ok()?;
+    let mut text = String::new();
+    manifest_entry.read_to_string(&mut text).ok()?;
+    let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
+    support_summary_from_manifest(&manifest)
+}
+
+fn json_string(value: Option<&serde_json::Value>) -> Option<String> {
+    value
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+}
+
+fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<SupportBundleSummary> {
+    let health = manifest.pointer("/bundle/health");
+    let provenance = manifest.pointer("/bundle/health/source_provenance");
+    let source_name = json_string(provenance.and_then(|value| value.get("original_file")))
+        .or_else(|| json_string(provenance.and_then(|value| value.get("map_name"))))
+        .or_else(|| json_string(provenance.and_then(|value| value.get("orthophoto_path"))));
+    let summary = SupportBundleSummary {
+        bundle_id: json_string(manifest.pointer("/bundle/bundle_id")),
+        bundle_health_status: json_string(health.and_then(|value| value.get("status"))),
+        checksum_status: json_string(manifest.pointer("/bundle/health/checksums/status")),
+        covered_file_count: manifest
+            .pointer("/bundle/health/checksums/covered_file_count")
+            .or_else(|| manifest.pointer("/bundle/health/checksums/entry_count"))
+            .and_then(|value| value.as_u64()),
+        elevation_status: json_string(manifest.pointer("/bundle/health/elevation/status")),
+        elevation_asset_count: manifest.pointer("/bundle/health/elevation/asset_count").and_then(|value| value.as_u64()),
+        vertical_sanity_ready: manifest.pointer("/bundle/health/elevation/vertical_sanity_ready").and_then(|value| value.as_bool()),
+        map_source: json_string(provenance.and_then(|value| value.get("map_source"))),
+        source_name,
+        georef_source: json_string(provenance.and_then(|value| value.get("georef_source"))),
+        georef_crs: json_string(provenance.and_then(|value| value.get("georef_crs"))),
+        georef_confidence: provenance
+            .and_then(|value| value.get("georef_confidence"))
+            .and_then(|value| value.as_f64()),
+        replay_gate_status: json_string(manifest.pointer("/replay_gates/status")),
+        replay_case_count: manifest.pointer("/replay_gates/case_count").and_then(|value| value.as_u64()),
+    };
+    if summary.bundle_id.is_none()
+        && summary.bundle_health_status.is_none()
+        && summary.checksum_status.is_none()
+        && summary.elevation_status.is_none()
+        && summary.replay_gate_status.is_none()
+    {
+        return None;
+    }
+    Some(summary)
 }
 
 fn expand_local_path(path: &str) -> Result<PathBuf> {
@@ -104,12 +182,56 @@ fn expand_local_path(path: &str) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::expand_local_path;
+    use super::{expand_local_path, support_summary_from_manifest};
 
     #[test]
     fn expands_home_prefixed_support_bundle_dir() {
         let expanded = expand_local_path("~/DroneTransfer/from-pi/support-bundles")
             .expect("expand support path");
         assert!(expanded.ends_with("DroneTransfer/from-pi/support-bundles"));
+    }
+
+    #[test]
+    fn extracts_support_bundle_summary_from_manifest() {
+        let manifest = serde_json::json!({
+            "bundle": {
+                "bundle_id": "mission-bundle",
+                "health": {
+                    "status": "passed",
+                    "checksums": {
+                        "status": "passed",
+                        "covered_file_count": 12
+                    },
+                    "source_provenance": {
+                        "map_source": "uploaded_geotiff",
+                        "original_file": "field-map.tif",
+                        "georef_source": "geotiff_embedded",
+                        "georef_crs": "EPSG:4326",
+                        "georef_confidence": 0.95
+                    },
+                    "elevation": {
+                        "status": "passed",
+                        "asset_count": 2,
+                        "vertical_sanity_ready": true
+                    }
+                }
+            },
+            "replay_gates": {
+                "status": "passed",
+                "case_count": 3
+            }
+        });
+        let summary = support_summary_from_manifest(&manifest).expect("support summary");
+        assert_eq!(summary.bundle_id.as_deref(), Some("mission-bundle"));
+        assert_eq!(summary.bundle_health_status.as_deref(), Some("passed"));
+        assert_eq!(summary.checksum_status.as_deref(), Some("passed"));
+        assert_eq!(summary.covered_file_count, Some(12));
+        assert_eq!(summary.elevation_status.as_deref(), Some("passed"));
+        assert_eq!(summary.elevation_asset_count, Some(2));
+        assert_eq!(summary.vertical_sanity_ready, Some(true));
+        assert_eq!(summary.map_source.as_deref(), Some("uploaded_geotiff"));
+        assert_eq!(summary.source_name.as_deref(), Some("field-map.tif"));
+        assert_eq!(summary.replay_gate_status.as_deref(), Some("passed"));
+        assert_eq!(summary.replay_case_count, Some(3));
     }
 }

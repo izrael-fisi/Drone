@@ -11,6 +11,9 @@ import numpy as np
 from vision_nav.georef import SimpleGeoReference
 
 
+GLOBAL_DESCRIPTOR_BINS = 16
+
+
 @dataclass(frozen=True)
 class TerrainTile:
     tile_id: str
@@ -41,6 +44,12 @@ class TerrainTile:
             (float(self.min_east_m) + float(self.max_east_m)) / 2.0,
             (float(self.min_north_m) + float(self.max_north_m)) / 2.0,
         )
+
+
+@dataclass(frozen=True)
+class TileQueryResult:
+    tiles: list[TerrainTile]
+    metadata: dict[str, object]
 
 
 def create_tile_schema(conn: sqlite3.Connection) -> None:
@@ -108,7 +117,9 @@ def save_tile_descriptor(
     keypoints_xy: np.ndarray,
     descriptors: np.ndarray,
     offset_xy_px: tuple[int, int],
+    global_descriptor: np.ndarray | None = None,
 ) -> None:
+    global_descriptor = image_global_descriptor(np.zeros(image_shape, dtype=np.uint8)) if global_descriptor is None else global_descriptor
     np.savez_compressed(
         output_path,
         tile_id=np.array(tile_id),
@@ -118,11 +129,13 @@ def save_tile_descriptor(
         keypoints_xy=keypoints_xy.astype(np.float32),
         descriptors=descriptors,
         offset_xy_px=np.array(offset_xy_px, dtype=np.int32),
+        global_descriptor=global_descriptor.astype(np.float32),
     )
 
 
 def load_tile_descriptor(path: Path) -> dict:
     with np.load(path, allow_pickle=False) as data:
+        global_descriptor = data["global_descriptor"].astype(np.float32) if "global_descriptor" in data.files else None
         return {
             "tile_id": str(data["tile_id"]),
             "image_path": str(data["image_path"]),
@@ -131,7 +144,36 @@ def load_tile_descriptor(path: Path) -> dict:
             "keypoints_xy": data["keypoints_xy"].astype(np.float32),
             "descriptors": data["descriptors"],
             "offset_xy_px": tuple(int(value) for value in data["offset_xy_px"]),
+            "global_descriptor": global_descriptor,
         }
+
+
+def image_global_descriptor(image: np.ndarray, *, bins: int = GLOBAL_DESCRIPTOR_BINS) -> np.ndarray:
+    arr = np.asarray(image)
+    if arr.ndim == 3:
+        arr = arr.mean(axis=2)
+    arr = arr.astype(np.float32)
+    if arr.size == 0:
+        return np.zeros((bins + 2,), dtype=np.float32)
+    arr = np.clip(arr, 0.0, 255.0)
+    hist, _ = np.histogram(arr, bins=bins, range=(0.0, 256.0))
+    hist = hist.astype(np.float32)
+    hist_sum = float(hist.sum())
+    if hist_sum > 0:
+        hist /= hist_sum
+    mean = np.array([float(arr.mean()) / 255.0], dtype=np.float32)
+    std = np.array([min(float(arr.std()) / 128.0, 1.0)], dtype=np.float32)
+    descriptor = np.concatenate([hist, mean, std]).astype(np.float32)
+    norm = float(np.linalg.norm(descriptor))
+    return descriptor / norm if norm > 0 else descriptor
+
+
+def global_descriptor_distance(a: np.ndarray | None, b: np.ndarray | None) -> float | None:
+    if a is None or b is None:
+        return None
+    if a.shape != b.shape:
+        return None
+    return float(np.linalg.norm(a.astype(np.float32) - b.astype(np.float32)))
 
 
 def build_tile_index(
@@ -184,6 +226,7 @@ def build_tile_index(
                     keypoints_xy=features.keypoints_xy,
                     descriptors=features.descriptors,
                     offset_xy_px=(x0, y0),
+                    global_descriptor=image_global_descriptor(tile),
                 )
                 min_east, max_east, min_north, max_north = local_bounds_for_tile(georef, x0, y0, x1, y1)
                 keypoint_count = int(features.keypoints_xy.shape[0])
@@ -270,9 +313,92 @@ def query_tiles(
     search_radius_m: float | None = None,
     max_candidates: int = 64,
 ) -> list[TerrainTile]:
+    return query_tiles_with_metadata(
+        index_path,
+        bundle_dir,
+        prior_east_m=prior_east_m,
+        prior_north_m=prior_north_m,
+        search_radius_m=search_radius_m,
+        max_candidates=max_candidates,
+    ).tiles
+
+
+def _tile_query_point(tile: TerrainTile) -> tuple[float, float]:
+    local_center = tile.center_local_m
+    if local_center is not None:
+        return local_center
+    pixel_center = tile.center_px
+    return (float(pixel_center[0]), float(pixel_center[1]))
+
+
+def _spatially_distributed_tiles(tiles: list[TerrainTile], max_candidates: int) -> list[TerrainTile]:
+    if max_candidates <= 0 or not tiles:
+        return []
+    if len(tiles) <= max_candidates:
+        return sorted(tiles, key=lambda tile: (-tile.keypoint_count, tile.tile_id))
+
+    quality_sorted = sorted(tiles, key=lambda tile: (-tile.keypoint_count, tile.tile_id))
+    selected: list[TerrainTile] = [quality_sorted[0]]
+    remaining = quality_sorted[1:]
+    max_keypoints = max((tile.keypoint_count for tile in tiles), default=1) or 1
+
+    while remaining and len(selected) < max_candidates:
+        selected_points = [_tile_query_point(tile) for tile in selected]
+        best_index = 0
+        best_score: tuple[float, float, str] | None = None
+        for index, tile in enumerate(remaining):
+            point = _tile_query_point(tile)
+            nearest = min(float(np.hypot(point[0] - selected_point[0], point[1] - selected_point[1])) for selected_point in selected_points)
+            quality = float(tile.keypoint_count) / float(max_keypoints)
+            score = (nearest, quality, tile.tile_id)
+            if best_score is None or score > best_score:
+                best_score = score
+                best_index = index
+        selected.append(remaining.pop(best_index))
+
+    return selected
+
+
+def query_tiles_with_metadata(
+    index_path: Path,
+    bundle_dir: Path,
+    *,
+    prior_east_m: float | None = None,
+    prior_north_m: float | None = None,
+    search_radius_m: float | None = None,
+    max_candidates: int = 64,
+) -> TileQueryResult:
     tiles = load_all_tiles(index_path, bundle_dir)
+    max_candidates = max(int(max_candidates), 0)
+    total_tiles = len(tiles)
+    base_metadata: dict[str, object] = {
+        "total_tiles": total_tiles,
+        "max_candidates": max_candidates,
+        "prior": {
+            "east_m": prior_east_m,
+            "north_m": prior_north_m,
+            "search_radius_m": search_radius_m,
+        },
+    }
     if prior_east_m is None or prior_north_m is None or search_radius_m is None:
-        return sorted(tiles, key=lambda tile: (-tile.keypoint_count, tile.tile_id))[:max_candidates]
+        selected = _spatially_distributed_tiles(tiles, max_candidates)
+        rows = sorted({tile.row for tile in selected})
+        cols = sorted({tile.col for tile in selected})
+        return TileQueryResult(
+            selected,
+            {
+                **base_metadata,
+                "strategy": "coarse_spatial_coverage",
+                "selected_tiles": len(selected),
+                "selected_tile_ids": [tile.tile_id for tile in selected],
+                "coverage": {
+                    "rows": rows,
+                    "cols": cols,
+                    "row_count": len(rows),
+                    "col_count": len(cols),
+                },
+            },
+        )
 
     radius = max(float(search_radius_m), 0.0)
     candidates: list[tuple[float, TerrainTile]] = []
@@ -289,7 +415,19 @@ def query_tiles(
         center = tile.center_local_m
         distance = 0.0 if center is None else float(np.hypot(center[0] - prior_east_m, center[1] - prior_north_m))
         candidates.append((distance, tile))
-    return [tile for _, tile in sorted(candidates, key=lambda item: (item[0], -item[1].keypoint_count))[:max_candidates]]
+    selected_pairs = sorted(candidates, key=lambda item: (item[0], -item[1].keypoint_count))[:max_candidates]
+    selected = [tile for _, tile in selected_pairs]
+    return TileQueryResult(
+        selected,
+        {
+            **base_metadata,
+            "strategy": "prior_local_radius",
+            "selected_tiles": len(selected),
+            "selected_tile_ids": [tile.tile_id for tile in selected],
+            "within_radius_tiles": len(candidates),
+            "nearest_distance_m": selected_pairs[0][0] if selected_pairs else None,
+        },
+    )
 
 
 def iter_tiles(index_path: Path, bundle_dir: Path) -> Iterable[TerrainTile]:

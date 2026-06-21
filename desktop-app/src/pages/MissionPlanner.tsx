@@ -37,6 +37,7 @@ import { useAppStore } from "../lib/store";
 import { loadPipelineConfig } from "../lib/pipelineConfig";
 import type { PipelineConfig } from "../lib/pipelineConfig";
 import { cn, generateId } from "../lib/utils";
+import { SupportBundleList } from "../components/SupportBundleList";
 import type {
   BuildDroneBundleResult,
   Device,
@@ -47,6 +48,7 @@ import type {
 
 type UploadPayload = UploadProgress;
 type Waypoint = { lat: number; lon: number };
+type BundleElevationHealth = NonNullable<BuildDroneBundleResult["geospatial_health"]>["elevation"];
 type PlanLayer = "mission" | "fence" | "rally" | "vision";
 type MissionItemType = "takeoff" | "waypoint" | "land";
 type PlanPoint = Waypoint & { id: string };
@@ -133,10 +135,23 @@ function parseSupportBundleZip(output: string) {
     ?.replace("__VISION_NAV_SUPPORT_ZIP__=", "");
 }
 
-function formatBundleSize(bytes: number) {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${bytes} B`;
+function formatHealthLabel(value?: string | number | null) {
+  if (value === undefined || value === null || value === "") return "n/a";
+  return String(value).replace(/_/g, " ");
+}
+
+function checksumBadgeClass(status?: string) {
+  if (status === "passed") return "badge-green";
+  if (status === "failed") return "badge-red";
+  return "badge-yellow";
+}
+
+function elevationHealthLabel(elevation?: BundleElevationHealth) {
+  if (!elevation || elevation.status === "not_provided" || !elevation.asset_count) return "none";
+  const parts = [];
+  if (elevation.dem_present) parts.push("DEM");
+  if (elevation.dsm_present) parts.push("DSM");
+  return parts.length ? parts.join("+") : `${elevation.asset_count} asset${elevation.asset_count === 1 ? "" : "s"}`;
 }
 
 function defaultRemoteBundleDir(device?: Device) {
@@ -1507,7 +1522,7 @@ export function MissionPlanner() {
                 </div>
               )}
               {bundleResult.terrain_index_path && (
-                <div className="grid grid-cols-5 gap-2 pt-1 text-[11px] text-emerald-300/80">
+                <div className="grid grid-cols-6 gap-2 pt-1 text-[11px] text-emerald-300/80">
                   <div>
                     <span className="block text-emerald-300/60">Tiles</span>
                     <span className="font-mono">
@@ -1539,7 +1554,69 @@ export function MissionPlanner() {
                     <span className="font-mono uppercase">
                       {bundleResult.geospatial_health?.map_quality?.estimated_pi_runtime_cost
                         ?? bundleResult.geospatial_health?.tile_index?.quality?.estimated_pi_runtime_cost
-                        ?? "low"}
+                      ?? "low"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-emerald-300/60">Elevation</span>
+                    <span className="font-mono uppercase">
+                      {elevationHealthLabel(bundleResult.geospatial_health?.elevation)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-emerald-300/60">Checksums</span>
+                    <span className={checksumBadgeClass(bundleResult.geospatial_health?.checksums?.status)}>
+                      {formatHealthLabel(bundleResult.geospatial_health?.checksums?.status)}
+                    </span>
+                  </div>
+                  <div className="font-mono text-emerald-300/80 truncate">
+                    {(bundleResult.geospatial_health?.checksums?.covered_file_count
+                      ?? bundleResult.geospatial_health?.checksums?.entry_count
+                      ?? 0).toLocaleString()} files
+                    {bundleResult.geospatial_health?.checksums?.extra_file_count
+                      ? `, ${bundleResult.geospatial_health.checksums.extra_file_count} extra`
+                      : ""}
+                  </div>
+                </div>
+                <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-emerald-300/60">Source</span>
+                    <span className="font-mono text-emerald-300/80 truncate">
+                      {formatHealthLabel(bundleResult.geospatial_health?.source_provenance?.map_source)}
+                    </span>
+                  </div>
+                  <div className="font-mono text-emerald-300/80 truncate">
+                    {bundleResult.geospatial_health?.source_provenance?.original_file
+                      || bundleResult.geospatial_health?.source_provenance?.map_name
+                      || bundleResult.geospatial_health?.source_provenance?.orthophoto_path
+                      || "map source"}
+                  </div>
+                </div>
+              </div>
+              {bundleResult.geospatial_health?.source_provenance && (
+                <div className="grid grid-cols-3 gap-2 text-[11px] text-emerald-300/70">
+                  <div>
+                    <span className="block text-emerald-300/50">Georef</span>
+                    <span className="font-mono truncate block">
+                      {formatHealthLabel(bundleResult.geospatial_health.source_provenance.georef_source)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-emerald-300/50">CRS</span>
+                    <span className="font-mono truncate block">
+                      {formatHealthLabel(bundleResult.geospatial_health.source_provenance.georef_crs)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-emerald-300/50">Confidence</span>
+                    <span className="font-mono">
+                      {bundleResult.geospatial_health.source_provenance.georef_confidence != null
+                        ? `${Math.round(bundleResult.geospatial_health.source_provenance.georef_confidence * 100)}%`
+                        : "n/a"}
                     </span>
                   </div>
                 </div>
@@ -1566,20 +1643,7 @@ export function MissionPlanner() {
               {cmdRunning ? commandOutput + "..." : commandOutput}
             </pre>
           )}
-          {supportBundles.length > 0 && (
-            <div className="rounded-lg border border-border bg-bg-base px-3 py-2 text-[11px] text-slate-400 space-y-1">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-slate-300">Downloaded support bundles</span>
-                <span className="font-mono truncate">{SUPPORT_DOWNLOAD_DIR}</span>
-              </div>
-              {supportBundles.slice(0, 3).map((bundle) => (
-                <div key={bundle.path} className="flex items-center justify-between gap-3 font-mono">
-                  <span className="truncate">{bundle.name}</span>
-                  <span className="shrink-0 text-slate-500">{formatBundleSize(bundle.size_bytes)}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} />
         </div>
       </div>
     </div>

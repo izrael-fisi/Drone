@@ -38,7 +38,13 @@ from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
 from vision_nav.support_bundle import create_support_bundle
 from vision_nav.terrain_estimator import TerrainEstimator
-from vision_nav.terrain_tiles import create_tile_schema, tile_origins
+from vision_nav.terrain_tiles import (
+    create_tile_schema,
+    global_descriptor_distance,
+    image_global_descriptor,
+    query_tiles_with_metadata,
+    tile_origins,
+)
 from vision_nav.validate_map_bundle import validate_bundle
 
 
@@ -57,13 +63,29 @@ def write_minimal_png(path: Path, width: int, height: int) -> None:
     )
 
 
-def create_minimal_terrain_bundle(root: Path, *, include_tile_index: bool = True) -> Path:
+def write_minimal_tiff(path: Path, width: int, height: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        b"II"
+        + struct.pack("<H", 42)
+        + struct.pack("<I", 8)
+        + struct.pack("<H", 2)
+        + struct.pack("<HHII", 256, 4, 1, width)
+        + struct.pack("<HHII", 257, 4, 1, height)
+        + struct.pack("<I", 0)
+    )
+
+
+def create_minimal_terrain_bundle(root: Path, *, include_tile_index: bool = True, include_elevation: bool = False) -> Path:
     bundle = root / "bundle"
     (bundle / "ortho").mkdir(parents=True)
     (bundle / "imagery" / "tiles").mkdir(parents=True)
     (bundle / "index" / "descriptors").mkdir(parents=True)
     write_minimal_png(bundle / "ortho" / "map.png", 100, 60)
     write_minimal_png(bundle / "imagery" / "tiles" / "tile_000000.png", 64, 60)
+    if include_elevation:
+        write_minimal_tiff(bundle / "elevation" / "dem.tif", 100, 60)
+        write_minimal_tiff(bundle / "elevation" / "dsm.tif", 100, 60)
     np.savez_compressed(
         bundle / "index" / "descriptors" / "tile_000000.npz",
         tile_id=np.array("tile_000000"),
@@ -105,6 +127,23 @@ def create_minimal_terrain_bundle(root: Path, *, include_tile_index: bool = True
                 ),
             )
             conn.commit()
+    terrain_bundle = {
+        "version": "0.1.0",
+        "tile_index_path": "index/tiles.sqlite",
+        "tile_size_px": 64,
+        "overlap_px": 8,
+        "local_origin": {"latitude": 40.0, "longitude": -75.0, "east_m": 0.0, "north_m": 0.0},
+        "crs": "EPSG:4326",
+        "gsd_m": 0.5,
+    }
+    stac_assets = {
+        "orthophoto": {"href": "ortho/map.png"},
+        "tile_index": {"href": "index/tiles.sqlite"},
+    }
+    if include_elevation:
+        terrain_bundle["elevation_assets"] = {"dem": "elevation/dem.tif", "dsm": "elevation/dsm.tif"}
+        stac_assets["dem"] = {"href": "elevation/dem.tif"}
+        stac_assets["dsm"] = {"href": "elevation/dsm.tif"}
     (bundle / "manifest.json").write_text(
         json.dumps(
             {
@@ -119,14 +158,22 @@ def create_minimal_terrain_bundle(root: Path, *, include_tile_index: bool = True
                     "georef_crs": "EPSG:4326",
                 },
                 "features": {"path": "features/map_features.npz", "method": "orb", "max_features": 100},
-                "terrain_bundle": {
-                    "version": "0.1.0",
-                    "tile_index_path": "index/tiles.sqlite",
-                    "tile_size_px": 64,
-                    "overlap_px": 8,
-                    "local_origin": {"latitude": 40.0, "longitude": -75.0, "east_m": 0.0, "north_m": 0.0},
-                    "crs": "EPSG:4326",
-                    "gsd_m": 0.5,
+                "terrain_bundle": terrain_bundle,
+                "source_region": {
+                    "id": "unit-region",
+                    "name": "Unit Test Region",
+                    "metadata_path": "metadata.json",
+                    "origin_lat": 40.0,
+                    "origin_lon": -75.0,
+                    "gsd_m_per_px": 0.5,
+                    "width_px": 100,
+                    "height_px": 60,
+                    "zoom": 18,
+                    "source": "uploaded_geotiff",
+                    "original_file": "unit-map.tif",
+                    "georef_source": "geotiff_embedded",
+                    "georef_confidence": 0.95,
+                    "georef_crs": "EPSG:4326",
                 },
             }
         )
@@ -140,10 +187,7 @@ def create_minimal_terrain_bundle(root: Path, *, include_tile_index: bool = True
                 "properties": {},
                 "geometry": {"type": "Point", "coordinates": [-75.0, 40.0]},
                 "links": [],
-                "assets": {
-                    "orthophoto": {"href": "ortho/map.png"},
-                    "tile_index": {"href": "index/tiles.sqlite"},
-                },
+                "assets": stac_assets,
             }
         )
     )
@@ -594,11 +638,18 @@ def test_bundle_checksums_detect_changed_file() -> None:
         )
         (bundle / "map.png").write_text("map-v1")
         (bundle / "features.npz").write_text("features-v1")
+        (bundle / "bundle_health.json").write_text('{"status":"old"}\n')
 
         written = write_checksum_file(bundle)
         assert_equal(written["entry_count"], 3, "checksum entry count")
+        if any(entry["path"] == "bundle_health.json" for entry in written["entries"]):
+            raise AssertionError("bundle_health.json should not be included in bundle checksums")
         verified = verify_checksum_file(bundle)
         assert_equal(verified["status"], "passed", "checksum verified status")
+
+        (bundle / "bundle_health.json").write_text('{"status":"new"}\n')
+        verified_after_health_update = verify_checksum_file(bundle)
+        assert_equal(verified_after_health_update["status"], "passed", "checksum ignores regenerated health")
 
         (bundle / "map.png").write_text("map-v2")
         failed = verify_checksum_file(bundle)
@@ -677,21 +728,35 @@ rotation_quat_xyzw: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
 
 def test_geospatial_health_report_validates_stac_tiles_and_bounds() -> None:
     with tempfile.TemporaryDirectory() as tmp:
-        bundle = create_minimal_terrain_bundle(Path(tmp))
+        bundle = create_minimal_terrain_bundle(Path(tmp), include_elevation=True)
 
         report = geospatial_health_report(bundle)
         assert_equal(report["status"], "passed", "geospatial health status")
         assert_equal(report["raster"]["format"], "PNG", "geospatial raster format")
         assert_equal(report["tile_index"]["tile_count"], 1, "geospatial tile count")
         assert_equal(report["map_quality"]["estimated_pi_runtime_cost"], "low", "geospatial runtime cost")
+        assert_equal(report["checksums"]["status"], "missing", "geospatial missing checksum status")
+        assert_equal(report["source_provenance"]["map_source"], "uploaded_geotiff", "source provenance source")
+        assert_equal(report["source_provenance"]["original_file"], "unit-map.tif", "source provenance original")
+        assert_equal(report["elevation"]["status"], "passed", "elevation health status")
+        assert_equal(report["elevation"]["asset_count"], 2, "elevation asset count")
+        assert_equal(report["elevation"]["dem_present"], True, "elevation dem present")
+        assert_equal(report["elevation"]["dsm_present"], True, "elevation dsm present")
+        assert_equal(report["elevation"]["vertical_sanity_ready"], True, "elevation vertical sanity ready")
         if report["georef"]["bounds"]["width_m"] <= 0:
             raise AssertionError("Expected geospatial bounds width to be positive")
+
+        write_checksum_file(bundle)
+        report_with_checksums = geospatial_health_report(bundle)
+        assert_equal(report_with_checksums["status"], "passed", "geospatial checksum health status")
+        assert_equal(report_with_checksums["checksums"]["status"], "passed", "geospatial checksum passed")
+        assert_equal(report_with_checksums["checksums"]["extra_file_count"], 0, "geospatial checksum ignores health file")
 
 
 def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        bundle = create_minimal_terrain_bundle(root)
+        bundle = create_minimal_terrain_bundle(root, include_elevation=True)
         log = root / "terrain_matches.jsonl"
         log.write_text(
             json.dumps(
@@ -734,6 +799,7 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
             name="unit-support",
             mavlink_endpoint="udp:14550",
             replay_case_manifest_path=str(replay_manifest),
+            include_map_assets=True,
         )
         assert_equal(result["status"], "passed", "support bundle status")
         zip_path = Path(result["zip_path"])
@@ -745,6 +811,8 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
             "support_manifest.json",
             "bundle/manifest.json",
             "bundle/bundle_health.generated.json",
+            "bundle/elevation/dem.tif",
+            "bundle/elevation/dsm.tif",
             "logs/terrain_matches.jsonl",
             "summaries/terrain_matches.summary.json",
             "summaries/replay_gates/unit-good.gate.json",
@@ -834,6 +902,79 @@ def test_terrain_tile_origins_cover_edges() -> None:
     assert_equal(len(set(origins)), len(origins), "tile origins unique")
 
 
+def test_global_image_descriptor_separates_simple_textures() -> None:
+    dark = image_global_descriptor(np.zeros((16, 16), dtype=np.uint8))
+    bright = image_global_descriptor(np.full((16, 16), 255, dtype=np.uint8))
+    dark_again = image_global_descriptor(np.zeros((16, 16), dtype=np.uint8))
+    same_distance = global_descriptor_distance(dark, dark_again)
+    different_distance = global_descriptor_distance(dark, bright)
+    if same_distance is None or same_distance > 1e-6:
+        raise AssertionError("Expected identical global descriptors to have near-zero distance")
+    if different_distance is None or different_distance <= 0.5:
+        raise AssertionError("Expected dark and bright global descriptors to separate")
+
+
+def test_hierarchical_tile_query_uses_prior_or_spatial_coverage() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        bundle = create_minimal_terrain_bundle(Path(tmp))
+        index_path = bundle / "index" / "tiles.sqlite"
+        with sqlite3.connect(index_path) as conn:
+            for idx, (row, col, keypoints) in enumerate(
+                [
+                    (0, 1, 40),
+                    (1, 0, 80),
+                    (1, 1, 10),
+                    (1, 2, 70),
+                    (2, 1, 30),
+                ],
+                start=1,
+            ):
+                conn.execute(
+                    """
+                    INSERT INTO tiles (
+                        tile_id, row, col, x0_px, y0_px, x1_px, y1_px,
+                        min_east_m, max_east_m, min_north_m, max_north_m,
+                        image_path, descriptor_path, keypoint_count, method
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f"tile_{idx:06d}",
+                        row,
+                        col,
+                        col * 64,
+                        row * 64,
+                        col * 64 + 64,
+                        row * 64 + 64,
+                        float(col * 32),
+                        float(col * 32 + 32),
+                        float(-row * 32 - 32),
+                        float(-row * 32),
+                        "imagery/tiles/tile_000000.png",
+                        "index/descriptors/tile_000000.npz",
+                        keypoints,
+                        "orb",
+                    ),
+                )
+            conn.commit()
+
+        coarse = query_tiles_with_metadata(index_path, bundle, max_candidates=3)
+        assert_equal(coarse.metadata["strategy"], "coarse_spatial_coverage", "coarse query strategy")
+        if len({tile.row for tile in coarse.tiles}) < 2 or len({tile.col for tile in coarse.tiles}) < 2:
+            raise AssertionError("Expected coarse startup query to cover multiple rows and columns")
+
+        local = query_tiles_with_metadata(
+            index_path,
+            bundle,
+            prior_east_m=75.0,
+            prior_north_m=-50.0,
+            search_radius_m=10.0,
+            max_candidates=4,
+        )
+        assert_equal(local.metadata["strategy"], "prior_local_radius", "prior query strategy")
+        assert_equal(local.tiles[0].tile_id, "tile_000004", "nearest prior tile")
+        assert_equal(local.metadata["within_radius_tiles"], 1, "prior query radius count")
+
+
 def test_terrain_estimator_updates_and_inflates_covariance() -> None:
     estimator = TerrainEstimator(process_noise_m2_per_s=2.0)
     result = estimator.update_from_match(
@@ -905,6 +1046,8 @@ def main() -> None:
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
         test_geospatial_health_blocks_missing_georef,
         test_terrain_tile_origins_cover_edges,
+        test_global_image_descriptor_separates_simple_textures,
+        test_hierarchical_tile_query_uses_prior_or_spatial_coverage,
         test_terrain_estimator_updates_and_inflates_covariance,
         test_barometer_tracker_and_estimator_fields,
     ]

@@ -8,6 +8,7 @@ import struct
 from statistics import median
 from typing import Any
 
+from vision_nav.bundle_checksums import CHECKSUM_FILENAME, verify_checksum_file
 from vision_nav.terrain_bundle import TerrainBundle, load_terrain_bundle
 
 
@@ -269,6 +270,132 @@ def stac_health(bundle: TerrainBundle) -> dict[str, Any]:
     }
 
 
+def checksum_health(bundle: TerrainBundle) -> dict[str, Any]:
+    summary = verify_checksum_file(bundle.bundle_dir)
+    if summary["status"] == "missing":
+        return {
+            "status": "missing",
+            "required": False,
+            "checksum_file": summary["checksum_file"],
+            "entry_count": 0,
+            "covered_file_count": 0,
+            "extra_file_count": 0,
+            "issues": [
+                {
+                    "severity": "info",
+                    "message": f"Missing {CHECKSUM_FILENAME}; strict transfer validation can require it.",
+                }
+            ],
+        }
+
+    issues: list[dict[str, str]] = []
+    if summary["status"] != "passed":
+        _add_issue(issues, "error", f"Checksum verification failed: {summary['checksum_file']}")
+    extra_files = list(summary.get("extra_files") or [])
+    ignored_entries = list(summary.get("ignored_entries") or [])
+    return {
+        "status": summary["status"],
+        "required": False,
+        "checksum_file": summary["checksum_file"],
+        "entry_count": int(summary.get("entry_count") or 0),
+        "covered_file_count": int(summary.get("entry_count") or 0) - len(ignored_entries),
+        "missing": summary.get("missing") or [],
+        "mismatched": summary.get("mismatched") or [],
+        "extra_file_count": len(extra_files),
+        "extra_files_sample": extra_files[:10],
+        "ignored_volatile_entries": ignored_entries,
+        "issues": issues,
+    }
+
+
+def source_provenance(bundle: TerrainBundle) -> dict[str, Any]:
+    manifest = bundle.manifest
+    source_region = manifest.get("source_region") if isinstance(manifest.get("source_region"), dict) else {}
+    orthophoto = manifest.get("orthophoto") if isinstance(manifest.get("orthophoto"), dict) else {}
+    terrain = manifest.get("terrain_bundle") if isinstance(manifest.get("terrain_bundle"), dict) else {}
+    features = manifest.get("features") if isinstance(manifest.get("features"), dict) else {}
+    pipeline = manifest.get("pipeline") if isinstance(manifest.get("pipeline"), dict) else {}
+    georef_source = (
+        source_region.get("georef_source")
+        or orthophoto.get("georef_source")
+        or orthophoto.get("source")
+        or (bundle.georef.source if bundle.georef else None)
+    )
+    georef_confidence = (
+        source_region.get("georef_confidence")
+        if source_region.get("georef_confidence") is not None
+        else orthophoto.get("georef_confidence")
+    )
+    if georef_confidence is None and bundle.georef:
+        georef_confidence = bundle.georef.confidence
+    return {
+        "bundle_id": manifest.get("bundle_id"),
+        "map_source": source_region.get("source") or "unknown",
+        "map_id": source_region.get("id"),
+        "map_name": source_region.get("name"),
+        "metadata_path": source_region.get("metadata_path"),
+        "original_file": source_region.get("original_file"),
+        "orthophoto_path": _relative(bundle.orthophoto_path, bundle.bundle_dir),
+        "width_px": source_region.get("width_px"),
+        "height_px": source_region.get("height_px"),
+        "zoom": source_region.get("zoom"),
+        "georef_source": georef_source,
+        "georef_confidence": georef_confidence,
+        "georef_crs": source_region.get("georef_crs") or orthophoto.get("georef_crs") or bundle.crs,
+        "gsd_m": source_region.get("gsd_m_per_px") or orthophoto.get("gsd_m") or bundle.gsd_m,
+        "origin_lat": source_region.get("origin_lat") or orthophoto.get("origin_lat"),
+        "origin_lon": source_region.get("origin_lon") or orthophoto.get("origin_lon"),
+        "terrain_builder": terrain.get("builder"),
+        "terrain_built_at": terrain.get("built_at"),
+        "feature_method": features.get("method"),
+        "max_features": features.get("max_features"),
+        "pipeline": pipeline.get("mode") or pipeline.get("pipeline"),
+    }
+
+
+def elevation_health(bundle: TerrainBundle) -> dict[str, Any]:
+    issues: list[dict[str, str]] = []
+    assets: list[dict[str, Any]] = []
+    for kind, rel in sorted(bundle.elevation_assets.items()):
+        path = bundle.bundle_dir / rel
+        asset: dict[str, Any] = {
+            "kind": kind,
+            "path": rel,
+            "exists": path.exists(),
+            "status": "missing",
+        }
+        if not path.exists():
+            _add_issue(issues, "error", f"Declared {kind.upper()} asset is missing: {rel}")
+            assets.append(asset)
+            continue
+        try:
+            raster = raster_metadata(path)
+            asset["raster"] = raster
+            asset["status"] = "passed" if raster.get("metadata_readable") else "degraded"
+            cog = raster.get("cog") or {}
+            asset["geotiff_tags"] = bool(cog.get("has_geotiff_tags"))
+            asset["cog_ready"] = bool(cog.get("candidate"))
+        except Exception as exc:
+            asset["status"] = "degraded"
+            asset["error"] = str(exc)
+            _add_issue(issues, "warning", f"Could not inspect {kind.upper()} raster metadata: {exc}")
+        assets.append(asset)
+
+    asset_count = len(assets)
+    usable_assets = [asset for asset in assets if asset.get("exists") and asset.get("status") in {"passed", "degraded"}]
+    asset_kinds = {str(asset["kind"]) for asset in usable_assets}
+    return {
+        "status": "not_provided" if asset_count == 0 else _status_from_issues(issues),
+        "required": False,
+        "asset_count": asset_count,
+        "dem_present": "dem" in asset_kinds,
+        "dsm_present": "dsm" in asset_kinds,
+        "vertical_sanity_ready": bool(usable_assets and bundle.georef is not None),
+        "assets": assets,
+        "issues": issues,
+    }
+
+
 def tile_index_health(bundle: TerrainBundle) -> dict[str, Any]:
     issues: list[dict[str, str]] = []
     if bundle.tile_index_path is None:
@@ -423,14 +550,19 @@ def geospatial_health_report(bundle_path: str | Path) -> dict[str, Any]:
 
     stac = stac_health(bundle)
     tile_index = tile_index_health(bundle)
-    for child in (stac, tile_index):
+    checksums = checksum_health(bundle)
+    elevation = elevation_health(bundle)
+    provenance = source_provenance(bundle)
+    for child in (stac, tile_index, checksums, elevation):
         for issue in child.get("issues", []):
-            issues.append(issue)
+            if issue.get("severity") != "info":
+                issues.append(issue)
 
     report = {
         "bundle_dir": str(bundle.bundle_dir),
         "bundle_id": bundle.manifest.get("bundle_id"),
         "orthophoto_path": str(bundle.orthophoto_path),
+        "source_provenance": provenance,
         "raster": raster,
         "georef": {
             "source": bundle.georef.source if bundle.georef else None,
@@ -442,6 +574,8 @@ def geospatial_health_report(bundle_path: str | Path) -> dict[str, Any]:
         },
         "stac": stac,
         "tile_index": tile_index,
+        "checksums": checksums,
+        "elevation": elevation,
         "map_quality": tile_index.get("quality"),
         "issues": issues,
         "status": _status_from_issues(issues),
@@ -468,6 +602,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def print_human(report: dict[str, Any]) -> None:
+    elevation = report.get("elevation") or {}
     print(f"Geospatial health: {report.get('bundle_id') or '(unnamed)'}")
     print(f"Status: {report['status']}")
     print(f"Raster: {report['raster'].get('format')} {report['raster'].get('width_px')}x{report['raster'].get('height_px')}")
@@ -475,6 +610,12 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"GSD: {report['georef'].get('gsd_m')}")
     print(f"Tiles: {report['tile_index'].get('tile_count') or 0}")
     print(f"Features: {report['tile_index'].get('feature_count') or 0}")
+    print(
+        "Elevation: "
+        f"{elevation.get('status') or 'not_provided'} "
+        f"({elevation.get('asset_count') or 0} asset(s), vertical sanity "
+        f"{'ready' if elevation.get('vertical_sanity_ready') else 'not ready'})"
+    )
     for issue in report["issues"]:
         print(f"[{issue['severity'].upper()}] {issue['message']}")
 

@@ -90,6 +90,9 @@ vision-nav-bundle-checksums --bundle ~/drone-data/map_bundles/mission_bundle --v
 Use `vision-nav-validate-bundle --require-checksums` or
 `VISION_NAV_REQUIRE_CHECKSUMS=1 ./scripts/pi/validate_vision_nav_bundle.sh` when
 you want the runtime gate to fail on missing or invalid bundle checksums.
+Terrain `bundle_health.json` reports checksum state and map source provenance,
+but the health report itself is treated as generated metadata and is excluded
+from `checksums.sha256`.
 
 When the homography is valid and georeference metadata is present, the JSON
 output includes:

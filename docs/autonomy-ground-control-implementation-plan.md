@@ -90,16 +90,33 @@ Status:
   terrain bundles.
 - In progress: Mission Planner shows bundle map health, tile count, feature
   count, and GSD after a bundle build.
+- In progress: `bundle_health.json` now includes checksum status and source
+  provenance while excluding generated health reports from checksum coverage to
+  avoid self-referential mismatches.
+- In progress: Mission Planner bundle results display checksum status, covered
+  file count, map source, source filename/name, georeference source, CRS, and
+  georeference confidence.
+- In progress: terrain bundles now discover optional `elevation/dem.tif` and
+  `elevation/dsm.tif` assets, declare them in manifest/STAC/runtime config, and
+  report elevation-readiness in bundle health and desktop/support summaries.
+- In progress: Maps can attach optional DEM/DSM GeoTIFFs to saved map sources
+  so Mission Planner bundle builds carry elevation assets into runtime bundles.
+- In progress: terrain matching now reports hierarchical tile retrieval
+  metadata and uses prior-local radius search when a pose prior exists, or
+  spatially distributed coarse candidates at startup with no prior.
+- In progress: terrain tile descriptors now include a compact grayscale global
+  descriptor, and runtime matching reranks coarse/prior candidates by visual
+  descriptor distance before local ORB/AKAZE homography.
 
 Tasks:
 
 1. Add stricter GDAL-backed COG/GeoTIFF validation when GDAL is available.
-2. Add checksum status and source provenance into the bundle health report
-   without creating checksum/report circularity.
-3. Add optional DEM/DSM assets for planning and vertical sanity checks.
+2. Add checksum/source-provenance status to downloaded support-bundle browsing.
+3. Add terrain profile preview and AGL/GSD checks for imported DEM/DSM assets.
 4. Turn the current feature-density summary into operator-facing map-quality
    heatmaps.
-5. Add hierarchical tile retrieval before local ORB/AKAZE matching.
+5. Benchmark the current lightweight global descriptor against optional neural
+   retrieval descriptors on replay logs.
 
 Acceptance checks:
 
@@ -154,7 +171,9 @@ Status:
   support-bundle creation and desktop download for connected Raspberry Pi
   modules.
 - In progress: Devices and Mission Planner list the most recent downloaded
-  support-bundle ZIPs under `~/DroneTransfer/from-pi/support-bundles/`.
+  support-bundle ZIPs under `~/DroneTransfer/from-pi/support-bundles/` with
+  parsed bundle health, checksum status, map provenance, georeference
+  confidence, and replay-gate status.
 - In progress: `vision_nav.replay_gates` evaluates replay/runtime logs for
   `good_map`, `degraded`, and `wrong_map` expected behavior. Wrong-map cases
   fail if any map match is accepted by default.
@@ -172,7 +191,8 @@ Tasks:
 3. Add acceptance gates for inliers, reprojection error, scale confidence,
    geometry sanity, motion consistency, covariance inflation, and wrong-map
    rejection.
-4. Add a dedicated support-bundle browser with open/delete/share actions.
+4. Add a dedicated support-bundle browser with open/delete/share actions and
+   deeper per-log/replay drilldown.
 
 Acceptance checks:
 

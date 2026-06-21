@@ -9,6 +9,10 @@ from typing import Any
 from vision_nav.bundle import load_manifest
 
 CHECKSUM_FILENAME = "checksums.sha256"
+VOLATILE_CHECKSUM_PATHS = {
+    CHECKSUM_FILENAME,
+    "bundle_health.json",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +50,9 @@ def iter_bundle_files(bundle_dir: Path, checksum_path: Path) -> list[Path]:
         if not path.is_file():
             continue
         if path.resolve() == checksum_path.resolve():
+            continue
+        relative = relative_posix(path, bundle_dir)
+        if relative in VOLATILE_CHECKSUM_PATHS:
             continue
         files.append(path)
     return sorted(files, key=lambda path: relative_posix(path, bundle_dir))
@@ -111,9 +118,11 @@ def verify_checksum_file(bundle: str | Path, checksum_file: str | Path | None = 
     entries = parse_checksum_file(checksum_path)
     missing: list[str] = []
     mismatched: list[dict[str, str]] = []
-    expected_paths = {entry["path"] for entry in entries}
+    ignored_entries = [entry["path"] for entry in entries if entry["path"] in VOLATILE_CHECKSUM_PATHS]
+    active_entries = [entry for entry in entries if entry["path"] not in VOLATILE_CHECKSUM_PATHS]
+    expected_paths = {entry["path"] for entry in active_entries}
 
-    for entry in entries:
+    for entry in active_entries:
         path = bundle_dir / entry["path"]
         if not path.exists():
             missing.append(entry["path"])
@@ -133,6 +142,7 @@ def verify_checksum_file(bundle: str | Path, checksum_file: str | Path | None = 
         "missing": missing,
         "mismatched": mismatched,
         "extra_files": extra_files,
+        "ignored_entries": ignored_entries,
     }
 
 
@@ -167,4 +177,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

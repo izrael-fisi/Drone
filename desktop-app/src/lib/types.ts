@@ -50,6 +50,9 @@ export interface Region {
   georef_crs?: string;
   file_size_mb?: number;
   location_label?: string;
+  elevation_dem_path?: string;
+  elevation_dsm_path?: string;
+  elevation_asset_count?: number;
 }
 
 export interface ModelSet {
@@ -96,6 +99,22 @@ export interface SupportBundleFile {
   path: string;
   size_bytes: number;
   modified_unix_ms?: number;
+  summary?: {
+    bundle_id?: string;
+    bundle_health_status?: "passed" | "degraded" | "failed" | string;
+    checksum_status?: "missing" | "passed" | "failed" | string;
+    covered_file_count?: number;
+    elevation_status?: "not_provided" | "passed" | "degraded" | "failed" | string;
+    elevation_asset_count?: number;
+    vertical_sanity_ready?: boolean;
+    map_source?: string;
+    source_name?: string;
+    georef_source?: string;
+    georef_crs?: string;
+    georef_confidence?: number;
+    replay_gate_status?: "passed" | "failed" | "degraded" | string;
+    replay_case_count?: number;
+  };
 }
 
 export interface BuildDroneBundleRequest {
@@ -146,6 +165,55 @@ export interface BuildDroneBundleResult {
       low_texture_tile_count?: number;
       low_texture_ratio?: number;
     };
+    elevation?: {
+      status?: "not_provided" | "passed" | "degraded" | "failed";
+      required?: boolean;
+      asset_count?: number;
+      dem_present?: boolean;
+      dsm_present?: boolean;
+      vertical_sanity_ready?: boolean;
+      assets?: Array<{
+        kind?: "dem" | "dsm" | string;
+        path?: string;
+        exists?: boolean;
+        status?: "passed" | "degraded" | "missing" | string;
+      }>;
+    };
+    checksums?: {
+      status?: "missing" | "passed" | "failed";
+      required?: boolean;
+      checksum_file?: string;
+      entry_count?: number;
+      covered_file_count?: number;
+      extra_file_count?: number;
+      missing?: string[];
+      mismatched?: Array<{ path: string; expected: string; actual: string }>;
+      extra_files_sample?: string[];
+      ignored_volatile_entries?: string[];
+    };
+    source_provenance?: {
+      bundle_id?: string;
+      map_source?: string;
+      map_id?: string;
+      map_name?: string;
+      metadata_path?: string;
+      original_file?: string;
+      orthophoto_path?: string;
+      width_px?: number;
+      height_px?: number;
+      zoom?: number;
+      georef_source?: string;
+      georef_confidence?: number;
+      georef_crs?: string;
+      gsd_m?: number;
+      origin_lat?: number;
+      origin_lon?: number;
+      terrain_builder?: string;
+      terrain_built_at?: string;
+      feature_method?: string;
+      max_features?: number;
+      pipeline?: string;
+    };
     issues?: Array<{ severity: "error" | "warning" | "info"; message: string }>;
   };
   checksums_path: string;
@@ -185,6 +253,20 @@ export interface ImportMapFileResult {
   georef_confidence: number;
   georef_crs?: string;
   source: "uploaded";
+}
+
+export interface ImportElevationAssetsRequest {
+  region_dir: string;
+  dem_path?: string;
+  dsm_path?: string;
+}
+
+export interface ImportElevationAssetsResult {
+  region_dir: string;
+  dem_path?: string;
+  dsm_path?: string;
+  asset_count: number;
+  metadata_path: string;
 }
 
 export interface CommandResult {

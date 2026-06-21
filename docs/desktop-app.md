@@ -158,8 +158,11 @@ Vision Pipeline defaults. It also builds the terrain tile index, STAC-style
 manifest, `bundle_health.json`, and terrain runtime config. The Mission Planner
 bundle result shows map health, tile count, feature count, and GSD before the
 operator validates or runs the bundle on the Pi. It also shows a coarse Pi
-runtime-cost estimate from tile count and feature density. By default this
-overwrites the active bundle at:
+runtime-cost estimate from tile count and feature density, plus checksum status,
+covered file count, map source provenance, georeference source, CRS, and
+georeference confidence. If optional DEM/DSM elevation rasters are present in
+the selected bundle, the result also shows whether elevation sanity checks are
+ready. By default this overwrites the active bundle at:
 
 ```text
 /home/<pi-user>/drone-data/map_bundles/mission_bundle
@@ -168,6 +171,10 @@ overwrites the active bundle at:
 That path is what `./scripts/pi/run_terrain_nav_loop.sh` loads through
 `VISION_NAV_BUNDLE`, so the map selected in the desktop app becomes the active
 map used for feature comparison on the Raspberry Pi.
+
+The Maps page can attach optional DEM and DSM GeoTIFFs to a saved map source.
+Those files are copied into the map folder under `elevation/`, referenced from
+`metadata.json`, and carried into the next terrain mission bundle.
 
 It then runs the existing Pi scripts:
 
@@ -182,7 +189,9 @@ Raspberry Pi. Support bundles are written under
 `~/DroneTransfer/from-pi/support-bundles/` on the desktop. They include active
 map metadata, bundle health, runtime logs, generated summaries, app/git state,
 and the configured MAVLink endpoint. The panel lists recent downloaded support
-bundle ZIPs so the operator can confirm what was captured.
+bundle ZIPs with parsed bundle health, checksum status, map source provenance,
+georeference confidence, and replay-gate status so the operator can confirm what
+was captured without manually opening the archive.
 
 ## MAVLink
 
@@ -206,4 +215,5 @@ skip reasons, and covariance warnings.
 The Devices Control tab mirrors the same runtime actions for a selected Pi:
 status, short terrain loop, stop loop, view logs, create support bundle, and
 service status. The support-bundle action also downloads the generated zip to
-the desktop transfer folder and shows recent downloaded bundles.
+the desktop transfer folder and shows recent downloaded bundles with the same
+parsed health summary.

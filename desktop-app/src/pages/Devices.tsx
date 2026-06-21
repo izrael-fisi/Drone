@@ -9,6 +9,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cmd } from "../lib/tauri";
 import { useAppStore } from "../lib/store";
 import { cn, generateId } from "../lib/utils";
+import { SupportBundleList } from "../components/SupportBundleList";
 import { ModuleSetup } from "./PiSetup";
 import type { Device, SupportBundleFile } from "../lib/types";
 
@@ -42,12 +43,6 @@ function parseSupportBundleZip(output: string) {
     .map((line) => line.trim())
     .find((line) => line.startsWith("__VISION_NAV_SUPPORT_ZIP__="))
     ?.replace("__VISION_NAV_SUPPORT_ZIP__=", "");
-}
-
-function formatBundleSize(bytes: number) {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${bytes} B`;
 }
 
 function defaultRemotePath(username = "user") {
@@ -535,20 +530,7 @@ export function Devices() {
                             {cmdRunning === d.id ? cmdOutputs[d.id] + "▋" : cmdOutputs[d.id]}
                           </pre>
                         )}
-                        {supportBundles.length > 0 && (
-                          <div className="rounded-lg border border-border bg-bg-base px-3 py-2 text-[11px] text-slate-400 space-y-1">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="font-medium text-slate-300">Downloaded support bundles</span>
-                              <span className="font-mono truncate">{SUPPORT_DOWNLOAD_DIR}</span>
-                            </div>
-                            {supportBundles.slice(0, 3).map((bundle) => (
-                              <div key={bundle.path} className="flex items-center justify-between gap-3 font-mono">
-                                <span className="truncate">{bundle.name}</span>
-                                <span className="shrink-0 text-slate-500">{formatBundleSize(bundle.size_bytes)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} />
                         {d.mavlink_endpoint && (
                           <div className="flex items-center gap-2 text-[11px] text-slate-500">
                             <Cable size={11} /> MAVLink: <span className="font-mono text-slate-400">{d.mavlink_endpoint}</span>
