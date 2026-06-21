@@ -140,6 +140,12 @@ export interface SupportBundleFile {
     ardupilot_params_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     ardupilot_source_set?: number;
     ardupilot_posxy_source?: number;
+    feature_method_benchmark_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    feature_method_benchmark_recommended?: string;
+    feature_method_benchmark_report_count?: number;
+    field_evidence_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    field_evidence_field_case_count?: number;
+    field_evidence_report_count?: number;
     bench_readiness_status?: "passed" | "failed" | "degraded" | string;
     bench_readiness_failed_count?: number;
     bench_readiness_degraded_count?: number;
@@ -223,6 +229,28 @@ export interface SupportBundleDetails {
     yaw_source?: number;
     source_switch_channels?: unknown;
     issues: string[];
+  }>;
+  feature_method_benchmark_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    case_name?: string;
+    expected?: string;
+    recommended_method?: string;
+    methods: Array<{
+      method?: string;
+      status?: "passed" | "failed" | "degraded" | "not_available" | string;
+      accepted_rate?: number;
+      total_records?: number;
+    }>;
+  }>;
+  field_evidence_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    manifest_path?: string;
+    coverage_status?: "passed" | "failed" | "degraded" | string;
+    replay_status?: "passed" | "failed" | "degraded" | string;
+    case_count?: number;
+    field_case_count?: number;
+    covered_conditions?: unknown;
+    required_conditions?: unknown;
   }>;
   bench_readiness?: {
     status?: "passed" | "failed" | "degraded" | string;

@@ -47,6 +47,10 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
+function arrayCount(value: unknown) {
+  return Array.isArray(value) ? value.length : 0;
+}
+
 function nestedString(root: unknown, path: string[]) {
   let current: unknown = root;
   for (const key of path) {
@@ -259,6 +263,59 @@ function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }
         </div>
       )}
 
+      {details.feature_method_benchmark_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Feature method benchmarks</div>
+          {details.feature_method_benchmark_reports.slice(0, 2).map((report, index) => (
+            <div key={`${report.case_name}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(report.status)}>
+                  {statusIcon(report.status)}
+                  {formatLabel(report.status)}
+                </span>
+                <span className="font-mono text-slate-400 truncate">{formatLabel(report.case_name)}</span>
+                <span className="font-mono text-slate-500">{formatLabel(report.expected)}</span>
+                <span className="font-mono text-slate-500">pick {formatLabel(report.recommended_method)}</span>
+              </div>
+              {report.methods.slice(0, 4).map((method) => (
+                <div key={`${report.case_name}-${method.method}`} className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500">
+                  <span className={statusClass(method.status)}>
+                    {statusIcon(method.status)}
+                    {formatLabel(method.status)}
+                  </span>
+                  <span>{formatLabel(method.method)}</span>
+                  <span>{method.total_records ?? 0} rec</span>
+                  <span>{formatPercent(method.accepted_rate)} accepted</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {details.field_evidence_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Field evidence</div>
+          {details.field_evidence_reports.slice(0, 2).map((report, index) => (
+            <div key={`${report.manifest_path}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(report.status)}>
+                  {statusIcon(report.status)}
+                  {formatLabel(report.status)}
+                </span>
+                <span className="font-mono text-slate-400 truncate">{formatLabel(report.manifest_path)}</span>
+                <span className="font-mono text-slate-500">coverage {formatLabel(report.coverage_status)}</span>
+                <span className="font-mono text-slate-500">replay {formatLabel(report.replay_status)}</span>
+              </div>
+              <div className="font-mono text-slate-500">
+                field cases {report.field_case_count ?? 0}/{report.case_count ?? 0}
+                {arrayCount(report.covered_conditions) > 0 ? `, conditions ${arrayCount(report.covered_conditions)}/${arrayCount(report.required_conditions)}` : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {details.replay_reports.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Replay gates</div>
@@ -419,6 +476,18 @@ export function SupportBundleList({
                     ardu {formatLabel(bundle.summary.ardupilot_params_status)}
                   </span>
                 )}
+                {bundle.summary.feature_method_benchmark_status && bundle.summary.feature_method_benchmark_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.feature_method_benchmark_status)}>
+                    {statusIcon(bundle.summary.feature_method_benchmark_status)}
+                    methods {formatLabel(bundle.summary.feature_method_benchmark_status)}
+                  </span>
+                )}
+                {bundle.summary.field_evidence_status && bundle.summary.field_evidence_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.field_evidence_status)}>
+                    {statusIcon(bundle.summary.field_evidence_status)}
+                    field {formatLabel(bundle.summary.field_evidence_status)}
+                  </span>
+                )}
                 {bundle.summary.elevation_status && (
                   <span className={bundle.summary.vertical_sanity_ready ? "badge-green" : statusClass(bundle.summary.elevation_status)}>
                     {statusIcon(bundle.summary.vertical_sanity_ready ? "passed" : bundle.summary.elevation_status)}
@@ -463,6 +532,10 @@ export function SupportBundleList({
                   <span>px4 samples {bundle.summary.px4_sitl_sample_count ?? 0}</span>
                   <span>params {formatLabel(bundle.summary.px4_params_status)}</span>
                   <span>EV ctrl {bundle.summary.px4_ev_ctrl ?? "n/a"}</span>
+                  <span>methods {formatLabel(bundle.summary.feature_method_benchmark_status)}</span>
+                  <span>pick {formatLabel(bundle.summary.feature_method_benchmark_recommended)}</span>
+                  <span>field {formatLabel(bundle.summary.field_evidence_status)}</span>
+                  <span>field cases {bundle.summary.field_evidence_field_case_count ?? 0}</span>
                   <span>ready {formatLabel(bundle.summary.bench_readiness_status)}</span>
                   <span>
                     gate {bundle.summary.bench_readiness_failed_count ?? 0} fail / {bundle.summary.bench_readiness_degraded_count ?? 0} degrade

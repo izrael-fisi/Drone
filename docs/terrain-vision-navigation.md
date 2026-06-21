@@ -97,6 +97,7 @@ vision-nav-match-terrain-frame --bundle mission_bundle --frame downward_frame.jp
 vision-nav-run-terrain-loop --bundle mission_bundle --output-dir terrain-run --count 30
 vision-nav-replay-terrain-log --bundle mission_bundle --log terrain-run/terrain_matches.jsonl
 vision-nav-benchmark-retrieval --bundle mission_bundle --log replay_cases.jsonl --top-k 1,5,10
+vision-nav-benchmark-feature-methods --bundle mission_bundle --replay-log replay_cases.jsonl --methods orb,akaze,sift,neural --expected good_map --output-dir method-bench
 ```
 
 The Pi wrappers are:
@@ -126,6 +127,16 @@ directly or a ground-truth `local_enu_m` / `map_pixel` value that maps back to a
 tile. The report includes top-k hits, recall@k, mean rank, per-record candidate
 rankings, and a `neural.status=not_available` placeholder until higher-compute
 retrieval descriptors are exported.
+
+`vision-nav-benchmark-feature-methods` compares local matching behavior across
+ORB, AKAZE, SIFT, and future neural methods on the same replay case. It can
+either rerun a frame replay from `--bundle` / `--replay-log`, or compare
+existing per-method logs with repeated `--method-log method=path` arguments.
+The report runs the same replay gates used for support bundles, recommends the
+first passing method in the requested order, and marks neural methods as
+`not_available` until SuperPoint/LightGlue descriptors are actually exported.
+Reports saved under `~/DroneTransfer/outgoing/feature-method-bench` are picked
+up automatically by `scripts/pi/create_support_bundle.sh`.
 
 ## Estimator Policy
 

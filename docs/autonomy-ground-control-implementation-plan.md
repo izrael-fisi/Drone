@@ -54,6 +54,9 @@ Status:
 - Done: support-bundle creation now writes `summaries/bench_readiness.json` and
   embeds the same status in `support_manifest.json` so downloaded bench reports
   carry their own readiness result.
+- Done: the bench-readiness gate now counts optional ArduPilot ExternalNav
+  parameter reports when present, without making ArduPilot mandatory for the
+  PX4-first bench path.
 - Done: PX4 external-vision bench guidance is documented in
   [PX4 External Vision Bench Guide](px4-external-vision-bench.md).
 - Done: runtime logs include `external_position_health` snapshots with message
@@ -301,18 +304,34 @@ Status:
   real field coverage across good texture, low texture, blur, seasonal change,
   lighting change, altitude/scale change, repeated patterns, and wrong-map
   rejection.
+- Done: `vision-nav-field-evidence-gate` combines real field coverage,
+  manifest-relative log existence, and per-case replay gate evaluation into one
+  pass/fail field evidence artifact.
 - Done: `vision-nav-register-replay-case` registers copied field, bench, or
   synthetic logs into replay manifests with dataset type, condition tags, and
   stable manifest-relative log paths.
+- Done: `vision-nav-benchmark-feature-methods` compares ORB, AKAZE, SIFT, and
+  future neural methods on the same replay case, using the same replay gates as
+  support bundles and marking neural descriptors unavailable until they are
+  generated.
+- Done: support bundles ingest feature-method benchmark report files or output
+  directories, copy them into `extras/feature_method_benchmarks/`, publish
+  parsed JSON under `summaries/feature_method_benchmarks/`, and count the result
+  in bench readiness when present.
+- Done: support bundles ingest `vision-nav-field-evidence-gate` reports, copy
+  them under `extras/field_evidence/`, publish parsed JSON under
+  `summaries/field_evidence/`, and count the result in bench readiness when
+  present.
 
 Tasks:
 
 1. Fill `data/replay_cases/` with real field logs that pass
-   `vision-nav-audit-replay-coverage` for good texture, low texture, blur,
+   `vision-nav-field-evidence-gate` for good texture, low texture, blur,
    seasonal change, lighting change, altitude/scale change, repeated patterns,
    and wrong map. Use `vision-nav-register-replay-case` when bringing Pi logs
    into the repo dataset folder.
-2. Compare ORB/AKAZE against optional higher-compute features on the same logs.
+2. Run `vision-nav-benchmark-feature-methods` on real field logs and use the
+   generated reports to choose the Pi default and higher-compute fallback.
 3. Tune replay-gate thresholds against real field logs for blur, seasonal
    change, altitude/scale change, repeated patterns, and wrong-map cases.
 4. Add native replay artifact views for full extracted support-bundle logs and
@@ -342,6 +361,10 @@ Status:
   ExternalNav readiness reports under `extras/ardupilot_params/` and
   `summaries/ardupilot_params/`, and the desktop support-bundle detail view can
   display them.
+- Done: `vision-nav-bench-readiness` includes ArduPilot parameter status in the
+  combined pass/degrade/fail bench artifact when an ArduPilot report is
+  bundled; use `--require-ardupilot-params` only for adapter-specific bench
+  runs.
 
 Tasks:
 

@@ -74,6 +74,10 @@ The checker looks for the conservative bench shape:
 This is an audit tool only. It does not modify flight-controller parameters.
 Support bundles can include the same report with
 `VISION_NAV_ARDUPILOT_PARAMS=/path/to/ardupilot.params ./scripts/pi/create_support_bundle.sh`.
+When included, `vision-nav-bench-readiness` counts the ArduPilot report in the
+combined bench artifact. ArduPilot remains optional for the PX4-first product
+path; use `vision-nav-bench-readiness --require-ardupilot-params` only for an
+ArduPilot-specific adapter run.
 
 ## Bench Sequence
 

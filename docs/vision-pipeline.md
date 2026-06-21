@@ -322,6 +322,19 @@ missing. It expects field cases for good texture, low texture, blur, seasonal
 change, lighting change, altitude/scale change, repeated patterns, and wrong-map
 rejection.
 
+Run the combined field evidence gate before treating a replay dataset as
+pilot-ready:
+
+```bash
+vision-nav-field-evidence-gate \
+  --manifest data/replay_cases/field_manifest.json \
+  --output data/replay_cases/field_evidence_report.json
+```
+
+This gate requires real field log files, checks that all required field
+conditions are covered, and evaluates every replay case with the same
+accepted/degraded/wrong-map gates used in support bundles.
+
 For a dependency-free local registry smoke test:
 
 ```bash

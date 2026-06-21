@@ -27,6 +27,21 @@ def parse_args() -> argparse.Namespace:
         help="Do not fail when PX4 parameter export evidence is absent. Use only before autopilot setup.",
     )
     parser.add_argument(
+        "--require-ardupilot-params",
+        action="store_true",
+        help="Fail when ArduPilot ExternalNav parameter evidence is absent.",
+    )
+    parser.add_argument(
+        "--require-feature-method-benchmark",
+        action="store_true",
+        help="Fail when feature-method benchmark evidence is absent.",
+    )
+    parser.add_argument(
+        "--require-field-evidence",
+        action="store_true",
+        help="Fail when field-evidence gate reports are absent.",
+    )
+    parser.add_argument(
         "--allow-missing-replay-gates",
         action="store_true",
         help="Do not fail when replay-gate cases are absent. Use only for packaging smoke checks.",
@@ -48,6 +63,9 @@ def evaluate_bench_readiness(
     *,
     allow_missing_px4_evidence: bool = False,
     allow_missing_px4_params: bool = False,
+    require_ardupilot_params: bool = False,
+    require_feature_method_benchmark: bool = False,
+    require_field_evidence: bool = False,
     allow_missing_replay_gates: bool = False,
 ) -> dict[str, Any]:
     checks = [
@@ -57,6 +75,15 @@ def evaluate_bench_readiness(
         check_px4_evidence(manifest, allow_missing=allow_missing_px4_evidence),
         check_px4_params(manifest, allow_missing=allow_missing_px4_params),
     ]
+    ardupilot_check = check_ardupilot_params(manifest, require=require_ardupilot_params)
+    if ardupilot_check is not None:
+        checks.append(ardupilot_check)
+    feature_benchmark_check = check_feature_method_benchmark(manifest, require=require_feature_method_benchmark)
+    if feature_benchmark_check is not None:
+        checks.append(feature_benchmark_check)
+    field_evidence_check = check_field_evidence(manifest, require=require_field_evidence)
+    if field_evidence_check is not None:
+        checks.append(field_evidence_check)
     status = readiness_status(checks)
     return {
         "status": status,
@@ -159,6 +186,69 @@ def check_px4_params(manifest: dict[str, Any], *, allow_missing: bool) -> dict[s
     return failed("px4_params", f"PX4 parameter check is {status}.", details)
 
 
+def check_ardupilot_params(manifest: dict[str, Any], *, require: bool) -> dict[str, Any] | None:
+    params = manifest.get("ardupilot_params") or {}
+    status = normalize_status(params.get("status"))
+    values = params.get("parameters") or {}
+    source_set = optional_int(values.get("source_set"))
+    details = {
+        "source_set": source_set,
+        "AHRS_EKF_TYPE": values.get("AHRS_EKF_TYPE"),
+        "VISO_TYPE": values.get("VISO_TYPE"),
+        "EK3_SRC_POSXY": values.get(f"EK3_SRC{source_set}_POSXY") if source_set in {1, 2, 3} else None,
+    }
+    if status in MISSING:
+        if require:
+            return failed("ardupilot_params", "ArduPilot parameter check is required for this readiness gate.", details)
+        return None
+    if status in PASSING:
+        return passed("ardupilot_params", "ArduPilot ExternalNav parameter check passed.", details)
+    if status in WARNING:
+        return degraded("ardupilot_params", "ArduPilot ExternalNav parameter check is degraded.", details)
+    return failed("ardupilot_params", f"ArduPilot ExternalNav parameter check is {status}.", details)
+
+
+def check_feature_method_benchmark(manifest: dict[str, Any], *, require: bool) -> dict[str, Any] | None:
+    benchmark = manifest.get("feature_method_benchmarks") or {}
+    status = normalize_status(benchmark.get("status"))
+    details = {
+        "report_count": benchmark.get("report_count"),
+        "recommended_methods": [
+            report.get("recommended_method")
+            for report in benchmark.get("reports", [])
+            if isinstance(report, dict) and report.get("recommended_method")
+        ][:5],
+    }
+    if status in MISSING:
+        if require:
+            return failed("feature_method_benchmarks", "Feature-method benchmark report is required for this readiness gate.", details)
+        return None
+    if status in PASSING:
+        return passed("feature_method_benchmarks", "Feature-method benchmark report passed.", details)
+    if status in WARNING:
+        return degraded("feature_method_benchmarks", "Feature-method benchmark report is degraded.", details)
+    return failed("feature_method_benchmarks", f"Feature-method benchmark report is {status}.", details)
+
+
+def check_field_evidence(manifest: dict[str, Any], *, require: bool) -> dict[str, Any] | None:
+    evidence = manifest.get("field_evidence") or {}
+    status = normalize_status(evidence.get("status"))
+    details = {
+        "report_count": evidence.get("report_count"),
+        "field_case_count": evidence.get("field_case_count"),
+        "covered_conditions": evidence.get("covered_conditions"),
+    }
+    if status in MISSING:
+        if require:
+            return failed("field_evidence", "Field-evidence gate report is required for this readiness gate.", details)
+        return None
+    if status in PASSING:
+        return passed("field_evidence", "Field-evidence gate passed.", details)
+    if status in WARNING:
+        return degraded("field_evidence", "Field-evidence gate is degraded.", details)
+    return failed("field_evidence", f"Field-evidence gate is {status}.", details)
+
+
 def readiness_status(checks: list[dict[str, Any]]) -> str:
     if any(check["status"] == "failed" for check in checks):
         return "failed"
@@ -172,6 +262,18 @@ def normalize_status(value: Any) -> str | None:
         return None
     text = str(value).strip().lower()
     return text or None
+
+
+def optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not numeric.is_integer():
+        return None
+    return int(numeric)
 
 
 def passed(name: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -200,6 +302,9 @@ def main() -> None:
             args.support_bundle,
             allow_missing_px4_evidence=args.allow_missing_px4_evidence,
             allow_missing_px4_params=args.allow_missing_px4_params,
+            require_ardupilot_params=args.require_ardupilot_params,
+            require_feature_method_benchmark=args.require_feature_method_benchmark,
+            require_field_evidence=args.require_field_evidence,
             allow_missing_replay_gates=args.allow_missing_replay_gates,
         )
     except Exception as exc:

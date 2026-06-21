@@ -34,6 +34,8 @@ from vision_nav.external_position import (
     yaw_enu_to_ned,
 )
 from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
+from vision_nav.feature_method_benchmark import benchmark_feature_methods
+from vision_nav.field_evidence_gate import evaluate_field_evidence_gate
 from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health_report
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
 from vision_nav.mavlink_bridge import MavlinkSendResult, MavlinkVisionBridge, parse_mavlink_endpoint, send_records_once
@@ -1326,6 +1328,67 @@ GPS_TYPE,0
 RC8_OPTION,90
 """.strip()
         )
+        feature_benchmark_dir = root / "feature-method-bench"
+        feature_benchmark_dir.mkdir()
+        (feature_benchmark_dir / "unit-method-benchmark.json").write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "case_name": "unit-method-benchmark",
+                    "expected": "good_map",
+                    "recommended_method": "orb",
+                    "methods": [
+                        {
+                            "method": "orb",
+                            "status": "passed",
+                            "gate": {"metrics": {"accepted_rate": 1.0, "total_records": 2}},
+                        },
+                        {
+                            "method": "neural",
+                            "status": "not_available",
+                            "reason": "Neural descriptors are not generated yet.",
+                        },
+                    ],
+                }
+            )
+        )
+        field_evidence_report = root / "field_evidence_report.json"
+        field_evidence_report.write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "manifest_path": "field_manifest.json",
+                    "summary": {
+                        "coverage_status": "passed",
+                        "replay_status": "passed",
+                        "case_count": 8,
+                        "field_case_count": 8,
+                        "required_conditions": [
+                            "good_texture",
+                            "low_texture",
+                            "blur",
+                            "seasonal_change",
+                            "lighting_change",
+                            "altitude_scale_change",
+                            "repeated_patterns",
+                            "wrong_map",
+                        ],
+                        "covered_conditions": [
+                            "good_texture",
+                            "low_texture",
+                            "blur",
+                            "seasonal_change",
+                            "lighting_change",
+                            "altitude_scale_change",
+                            "repeated_patterns",
+                            "wrong_map",
+                        ],
+                    },
+                    "coverage": {"status": "passed"},
+                    "replay_gates": {"status": "passed", "case_count": 8, "reports": []},
+                }
+            )
+        )
 
         result = create_support_bundle(
             bundle=str(bundle),
@@ -1339,6 +1402,8 @@ RC8_OPTION,90
             ardupilot_params_path=str(ardupilot_params),
             px4_expected_message="odometry",
             replay_case_manifest_path=str(replay_manifest),
+            feature_method_benchmark_paths=[str(feature_benchmark_dir)],
+            field_evidence_report_paths=[str(field_evidence_report)],
             include_map_assets=True,
         )
         assert_equal(result["status"], "passed", "support bundle status")
@@ -1359,12 +1424,16 @@ RC8_OPTION,90
             "summaries/px4_sitl_evidence/receiver_evidence.json",
             "summaries/px4_params/param_check.json",
             "summaries/ardupilot_params/param_check.json",
+            "summaries/feature_method_benchmarks/unit-method-benchmark-01.json",
+            "summaries/field_evidence/field_manifest-01.json",
             "summaries/bench_readiness.json",
             "extras/px4_sitl_session/px4_sitl_evidence_session.json",
             "extras/px4_sitl_session/receiver_capture/vehicle_visual_odometry.txt",
             "extras/px4_sitl_session/receiver_capture/mavlink_status.txt",
             "extras/px4_params/px4.params",
             "extras/ardupilot_params/ardupilot.params",
+            "extras/feature_method_benchmarks/feature-method-bench/unit-method-benchmark.json",
+            "extras/field_evidence/field_evidence_report.json",
         }:
             if expected not in names:
                 raise AssertionError(f"Missing {expected} from support bundle zip")
@@ -1378,6 +1447,10 @@ RC8_OPTION,90
         assert_equal(manifest["px4_params"]["parameters"]["EKF2_EV_CTRL"], 1, "support px4 ev ctrl")
         assert_equal(manifest["ardupilot_params"]["status"], "passed", "support ardupilot params status")
         assert_equal(manifest["ardupilot_params"]["parameters"]["EK3_SRC1_POSXY"], 6, "support ardupilot posxy")
+        assert_equal(manifest["feature_method_benchmarks"]["status"], "passed", "support feature benchmark status")
+        assert_equal(manifest["feature_method_benchmarks"]["reports"][0]["recommended_method"], "orb", "support feature benchmark recommendation")
+        assert_equal(manifest["field_evidence"]["status"], "passed", "support field evidence status")
+        assert_equal(manifest["field_evidence"]["field_case_count"], 8, "support field evidence case count")
         assert_equal(manifest["bench_readiness"]["status"], "degraded", "support bench readiness status")
         assert_equal(manifest["bench_readiness"]["summary"]["degraded"], 1, "support bench readiness degraded count")
         readiness = evaluate_bench_readiness_file(zip_path)
@@ -1386,6 +1459,9 @@ RC8_OPTION,90
         assert_equal(readiness_checks["bundle_health"], "passed", "bench readiness bundle health")
         assert_equal(readiness_checks["px4_sitl_evidence"], "passed", "bench readiness px4 evidence")
         assert_equal(readiness_checks["px4_params"], "degraded", "bench readiness px4 params")
+        assert_equal(readiness_checks["ardupilot_params"], "passed", "bench readiness ardupilot params")
+        assert_equal(readiness_checks["feature_method_benchmarks"], "passed", "bench readiness feature benchmarks")
+        assert_equal(readiness_checks["field_evidence"], "passed", "bench readiness field evidence")
 
         missing_px4 = dict(manifest)
         missing_px4["px4_sitl_evidence"] = {"status": "not_provided"}
@@ -1393,6 +1469,51 @@ RC8_OPTION,90
         assert_equal(failed["status"], "failed", "bench readiness missing px4 evidence")
         allowed = evaluate_bench_readiness(missing_px4, allow_missing_px4_evidence=True)
         assert_equal(allowed["status"], "degraded", "bench readiness allow missing px4 evidence")
+
+        failed_ardupilot = dict(manifest)
+        failed_ardupilot["ardupilot_params"] = {
+            "status": "failed",
+            "parameters": {"source_set": 1, "EK3_SRC1_POSXY": 0},
+        }
+        ardupilot_failed = evaluate_bench_readiness(failed_ardupilot)
+        assert_equal(ardupilot_failed["status"], "failed", "bench readiness failed ardupilot params")
+        ardupilot_failed_checks = {check["name"]: check["status"] for check in ardupilot_failed["checks"]}
+        assert_equal(ardupilot_failed_checks["ardupilot_params"], "failed", "failed ardupilot check included")
+
+        missing_ardupilot = dict(manifest)
+        missing_ardupilot["ardupilot_params"] = {"status": "not_provided"}
+        optional_ardupilot = evaluate_bench_readiness(missing_ardupilot)
+        optional_check_names = {check["name"] for check in optional_ardupilot["checks"]}
+        if "ardupilot_params" in optional_check_names:
+            raise AssertionError("ArduPilot params should be optional unless required")
+        required_ardupilot = evaluate_bench_readiness(missing_ardupilot, require_ardupilot_params=True)
+        assert_equal(required_ardupilot["status"], "failed", "bench readiness required missing ardupilot params")
+
+        failed_feature_benchmarks = dict(manifest)
+        failed_feature_benchmarks["feature_method_benchmarks"] = {"status": "failed", "report_count": 1, "reports": []}
+        feature_failed = evaluate_bench_readiness(failed_feature_benchmarks)
+        assert_equal(feature_failed["status"], "failed", "bench readiness failed feature benchmark")
+        missing_feature_benchmarks = dict(manifest)
+        missing_feature_benchmarks["feature_method_benchmarks"] = {"status": "not_provided", "report_count": 0}
+        feature_optional = evaluate_bench_readiness(missing_feature_benchmarks)
+        feature_optional_names = {check["name"] for check in feature_optional["checks"]}
+        if "feature_method_benchmarks" in feature_optional_names:
+            raise AssertionError("Feature-method benchmarks should be optional unless required")
+        feature_required = evaluate_bench_readiness(missing_feature_benchmarks, require_feature_method_benchmark=True)
+        assert_equal(feature_required["status"], "failed", "bench readiness required missing feature benchmark")
+
+        failed_field_evidence = dict(manifest)
+        failed_field_evidence["field_evidence"] = {"status": "failed", "report_count": 1, "reports": []}
+        field_failed = evaluate_bench_readiness(failed_field_evidence)
+        assert_equal(field_failed["status"], "failed", "bench readiness failed field evidence")
+        missing_field_evidence = dict(manifest)
+        missing_field_evidence["field_evidence"] = {"status": "not_provided", "report_count": 0}
+        field_optional = evaluate_bench_readiness(missing_field_evidence)
+        field_optional_names = {check["name"] for check in field_optional["checks"]}
+        if "field_evidence" in field_optional_names:
+            raise AssertionError("Field evidence should be optional unless required")
+        field_required = evaluate_bench_readiness(missing_field_evidence, require_field_evidence=True)
+        assert_equal(field_required["status"], "failed", "bench readiness required missing field evidence")
 
 
 def test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance() -> None:
@@ -1585,6 +1706,70 @@ def test_replay_dataset_coverage_audit_requires_real_field_cases() -> None:
         assert_equal(field_report["field_case_count"], len(cases), "field replay coverage case count")
         if any(requirement["status"] != "covered" for requirement in field_report["requirements"]):
             raise AssertionError(f"Expected all coverage requirements to pass, got {field_report['requirements']}")
+
+
+def test_field_evidence_gate_combines_coverage_and_replay_gates() -> None:
+    def good_record(x_m: float, y_m: float) -> dict:
+        return {
+            "result": {
+                "status": "accepted",
+                "confidence": 0.82,
+                "inliers": 32,
+                "reprojection_error_px": 1.8,
+                "scale_confidence": 0.75,
+                "local_enu_m": {"x": x_m, "y": y_m},
+                "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
+            }
+        }
+
+    def rejected_record(reason: str) -> dict:
+        return {"result": {"status": "rejected", "reason": reason}}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        case_specs = [
+            ("field-good-texture", "good_map", "good_texture", [good_record(0.0, 0.0), good_record(1.0, 0.2)]),
+            ("field-low-texture", "degraded", "low_texture", [rejected_record("low_texture")]),
+            ("field-blur", "degraded", "blur", [rejected_record("blur")]),
+            ("field-seasonal-change", "degraded", "seasonal_change", [rejected_record("seasonal_change")]),
+            ("field-lighting-change", "degraded", "lighting_change", [rejected_record("lighting_change")]),
+            ("field-altitude-scale-change", "good_map", "altitude_scale_change", [good_record(2.0, 0.3), good_record(3.0, 0.8)]),
+            ("field-repeated-patterns", "degraded", "repeated_patterns", [rejected_record("ambiguous")]),
+            ("field-wrong-map", "wrong_map", "wrong_map", [rejected_record("wrong_map")]),
+        ]
+        manifest_cases = []
+        for case_name, expected, condition, records in case_specs:
+            log = base / "logs" / condition / "terrain_matches.jsonl"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+            manifest_cases.append(
+                {
+                    "case_name": case_name,
+                    "expected": expected,
+                    "dataset_type": "field",
+                    "conditions": [condition],
+                    "bundle": "field-bundle",
+                    "log": str(log.relative_to(base)),
+                }
+            )
+        manifest = base / "manifest.json"
+        manifest.write_text(json.dumps({"version": "0.1.0", "cases": manifest_cases}))
+
+        output = base / "reports" / "field_evidence.json"
+        report = evaluate_field_evidence_gate(manifest, output_path=output)
+        assert_equal(report["status"], "passed", "field evidence gate status")
+        assert_equal(report["summary"]["field_case_count"], 8, "field evidence gate field case count")
+        if not output.exists():
+            raise AssertionError("Expected field evidence report to be written")
+
+        missing_manifest = base / "missing_manifest.json"
+        missing_cases = [dict(case) for case in manifest_cases]
+        missing_cases[0]["log"] = "logs/good_texture/missing.jsonl"
+        missing_manifest.write_text(json.dumps({"version": "0.1.0", "cases": missing_cases}))
+        failed = evaluate_field_evidence_gate(missing_manifest)
+        assert_equal(failed["status"], "failed", "field evidence gate missing log status")
+        if not any(issue["severity"] == "error" for issue in failed["coverage"]["case_issues"]):
+            raise AssertionError("Expected missing field log to create coverage error")
 
 
 def test_replay_case_registry_registers_and_replaces_cases() -> None:
@@ -1787,6 +1972,55 @@ def test_retrieval_benchmark_ranks_expected_tile() -> None:
         assert_equal(report["backends"]["neural"]["status"], "not_available", "retrieval benchmark neural status")
 
 
+def test_feature_method_benchmark_compares_gate_results() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        orb_log = root / "orb.jsonl"
+        akaze_log = root / "akaze.jsonl"
+        accepted = {
+            "status": "accepted",
+            "confidence": 0.82,
+            "inliers": 32,
+            "reprojection_error_px": 1.6,
+            "scale_confidence": 0.78,
+            "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
+        }
+        orb_log.write_text(
+            "\n".join(
+                [
+                    json.dumps({"sequence": 1, "result": {**accepted, "local_enu_m": {"x": 0.0, "y": 0.0}}}),
+                    json.dumps({"sequence": 2, "result": {**accepted, "local_enu_m": {"x": 1.0, "y": 0.5}}}),
+                ]
+            )
+            + "\n"
+        )
+        akaze_log.write_text(
+            "\n".join(
+                [
+                    json.dumps({"sequence": 1, "result": {"status": "rejected", "reason": "not_enough_inliers"}}),
+                    json.dumps({"sequence": 2, "result": {"status": "rejected", "reason": "not_enough_inliers"}}),
+                ]
+            )
+            + "\n"
+        )
+
+        report = benchmark_feature_methods(
+            expected="good_map",
+            methods=["orb", "akaze", "neural"],
+            case_name="unit-method-benchmark",
+            method_logs={"orb": orb_log, "akaze": akaze_log},
+        )
+
+        assert_equal(report["status"], "passed", "feature method benchmark overall status")
+        assert_equal(report["recommended_method"], "orb", "feature method benchmark recommendation")
+        statuses = {method["method"]: method["status"] for method in report["methods"]}
+        assert_equal(statuses["orb"], "passed", "orb gate status")
+        assert_equal(statuses["akaze"], "failed", "akaze gate status")
+        assert_equal(statuses["neural"], "not_available", "neural placeholder status")
+        orb_report = next(method for method in report["methods"] if method["method"] == "orb")
+        assert_equal(orb_report["gate"]["metrics"]["accepted_rate"], 1.0, "orb accepted rate")
+
+
 def test_hierarchical_tile_query_uses_prior_or_spatial_coverage() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         bundle = create_minimal_terrain_bundle(Path(tmp))
@@ -1929,11 +2163,13 @@ def main() -> None:
         test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance,
         test_synthetic_replay_case_manifest_passes_all_cases,
         test_replay_dataset_coverage_audit_requires_real_field_cases,
+        test_field_evidence_gate_combines_coverage_and_replay_gates,
         test_replay_case_registry_registers_and_replaces_cases,
         test_geospatial_health_blocks_missing_georef,
         test_terrain_tile_origins_cover_edges,
         test_global_image_descriptor_separates_simple_textures,
         test_retrieval_benchmark_ranks_expected_tile,
+        test_feature_method_benchmark_compares_gate_results,
         test_hierarchical_tile_query_uses_prior_or_spatial_coverage,
         test_terrain_estimator_updates_and_inflates_covariance,
         test_barometer_tracker_and_estimator_fields,

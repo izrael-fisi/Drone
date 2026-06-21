@@ -40,6 +40,8 @@ function shellQuote(value: string) {
 
 const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
 const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
+const SUPPORT_EVIDENCE_ENV =
+  'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
 
 function readModuleSetupHandoffDeviceId() {
   try {
@@ -56,7 +58,7 @@ function readModuleSetupHandoffDeviceId() {
 function supportBundleCommand(remotePath: string, remoteBundle: string, mavlinkEnv: string) {
   return [
     `cd ${shellQuote(remotePath)}`,
-    `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ${mavlinkEnv}./scripts/pi/create_support_bundle.sh`,
+    `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ${mavlinkEnv}${SUPPORT_EVIDENCE_ENV}./scripts/pi/create_support_bundle.sh`,
     `latest=$(ls -t "$HOME/DroneTransfer/outgoing/support-bundles/"*.zip 2>/dev/null | head -n 1)`,
     `test -n "$latest"`,
     `echo "__VISION_NAV_SUPPORT_ZIP__=$latest"`,

@@ -48,6 +48,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--replay-case-manifest", help="Optional JSON replay-case manifest to evaluate and include.")
     parser.add_argument(
+        "--feature-method-benchmark",
+        action="append",
+        default=[],
+        help="Feature-method benchmark JSON report or output directory. Can be repeated.",
+    )
+    parser.add_argument(
+        "--field-evidence-report",
+        action="append",
+        default=[],
+        help="Field evidence gate JSON report. Can be repeated.",
+    )
+    parser.add_argument(
         "--replay-case",
         action="append",
         default=[],
@@ -489,6 +501,164 @@ def evaluate_ardupilot_param_export(
     return report
 
 
+def summarize_feature_method_report(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    methods = []
+    for method_report in report.get("methods") or []:
+        if not isinstance(method_report, dict):
+            continue
+        gate = method_report.get("gate") if isinstance(method_report.get("gate"), dict) else {}
+        metrics = gate.get("metrics") if isinstance(gate.get("metrics"), dict) else {}
+        methods.append(
+            {
+                "method": method_report.get("method"),
+                "status": method_report.get("status"),
+                "accepted_rate": metrics.get("accepted_rate"),
+                "total_records": metrics.get("total_records"),
+            }
+        )
+    return {
+        "path": str(report_path),
+        "status": report.get("status"),
+        "case_name": report.get("case_name"),
+        "expected": report.get("expected"),
+        "recommended_method": report.get("recommended_method"),
+        "methods": methods,
+    }
+
+
+def copy_feature_method_benchmarks(paths: list[str], support_dir: Path) -> dict[str, Any]:
+    if not paths:
+        return {"status": "not_provided", "report_count": 0}
+
+    summary_dir = support_dir / "summaries" / "feature_method_benchmarks"
+    raw_dir = support_dir / "extras" / "feature_method_benchmarks"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"Feature-method benchmark path is missing: {source}"})
+            continue
+        copied.append(copy_tree(source, raw_dir / safe_relpath(source)) if source.is_dir() else copy_file(source, raw_dir / source.name))
+        json_files = sorted(source.rglob("*.json")) if source.is_dir() else [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception as exc:
+                issues.append({"severity": "warning", "message": f"Could not parse feature-method benchmark report {report_file}: {exc}"})
+                continue
+            if not isinstance(report, dict) or "methods" not in report:
+                continue
+            report_summary = summarize_feature_method_report(report, report_path=report_file)
+            reports.append(report_summary)
+            output_name = f"{sanitize_filename(report_summary.get('case_name') or report_file.stem)}-{len(reports):02d}.json"
+            (summary_dir / output_name).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+    statuses = {str(report.get("status") or "").lower() for report in reports}
+    if missing or "failed" in statuses:
+        status = "failed"
+    elif not reports:
+        status = "degraded" if issues else "not_provided"
+    elif statuses.intersection({"degraded", "not_available"}):
+        status = "degraded"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "report_count": len(reports),
+        "reports": reports,
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
+def summarize_field_evidence_report(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    return {
+        "path": str(report_path),
+        "status": report.get("status"),
+        "manifest_path": report.get("manifest_path"),
+        "coverage_status": summary.get("coverage_status"),
+        "replay_status": summary.get("replay_status"),
+        "case_count": summary.get("case_count"),
+        "field_case_count": summary.get("field_case_count"),
+        "covered_conditions": summary.get("covered_conditions") or [],
+        "required_conditions": summary.get("required_conditions") or [],
+    }
+
+
+def copy_field_evidence_reports(paths: list[str], support_dir: Path) -> dict[str, Any]:
+    if not paths:
+        return {"status": "not_provided", "report_count": 0}
+
+    summary_dir = support_dir / "summaries" / "field_evidence"
+    raw_dir = support_dir / "extras" / "field_evidence"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"Field evidence report is missing: {source}"})
+            continue
+        if source.is_dir():
+            copied.append(copy_tree(source, raw_dir / safe_relpath(source)))
+            json_files = sorted(source.rglob("*.json"))
+        else:
+            copied.append(copy_file(source, raw_dir / source.name))
+            json_files = [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception as exc:
+                issues.append({"severity": "warning", "message": f"Could not parse field evidence report {report_file}: {exc}"})
+                continue
+            if not isinstance(report, dict) or "coverage" not in report or "replay_gates" not in report:
+                continue
+            report_summary = summarize_field_evidence_report(report, report_path=report_file)
+            reports.append(report_summary)
+            output_name = f"{sanitize_filename(Path(str(report_summary.get('manifest_path') or report_file.stem)).stem)}-{len(reports):02d}.json"
+            (summary_dir / output_name).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+    statuses = {str(report.get("status") or "").lower() for report in reports}
+    if missing or "failed" in statuses:
+        status = "failed"
+    elif not reports:
+        status = "degraded" if issues else "not_provided"
+    elif statuses.intersection({"degraded", "warming_up"}):
+        status = "degraded"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "report_count": len(reports),
+        "reports": reports,
+        "field_case_count": max((int(report.get("field_case_count") or 0) for report in reports), default=0),
+        "covered_conditions": sorted(
+            {
+                str(condition)
+                for report in reports
+                for condition in report.get("covered_conditions", [])
+            }
+        ),
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
 def zip_directory(source_dir: Path, zip_path: Path) -> None:
     if zip_path.exists():
         zip_path.unlink()
@@ -516,6 +686,8 @@ def create_support_bundle(
     px4_expected_message: str = "odometry",
     replay_case_manifest_path: str | None = None,
     inline_replay_cases: list[str] | None = None,
+    feature_method_benchmark_paths: list[str] | None = None,
+    field_evidence_report_paths: list[str] | None = None,
     include_map_assets: bool = False,
     max_log_bytes: int = DEFAULT_MAX_LOG_BYTES,
 ) -> dict[str, Any]:
@@ -565,6 +737,14 @@ def create_support_bundle(
         params_path=ardupilot_params_path,
         support_dir=support_dir,
     )
+    feature_method_benchmarks = copy_feature_method_benchmarks(
+        feature_method_benchmark_paths or [],
+        support_dir,
+    )
+    field_evidence = copy_field_evidence_reports(
+        field_evidence_report_paths or [],
+        support_dir,
+    )
     manifest = {
         "support_bundle_version": "0.1.0",
         "name": support_name,
@@ -575,6 +755,8 @@ def create_support_bundle(
         "px4_sitl_evidence": px4_evidence_summary,
         "px4_params": px4_params_summary,
         "ardupilot_params": ardupilot_params_summary,
+        "feature_method_benchmarks": feature_method_benchmarks,
+        "field_evidence": field_evidence,
         "extras": extra_summary,
     }
     bench_readiness = evaluate_bench_readiness(manifest)
@@ -622,6 +804,12 @@ def print_human(result: dict[str, Any]) -> None:
     ardupilot_params = manifest.get("ardupilot_params") or {}
     if ardupilot_params.get("status") not in {None, "not_provided"}:
         print(f"ArduPilot params: {ardupilot_params.get('status')}")
+    feature_benchmarks = manifest.get("feature_method_benchmarks") or {}
+    if feature_benchmarks.get("status") not in {None, "not_provided"}:
+        print(f"Feature method benchmarks: {feature_benchmarks.get('status')} ({feature_benchmarks.get('report_count')} report(s))")
+    field_evidence = manifest.get("field_evidence") or {}
+    if field_evidence.get("status") not in {None, "not_provided"}:
+        print(f"Field evidence: {field_evidence.get('status')} ({field_evidence.get('report_count')} report(s))")
     readiness = manifest.get("bench_readiness") or {}
     print(f"Bench readiness: {readiness.get('status') or 'unknown'}")
 
@@ -645,6 +833,8 @@ def main() -> None:
         px4_expected_message=args.px4_expected_message,
         replay_case_manifest_path=args.replay_case_manifest,
         inline_replay_cases=args.replay_case,
+        feature_method_benchmark_paths=args.feature_method_benchmark,
+        field_evidence_report_paths=args.field_evidence_report,
         include_map_assets=args.include_map_assets,
         max_log_bytes=args.max_log_bytes,
     )

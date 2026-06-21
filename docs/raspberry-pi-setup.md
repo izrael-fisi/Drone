@@ -463,6 +463,32 @@ cd Drone
 ./scripts/pi/replay_terrain_nav_log.sh
 ```
 
+To compare low-compute methods on the same replay case:
+
+```bash
+vision-nav-benchmark-feature-methods \
+  --bundle "$HOME/drone-data/map_bundles/mission_bundle" \
+  --replay-log "$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl" \
+  --methods orb,akaze,sift,neural \
+  --expected good_map \
+  --output-dir "$HOME/DroneTransfer/outgoing/feature-method-bench"
+```
+
+Use `--expected degraded` or `--expected wrong_map` for those field cases.
+Neural/SuperPoint-LightGlue is reported as unavailable until those descriptors
+are generated for the bundle.
+
+After registering a full field replay manifest, run the combined evidence gate:
+
+```bash
+vision-nav-field-evidence-gate \
+  --manifest "$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json" \
+  --output "$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json"
+```
+
+This is stricter than a coverage audit: it requires real field log files and
+also runs replay gates for every case in the manifest.
+
 Defaults:
 
 - reads frame records from `~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl`
@@ -589,6 +615,31 @@ VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" \
 The raw parameter export is copied under `extras/ardupilot_params/`, and the
 parsed report is written under `summaries/ardupilot_params/`.
 
+If feature-method benchmark reports exist under
+`~/DroneTransfer/outgoing/feature-method-bench`, the Pi wrapper includes them
+automatically. Override the location with:
+
+```bash
+VISION_NAV_FEATURE_METHOD_BENCHMARK="$HOME/DroneTransfer/outgoing/feature-method-bench" \
+./scripts/pi/create_support_bundle.sh
+```
+
+The benchmark directory is copied under `extras/feature_method_benchmarks/`, and
+parsed report JSON files are written under `summaries/feature_method_benchmarks/`.
+
+If a field evidence report exists at
+`~/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`, the Pi
+wrapper includes it automatically. Override the location with:
+
+```bash
+VISION_NAV_FIELD_EVIDENCE_REPORT="$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json" \
+./scripts/pi/create_support_bundle.sh
+```
+
+The raw report is copied under `extras/field_evidence/`, parsed reports are
+written under `summaries/field_evidence/`, and the status is counted in bench
+readiness when present.
+
 Every support bundle now includes a combined bench-readiness report under
 `summaries/bench_readiness.json`. Re-run the same gate against an existing ZIP
 with:
@@ -599,7 +650,10 @@ vision-nav-bench-readiness \
 ```
 
 The gate checks terrain bundle health, runtime logs, replay gates, PX4 receiver
-evidence, and PX4 parameter readiness in one report. Use
+evidence, and PX4 parameter readiness in one report. If an ArduPilot
+ExternalNav parameter report is bundled, it is counted in the same readiness
+report; add `--require-ardupilot-params` only for ArduPilot-specific adapter
+bench runs. Use
 `--allow-missing-px4-evidence`, `--allow-missing-px4-params`, or
 `--allow-missing-replay-gates` only for local software smoke checks before the
 real bench evidence exists.

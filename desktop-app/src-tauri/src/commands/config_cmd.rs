@@ -35,6 +35,12 @@ pub struct SupportBundleSummary {
     pub ardupilot_params_status: Option<String>,
     pub ardupilot_source_set: Option<i64>,
     pub ardupilot_posxy_source: Option<i64>,
+    pub feature_method_benchmark_status: Option<String>,
+    pub feature_method_benchmark_recommended: Option<String>,
+    pub feature_method_benchmark_report_count: Option<u64>,
+    pub field_evidence_status: Option<String>,
+    pub field_evidence_field_case_count: Option<u64>,
+    pub field_evidence_report_count: Option<u64>,
     pub bench_readiness_status: Option<String>,
     pub bench_readiness_failed_count: Option<u64>,
     pub bench_readiness_degraded_count: Option<u64>,
@@ -107,6 +113,35 @@ pub struct SupportBundleArduPilotParamReport {
 }
 
 #[derive(Serialize)]
+pub struct SupportBundleFeatureMethodReport {
+    pub method: Option<String>,
+    pub status: Option<String>,
+    pub accepted_rate: Option<f64>,
+    pub total_records: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleFeatureMethodBenchmarkReport {
+    pub status: Option<String>,
+    pub case_name: Option<String>,
+    pub expected: Option<String>,
+    pub recommended_method: Option<String>,
+    pub methods: Vec<SupportBundleFeatureMethodReport>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleFieldEvidenceReport {
+    pub status: Option<String>,
+    pub manifest_path: Option<String>,
+    pub coverage_status: Option<String>,
+    pub replay_status: Option<String>,
+    pub case_count: Option<u64>,
+    pub field_case_count: Option<u64>,
+    pub covered_conditions: Option<serde_json::Value>,
+    pub required_conditions: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleBenchReadinessCheck {
     pub name: Option<String>,
     pub status: Option<String>,
@@ -167,6 +202,8 @@ pub struct SupportBundleDetails {
     pub px4_evidence_reports: Vec<SupportBundlePx4EvidenceReport>,
     pub px4_param_reports: Vec<SupportBundlePx4ParamReport>,
     pub ardupilot_param_reports: Vec<SupportBundleArduPilotParamReport>,
+    pub feature_method_benchmark_reports: Vec<SupportBundleFeatureMethodBenchmarkReport>,
+    pub field_evidence_reports: Vec<SupportBundleFieldEvidenceReport>,
     pub bench_readiness: Option<SupportBundleBenchReadinessReport>,
     pub entry_count: usize,
 }
@@ -291,6 +328,8 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut px4_evidence_reports = Vec::new();
     let mut px4_param_reports = Vec::new();
     let mut ardupilot_param_reports = Vec::new();
+    let mut feature_method_benchmark_reports = Vec::new();
+    let mut field_evidence_reports = Vec::new();
     let mut bench_readiness = manifest
         .get("bench_readiness")
         .map(bench_readiness_report_from_json);
@@ -326,6 +365,16 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 ardupilot_param_reports.push(ardupilot_param_report_from_json(&value));
             }
+        } else if name.starts_with("summaries/feature_method_benchmarks/")
+            && name.ends_with(".json")
+        {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                feature_method_benchmark_reports.push(feature_method_report_from_json(&value));
+            }
+        } else if name.starts_with("summaries/field_evidence/") && name.ends_with(".json") {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                field_evidence_reports.push(field_evidence_report_from_json(&value));
+            }
         } else if name == "summaries/bench_readiness.json" {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 bench_readiness = Some(bench_readiness_report_from_json(&value));
@@ -348,6 +397,8 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         px4_evidence_reports,
         px4_param_reports,
         ardupilot_param_reports,
+        feature_method_benchmark_reports,
+        field_evidence_reports,
         bench_readiness,
         entry_count,
         manifest,
@@ -627,6 +678,62 @@ fn ardupilot_param_report_from_json(
     }
 }
 
+fn feature_method_report_from_json(
+    value: &serde_json::Value,
+) -> SupportBundleFeatureMethodBenchmarkReport {
+    let methods = value
+        .get("methods")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| {
+                    let metrics = item.pointer("/gate/metrics");
+                    SupportBundleFeatureMethodReport {
+                        method: json_string(item.get("method")),
+                        status: json_string(item.get("status")),
+                        accepted_rate: metrics
+                            .and_then(|metrics| metrics.get("accepted_rate"))
+                            .and_then(|value| value.as_f64()),
+                        total_records: metrics
+                            .and_then(|metrics| metrics.get("total_records"))
+                            .and_then(|value| value.as_u64()),
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    SupportBundleFeatureMethodBenchmarkReport {
+        status: json_string(value.get("status")),
+        case_name: json_string(value.get("case_name")),
+        expected: json_string(value.get("expected")),
+        recommended_method: json_string(value.get("recommended_method")),
+        methods,
+    }
+}
+
+fn field_evidence_report_from_json(value: &serde_json::Value) -> SupportBundleFieldEvidenceReport {
+    let summary = value.get("summary");
+    SupportBundleFieldEvidenceReport {
+        status: json_string(value.get("status")),
+        manifest_path: json_string(value.get("manifest_path")),
+        coverage_status: json_string(summary.and_then(|value| value.get("coverage_status"))),
+        replay_status: json_string(summary.and_then(|value| value.get("replay_status"))),
+        case_count: summary
+            .and_then(|value| value.get("case_count"))
+            .and_then(|value| value.as_u64()),
+        field_case_count: summary
+            .and_then(|value| value.get("field_case_count"))
+            .and_then(|value| value.as_u64()),
+        covered_conditions: summary
+            .and_then(|value| value.get("covered_conditions"))
+            .cloned(),
+        required_conditions: summary
+            .and_then(|value| value.get("required_conditions"))
+            .cloned(),
+    }
+}
+
 fn bench_readiness_report_from_json(
     value: &serde_json::Value,
 ) -> SupportBundleBenchReadinessReport {
@@ -859,6 +966,22 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
             .or_else(|| manifest.pointer("/ardupilot_params/parameters/EK3_SRC2_POSXY"))
             .or_else(|| manifest.pointer("/ardupilot_params/parameters/EK3_SRC3_POSXY"))
             .and_then(|value| value.as_i64()),
+        feature_method_benchmark_status: json_string(
+            manifest.pointer("/feature_method_benchmarks/status"),
+        ),
+        feature_method_benchmark_recommended: json_string(
+            manifest.pointer("/feature_method_benchmarks/reports/0/recommended_method"),
+        ),
+        feature_method_benchmark_report_count: manifest
+            .pointer("/feature_method_benchmarks/report_count")
+            .and_then(|value| value.as_u64()),
+        field_evidence_status: json_string(manifest.pointer("/field_evidence/status")),
+        field_evidence_field_case_count: manifest
+            .pointer("/field_evidence/field_case_count")
+            .and_then(|value| value.as_u64()),
+        field_evidence_report_count: manifest
+            .pointer("/field_evidence/report_count")
+            .and_then(|value| value.as_u64()),
         bench_readiness_status: json_string(manifest.pointer("/bench_readiness/status")),
         bench_readiness_failed_count: manifest
             .pointer("/bench_readiness/summary/failed")
@@ -875,6 +998,8 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.px4_sitl_evidence_status.is_none()
         && summary.px4_params_status.is_none()
         && summary.ardupilot_params_status.is_none()
+        && summary.feature_method_benchmark_status.is_none()
+        && summary.field_evidence_status.is_none()
         && summary.bench_readiness_status.is_none()
     {
         return None;
@@ -966,6 +1091,20 @@ mod tests {
                     "EK3_SRC1_POSXY": 6
                 }
             },
+            "feature_method_benchmarks": {
+                "status": "passed",
+                "report_count": 1,
+                "reports": [
+                    {
+                        "recommended_method": "orb"
+                    }
+                ]
+            },
+            "field_evidence": {
+                "status": "passed",
+                "report_count": 1,
+                "field_case_count": 8
+            },
             "bench_readiness": {
                 "status": "degraded",
                 "summary": {
@@ -994,6 +1133,18 @@ mod tests {
         assert_eq!(summary.ardupilot_params_status.as_deref(), Some("passed"));
         assert_eq!(summary.ardupilot_source_set, Some(1));
         assert_eq!(summary.ardupilot_posxy_source, Some(6));
+        assert_eq!(
+            summary.feature_method_benchmark_status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            summary.feature_method_benchmark_recommended.as_deref(),
+            Some("orb")
+        );
+        assert_eq!(summary.feature_method_benchmark_report_count, Some(1));
+        assert_eq!(summary.field_evidence_status.as_deref(), Some("passed"));
+        assert_eq!(summary.field_evidence_field_case_count, Some(8));
+        assert_eq!(summary.field_evidence_report_count, Some(1));
         assert_eq!(summary.bench_readiness_status.as_deref(), Some("degraded"));
         assert_eq!(summary.bench_readiness_failed_count, Some(0));
         assert_eq!(summary.bench_readiness_degraded_count, Some(1));
@@ -1161,6 +1312,53 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write ardupilot params");
+            zip.start_file(
+                "summaries/feature_method_benchmarks/unit-method-benchmark-01.json",
+                options,
+            )
+            .expect("feature method benchmark entry");
+            zip.write_all(
+                serde_json::json!({
+                    "status": "passed",
+                    "case_name": "unit-method-benchmark",
+                    "expected": "good_map",
+                    "recommended_method": "orb",
+                    "methods": [
+                        {
+                            "method": "orb",
+                            "status": "passed",
+                            "gate": {"metrics": {"accepted_rate": 1.0, "total_records": 2}}
+                        },
+                        {
+                            "method": "akaze",
+                            "status": "failed",
+                            "gate": {"metrics": {"accepted_rate": 0.0, "total_records": 2}}
+                        }
+                    ]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write feature method benchmark");
+            zip.start_file("summaries/field_evidence/field_manifest-01.json", options)
+                .expect("field evidence entry");
+            zip.write_all(
+                serde_json::json!({
+                    "status": "passed",
+                    "manifest_path": "field_manifest.json",
+                    "summary": {
+                        "coverage_status": "passed",
+                        "replay_status": "passed",
+                        "case_count": 8,
+                        "field_case_count": 8,
+                        "covered_conditions": ["good_texture", "low_texture", "blur"],
+                        "required_conditions": ["good_texture", "low_texture", "blur"]
+                    }
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write field evidence");
             zip.start_file("summaries/bench_readiness.json", options)
                 .expect("bench readiness entry");
             zip.write_all(
@@ -1187,7 +1385,7 @@ mod tests {
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(details.entry_count, 10);
+        assert_eq!(details.entry_count, 12);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(details.log_previews.len(), 1);
@@ -1231,6 +1429,37 @@ mod tests {
         );
         assert_eq!(details.ardupilot_param_reports[0].source_set, Some(1));
         assert_eq!(details.ardupilot_param_reports[0].posxy_source, Some(6));
+        assert_eq!(details.feature_method_benchmark_reports.len(), 1);
+        assert_eq!(
+            details.feature_method_benchmark_reports[0]
+                .recommended_method
+                .as_deref(),
+            Some("orb")
+        );
+        assert_eq!(
+            details.feature_method_benchmark_reports[0].methods[0]
+                .method
+                .as_deref(),
+            Some("orb")
+        );
+        assert_eq!(
+            details.feature_method_benchmark_reports[0].methods[0].accepted_rate,
+            Some(1.0)
+        );
+        assert_eq!(details.field_evidence_reports.len(), 1);
+        assert_eq!(
+            details.field_evidence_reports[0].status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            details.field_evidence_reports[0].coverage_status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            details.field_evidence_reports[0].replay_status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(details.field_evidence_reports[0].field_case_count, Some(8));
         let readiness = details.bench_readiness.expect("bench readiness report");
         assert_eq!(readiness.status.as_deref(), Some("degraded"));
         assert_eq!(readiness.degraded_count, Some(1));

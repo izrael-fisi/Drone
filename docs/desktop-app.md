@@ -239,21 +239,37 @@ Raspberry Pi. Support bundles are written under
 map metadata, bundle health, runtime logs, generated summaries, app/git state,
 the configured MAVLink endpoint, optional replay-gate reports, optional PX4
 SITL receiver evidence and parameter checks, optional ArduPilot parameter
-checks, and an automatic bench-readiness summary. The panel lists recent
-downloaded support bundle ZIPs with parsed bench-readiness status, bundle
-health, checksum status, map source provenance, georeference confidence,
-replay-gate status, PX4 evidence status, PX4 parameter status, and ArduPilot
-parameter status so the operator can confirm what was captured without manually opening the archive. The list can reveal a ZIP in
-the local file manager, copy the full path for support notes, show a compact
-detail view, or delete stale ZIP files after a bench session. The detail view
-reads the ZIP archive directly and shows support metadata, git/app state, log
-status counts, accepted-rate summaries, bench-readiness checks, replay-gate case
-results, PX4 receiver sample counts, MAVLink version/link hints, PX4
-external-vision parameter readiness, ArduPilot ExternalNav parameter readiness,
-and compact per-record previews from bundled runtime/replay JSONL logs. It also
+checks, optional feature-method benchmarks, optional field-evidence gates, and
+an automatic bench-readiness summary. The panel lists recent downloaded support
+bundle ZIPs with parsed bench-readiness status, bundle health, checksum status,
+map source provenance, georeference confidence, replay-gate status, PX4
+evidence status, PX4 parameter status, ArduPilot parameter status,
+feature-method benchmark status, and field-evidence status so the operator can
+confirm what was captured without manually opening the archive. Feature-method
+benchmark reports from `$HOME/DroneTransfer/outgoing/feature-method-bench` and
+field-evidence reports from
+`$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json` are also
+packaged automatically when present and counted in bench readiness. The list can
+reveal a ZIP in the local file manager, copy the full path for support notes,
+show a compact detail view, or delete stale ZIP files after a bench session. The
+detail view reads the ZIP archive directly and shows support metadata,
+git/app state, log status counts, accepted-rate summaries, bench-readiness
+checks, replay-gate case results, PX4 receiver sample counts, MAVLink
+version/link hints, PX4 external-vision parameter readiness, ArduPilot
+ExternalNav parameter readiness, feature-method benchmark recommendations,
+field-evidence case coverage, and compact per-record previews from bundled
+runtime/replay JSONL logs. It also
 previews a bounded set of small image artifacts from camera, debug, replay,
 smoke, or extra-file paths while skipping full map, orthophoto, and tile
 assets.
+
+Desktop-created support bundles automatically pass conventional Pi evidence
+locations into `scripts/pi/create_support_bundle.sh`:
+`$HOME/px4-sitl-evidence`, `$HOME/px4.params`, `$HOME/ardupilot.params`,
+`$HOME/DroneTransfer/outgoing/feature-method-bench`, and
+`$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`.
+Missing files are ignored by the Pi wrapper; present files are packaged and
+counted in the bench-readiness report.
 
 Module Setup uses the same support-bundle path for its `Bench Report` action,
 after validating the deployed terrain bundle at the configured runtime bundle

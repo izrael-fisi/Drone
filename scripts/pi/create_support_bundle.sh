@@ -6,6 +6,8 @@ venv_python="${VISION_NAV_PYTHON:-$HOME/drone_vision_nav_venv/bin/python}"
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
 output_dir="${VISION_NAV_SUPPORT_OUTPUT_DIR:-$HOME/DroneTransfer/outgoing/support-bundles}"
 mavlink_endpoint="${VISION_NAV_MAVLINK_ENDPOINT:-}"
+feature_method_benchmark="${VISION_NAV_FEATURE_METHOD_BENCHMARK:-$HOME/DroneTransfer/outgoing/feature-method-bench}"
+field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json}"
 
 if [[ ! -x "$venv_python" ]]; then
   echo "Missing Python venv: $venv_python" >&2
@@ -63,6 +65,14 @@ fi
 
 if [[ -n "${VISION_NAV_REPLAY_CASE_MANIFEST:-}" && -f "${VISION_NAV_REPLAY_CASE_MANIFEST}" ]]; then
   args+=(--replay-case-manifest "$VISION_NAV_REPLAY_CASE_MANIFEST")
+fi
+
+if [[ -n "$feature_method_benchmark" && -e "$feature_method_benchmark" ]]; then
+  args+=(--feature-method-benchmark "$feature_method_benchmark")
+fi
+
+if [[ -n "$field_evidence_report" && -e "$field_evidence_report" ]]; then
+  args+=(--field-evidence-report "$field_evidence_report")
 fi
 
 if [[ "${VISION_NAV_SUPPORT_INCLUDE_MAP_ASSETS:-0}" == "1" ]]; then
