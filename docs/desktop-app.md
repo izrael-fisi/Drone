@@ -34,6 +34,9 @@ The flow is:
    - system verification
    - camera view test
    - camera health
+   - time sync
+   - MAVLink endpoint access
+   - calibration image capture
    - synthetic vision smoke test
    - deployed runtime bundle validation
 
@@ -160,9 +163,13 @@ bundle result shows map health, tile count, feature count, and GSD before the
 operator validates or runs the bundle on the Pi. It also shows a coarse Pi
 runtime-cost estimate from tile count and feature density, plus checksum status,
 covered file count, map source provenance, georeference source, CRS, and
-georeference confidence. If optional DEM/DSM elevation rasters are present in
-the selected bundle, the result also shows whether elevation sanity checks are
-ready. By default this overwrites the active bundle at:
+georeference confidence. A compact map-quality heatmap previews feature density
+per tile so low-texture areas are visible before the Pi uses the bundle. If
+optional DEM/DSM elevation rasters are present in the selected bundle, the
+result also shows whether elevation sanity checks are ready. When the bundle
+contains a mission plan and sampleable DEM/DSM raster, it shows terrain-profile
+status, estimated minimum AGL, terrain relief, and a compact terrain/flight
+profile preview. By default this overwrites the active bundle at:
 
 ```text
 /home/<pi-user>/drone-data/map_bundles/mission_bundle
@@ -175,6 +182,9 @@ map used for feature comparison on the Raspberry Pi.
 The Maps page can attach optional DEM and DSM GeoTIFFs to a saved map source.
 Those files are copied into the map folder under `elevation/`, referenced from
 `metadata.json`, and carried into the next terrain mission bundle.
+When GDAL Python bindings are available on the machine building the bundle, the
+same health report also includes stricter TIFF/GeoTIFF driver, projection,
+geotransform, overview, block-layout, and COG-readiness checks.
 
 It then runs the existing Pi scripts:
 

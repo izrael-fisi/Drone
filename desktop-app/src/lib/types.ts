@@ -164,6 +164,26 @@ export interface BuildDroneBundleResult {
       estimated_pi_runtime_cost?: "low" | "moderate" | "high";
       low_texture_tile_count?: number;
       low_texture_ratio?: number;
+      heatmap?: {
+        row_count?: number;
+        col_count?: number;
+        cell_count?: number;
+        omitted_tile_count?: number;
+        cells?: Array<{
+          tile_id?: string;
+          row?: number;
+          col?: number;
+          keypoint_count?: number;
+          feature_density_per_mpx?: number;
+          quality?: "low" | "fair" | "good" | "dense" | string;
+          local_bounds_m?: {
+            east_min?: number;
+            east_max?: number;
+            north_min?: number;
+            north_max?: number;
+          };
+        }>;
+      };
     };
     elevation?: {
       status?: "not_provided" | "passed" | "degraded" | "failed";
@@ -178,6 +198,43 @@ export interface BuildDroneBundleResult {
         exists?: boolean;
         status?: "passed" | "degraded" | "missing" | string;
       }>;
+    };
+    terrain_profile?: {
+      status?: "not_provided" | "not_available" | "passed" | "degraded" | "failed" | string;
+      mission_path?: string;
+      reason?: string;
+      surface_source?: "dem" | "dsm" | string;
+      surface_path?: string;
+      mission_item_count?: number;
+      sample_count?: number;
+      sampled_count?: number;
+      path_length_m?: number;
+      coordinate_mapping?: string;
+      altitude_reference?: string;
+      terrain_elevation_m?: {
+        min?: number;
+        max?: number;
+        start?: number;
+        end?: number;
+        relief?: number;
+      };
+      mission_altitude_m?: {
+        min?: number;
+        max?: number;
+      };
+      estimated_agl_m?: {
+        min?: number;
+        max?: number;
+        mean?: number;
+      };
+      min_agl_to_map_gsd_ratio?: number;
+      preview_points?: Array<{
+        distance_m?: number;
+        terrain_elevation_m?: number;
+        mission_altitude_m?: number;
+        estimated_agl_m?: number;
+      }>;
+      issues?: Array<{ severity: "error" | "warning" | "info"; message: string }>;
     };
     checksums?: {
       status?: "missing" | "passed" | "failed";

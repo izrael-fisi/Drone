@@ -49,6 +49,8 @@ import type {
 type UploadPayload = UploadProgress;
 type Waypoint = { lat: number; lon: number };
 type BundleElevationHealth = NonNullable<BuildDroneBundleResult["geospatial_health"]>["elevation"];
+type BundleTerrainProfile = NonNullable<BuildDroneBundleResult["geospatial_health"]>["terrain_profile"];
+type BundleMapQuality = NonNullable<BuildDroneBundleResult["geospatial_health"]>["map_quality"];
 type PlanLayer = "mission" | "fence" | "rally" | "vision";
 type MissionItemType = "takeoff" | "waypoint" | "land";
 type PlanPoint = Waypoint & { id: string };
@@ -152,6 +154,108 @@ function elevationHealthLabel(elevation?: BundleElevationHealth) {
   if (elevation.dem_present) parts.push("DEM");
   if (elevation.dsm_present) parts.push("DSM");
   return parts.length ? parts.join("+") : `${elevation.asset_count} asset${elevation.asset_count === 1 ? "" : "s"}`;
+}
+
+function terrainProfileLabel(profile?: BundleTerrainProfile) {
+  if (!profile || profile.status === "not_provided") return "none";
+  if (profile.status === "not_available") return "no mission";
+  const minAgl = profile.estimated_agl_m?.min;
+  if (typeof minAgl === "number") return `${minAgl.toFixed(1)} m`;
+  return formatHealthLabel(profile.status);
+}
+
+function qualityCellClass(quality?: string) {
+  if (quality === "low") return "bg-red-400/80";
+  if (quality === "fair") return "bg-amber-300/80";
+  if (quality === "good") return "bg-cyan-300/80";
+  if (quality === "dense") return "bg-emerald-300/80";
+  return "bg-slate-500/60";
+}
+
+function mapQualityPercent(quality?: BundleMapQuality) {
+  const ratio = quality?.low_texture_ratio;
+  return typeof ratio === "number" ? `${Math.round(ratio * 100)}% low` : "n/a";
+}
+
+function profilePreviewPoints(profile?: BundleTerrainProfile) {
+  return (profile?.preview_points ?? [])
+    .map((point) => {
+      const distance = Number(point.distance_m);
+      const terrain = Number(point.terrain_elevation_m);
+      const agl = Number(point.estimated_agl_m);
+      if (!Number.isFinite(distance) || !Number.isFinite(terrain) || !Number.isFinite(agl)) return null;
+      return {
+        distance,
+        terrain,
+        aircraft: terrain + agl,
+      };
+    })
+    .filter((point): point is { distance: number; terrain: number; aircraft: number } => point !== null);
+}
+
+function profilePolyline(points: { distance: number; value: number }[], width: number, height: number, padding: number) {
+  if (points.length < 2) return "";
+  const minX = Math.min(...points.map((point) => point.distance));
+  const maxX = Math.max(...points.map((point) => point.distance));
+  const minY = Math.min(...points.map((point) => point.value));
+  const maxY = Math.max(...points.map((point) => point.value));
+  const xRange = Math.max(maxX - minX, 1);
+  const yRange = Math.max(maxY - minY, 1);
+  return points
+    .map((point) => {
+      const x = padding + ((point.distance - minX) / xRange) * (width - padding * 2);
+      const y = height - padding - ((point.value - minY) / yRange) * (height - padding * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+}
+
+function TerrainProfilePreview({ profile }: { profile?: BundleTerrainProfile }) {
+  const preview = profilePreviewPoints(profile);
+  if (preview.length < 2) return null;
+  const width = 320;
+  const height = 88;
+  const padding = 10;
+  const terrainPoints = preview.map((point) => ({ distance: point.distance, value: point.terrain }));
+  const aircraftPoints = preview.map((point) => ({ distance: point.distance, value: point.aircraft }));
+  const allY = [...terrainPoints, ...aircraftPoints].map((point) => point.value);
+  const relief = profile?.terrain_elevation_m?.relief;
+  const minAgl = profile?.estimated_agl_m?.min;
+
+  return (
+    <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-emerald-300/60">Terrain profile preview</span>
+        <span className="font-mono text-emerald-300/80">
+          {typeof minAgl === "number" ? `min AGL ${minAgl.toFixed(1)} m` : formatHealthLabel(profile?.status)}
+        </span>
+      </div>
+      <svg className="h-20 w-full overflow-visible" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Terrain profile preview">
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} className="stroke-emerald-300/20" strokeWidth="1" />
+        <polyline
+          points={profilePolyline(terrainPoints, width, height, padding)}
+          fill="none"
+          className="stroke-amber-300/90"
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        <polyline
+          points={profilePolyline(aircraftPoints, width, height, padding)}
+          fill="none"
+          className="stroke-cyan-300/90"
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="flex justify-between text-[10px] text-emerald-300/60">
+        <span><span className="inline-block h-2 w-2 rounded-[2px] bg-amber-300/90 mr-1" />Terrain</span>
+        <span><span className="inline-block h-2 w-2 rounded-[2px] bg-cyan-300/90 mr-1" />Flight</span>
+        <span>{typeof relief === "number" ? `relief ${relief.toFixed(1)} m` : `${Math.round(Math.max(...allY) - Math.min(...allY))} m span`}</span>
+      </div>
+    </div>
+  );
 }
 
 function defaultRemoteBundleDir(device?: Device) {
@@ -1565,7 +1669,7 @@ export function MissionPlanner() {
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+              <div className="grid grid-cols-3 gap-2 pt-1 text-[11px]">
                 <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-emerald-300/60">Checksums</span>
@@ -1596,7 +1700,55 @@ export function MissionPlanner() {
                       || "map source"}
                   </div>
                 </div>
+                <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-emerald-300/60">Terrain profile</span>
+                    <span className="font-mono text-emerald-300/80 truncate">
+                      {formatHealthLabel(bundleResult.geospatial_health?.terrain_profile?.status)}
+                    </span>
+                  </div>
+                  <div className="font-mono text-emerald-300/80 truncate">
+                    Min AGL {terrainProfileLabel(bundleResult.geospatial_health?.terrain_profile)}
+                    {bundleResult.geospatial_health?.terrain_profile?.terrain_elevation_m?.relief != null
+                      ? `, relief ${bundleResult.geospatial_health.terrain_profile.terrain_elevation_m.relief.toFixed(1)} m`
+                      : ""}
+                  </div>
+                </div>
               </div>
+              <TerrainProfilePreview profile={bundleResult.geospatial_health?.terrain_profile} />
+              {bundleResult.geospatial_health?.map_quality?.heatmap?.cells?.length ? (
+                <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="text-emerald-300/60">Map quality heatmap</span>
+                    <span className="font-mono text-emerald-300/80">
+                      {mapQualityPercent(bundleResult.geospatial_health.map_quality)}
+                    </span>
+                  </div>
+                  <div
+                    className="grid gap-0.5"
+                    style={{
+                      gridTemplateColumns: `repeat(${Math.max(1, bundleResult.geospatial_health.map_quality.heatmap.col_count ?? 1)}, minmax(4px, 1fr))`,
+                    }}
+                  >
+                    {bundleResult.geospatial_health.map_quality.heatmap.cells.map((cell) => (
+                      <div
+                        key={cell.tile_id ?? `${cell.row}-${cell.col}`}
+                        className={cn("h-2 rounded-[2px]", qualityCellClass(cell.quality))}
+                        title={`${cell.tile_id ?? "tile"}: ${formatHealthLabel(cell.quality)} ${Math.round(cell.feature_density_per_mpx ?? 0)} features/Mpx`}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-emerald-300/60">
+                    <span><span className="inline-block h-2 w-2 rounded-[2px] bg-red-400/80 mr-1" />Low</span>
+                    <span><span className="inline-block h-2 w-2 rounded-[2px] bg-amber-300/80 mr-1" />Fair</span>
+                    <span><span className="inline-block h-2 w-2 rounded-[2px] bg-cyan-300/80 mr-1" />Good</span>
+                    <span><span className="inline-block h-2 w-2 rounded-[2px] bg-emerald-300/80 mr-1" />Dense</span>
+                    {bundleResult.geospatial_health.map_quality.heatmap.omitted_tile_count
+                      ? <span>{bundleResult.geospatial_health.map_quality.heatmap.omitted_tile_count} hidden</span>
+                      : null}
+                  </div>
+                </div>
+              ) : null}
               {bundleResult.geospatial_health?.source_provenance && (
                 <div className="grid grid-cols-3 gap-2 text-[11px] text-emerald-300/70">
                   <div>

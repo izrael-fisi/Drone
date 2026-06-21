@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import sqlite3
 import struct
 from statistics import median
 from typing import Any
+
+import numpy as np
 
 from vision_nav.bundle_checksums import CHECKSUM_FILENAME, verify_checksum_file
 from vision_nav.terrain_bundle import TerrainBundle, load_terrain_bundle
@@ -16,11 +19,17 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 TIFF_TAGS = {
     256: "image_width",
     257: "image_length",
+    258: "bits_per_sample",
     259: "compression",
+    262: "photometric_interpretation",
     273: "strip_offsets",
+    277: "samples_per_pixel",
+    278: "rows_per_strip",
+    279: "strip_byte_counts",
     322: "tile_width",
     323: "tile_length",
     324: "tile_offsets",
+    339: "sample_format",
     33550: "model_pixel_scale",
     33922: "model_tiepoint",
     34264: "model_transformation",
@@ -130,6 +139,14 @@ def _decode_tiff_inline_value(raw: bytes, endian: str, tag_type: int, count: int
         values = list(struct.unpack(endian + f"{count}I", data))
     elif tag_type == 1:
         values = list(data)
+    elif tag_type == 5:
+        raw_values = struct.unpack(endian + f"{count * 2}I", data)
+        values = [
+            raw_values[index] / raw_values[index + 1] if raw_values[index + 1] else float("nan")
+            for index in range(0, len(raw_values), 2)
+        ]
+    elif tag_type == 12:
+        values = list(struct.unpack(endian + f"{count}d", data))
     else:
         return {"type": tag_type, "count": count}
     return values[0] if len(values) == 1 else values
@@ -145,6 +162,7 @@ def raster_metadata(path: Path) -> dict[str, Any]:
             "height_px": size[1] if size else None,
             "metadata_readable": size is not None,
             "cog": {"status": "not_applicable", "reason": "PNG is not a Cloud Optimized GeoTIFF."},
+            "gdal": gdal_raster_metadata(path),
         }
     if suffix in {".tif", ".tiff"}:
         tiff = _read_tiff_ifds(path)
@@ -167,6 +185,13 @@ def raster_metadata(path: Path) -> dict[str, Any]:
             reasons.append("no internal overviews")
         if not has_geotiff:
             reasons.append("no GeoTIFF georeference tags")
+        gdal = gdal_raster_metadata(path)
+        if gdal.get("available") and gdal.get("openable"):
+            gdal_cog = gdal.get("cog") or {}
+            if gdal_cog.get("status") == "passed":
+                reasons = []
+            elif gdal_cog.get("reasons"):
+                reasons = sorted(set(reasons + list(gdal_cog.get("reasons") or [])))
         return {
             "format": "TIFF",
             "width_px": tags.get("image_width"),
@@ -182,6 +207,7 @@ def raster_metadata(path: Path) -> dict[str, Any]:
                 "has_geotiff_tags": has_geotiff,
                 "reasons": reasons,
             },
+            "gdal": gdal,
         }
     return {
         "format": suffix.lstrip(".").upper() or "unknown",
@@ -189,6 +215,148 @@ def raster_metadata(path: Path) -> dict[str, Any]:
         "height_px": None,
         "metadata_readable": False,
         "cog": {"status": "not_applicable", "reason": "Unsupported raster header for lightweight inspection."},
+        "gdal": gdal_raster_metadata(path),
+    }
+
+
+def gdal_raster_metadata(path: Path) -> dict[str, Any]:
+    try:
+        from osgeo import gdal  # type: ignore
+    except Exception as exc:
+        return {
+            "available": False,
+            "status": "not_available",
+            "reason": f"GDAL Python bindings are not available: {exc.__class__.__name__}",
+        }
+
+    try:
+        gdal.UseExceptions()
+    except Exception:
+        pass
+
+    try:
+        dataset = gdal.OpenEx(str(path), gdal.OF_RASTER | gdal.OF_READONLY)
+    except Exception as exc:
+        return {
+            "available": True,
+            "status": "failed",
+            "openable": False,
+            "error": str(exc),
+            "issues": [{"severity": "error", "message": f"GDAL could not open raster: {exc}"}],
+        }
+    if dataset is None:
+        return {
+            "available": True,
+            "status": "failed",
+            "openable": False,
+            "error": "GDAL returned no dataset.",
+            "issues": [{"severity": "error", "message": "GDAL returned no dataset."}],
+        }
+
+    driver = dataset.GetDriver().ShortName if dataset.GetDriver() else None
+    projection = dataset.GetProjectionRef() or ""
+    geotransform = _gdal_geotransform(dataset)
+    band = dataset.GetRasterBand(1) if dataset.RasterCount else None
+    block_size = tuple(int(value) for value in band.GetBlockSize()) if band else None
+    overview_count = int(band.GetOverviewCount()) if band else 0
+    image_structure = dataset.GetMetadata("IMAGE_STRUCTURE") or {}
+    layout_metadata = dataset.GetMetadata("LAYOUT") or {}
+    issues: list[dict[str, str]] = []
+
+    if not projection:
+        _add_issue(issues, "warning", "GDAL reports no raster projection.")
+    if not geotransform:
+        _add_issue(issues, "warning", "GDAL reports no geotransform.")
+
+    cog = _gdal_cog_health(
+        driver=driver,
+        block_size=block_size,
+        overview_count=overview_count,
+        projection=projection,
+        geotransform=geotransform,
+        image_structure=image_structure,
+        layout_metadata=layout_metadata,
+    )
+    for issue in cog["issues"]:
+        if issue.get("severity") == "warning":
+            issues.append(issue)
+
+    return {
+        "available": True,
+        "status": _status_from_issues(issues),
+        "openable": True,
+        "driver": driver,
+        "width_px": int(dataset.RasterXSize),
+        "height_px": int(dataset.RasterYSize),
+        "band_count": int(dataset.RasterCount),
+        "projection_present": bool(projection),
+        "projection_wkt_sample": projection[:160] if projection else None,
+        "geotransform": list(geotransform) if geotransform else None,
+        "block_size": list(block_size) if block_size else None,
+        "overview_count": overview_count,
+        "image_structure": image_structure,
+        "layout_metadata": layout_metadata,
+        "cog": cog,
+        "issues": issues,
+    }
+
+
+def _gdal_geotransform(dataset: Any) -> tuple[float, ...] | None:
+    try:
+        transform = dataset.GetGeoTransform(can_return_null=True)
+    except TypeError:
+        try:
+            transform = dataset.GetGeoTransform()
+        except Exception:
+            return None
+        if transform == (0.0, 1.0, 0.0, 0.0, 0.0, 1.0):
+            return None
+    except Exception:
+        return None
+    return tuple(float(value) for value in transform) if transform else None
+
+
+def _gdal_cog_health(
+    *,
+    driver: str | None,
+    block_size: tuple[int, int] | None,
+    overview_count: int,
+    projection: str,
+    geotransform: tuple[float, ...] | None,
+    image_structure: dict[str, str],
+    layout_metadata: dict[str, str],
+) -> dict[str, Any]:
+    issues: list[dict[str, str]] = []
+    reasons: list[str] = []
+    is_tiff = driver in {"GTiff", "COG"}
+    tiled = bool(block_size and block_size[0] > 1 and block_size[1] > 1)
+    layout = (layout_metadata.get("LAYOUT") or image_structure.get("LAYOUT") or "").upper()
+
+    if not is_tiff:
+        reasons.append(f"driver is {driver or 'unknown'}, not GTiff/COG")
+    if not tiled:
+        reasons.append("not tiled")
+    if overview_count <= 0:
+        reasons.append("no internal overviews")
+    if not projection:
+        reasons.append("no projection")
+    if not geotransform:
+        reasons.append("no geotransform")
+
+    for reason in reasons:
+        _add_issue(issues, "warning", f"GDAL COG readiness: {reason}.")
+
+    return {
+        "status": "passed" if not reasons else "degraded",
+        "candidate": not reasons,
+        "driver": driver,
+        "layout": layout or None,
+        "tiled": tiled,
+        "overview_count": overview_count,
+        "has_projection": bool(projection),
+        "has_geotransform": bool(geotransform),
+        "reasons": reasons,
+        "issues": issues,
     }
 
 
@@ -230,6 +398,24 @@ def georef_bounds(bundle: TerrainBundle, raster: dict[str, Any]) -> dict[str, An
         "width_m": max(east) - min(east),
         "height_m": max(north) - min(north),
     }
+
+
+def _gdal_validation_issues(raster: dict[str, Any], *, label: str) -> list[dict[str, str]]:
+    if raster.get("format") != "TIFF":
+        return []
+    gdal = raster.get("gdal")
+    if not isinstance(gdal, dict) or not gdal.get("available"):
+        return []
+    issues: list[dict[str, str]] = []
+    if gdal.get("status") == "failed" or gdal.get("openable") is False:
+        _add_issue(issues, "error", f"GDAL could not validate {label}.")
+        return issues
+    for issue in gdal.get("issues") or []:
+        message = issue.get("message") if isinstance(issue, dict) else None
+        severity = issue.get("severity", "warning") if isinstance(issue, dict) else "warning"
+        if message:
+            _add_issue(issues, severity, f"{label}: {message}")
+    return issues
 
 
 def stac_health(bundle: TerrainBundle) -> dict[str, Any]:
@@ -375,6 +561,11 @@ def elevation_health(bundle: TerrainBundle) -> dict[str, Any]:
             cog = raster.get("cog") or {}
             asset["geotiff_tags"] = bool(cog.get("has_geotiff_tags"))
             asset["cog_ready"] = bool(cog.get("candidate"))
+            gdal = raster.get("gdal") if isinstance(raster.get("gdal"), dict) else {}
+            asset["gdal_status"] = gdal.get("status")
+            asset["gdal_cog_ready"] = bool((gdal.get("cog") or {}).get("candidate")) if gdal.get("available") else None
+            for issue in _gdal_validation_issues(raster, label=f"{kind.upper()} asset"):
+                _add_issue(issues, issue["severity"], issue["message"])
         except Exception as exc:
             asset["status"] = "degraded"
             asset["error"] = str(exc)
@@ -392,6 +583,392 @@ def elevation_health(bundle: TerrainBundle) -> dict[str, Any]:
         "dsm_present": "dsm" in asset_kinds,
         "vertical_sanity_ready": bool(usable_assets and bundle.georef is not None),
         "assets": assets,
+        "issues": issues,
+    }
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _first_number(value: Any, default: float | int | None = None) -> float | int | None:
+    values = _as_list(value)
+    if not values:
+        return default
+    try:
+        return values[0]
+    except IndexError:
+        return default
+
+
+def read_scalar_elevation_array(path: Path) -> np.ndarray:
+    try:
+        return _read_scalar_tiff_array(path)
+    except Exception as lightweight_error:
+        try:
+            import tifffile  # type: ignore
+
+            array = tifffile.imread(path)
+        except Exception as tifffile_error:
+            raise ValueError(
+                f"Could not read uncompressed scalar elevation raster ({lightweight_error}); "
+                f"tifffile fallback also failed ({tifffile_error})"
+            ) from tifffile_error
+        if array.ndim > 2:
+            array = array[..., 0]
+        return np.asarray(array, dtype=float)
+
+
+def _read_scalar_tiff_array(path: Path) -> np.ndarray:
+    raw = path.read_bytes()
+    if raw[:2] == b"II":
+        endian = "<"
+    elif raw[:2] == b"MM":
+        endian = ">"
+    else:
+        raise ValueError("TIFF byte order marker is missing")
+    tiff = _read_tiff_ifds(path)
+    tags = tiff["first_ifd"]["tags"]
+    width = int(tags.get("image_width") or 0)
+    height = int(tags.get("image_length") or 0)
+    if width <= 0 or height <= 0:
+        raise ValueError("TIFF raster width/height is missing")
+    compression = int(_first_number(tags.get("compression"), 1) or 1)
+    if compression != 1:
+        raise ValueError(f"Only uncompressed TIFF elevation rasters are supported by the lightweight reader; compression={compression}")
+    samples_per_pixel = int(_first_number(tags.get("samples_per_pixel"), 1) or 1)
+    if samples_per_pixel != 1:
+        raise ValueError("Only single-band elevation rasters are supported by the lightweight reader")
+    bits_per_sample = int(_first_number(tags.get("bits_per_sample"), 8) or 8)
+    sample_format = int(_first_number(tags.get("sample_format"), 1) or 1)
+    offsets = [int(value) for value in _as_list(tags.get("strip_offsets"))]
+    byte_counts = [int(value) for value in _as_list(tags.get("strip_byte_counts"))]
+    if not offsets or not byte_counts:
+        raise ValueError("TIFF strip offsets/byte counts are missing")
+    if len(byte_counts) == 1 and len(offsets) > 1:
+        byte_counts = byte_counts * len(offsets)
+    if len(offsets) != len(byte_counts):
+        raise ValueError("TIFF strip offset/count lengths do not match")
+
+    dtype_map = {
+        (8, 1): np.dtype("u1"),
+        (16, 1): np.dtype(endian + "u2"),
+        (32, 1): np.dtype(endian + "u4"),
+        (8, 2): np.dtype("i1"),
+        (16, 2): np.dtype(endian + "i2"),
+        (32, 2): np.dtype(endian + "i4"),
+        (32, 3): np.dtype(endian + "f4"),
+        (64, 3): np.dtype(endian + "f8"),
+    }
+    dtype = dtype_map.get((bits_per_sample, sample_format))
+    if dtype is None:
+        raise ValueError(f"Unsupported TIFF elevation sample format: bits={bits_per_sample} sample_format={sample_format}")
+
+    payload = bytearray()
+    for offset, byte_count in zip(offsets, byte_counts):
+        if offset < 0 or byte_count < 0 or offset + byte_count > len(raw):
+            raise ValueError("TIFF strip data points outside the file")
+        payload.extend(raw[offset : offset + byte_count])
+    array = np.frombuffer(bytes(payload), dtype=dtype)
+    required = width * height
+    if array.size < required:
+        raise ValueError(f"TIFF elevation data is too short: {array.size} samples for {width}x{height}")
+    return array[:required].astype(float).reshape((height, width))
+
+
+def _mission_plan_path(bundle: TerrainBundle) -> Path | None:
+    mission = bundle.manifest.get("mission") if isinstance(bundle.manifest.get("mission"), dict) else {}
+    candidates = [
+        mission.get("desktop_plan_path"),
+        mission.get("mission_plan_path"),
+        "mission/mission_plan.json",
+    ]
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate:
+            path = bundle.bundle_dir / candidate
+            if path.exists():
+                return path
+    return None
+
+
+def _mission_items_from_bundle(bundle: TerrainBundle) -> tuple[list[dict[str, Any]], str | None]:
+    path = _mission_plan_path(bundle)
+    if path is None:
+        return [], None
+    raw = json.loads(path.read_text())
+    mission = raw.get("mission") if isinstance(raw.get("mission"), dict) else {}
+    default_altitude = mission.get("altitude_m")
+    items: list[dict[str, Any]] = []
+    for item in mission.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        lat = item.get("lat")
+        lon = item.get("lon")
+        altitude = item.get("altitudeM", item.get("altitude_m", default_altitude))
+        if lat is None or lon is None or altitude is None:
+            continue
+        try:
+            items.append(
+                {
+                    "type": item.get("type") or "waypoint",
+                    "lat": float(lat),
+                    "lon": float(lon),
+                    "altitude_m": float(altitude),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+    return items, _relative(path, bundle.bundle_dir)
+
+
+def _mission_samples(bundle: TerrainBundle, items: list[dict[str, Any]], spacing_m: float = 25.0) -> tuple[list[dict[str, float]], float]:
+    if bundle.georef is None or not items:
+        return [], 0.0
+    if len(items) == 1:
+        item = items[0]
+        return [{"lat": item["lat"], "lon": item["lon"], "altitude_m": item["altitude_m"], "distance_m": 0.0}], 0.0
+
+    samples: list[dict[str, float]] = []
+    cumulative_m = 0.0
+    for index, (start, end) in enumerate(zip(items, items[1:])):
+        start_local = bundle.georef.latlon_to_local_m(start["lat"], start["lon"])
+        end_local = bundle.georef.latlon_to_local_m(end["lat"], end["lon"])
+        segment_m = math.hypot(end_local[0] - start_local[0], end_local[1] - start_local[1])
+        steps = max(int(math.ceil(segment_m / max(spacing_m, 1.0))), 1)
+        first_step = 0 if index == 0 else 1
+        for step in range(first_step, steps + 1):
+            t = step / steps
+            samples.append(
+                {
+                    "lat": start["lat"] + (end["lat"] - start["lat"]) * t,
+                    "lon": start["lon"] + (end["lon"] - start["lon"]) * t,
+                    "altitude_m": start["altitude_m"] + (end["altitude_m"] - start["altitude_m"]) * t,
+                    "distance_m": cumulative_m + segment_m * t,
+                }
+            )
+        cumulative_m += segment_m
+    return samples, cumulative_m
+
+
+def _geotiff_pixel_from_latlon(raster: dict[str, Any], lat: float, lon: float) -> tuple[float, float] | None:
+    tags = raster.get("tiff_tags") if isinstance(raster.get("tiff_tags"), dict) else {}
+    scale = _as_list(tags.get("model_pixel_scale"))
+    tiepoint = _as_list(tags.get("model_tiepoint"))
+    if len(scale) < 2 or len(tiepoint) < 6:
+        return None
+    try:
+        tie_x_px = float(tiepoint[0])
+        tie_y_px = float(tiepoint[1])
+        model_x = float(tiepoint[3])
+        model_y = float(tiepoint[4])
+        scale_x = float(scale[0])
+        scale_y = float(scale[1])
+    except (TypeError, ValueError):
+        return None
+    if not (-180.0 <= model_x <= 180.0 and -90.0 <= model_y <= 90.0 and scale_x > 0 and scale_y > 0):
+        return None
+    return tie_x_px + (lon - model_x) / scale_x, tie_y_px + (model_y - lat) / scale_y
+
+
+def _same_grid_pixel_from_latlon(
+    bundle: TerrainBundle,
+    raster: dict[str, Any],
+    orthophoto_raster: dict[str, Any],
+    lat: float,
+    lon: float,
+) -> tuple[float, float] | None:
+    if bundle.georef is None:
+        return None
+    source_region = bundle.manifest.get("source_region") if isinstance(bundle.manifest.get("source_region"), dict) else {}
+    map_width = int(orthophoto_raster.get("width_px") or source_region.get("width_px") or 0)
+    map_height = int(orthophoto_raster.get("height_px") or source_region.get("height_px") or 0)
+    raster_width = int(raster.get("width_px") or 0)
+    raster_height = int(raster.get("height_px") or 0)
+    if map_width <= 0 or map_height <= 0 or raster_width != map_width or raster_height != map_height:
+        return None
+    return bundle.georef.latlon_to_pixel(lat, lon)
+
+
+def _sample_elevation_nearest(array: np.ndarray, x_px: float, y_px: float) -> float | None:
+    x = int(round(x_px))
+    y = int(round(y_px))
+    if y < 0 or y >= array.shape[0] or x < 0 or x >= array.shape[1]:
+        return None
+    value = float(array[y, x])
+    return value if math.isfinite(value) else None
+
+
+def _downsample_profile_points(points: list[dict[str, float]], limit: int = 96) -> list[dict[str, float]]:
+    if len(points) <= limit:
+        return points
+    if limit <= 2:
+        return points[:limit]
+    selected: list[dict[str, float]] = []
+    last_index = len(points) - 1
+    for slot in range(limit):
+        index = round(slot * last_index / (limit - 1))
+        selected.append(points[index])
+    return selected
+
+
+def terrain_profile_health(
+    bundle: TerrainBundle,
+    elevation: dict[str, Any],
+    orthophoto_raster: dict[str, Any],
+) -> dict[str, Any]:
+    issues: list[dict[str, str]] = []
+    if not elevation.get("asset_count"):
+        return {"status": "not_provided", "required": False, "issues": issues}
+    if bundle.georef is None:
+        _add_issue(issues, "warning", "Terrain profile needs a map georeference.")
+        return {"status": "degraded", "required": False, "issues": issues}
+
+    items, mission_path = _mission_items_from_bundle(bundle)
+    if not items:
+        return {
+            "status": "not_available",
+            "required": False,
+            "reason": "No desktop mission plan found in the bundle.",
+            "issues": issues,
+        }
+
+    assets = elevation.get("assets") if isinstance(elevation.get("assets"), list) else []
+    surface_asset = next((asset for asset in assets if asset.get("kind") == "dsm" and asset.get("exists")), None)
+    surface_asset = surface_asset or next((asset for asset in assets if asset.get("kind") == "dem" and asset.get("exists")), None)
+    if surface_asset is None:
+        _add_issue(issues, "warning", "No readable DEM/DSM asset is available for terrain profile sampling.")
+        return {"status": "degraded", "required": False, "issues": issues}
+
+    surface_rel = str(surface_asset.get("path") or "")
+    surface_path = bundle.bundle_dir / surface_rel
+    raster = surface_asset.get("raster") if isinstance(surface_asset.get("raster"), dict) else raster_metadata(surface_path)
+    try:
+        array = read_scalar_elevation_array(surface_path)
+    except Exception as exc:
+        _add_issue(issues, "warning", f"Could not read elevation samples from {surface_asset.get('kind', 'asset').upper()}: {exc}")
+        return {
+            "status": "degraded",
+            "required": False,
+            "mission_path": mission_path,
+            "surface_source": surface_asset.get("kind"),
+            "surface_path": surface_rel,
+            "reason": "Elevation raster metadata was readable, but sample values were not.",
+            "issues": issues,
+        }
+
+    samples, path_length_m = _mission_samples(bundle, items)
+    if not samples:
+        return {"status": "not_available", "required": False, "reason": "Mission path has no sampleable points.", "issues": issues}
+
+    sampled: list[dict[str, float]] = []
+    transform = "geotiff_tiepoint_scale"
+    for sample in samples:
+        pixel = _geotiff_pixel_from_latlon(raster, sample["lat"], sample["lon"])
+        if pixel is None:
+            transform = "same_grid_orthophoto"
+            pixel = _same_grid_pixel_from_latlon(bundle, raster, orthophoto_raster, sample["lat"], sample["lon"])
+        if pixel is None:
+            _add_issue(
+                issues,
+                "warning",
+                "Terrain profile needs DEM/DSM GeoTIFF georeference tags or an elevation raster on the same grid as the orthophoto.",
+            )
+            return {
+                "status": "degraded",
+                "required": False,
+                "mission_path": mission_path,
+                "surface_source": surface_asset.get("kind"),
+                "surface_path": surface_rel,
+                "reason": "Elevation raster cannot be mapped to mission coordinates without GDAL or same-grid metadata.",
+                "issues": issues,
+            }
+        elevation_m = _sample_elevation_nearest(array, pixel[0], pixel[1])
+        if elevation_m is None:
+            continue
+        sampled.append({**sample, "elevation_m": elevation_m})
+
+    if not sampled:
+        _add_issue(issues, "warning", "Mission path does not overlap readable DEM/DSM pixels.")
+        return {
+            "status": "degraded",
+            "required": False,
+            "mission_path": mission_path,
+            "surface_source": surface_asset.get("kind"),
+            "surface_path": surface_rel,
+            "sample_count": len(samples),
+            "sampled_count": 0,
+            "issues": issues,
+        }
+    if len(sampled) < len(samples):
+        missing_ratio = 1.0 - len(sampled) / max(len(samples), 1)
+        if missing_ratio > 0.2:
+            _add_issue(issues, "warning", f"{missing_ratio:.0%} of terrain profile samples fell outside readable elevation pixels.")
+
+    terrain_values = [sample["elevation_m"] for sample in sampled]
+    altitude_values = [sample["altitude_m"] for sample in sampled]
+    reference_elevation_m = terrain_values[0]
+    agl_values = [
+        sample["altitude_m"] - (sample["elevation_m"] - reference_elevation_m)
+        for sample in sampled
+    ]
+    profile_points = [
+        {
+            "distance_m": sample["distance_m"],
+            "terrain_elevation_m": sample["elevation_m"],
+            "mission_altitude_m": sample["altitude_m"],
+            "estimated_agl_m": agl,
+        }
+        for sample, agl in zip(sampled, agl_values)
+    ]
+    min_agl_m = min(agl_values)
+    min_agl_to_gsd_ratio = min_agl_m / bundle.georef.gsd_m if bundle.georef.gsd_m > 0 else None
+    if min_agl_m <= 0:
+        _add_issue(issues, "error", "Mission path intersects terrain/surface under the relative AGL assumption.")
+    elif min_agl_m < 10.0:
+        _add_issue(issues, "warning", f"Minimum estimated AGL is low: {min_agl_m:.1f} m.")
+    if min_agl_to_gsd_ratio is not None and min_agl_to_gsd_ratio < 30.0:
+        _add_issue(
+            issues,
+            "warning",
+            f"Map GSD may be coarse for the planned low-altitude profile: min AGL/GSD ratio is {min_agl_to_gsd_ratio:.1f}.",
+        )
+
+    return {
+        "status": _status_from_issues(issues),
+        "required": False,
+        "mission_path": mission_path,
+        "mission_item_count": len(items),
+        "sample_count": len(samples),
+        "sampled_count": len(sampled),
+        "sample_spacing_m": 25.0,
+        "path_length_m": path_length_m,
+        "surface_source": surface_asset.get("kind"),
+        "surface_path": surface_rel,
+        "coordinate_mapping": transform,
+        "altitude_reference": "mission_altitude_relative_to_first_sampled_surface",
+        "reference_elevation_m": reference_elevation_m,
+        "terrain_elevation_m": {
+            "min": min(terrain_values),
+            "max": max(terrain_values),
+            "start": terrain_values[0],
+            "end": terrain_values[-1],
+            "relief": max(terrain_values) - min(terrain_values),
+        },
+        "mission_altitude_m": {
+            "min": min(altitude_values),
+            "max": max(altitude_values),
+        },
+        "estimated_agl_m": {
+            "min": min_agl_m,
+            "max": max(agl_values),
+            "mean": sum(agl_values) / len(agl_values),
+        },
+        "min_agl_to_map_gsd_ratio": min_agl_to_gsd_ratio,
+        "preview_points": _downsample_profile_points(profile_points),
         "issues": issues,
     }
 
@@ -428,7 +1005,10 @@ def tile_index_health(bundle: TerrainBundle) -> dict[str, Any]:
         methods = [str(value[0]) for value in conn.execute("SELECT DISTINCT method FROM tiles ORDER BY method").fetchall()]
         tile_rows = conn.execute(
             """
-            SELECT tile_id, x0_px, y0_px, x1_px, y1_px, image_path, descriptor_path, keypoint_count
+            SELECT
+              tile_id, row, col, x0_px, y0_px, x1_px, y1_px,
+              min_east_m, max_east_m, min_north_m, max_north_m,
+              image_path, descriptor_path, keypoint_count
             FROM tiles
             ORDER BY tile_id
             """
@@ -484,14 +1064,40 @@ def map_quality_from_tiles(tile_rows: list[sqlite3.Row], *, tile_count: int, fea
     density_threshold_per_mpx = 150.0
     densities: list[float] = []
     low_texture_tiles: list[str] = []
+    heatmap_cells: list[dict[str, Any]] = []
+    heatmap_cell_limit = 512
+    max_row = -1
+    max_col = -1
     for row in tile_rows:
         width_px = max(int(row["x1_px"]) - int(row["x0_px"]), 1)
         height_px = max(int(row["y1_px"]) - int(row["y0_px"]), 1)
         area_mpx = (width_px * height_px) / 1_000_000.0
         density = float(row["keypoint_count"]) / max(area_mpx, 1e-9)
         densities.append(density)
+        tile_quality = _tile_quality_class(density, density_threshold_per_mpx)
         if density < density_threshold_per_mpx:
             low_texture_tiles.append(str(row["tile_id"]))
+        tile_row = int(row["row"])
+        tile_col = int(row["col"])
+        max_row = max(max_row, tile_row)
+        max_col = max(max_col, tile_col)
+        if len(heatmap_cells) < heatmap_cell_limit:
+            heatmap_cells.append(
+                {
+                    "tile_id": str(row["tile_id"]),
+                    "row": tile_row,
+                    "col": tile_col,
+                    "keypoint_count": int(row["keypoint_count"] or 0),
+                    "feature_density_per_mpx": density,
+                    "quality": tile_quality,
+                    "local_bounds_m": {
+                        "east_min": row["min_east_m"],
+                        "east_max": row["max_east_m"],
+                        "north_min": row["min_north_m"],
+                        "north_max": row["max_north_m"],
+                    },
+                }
+            )
 
     if not densities:
         density_summary = {"min": 0.0, "median": 0.0, "mean": 0.0, "max": 0.0}
@@ -517,7 +1123,30 @@ def map_quality_from_tiles(tile_rows: list[sqlite3.Row], *, tile_count: int, fea
         "low_texture_ratio": (len(low_texture_tiles) / tile_count) if tile_count else 1.0,
         "low_texture_tile_ids_sample": low_texture_tiles[:10],
         "estimated_pi_runtime_cost": runtime_cost,
+        "heatmap": {
+            "row_count": max_row + 1 if max_row >= 0 else 0,
+            "col_count": max_col + 1 if max_col >= 0 else 0,
+            "cell_count": len(heatmap_cells),
+            "omitted_tile_count": max(tile_count - len(heatmap_cells), 0),
+            "quality_legend": {
+                "low": f"< {density_threshold_per_mpx:.0f} features/Mpx",
+                "fair": f"{density_threshold_per_mpx:.0f}-{density_threshold_per_mpx * 2:.0f} features/Mpx",
+                "good": f"{density_threshold_per_mpx * 2:.0f}-{density_threshold_per_mpx * 5:.0f} features/Mpx",
+                "dense": f">= {density_threshold_per_mpx * 5:.0f} features/Mpx",
+            },
+            "cells": heatmap_cells,
+        },
     }
+
+
+def _tile_quality_class(density_per_mpx: float, low_threshold: float) -> str:
+    if density_per_mpx < low_threshold:
+        return "low"
+    if density_per_mpx < low_threshold * 2:
+        return "fair"
+    if density_per_mpx < low_threshold * 5:
+        return "good"
+    return "dense"
 
 
 def geospatial_health_report(bundle_path: str | Path) -> dict[str, Any]:
@@ -547,13 +1176,16 @@ def geospatial_health_report(bundle_path: str | Path) -> dict[str, Any]:
     cog = raster.get("cog") or {}
     if cog.get("status") == "degraded":
         _add_issue(issues, "warning", f"GeoTIFF is not COG-ready: {', '.join(cog.get('reasons') or [])}")
+    for issue in _gdal_validation_issues(raster, label="Orthophoto"):
+        issues.append(issue)
 
     stac = stac_health(bundle)
     tile_index = tile_index_health(bundle)
     checksums = checksum_health(bundle)
     elevation = elevation_health(bundle)
+    terrain_profile = terrain_profile_health(bundle, elevation, raster)
     provenance = source_provenance(bundle)
-    for child in (stac, tile_index, checksums, elevation):
+    for child in (stac, tile_index, checksums, elevation, terrain_profile):
         for issue in child.get("issues", []):
             if issue.get("severity") != "info":
                 issues.append(issue)
@@ -576,6 +1208,7 @@ def geospatial_health_report(bundle_path: str | Path) -> dict[str, Any]:
         "tile_index": tile_index,
         "checksums": checksums,
         "elevation": elevation,
+        "terrain_profile": terrain_profile,
         "map_quality": tile_index.get("quality"),
         "issues": issues,
         "status": _status_from_issues(issues),
@@ -603,6 +1236,7 @@ def parse_args() -> argparse.Namespace:
 
 def print_human(report: dict[str, Any]) -> None:
     elevation = report.get("elevation") or {}
+    terrain_profile = report.get("terrain_profile") or {}
     print(f"Geospatial health: {report.get('bundle_id') or '(unnamed)'}")
     print(f"Status: {report['status']}")
     print(f"Raster: {report['raster'].get('format')} {report['raster'].get('width_px')}x{report['raster'].get('height_px')}")
@@ -616,6 +1250,14 @@ def print_human(report: dict[str, Any]) -> None:
         f"({elevation.get('asset_count') or 0} asset(s), vertical sanity "
         f"{'ready' if elevation.get('vertical_sanity_ready') else 'not ready'})"
     )
+    if terrain_profile.get("status") not in {None, "not_provided"}:
+        agl = terrain_profile.get("estimated_agl_m") or {}
+        relief = (terrain_profile.get("terrain_elevation_m") or {}).get("relief")
+        print(
+            "Terrain profile: "
+            f"{terrain_profile.get('status')} "
+            f"(min AGL {agl.get('min') if agl else 'n/a'} m, relief {relief if relief is not None else 'n/a'} m)"
+        )
     for issue in report["issues"]:
         print(f"[{issue['severity'].upper()}] {issue['message']}")
 

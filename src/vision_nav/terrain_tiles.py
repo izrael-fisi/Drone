@@ -176,6 +176,31 @@ def global_descriptor_distance(a: np.ndarray | None, b: np.ndarray | None) -> fl
     return float(np.linalg.norm(a.astype(np.float32) - b.astype(np.float32)))
 
 
+def rank_tiles_by_global_descriptor(
+    tiles: list[TerrainTile],
+    frame_global_descriptor: np.ndarray,
+) -> list[dict[str, object]]:
+    scored: list[tuple[float, int, str, TerrainTile]] = []
+    for tile in tiles:
+        descriptor = load_tile_descriptor(tile.descriptor_path)
+        distance = global_descriptor_distance(frame_global_descriptor, descriptor.get("global_descriptor"))
+        if distance is None:
+            continue
+        scored.append((distance, -tile.keypoint_count, tile.tile_id, tile))
+    scored.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [
+        {
+            "rank": index,
+            "tile_id": tile.tile_id,
+            "distance": distance,
+            "keypoint_count": tile.keypoint_count,
+            "row": tile.row,
+            "col": tile.col,
+        }
+        for index, (distance, _, _, tile) in enumerate(scored, start=1)
+    ]
+
+
 def build_tile_index(
     *,
     bundle_dir: Path,

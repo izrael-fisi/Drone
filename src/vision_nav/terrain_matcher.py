@@ -19,10 +19,10 @@ from vision_nav.quality import (
 from vision_nav.terrain_bundle import TerrainBundle
 from vision_nav.terrain_tiles import (
     TerrainTile,
-    global_descriptor_distance,
     image_global_descriptor,
     load_tile_descriptor,
     query_tiles_with_metadata,
+    rank_tiles_by_global_descriptor,
 )
 
 
@@ -221,29 +221,29 @@ def _rank_candidates_by_global_descriptor(
     frame_global_descriptor: np.ndarray,
     max_candidates: int,
 ) -> tuple[list[tuple[TerrainTile, dict]], dict[str, Any]]:
-    scored: list[tuple[float, int, str, TerrainTile, dict]] = []
+    tile_by_id = {tile.tile_id: tile for tile in candidates}
+    ranked = rank_tiles_by_global_descriptor(candidates, frame_global_descriptor)
+    ranked_ids = {str(item["tile_id"]) for item in ranked}
     unscored: list[tuple[TerrainTile, dict]] = []
     for tile in candidates:
-        descriptor = load_tile_descriptor(tile.descriptor_path)
-        distance = global_descriptor_distance(frame_global_descriptor, descriptor.get("global_descriptor"))
-        if distance is None:
-            unscored.append((tile, descriptor))
-        else:
-            scored.append((distance, -tile.keypoint_count, tile.tile_id, tile, descriptor))
+        if tile.tile_id not in ranked_ids:
+            unscored.append((tile, load_tile_descriptor(tile.descriptor_path)))
 
-    scored.sort(key=lambda item: (item[0], item[1], item[2]))
-    selected: list[tuple[TerrainTile, dict]] = [(tile, descriptor) for _, _, _, tile, descriptor in scored[:max_candidates]]
+    selected: list[tuple[TerrainTile, dict]] = []
+    for item in ranked[:max_candidates]:
+        tile = tile_by_id[str(item["tile_id"])]
+        selected.append((tile, load_tile_descriptor(tile.descriptor_path)))
     if len(selected) < max_candidates:
         selected.extend(unscored[: max_candidates - len(selected)])
     distances = [
-        {"tile_id": tile.tile_id, "distance": distance}
-        for distance, _, _, tile, _ in scored[: min(len(scored), 10)]
+        {"tile_id": str(item["tile_id"]), "distance": item["distance"]}
+        for item in ranked[:10]
     ]
     return selected, {
         "enabled": True,
         "descriptor": "grayscale_histogram_v1",
         "input_tiles": len(candidates),
-        "scored_tiles": len(scored),
+        "scored_tiles": len(ranked),
         "selected_tiles": len(selected),
         "selected_tile_ids": [tile.tile_id for tile, _ in selected],
         "best_distances": distances,

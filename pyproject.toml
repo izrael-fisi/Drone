@@ -28,6 +28,7 @@ mavlink = [
 vision-nav-build-map = "vision_nav.build_feature_map:main"
 vision-nav-build-bundle = "vision_nav.build_map_bundle:main"
 vision-nav-build-terrain-bundle = "vision_nav.build_terrain_bundle:main"
+vision-nav-benchmark-retrieval = "vision_nav.benchmark_retrieval:main"
 vision-nav-bundle-checksums = "vision_nav.bundle_checksums:main"
 vision-nav-calibrate-camera = "vision_nav.calibrate_camera:main"
 vision-nav-camera-health = "vision_nav.camera_health:main"

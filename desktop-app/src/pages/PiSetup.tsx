@@ -406,6 +406,26 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/check_global_shutter_camera.sh`,
     },
     {
+      id: "time-sync",
+      title: "Time Sync",
+      detail: "Checks system clock plausibility and NTP synchronization for timestamped external-vision output.",
+      command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/check_time_sync.sh`,
+    },
+    {
+      id: "mavlink",
+      title: "MAVLink Endpoint",
+      detail: "Validates MAVLink endpoint syntax and serial-device access. Set probe mode for live telemetry.",
+      command: () =>
+        `cd ${shellQuote(remoteProject)} && VISION_NAV_MAVLINK_ENDPOINT=${shellQuote(form.mavlinkEndpoint)} ./scripts/pi/check_mavlink_endpoint.sh`,
+    },
+    {
+      id: "calibration-capture",
+      title: "Calibration Capture",
+      detail: "Captures a short chessboard image set for down-camera calibration when the target is ready.",
+      command: () =>
+        `cd ${shellQuote(remoteProject)} && CALIBRATION_COUNT=8 CALIBRATION_DELAY_S=1 ./scripts/pi/capture_calibration_set.sh`,
+    },
+    {
       id: "smoke",
       title: "Vision Smoke Test",
       detail: "Builds and matches a synthetic feature-map pair on the module.",
@@ -421,7 +441,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   ];
 
   const runRecommendedChecks = async () => {
-    for (const step of steps.filter((candidate) => ["identity", "repo", "verify", "camera", "smoke"].includes(candidate.id))) {
+    for (const step of steps.filter((candidate) => ["identity", "repo", "verify", "camera", "time-sync", "mavlink", "smoke"].includes(candidate.id))) {
       await runRemote(step.id, step.title, step.command());
     }
   };

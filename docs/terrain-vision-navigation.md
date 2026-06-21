@@ -50,13 +50,20 @@ vision-nav-map-health --bundle mission_bundle --json
 The builder updates `manifest.json` with `terrain_bundle` metadata, writes a
 small STAC-style manifest, creates `config/terrain_nav.yaml`, and writes
 `bundle_health.json`. The health report checks georeference completeness, CRS,
-GSD, raster header metadata, lightweight COG/GeoTIFF readiness, STAC asset
-paths, tile-index readiness, feature count, first-pass feature-density quality,
+GSD, raster header metadata, lightweight COG/GeoTIFF readiness, optional
+GDAL-backed raster validation, STAC asset paths, tile-index readiness, feature
+count, first-pass feature-density quality, feature-density heatmap cells,
 estimated Pi runtime cost, local map bounds, source provenance, and checksum
 status. Missing checksums are reported without failing the health report; invalid
 checksums are reported as errors. The generated `bundle_health.json` file is
 excluded from bundle checksums so regenerating the report does not create a
 self-referential checksum mismatch.
+
+GDAL is not required for the Raspberry Pi MVP or local tests. If the Python GDAL
+bindings are installed, the health report adds driver, projection, geotransform,
+block-size, overview, and COG-readiness details for TIFF/GeoTIFF assets. If GDAL
+is unavailable, the report records `gdal.status=not_available` and keeps using
+the lightweight header checks.
 
 Optional DEM/DSM rasters can be placed at `elevation/dem.tif` and
 `elevation/dsm.tif` before building the terrain bundle. The builder declares
@@ -65,6 +72,19 @@ those assets in `manifest.json`, `manifest.stac.json`, and
 present, whether their raster metadata can be inspected, and whether vertical
 terrain sanity checks are ready. Missing DEM/DSM files are fine when no asset is
 declared; declared-but-missing files fail bundle health.
+
+When a desktop mission plan is included, `bundle_health.json` also includes a
+`terrain_profile` section. The profile samples the mission route against DSM
+when available, otherwise DEM, and reports terrain relief, estimated minimum
+AGL, mission altitude range, path length, and AGL-to-map-GSD sanity. Mission
+altitude is treated as relative to the first sampled terrain/surface point, so
+this is a planning sanity check rather than an absolute aircraft-height claim.
+Without GDAL, sampling requires either GeoTIFF tiepoint/scale tags in the
+elevation raster or a DEM/DSM on the same pixel grid as the orthophoto; otherwise
+the profile degrades with an explicit reason.
+The same section includes bounded `preview_points` for desktop profile charts:
+distance along route, sampled terrain/surface elevation, mission altitude, and
+estimated AGL.
 
 From the desktop app, use Maps -> Attach Elevation Assets to copy DEM/DSM
 GeoTIFFs into a saved map source. The next Mission Planner bundle build will
@@ -76,6 +96,7 @@ carry those assets into `mission_bundle/elevation/`.
 vision-nav-match-terrain-frame --bundle mission_bundle --frame downward_frame.jpg
 vision-nav-run-terrain-loop --bundle mission_bundle --output-dir terrain-run --count 30
 vision-nav-replay-terrain-log --bundle mission_bundle --log terrain-run/terrain_matches.jsonl
+vision-nav-benchmark-retrieval --bundle mission_bundle --log replay_cases.jsonl --top-k 1,5,10
 ```
 
 The Pi wrappers are:
@@ -98,6 +119,13 @@ then reranks candidate tiles with a compact grayscale global descriptor before
 local ORB/AKAZE matching. Each runtime result includes `tile_query.strategy`,
 `tile_query.global_retrieval`, selected tile IDs, and coverage metadata so a
 support bundle can explain how candidate tiles were chosen.
+
+`vision-nav-benchmark-retrieval` evaluates the same lightweight global
+descriptor against replay logs. Replay records can provide `expected_tile_id`
+directly or a ground-truth `local_enu_m` / `map_pixel` value that maps back to a
+tile. The report includes top-k hits, recall@k, mean rank, per-record candidate
+rankings, and a `neural.status=not_available` placeholder until higher-compute
+retrieval descriptors are exported.
 
 ## Estimator Policy
 

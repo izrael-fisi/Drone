@@ -101,22 +101,35 @@ Status:
   report elevation-readiness in bundle health and desktop/support summaries.
 - In progress: Maps can attach optional DEM/DSM GeoTIFFs to saved map sources
   so Mission Planner bundle builds carry elevation assets into runtime bundles.
+- In progress: `bundle_health.json` now includes a mission terrain profile when
+  DEM/DSM assets can be sampled, with terrain relief, estimated minimum AGL, and
+  AGL-to-map-GSD warnings shown in Mission Planner bundle results.
 - In progress: terrain matching now reports hierarchical tile retrieval
   metadata and uses prior-local radius search when a pose prior exists, or
   spatially distributed coarse candidates at startup with no prior.
 - In progress: terrain tile descriptors now include a compact grayscale global
   descriptor, and runtime matching reranks coarse/prior candidates by visual
   descriptor distance before local ORB/AKAZE homography.
+- In progress: `bundle_health.json` now includes feature-density heatmap cells
+  for terrain tiles, and Mission Planner renders a compact low/fair/good/dense
+  map-quality heatmap after bundle build.
+- In progress: raster health now records optional GDAL-backed TIFF/GeoTIFF
+  validation when Python GDAL bindings are available, including driver,
+  projection, geotransform, block layout, overview count, and COG readiness.
+- In progress: terrain profile health now emits bounded preview points, and
+  Mission Planner renders a compact terrain/flight profile preview after bundle
+  build.
+- Done: downloaded support-bundle browsing shows parsed checksum status, map
+  source provenance, georeference confidence, and replay-gate state.
+- In progress: `vision-nav-benchmark-retrieval` benchmarks the current
+  lightweight grayscale global descriptor on replay logs, reporting top-k
+  recall and mean rank while marking the optional neural retrieval backend as
+  unavailable until neural descriptors are generated.
 
 Tasks:
 
-1. Add stricter GDAL-backed COG/GeoTIFF validation when GDAL is available.
-2. Add checksum/source-provenance status to downloaded support-bundle browsing.
-3. Add terrain profile preview and AGL/GSD checks for imported DEM/DSM assets.
-4. Turn the current feature-density summary into operator-facing map-quality
-   heatmaps.
-5. Benchmark the current lightweight global descriptor against optional neural
-   retrieval descriptors on replay logs.
+1. Validate the full terrain-bundle pipeline on real field replay logs and
+   promote recurring failure modes into Track 5 replay gates.
 
 Acceptance checks:
 
@@ -136,15 +149,22 @@ Status:
 - In progress: plan-state checks include mission/map readiness, selected map
   source, output bundle path, remote bundle path, QGC plan content, and desktop
   mission JSON content.
+- In progress: Module Setup chains Wi-Fi SSH identity, repo sync/install,
+  runtime verification, camera preview/health, time sync, MAVLink endpoint
+  validation, calibration image capture, synthetic smoke testing, and deployed
+  bundle validation from the app.
+- In progress: Mission Planner bundle results show imported DEM/DSM terrain
+  profile, estimated minimum AGL, AGL/GSD warnings, and map-quality heatmaps.
 
 Tasks:
 
-1. Build a setup wizard that chains Pi discovery, runtime verification, camera
-   test, MAVLink test, time sync, calibration, map upload, and bench test.
+1. Add automatic Pi discovery, map-upload-to-bench-report handoff, and a saved
+   setup report.
 2. Persist plan-state history across app restarts and add an explicit unsaved
    file indicator for imported/exported `.plan` files.
-3. Add UgCS-style terrain planning: DEM/DSM import, terrain profile, GSD/AGL
-   checks, offline cache state, and route segmentation.
+3. Add remaining UgCS-style terrain planning pieces: offline cache state,
+   terrain-aware route segmentation, and operator controls for terrain profile
+   constraints.
 4. Add GNSS-denied readiness actions: set/reset map position, heading, home,
    and estimator health.
 

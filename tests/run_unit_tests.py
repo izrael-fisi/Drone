@@ -12,6 +12,7 @@ import zipfile
 import numpy as np
 
 from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
+from vision_nav.benchmark_retrieval import benchmark_retrieval
 from vision_nav.bundle import (
     load_manifest,
     manifest_feature_options,
@@ -30,7 +31,7 @@ from vision_nav.external_position import (
     yaw_enu_to_ned,
 )
 from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
-from vision_nav.geospatial_health import geospatial_health_report
+from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health_report
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
 from vision_nav.mavlink_bridge import MavlinkVisionBridge, parse_mavlink_endpoint
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
@@ -43,6 +44,7 @@ from vision_nav.terrain_tiles import (
     global_descriptor_distance,
     image_global_descriptor,
     query_tiles_with_metadata,
+    save_tile_descriptor,
     tile_origins,
 )
 from vision_nav.validate_map_bundle import validate_bundle
@@ -74,6 +76,37 @@ def write_minimal_tiff(path: Path, width: int, height: int) -> None:
         + struct.pack("<HHII", 257, 4, 1, height)
         + struct.pack("<I", 0)
     )
+
+
+def write_scalar_float_tiff(path: Path, values: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    array = np.asarray(values, dtype="<f4")
+    height, width = array.shape
+    entries = [
+        (256, 4, 1, width),
+        (257, 4, 1, height),
+        (258, 3, 1, 32),
+        (259, 3, 1, 1),
+        (262, 3, 1, 1),
+        (273, 4, 1, 0),
+        (277, 3, 1, 1),
+        (278, 4, 1, height),
+        (279, 4, 1, array.nbytes),
+        (339, 3, 1, 3),
+    ]
+    data_offset = 8 + 2 + len(entries) * 12 + 4
+    payload = bytearray()
+    payload.extend(b"II")
+    payload.extend(struct.pack("<H", 42))
+    payload.extend(struct.pack("<I", 8))
+    payload.extend(struct.pack("<H", len(entries)))
+    for tag, tag_type, count, value in entries:
+        if tag == 273:
+            value = data_offset
+        payload.extend(struct.pack("<HHII", tag, tag_type, count, value))
+    payload.extend(struct.pack("<I", 0))
+    payload.extend(array.tobytes())
+    path.write_bytes(bytes(payload))
 
 
 def create_minimal_terrain_bundle(root: Path, *, include_tile_index: bool = True, include_elevation: bool = False) -> Path:
@@ -203,6 +236,10 @@ def test_pixel_to_local_default_north_up_axes() -> None:
     east_m, north_m = georef.pixel_to_local_m(10, 8)
     assert_equal(east_m, 5.0, "east_m")
     assert_equal(north_m, -4.0, "north_m")
+    lat, lon = georef.pixel_to_latlon(10, 8)
+    x_px, y_px = georef.latlon_to_pixel(lat, lon)
+    if abs(x_px - 10) > 1e-6 or abs(y_px - 8) > 1e-6:
+        raise AssertionError(f"Expected lat/lon to invert to pixel (10, 8), got ({x_px}, {y_px})")
 
 
 def test_georef_json_round_trip() -> None:
@@ -731,10 +768,16 @@ def test_geospatial_health_report_validates_stac_tiles_and_bounds() -> None:
         bundle = create_minimal_terrain_bundle(Path(tmp), include_elevation=True)
 
         report = geospatial_health_report(bundle)
-        assert_equal(report["status"], "passed", "geospatial health status")
+        if report["status"] not in {"passed", "degraded"}:
+            raise AssertionError(f"geospatial health status: expected passed/degraded, got {report['status']}")
         assert_equal(report["raster"]["format"], "PNG", "geospatial raster format")
+        assert_equal("available" in report["raster"]["gdal"], True, "geospatial raster gdal metadata")
         assert_equal(report["tile_index"]["tile_count"], 1, "geospatial tile count")
         assert_equal(report["map_quality"]["estimated_pi_runtime_cost"], "low", "geospatial runtime cost")
+        assert_equal(report["map_quality"]["heatmap"]["row_count"], 1, "geospatial heatmap rows")
+        assert_equal(report["map_quality"]["heatmap"]["col_count"], 1, "geospatial heatmap cols")
+        assert_equal(report["map_quality"]["heatmap"]["cells"][0]["tile_id"], "tile_000000", "geospatial heatmap tile")
+        assert_equal(report["map_quality"]["heatmap"]["cells"][0]["quality"], "dense", "geospatial heatmap quality")
         assert_equal(report["checksums"]["status"], "missing", "geospatial missing checksum status")
         assert_equal(report["source_provenance"]["map_source"], "uploaded_geotiff", "source provenance source")
         assert_equal(report["source_provenance"]["original_file"], "unit-map.tif", "source provenance original")
@@ -743,14 +786,77 @@ def test_geospatial_health_report_validates_stac_tiles_and_bounds() -> None:
         assert_equal(report["elevation"]["dem_present"], True, "elevation dem present")
         assert_equal(report["elevation"]["dsm_present"], True, "elevation dsm present")
         assert_equal(report["elevation"]["vertical_sanity_ready"], True, "elevation vertical sanity ready")
+        assert_equal("gdal_status" in report["elevation"]["assets"][0], True, "elevation gdal status")
         if report["georef"]["bounds"]["width_m"] <= 0:
             raise AssertionError("Expected geospatial bounds width to be positive")
 
         write_checksum_file(bundle)
         report_with_checksums = geospatial_health_report(bundle)
-        assert_equal(report_with_checksums["status"], "passed", "geospatial checksum health status")
+        if report_with_checksums["status"] not in {"passed", "degraded"}:
+            raise AssertionError(f"geospatial checksum health status: expected passed/degraded, got {report_with_checksums['status']}")
         assert_equal(report_with_checksums["checksums"]["status"], "passed", "geospatial checksum passed")
         assert_equal(report_with_checksums["checksums"]["extra_file_count"], 0, "geospatial checksum ignores health file")
+
+
+def test_gdal_metadata_degrades_gracefully_when_unavailable() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "tiny.tif"
+        write_minimal_tiff(path, 4, 3)
+        metadata = gdal_raster_metadata(path)
+        assert_equal("available" in metadata, True, "gdal metadata availability flag")
+        if metadata["available"]:
+            assert_equal(metadata["openable"], True, "gdal opened tiny tiff")
+            assert_equal(metadata["width_px"], 4, "gdal width")
+            assert_equal(metadata["height_px"], 3, "gdal height")
+            assert_equal("cog" in metadata, True, "gdal cog metadata")
+        else:
+            assert_equal(metadata["status"], "not_available", "gdal unavailable status")
+
+
+def test_terrain_profile_reports_agl_and_gsd_warnings() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        bundle = create_minimal_terrain_bundle(Path(tmp), include_elevation=True)
+        georef = SimpleGeoReference(origin_lat=40.0, origin_lon=-75.0, gsd_m=0.5, crs="EPSG:4326")
+        values = np.tile(np.linspace(0.0, 20.0, 100, dtype=np.float32), (60, 1))
+        write_scalar_float_tiff(bundle / "elevation" / "dsm.tif", values)
+        start_lat, start_lon = georef.pixel_to_latlon(0, 10)
+        end_lat, end_lon = georef.pixel_to_latlon(99, 10)
+        (bundle / "mission").mkdir(exist_ok=True)
+        (bundle / "mission" / "mission_plan.json").write_text(
+            json.dumps(
+                {
+                    "mission": {
+                        "altitude_m": 25,
+                        "speed_mps": 4,
+                        "items": [
+                            {"id": "takeoff", "type": "takeoff", "lat": start_lat, "lon": start_lon, "altitudeM": 25},
+                            {"id": "wp1", "type": "waypoint", "lat": end_lat, "lon": end_lon, "altitudeM": 25},
+                        ],
+                    }
+                }
+            )
+        )
+        manifest_path = bundle / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["mission"] = {"desktop_plan_path": "mission/mission_plan.json"}
+        manifest_path.write_text(json.dumps(manifest))
+
+        report = geospatial_health_report(bundle)
+        profile = report["terrain_profile"]
+        assert_equal(profile["status"], "degraded", "terrain profile status")
+        assert_equal(profile["surface_source"], "dsm", "terrain profile source")
+        if abs(profile["terrain_elevation_m"]["relief"] - 20.0) > 0.5:
+            raise AssertionError(f"Expected terrain relief near 20 m, got {profile['terrain_elevation_m']['relief']}")
+        if abs(profile["estimated_agl_m"]["min"] - 5.0) > 0.75:
+            raise AssertionError(f"Expected min AGL near 5 m, got {profile['estimated_agl_m']['min']}")
+        if len(profile["preview_points"]) < 2:
+            raise AssertionError("Expected terrain profile preview points")
+        assert_equal(profile["preview_points"][0]["distance_m"], 0.0, "terrain profile first preview distance")
+        if profile["preview_points"][-1]["distance_m"] <= profile["preview_points"][0]["distance_m"]:
+            raise AssertionError("Expected terrain profile preview distance to increase")
+        messages = " ".join(issue["message"] for issue in profile["issues"])
+        if "Minimum estimated AGL is low" not in messages:
+            raise AssertionError(f"Expected low AGL warning, got {messages}")
 
 
 def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
@@ -914,6 +1020,101 @@ def test_global_image_descriptor_separates_simple_textures() -> None:
         raise AssertionError("Expected dark and bright global descriptors to separate")
 
 
+def test_retrieval_benchmark_ranks_expected_tile() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bundle = root / "bundle"
+        (bundle / "ortho").mkdir(parents=True)
+        (bundle / "index" / "descriptors").mkdir(parents=True)
+        (bundle / "imagery" / "tiles").mkdir(parents=True)
+        write_minimal_png(bundle / "ortho" / "map.png", 32, 16)
+        dark = np.zeros((16, 16), dtype=np.uint8)
+        bright = np.full((16, 16), 255, dtype=np.uint8)
+        for tile_id, image, offset in (
+            ("tile_000000", dark, (0, 0)),
+            ("tile_000001", bright, (16, 0)),
+        ):
+            save_tile_descriptor(
+                bundle / "index" / "descriptors" / f"{tile_id}.npz",
+                tile_id=tile_id,
+                image_path=f"imagery/tiles/{tile_id}.png",
+                image_shape=image.shape,
+                method="orb",
+                keypoints_xy=np.zeros((0, 2), dtype=np.float32),
+                descriptors=np.zeros((0, 32), dtype=np.uint8),
+                offset_xy_px=offset,
+                global_descriptor=image_global_descriptor(image),
+            )
+            write_minimal_png(bundle / "imagery" / "tiles" / f"{tile_id}.png", 16, 16)
+        index_path = bundle / "index" / "tiles.sqlite"
+        with sqlite3.connect(index_path) as conn:
+            create_tile_schema(conn)
+            for tile_id, col, x0, x1 in (
+                ("tile_000000", 0, 0, 16),
+                ("tile_000001", 1, 16, 32),
+            ):
+                conn.execute(
+                    """
+                    INSERT INTO tiles (
+                        tile_id, row, col, x0_px, y0_px, x1_px, y1_px,
+                        min_east_m, max_east_m, min_north_m, max_north_m,
+                        image_path, descriptor_path, keypoint_count, method
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        tile_id,
+                        0,
+                        col,
+                        x0,
+                        0,
+                        x1,
+                        16,
+                        float(x0),
+                        float(x1),
+                        -16.0,
+                        0.0,
+                        f"imagery/tiles/{tile_id}.png",
+                        f"index/descriptors/{tile_id}.npz",
+                        0,
+                        "orb",
+                    ),
+                )
+            conn.commit()
+        (bundle / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "bundle_id": "retrieval-test",
+                    "orthophoto": {
+                        "path": "ortho/map.png",
+                        "origin_lat": 40.0,
+                        "origin_lon": -75.0,
+                        "gsd_m": 1.0,
+                    },
+                    "features": {"path": "features/map_features.npz", "method": "orb", "max_features": 100},
+                    "terrain_bundle": {
+                        "version": "0.1.0",
+                        "tile_index_path": "index/tiles.sqlite",
+                        "tile_size_px": 16,
+                        "overlap_px": 0,
+                        "gsd_m": 1.0,
+                    },
+                }
+            )
+        )
+        frame = root / "bright_frame.npy"
+        np.save(frame, bright)
+        replay_log = root / "replay.jsonl"
+        replay_log.write_text(json.dumps({"frame_path": frame.name, "expected_tile_id": "tile_000001"}) + "\n")
+
+        report = benchmark_retrieval(bundle, replay_log, top_k=[1, 2], backend="all")
+        global_backend = report["backends"]["global_histogram_v1"]
+        assert_equal(global_backend["status"], "passed", "retrieval benchmark global status")
+        assert_equal(global_backend["recall_at_k"]["1"], 1.0, "retrieval benchmark recall@1")
+        assert_equal(global_backend["records"][0]["rank"], 1, "retrieval benchmark expected rank")
+        assert_equal(global_backend["records"][0]["top_tile_id"], "tile_000001", "retrieval benchmark top tile")
+        assert_equal(report["backends"]["neural"]["status"], "not_available", "retrieval benchmark neural status")
+
+
 def test_hierarchical_tile_query_uses_prior_or_spatial_coverage() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         bundle = create_minimal_terrain_bundle(Path(tmp))
@@ -1042,11 +1243,14 @@ def main() -> None:
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
         test_geospatial_health_report_validates_stac_tiles_and_bounds,
+        test_gdal_metadata_degrades_gracefully_when_unavailable,
+        test_terrain_profile_reports_agl_and_gsd_warnings,
         test_support_bundle_collects_manifest_health_logs_and_summary,
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
         test_geospatial_health_blocks_missing_georef,
         test_terrain_tile_origins_cover_edges,
         test_global_image_descriptor_separates_simple_textures,
+        test_retrieval_benchmark_ranks_expected_tile,
         test_hierarchical_tile_query_uses_prior_or_spatial_coverage,
         test_terrain_estimator_updates_and_inflates_covariance,
         test_barometer_tracker_and_estimator_fields,

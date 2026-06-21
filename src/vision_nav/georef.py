@@ -55,6 +55,28 @@ class SimpleGeoReference:
         lon = self.origin_lon + math.degrees(dlon)
         return lat, lon
 
+    def latlon_to_local_m(self, lat: float, lon: float) -> tuple[float, float]:
+        origin_lat_rad = math.radians(self.origin_lat)
+        east_m = math.radians(lon - self.origin_lon) * EARTH_RADIUS_M * max(math.cos(origin_lat_rad), 1e-9)
+        north_m = math.radians(lat - self.origin_lat) * EARTH_RADIUS_M
+        return east_m, north_m
+
+    def local_m_to_pixel(self, east_m: float, north_m: float) -> tuple[float, float]:
+        theta = math.radians(self.rotation_deg)
+        cos_t = math.cos(theta)
+        sin_t = math.sin(theta)
+
+        # Invert the counter-clockwise rotation used by pixel_to_local_m.
+        unrotated_east = east_m * cos_t + north_m * sin_t
+        unrotated_north = -east_m * sin_t + north_m * cos_t
+        x_px = self.origin_pixel_x + unrotated_east / self.gsd_m
+        y_px = self.origin_pixel_y - unrotated_north / self.gsd_m
+        return x_px, y_px
+
+    def latlon_to_pixel(self, lat: float, lon: float) -> tuple[float, float]:
+        east_m, north_m = self.latlon_to_local_m(lat, lon)
+        return self.local_m_to_pixel(east_m, north_m)
+
     def to_dict(self) -> dict[str, float]:
         return asdict(self)
 

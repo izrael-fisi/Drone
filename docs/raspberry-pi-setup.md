@@ -172,6 +172,12 @@ cd Drone
 ./scripts/pi/capture_calibration_set.sh
 ```
 
+For a short setup-wizard style capture:
+
+```bash
+CALIBRATION_COUNT=8 CALIBRATION_DELAY_S=1 ./scripts/pi/capture_calibration_set.sh
+```
+
 Then calibrate:
 
 ```bash
@@ -240,6 +246,27 @@ If `rpicam-*` is not available, try:
 ```bash
 libcamera-hello --list-cameras
 libcamera-still -o ~/DroneTransfer/outgoing/global_shutter_test.jpg
+```
+
+## Time And MAVLink Checks
+
+Before sending external-vision measurements to PX4, verify the Pi clock and
+MAVLink endpoint:
+
+```bash
+cd Drone
+./scripts/pi/check_time_sync.sh
+VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600 ./scripts/pi/check_mavlink_endpoint.sh
+```
+
+`check_time_sync.sh` verifies clock plausibility and NTP synchronization.
+`check_mavlink_endpoint.sh` validates endpoint syntax and serial-device access
+without requiring live traffic. To probe for live MAVLink telemetry:
+
+```bash
+VISION_NAV_MAVLINK_PROBE=1 \
+VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600 \
+./scripts/pi/check_mavlink_endpoint.sh
 ```
 
 ## First Feature-Matching Test
