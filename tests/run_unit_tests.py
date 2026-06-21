@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import tempfile
 import time
@@ -17,8 +18,18 @@ from vision_nav.bundle import (
 )
 from vision_nav.bundle_checksums import verify_checksum_file, write_checksum_file
 from vision_nav.camera import load_camera_calibration, validate_image_size
+from vision_nav.external_position import (
+    ExternalPositionEstimate,
+    OdometryResetTracker,
+    build_odometry_payload,
+    build_vision_position_estimate_payload,
+    external_position_from_match_result,
+    yaw_enu_to_ned,
+)
+from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
 from vision_nav.mavlink_bridge import MavlinkVisionBridge, parse_mavlink_endpoint
+from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
 from vision_nav.summarize_match_log import summarize_records
 from vision_nav.terrain_estimator import TerrainEstimator
 from vision_nav.terrain_tiles import tile_origins
@@ -145,6 +156,15 @@ def test_summarize_match_records() -> None:
             {
                 "capture_duration_s": 0.2,
                 "match_duration_s": 0.4,
+                "external_position_health": {
+                    "status": "healthy",
+                    "message_type": "odometry",
+                    "send_rate_hz": 1.0,
+                    "last_latency_ms": 50.0,
+                    "skip_reasons": {},
+                    "last_warnings": [],
+                },
+                "mavlink": {"sent": True, "message": "ODOMETRY", "details": {"reset_counter": 0}},
                 "result": {
                     "status": "accepted",
                     "confidence": 0.8,
@@ -167,6 +187,15 @@ def test_summarize_match_records() -> None:
             {
                 "capture_duration_s": 0.3,
                 "match_duration_s": 0.5,
+                "external_position_health": {
+                    "status": "degraded",
+                    "message_type": "odometry",
+                    "send_rate_hz": 0.5,
+                    "last_latency_ms": 250.0,
+                    "skip_reasons": {"match_not_accepted": 1},
+                    "last_warnings": ["match_not_accepted"],
+                },
+                "mavlink": {"sent": True, "message": "ODOMETRY", "details": {"reset_counter": 1}},
                 "result": {
                     "status": "rejected",
                     "confidence": 0.2,
@@ -190,6 +219,21 @@ def test_summarize_match_records() -> None:
     assert_equal(summary["geometry_rotation_deg"]["mean"], 2.0, "summary geometry rotation mean")
     assert_equal(summary["estimated_position"]["count"], 1, "summary estimated_position count")
     assert_equal(summary["covariance_sigma_xy_m"]["mean"], 1.2, "summary covariance sigma mean")
+    assert_equal(
+        summary["external_position"]["status_counts"],
+        {"degraded": 1, "healthy": 1},
+        "summary external position status counts",
+    )
+    assert_equal(summary["external_position"]["message_counts"], {"odometry": 2}, "summary external position messages")
+    assert_equal(
+        summary["external_position"]["skip_reasons"],
+        {"match_not_accepted": 1},
+        "summary external position skip reasons",
+    )
+    assert_equal(summary["external_position"]["send_rate_hz"]["mean"], 0.75, "summary external position rate")
+    assert_equal(summary["external_position"]["latency_ms"]["mean"], 150.0, "summary external position latency")
+    assert_equal(summary["external_position"]["reset_counter"]["max"], 1.0, "summary reset counter max")
+    assert_equal(summary["external_position"]["last_reset_counter"], 1, "summary last reset counter")
 
 
 def test_quality_metrics_and_covariance() -> None:
@@ -260,6 +304,133 @@ def test_mavlink_endpoint_parsing_and_axis_mapping() -> None:
     assert_equal(z_down, -0.0, "MAVLink down axis")
     assert_equal(covariance[0], 16.0, "MAVLink north covariance")
     assert_equal(covariance[6], 9.0, "MAVLink east covariance")
+
+
+def test_external_position_payloads() -> None:
+    estimate, reason = external_position_from_match_result(
+        {
+            "status": "accepted",
+            "confidence": 0.73,
+            "measurement": {
+                "frame": "local_enu",
+                "x_m": 4.0,
+                "y_m": 7.0,
+                "z_m": 3.0,
+                "yaw_rad": 0.0,
+                "covariance": {"x_m2": 9.0, "y_m2": 16.0, "z_m2": 25.0, "yaw_rad2": 0.2},
+            },
+        }
+    )
+    assert_equal(reason, None, "external position parse reason")
+    ned = estimate.to_local_ned()
+    assert_equal(ned.north_m, 7.0, "external position north")
+    assert_equal(ned.east_m, 4.0, "external position east")
+    assert_equal(ned.down_m, -3.0, "external position down")
+    if not math.isclose(ned.yaw_rad, math.pi / 2.0):
+        raise AssertionError("Expected ENU yaw 0 to map to NED yaw pi/2")
+    if not math.isclose(yaw_enu_to_ned(math.pi / 2.0), 0.0):
+        raise AssertionError("Expected ENU north yaw to map to NED yaw 0")
+
+    vision_payload = build_vision_position_estimate_payload(
+        ExternalPositionEstimate(timestamp_us=1, east_m=4.0, north_m=7.0),
+        time_usec=555,
+    )
+    assert_equal(vision_payload.x_north_m, 7.0, "vision payload x north")
+    assert_equal(vision_payload.y_east_m, 4.0, "vision payload y east")
+    assert_equal(vision_payload.covariance_urt[11], 100.0, "vision payload default z covariance")
+
+    odometry_payload = build_odometry_payload(estimate, time_usec=999, reset_counter=4)
+    assert_equal(odometry_payload.frame_id, "MAV_FRAME_LOCAL_FRD", "odometry frame")
+    assert_equal(odometry_payload.child_frame_id, "MAV_FRAME_BODY_FRD", "odometry child frame")
+    assert_equal(odometry_payload.quality, 73, "odometry quality")
+
+    tracker = OdometryResetTracker()
+    assert_equal(
+        tracker.update_from_result({"timestamp_us": 100, "map_id": "a", "estimator": {"reset_counter": 1}}),
+        0,
+        "odometry reset counter first result",
+    )
+    assert_equal(
+        tracker.update_from_result({"timestamp_us": 110, "map_id": "a", "estimator": {"reset_counter": 2}}),
+        1,
+        "odometry reset counter estimator reset",
+    )
+    assert_equal(
+        tracker.update_from_result({"timestamp_us": 120, "map_id": "b", "estimator": {"reset_counter": 2}}),
+        2,
+        "odometry reset counter map change",
+    )
+
+
+def test_external_position_stream_health() -> None:
+    health = ExternalPositionStreamHealth(ExternalPositionHealthConfig(min_rate_hz=0.5, max_latency_ms=200.0))
+    result = {
+        "status": "accepted",
+        "timestamp_us": 1_000_000,
+        "measurement": {
+            "frame": "local_enu",
+            "x_m": 1.0,
+            "y_m": 2.0,
+            "covariance": {"x_m2": 4.0, "y_m2": 5.0, "z_m2": None, "yaw_rad2": None},
+        },
+    }
+    first = health.update(
+        result=result,
+        mavlink_result={"sent": True},
+        message_type="odometry",
+        now_monotonic_s=10.0,
+        now_time_us=1_050_000,
+    ).to_dict()
+    assert_equal(first["status"], "warming_up", "external position health first status")
+    assert_equal(first["last_latency_ms"], 50.0, "external position health latency")
+    second = health.update(
+        result={**result, "timestamp_us": 2_000_000},
+        mavlink_result={"sent": True},
+        message_type="odometry",
+        now_monotonic_s=11.0,
+        now_time_us=2_050_000,
+    ).to_dict()
+    assert_equal(second["status"], "healthy", "external position health second status")
+    assert_equal(second["send_rate_hz"], 1.0, "external position health rate")
+
+
+def test_ros2_odometry_and_diagnostics_adapters() -> None:
+    odometry, reason = odometry_dict_from_match_result(
+        {
+            "status": "accepted",
+            "timestamp_us": 1_234_567,
+            "confidence": 0.8,
+            "measurement": {
+                "frame": "local_enu",
+                "x_m": 4.0,
+                "y_m": 7.0,
+                "z_m": 3.0,
+                "yaw_rad": math.pi / 2.0,
+                "covariance": {"x_m2": 9.0, "y_m2": 16.0, "z_m2": 25.0, "yaw_rad2": 0.2},
+            },
+        }
+    )
+    assert_equal(reason, None, "ROS 2 odometry skip reason")
+    assert_equal(odometry["header"]["stamp"], {"sec": 1, "nanosec": 234_567_000}, "ROS 2 stamp")
+    assert_equal(odometry["pose"]["pose"]["position"], {"x": 4.0, "y": 7.0, "z": 3.0}, "ROS 2 position")
+    assert_equal(odometry["pose"]["covariance"][0], 9.0, "ROS 2 east covariance")
+    assert_equal(odometry["pose"]["covariance"][7], 16.0, "ROS 2 north covariance")
+    healthy = diagnostic_status_from_health({"status": "healthy", "sent_count": 1, "message_type": "odometry"})
+    degraded = diagnostic_status_from_health({"status": "degraded", "sent_count": 0, "message_type": "odometry"})
+    assert_equal(healthy["level"], DIAG_OK, "ROS 2 healthy diagnostic level")
+    assert_equal(degraded["level"], DIAG_ERROR, "ROS 2 degraded diagnostic level")
+
+
+def test_ros2_launch_profiles_static() -> None:
+    root = Path(__file__).resolve().parents[1]
+    live = (root / "ros2" / "launch" / "terrain_nav_live.launch.py").read_text()
+    replay = (root / "ros2" / "launch" / "terrain_nav_replay.launch.py").read_text()
+    for expected in ("vision_nav.run_terrain_loop", "--ros2-publish", "/vision_nav/odometry", "/diagnostics"):
+        if expected not in live:
+            raise AssertionError(f"Live ROS 2 launch profile missing {expected}")
+    for expected in ("vision_nav.ros2_bridge", "--publish", "/vision_nav/odometry", "/diagnostics"):
+        if expected not in replay:
+            raise AssertionError(f"Replay ROS 2 launch profile missing {expected}")
 
 
 def test_camera_health_report_on_synthetic_image() -> None:
@@ -461,6 +632,10 @@ def main() -> None:
         test_summarize_match_records,
         test_quality_metrics_and_covariance,
         test_mavlink_endpoint_parsing_and_axis_mapping,
+        test_external_position_payloads,
+        test_external_position_stream_health,
+        test_ros2_odometry_and_diagnostics_adapters,
+        test_ros2_launch_profiles_static,
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,

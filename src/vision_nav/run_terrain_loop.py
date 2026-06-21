@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from vision_nav.capture_frame import capture_frame
+from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
 from vision_nav.mavlink_bridge import MavlinkVisionBridge
+from vision_nav.ros2_bridge import Ros2RuntimePublisher
 from vision_nav.terrain_bundle import load_terrain_bundle
 from vision_nav.terrain_estimator import TerrainEstimator
 from vision_nav.terrain_matcher import TerrainMatchOptions, match_terrain_frame
@@ -36,6 +38,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mavlink-component-id", type=int, default=197)
     parser.add_argument("--mavlink-source-system", type=int, default=42)
     parser.add_argument("--mavlink-source-component", type=int, default=197)
+    parser.add_argument(
+        "--mavlink-message",
+        choices=["vision_position_estimate", "odometry"],
+        default="vision_position_estimate",
+        help="MAVLink external-position message to send when --mavlink-endpoint is set.",
+    )
+    parser.add_argument("--external-position-min-rate-hz", type=float, default=1.0)
+    parser.add_argument("--external-position-max-latency-ms", type=float, default=500.0)
+    parser.add_argument("--external-position-max-horizontal-var-m2", type=float, default=400.0)
+    parser.add_argument("--ros2-publish", action="store_true", help="Publish accepted terrain results and diagnostics to ROS 2.")
+    parser.add_argument("--ros2-odometry-topic", default="/vision_nav/odometry")
+    parser.add_argument("--ros2-diagnostics-topic", default="/diagnostics")
+    parser.add_argument("--ros2-frame-id", default="map")
+    parser.add_argument("--ros2-child-frame-id", default="base_link")
     return parser.parse_args()
 
 
@@ -62,6 +78,8 @@ def main() -> None:
     bundle = load_terrain_bundle(args.bundle)
     estimator = TerrainEstimator()
     mavlink_bridge = None
+    external_position_health = None
+    ros2_publisher = None
     if args.mavlink_endpoint:
         mavlink_bridge = MavlinkVisionBridge(
             args.mavlink_endpoint,
@@ -72,6 +90,19 @@ def main() -> None:
             ev_delay_ms=args.mavlink_ev_delay_ms,
         )
         mavlink_bridge.connect()
+        external_position_health = ExternalPositionStreamHealth(
+            ExternalPositionHealthConfig(
+                min_rate_hz=args.external_position_min_rate_hz,
+                max_latency_ms=args.external_position_max_latency_ms,
+                max_horizontal_variance_m2=args.external_position_max_horizontal_var_m2,
+            )
+        )
+
+    if args.ros2_publish:
+        ros2_publisher = Ros2RuntimePublisher(
+            odometry_topic=args.ros2_odometry_topic,
+            diagnostics_topic=args.ros2_diagnostics_topic,
+        )
 
     output_dir = Path(args.output_dir)
     frames_dir = output_dir / "frames"
@@ -133,8 +164,18 @@ def main() -> None:
                 match_duration_s = time.monotonic() - match_start
 
                 mavlink_result = None
+                external_position_health_snapshot = None
                 if mavlink_bridge is not None:
-                    mavlink_result = mavlink_bridge.send_match_result(result).to_dict()
+                    mavlink_result = mavlink_bridge.send_match_result(
+                        result,
+                        message_type=args.mavlink_message,
+                    ).to_dict()
+                    if external_position_health is not None:
+                        external_position_health_snapshot = external_position_health.update(
+                            result=result,
+                            mavlink_result=mavlink_result,
+                            message_type=args.mavlink_message,
+                        ).to_dict()
 
                 record = {
                     "sequence": sequence,
@@ -144,8 +185,15 @@ def main() -> None:
                     "match_duration_s": match_duration_s,
                     "telemetry": telemetry_samples,
                     "mavlink": mavlink_result,
+                    "external_position_health": external_position_health_snapshot,
                     "result": result,
                 }
+                if ros2_publisher is not None:
+                    record["ros2"] = ros2_publisher.publish_record(
+                        record,
+                        frame_id=args.ros2_frame_id,
+                        child_frame_id=args.ros2_child_frame_id,
+                    )
                 log_file.write(json.dumps(record, sort_keys=True) + "\n")
                 log_file.flush()
                 print(status_line(sequence, result, capture_duration_s, match_duration_s))
@@ -158,6 +206,8 @@ def main() -> None:
     finally:
         if mavlink_bridge:
             mavlink_bridge.close()
+        if ros2_publisher:
+            ros2_publisher.close()
 
 
 if __name__ == "__main__":

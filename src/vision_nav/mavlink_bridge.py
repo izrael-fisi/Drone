@@ -8,18 +8,27 @@ import time
 from pathlib import Path
 from typing import Any
 
+from vision_nav.external_position import (
+    OdometryResetTracker,
+    build_odometry_payload,
+    build_vision_position_estimate_payload,
+    external_position_from_match_result,
+)
+
 
 @dataclass(frozen=True)
 class MavlinkSendResult:
     sent: bool
     reason: str | None = None
     message: str | None = None
+    details: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "sent": self.sent,
             "reason": self.reason,
             "message": self.message,
+            "details": self.details or {},
         }
 
 
@@ -99,6 +108,7 @@ class MavlinkVisionBridge:
         self.ev_delay_ms = ev_delay_ms
         self._conn = None
         self._last_heartbeat_s = 0.0
+        self._odometry_reset_tracker = OdometryResetTracker()
 
     def connect(self) -> None:
         try:
@@ -186,7 +196,16 @@ class MavlinkVisionBridge:
             )
         return MavlinkTelemetrySample(message_type=message_type, timestamp_us=timestamp_us)
 
-    def send_match_result(self, result: dict[str, Any]) -> MavlinkSendResult:
+    def send_match_result(
+        self,
+        result: dict[str, Any],
+        *,
+        message_type: str = "vision_position_estimate",
+    ) -> MavlinkSendResult:
+        if message_type == "odometry":
+            return self.send_odometry_match_result(result)
+        if message_type != "vision_position_estimate":
+            return MavlinkSendResult(False, reason="unsupported_mavlink_message")
         if self._conn is None:
             return MavlinkSendResult(False, reason="not_connected")
         self.send_heartbeat_if_due()
@@ -194,50 +213,47 @@ class MavlinkVisionBridge:
         if result.get("status") != "accepted":
             return MavlinkSendResult(False, reason="match_not_accepted")
 
-        measurement = result.get("measurement") or {}
-        position = result.get("estimated_position") or {}
-        if measurement.get("frame") != "local_enu":
-            return MavlinkSendResult(False, reason="missing_local_enu_measurement")
-
-        east_m = measurement.get("x_m", position.get("east_m"))
-        north_m = measurement.get("y_m", position.get("north_m"))
-        if east_m is None or north_m is None:
-            return MavlinkSendResult(False, reason="missing_local_position")
-
-        covariance = measurement.get("covariance") or {}
-        east_var = _as_float(covariance.get("x_m2"), default=25.0)
-        north_var = _as_float(covariance.get("y_m2"), default=east_var)
-        horizontal_var = max(east_var, north_var)
-        z_var = _as_float(covariance.get("z_m2"), default=max(horizontal_var * 4.0, 100.0))
-        yaw_var = _as_float(covariance.get("yaw_rad2"), default=math.radians(30.0) ** 2)
-        z_m = measurement.get("z_m")
-
-        cov = [0.0] * 21
-        cov[0] = north_var
-        cov[6] = east_var
-        cov[11] = z_var
-        cov[20] = yaw_var
-
         time_usec = int(time.time() * 1_000_000) - int(self.ev_delay_ms * 1000)
-        self._conn.mav.vision_position_estimate_send(
-            time_usec,
-            float(north_m),
-            float(east_m),
-            float(-(z_m or 0.0)),
-            0.0,
-            0.0,
-            float(measurement.get("yaw_rad") or 0.0),
-            cov,
-        )
+        estimate, reason = external_position_from_match_result(result)
+        if estimate is None:
+            return MavlinkSendResult(False, reason=reason)
+        payload = build_vision_position_estimate_payload(estimate, time_usec=time_usec)
+        self._conn.mav.vision_position_estimate_send(*payload.to_mavlink_args())
         return MavlinkSendResult(True, message="VISION_POSITION_ESTIMATE")
 
+    def send_odometry_match_result(self, result: dict[str, Any]) -> MavlinkSendResult:
+        if self._conn is None:
+            return MavlinkSendResult(False, reason="not_connected")
+        self.send_heartbeat_if_due()
 
-def _as_float(value: Any, *, default: float) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
+        estimate, reason = external_position_from_match_result(result)
+        if estimate is None:
+            return MavlinkSendResult(False, reason=reason)
 
+        time_usec = int(time.time() * 1_000_000) - int(self.ev_delay_ms * 1000)
+        reset_counter = self._odometry_reset_tracker.update_from_result(result)
+        payload = build_odometry_payload(estimate, time_usec=time_usec, reset_counter=reset_counter)
+        self._conn.mav.odometry_send(
+            payload.time_usec,
+            _mavlink_enum_value(payload.frame_id),
+            _mavlink_enum_value(payload.child_frame_id),
+            payload.x_m,
+            payload.y_m,
+            payload.z_m,
+            list(payload.q),
+            payload.vx_mps,
+            payload.vy_mps,
+            payload.vz_mps,
+            payload.rollspeed_radps,
+            payload.pitchspeed_radps,
+            payload.yawspeed_radps,
+            payload.pose_covariance_urt,
+            payload.velocity_covariance_urt,
+            payload.reset_counter,
+            _mavlink_enum_value(payload.estimator_type),
+            payload.quality,
+        )
+        return MavlinkSendResult(True, message="ODOMETRY", details={"reset_counter": reset_counter})
 
 def _as_optional_float(value: Any) -> float | None:
     try:
@@ -247,6 +263,19 @@ def _as_optional_float(value: Any) -> float | None:
         return output if math.isfinite(output) else None
     except (TypeError, ValueError):
         return None
+
+
+def _mavlink_enum_value(name: str) -> int:
+    defaults = {
+        "MAV_FRAME_LOCAL_FRD": 20,
+        "MAV_FRAME_BODY_FRD": 12,
+        "MAV_ESTIMATOR_TYPE_VISION": 2,
+    }
+    try:
+        from pymavlink import mavutil
+    except ImportError:
+        return defaults[name]
+    return int(getattr(mavutil.mavlink, name, defaults[name]))
 
 
 def send_log_once(log_path: str, endpoint: str, ev_delay_ms: int = 50) -> dict[str, Any]:

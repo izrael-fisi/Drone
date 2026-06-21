@@ -61,6 +61,13 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     covariance_sigma_values: list[float] = []
     latitudes: list[float] = []
     longitudes: list[float] = []
+    external_position_statuses: Counter[str] = Counter()
+    external_position_messages: Counter[str] = Counter()
+    external_position_skip_reasons: Counter[str] = Counter()
+    external_position_warnings: Counter[str] = Counter()
+    external_position_rates: list[float] = []
+    external_position_latencies_ms: list[float] = []
+    mavlink_reset_counters: list[float] = []
 
     for record in records:
         result = record.get("result") or {}
@@ -115,6 +122,24 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             latitudes.append(float(position["latitude"]))
             longitudes.append(float(position["longitude"]))
 
+        external_health = record.get("external_position_health") or {}
+        if external_health:
+            external_position_statuses[str(external_health.get("status", "unknown"))] += 1
+            external_position_messages[str(external_health.get("message_type", "unknown"))] += 1
+            if external_health.get("send_rate_hz") is not None:
+                external_position_rates.append(float(external_health["send_rate_hz"]))
+            if external_health.get("last_latency_ms") is not None:
+                external_position_latencies_ms.append(float(external_health["last_latency_ms"]))
+            for reason, count in (external_health.get("skip_reasons") or {}).items():
+                external_position_skip_reasons[str(reason)] += int(count)
+            for warning in external_health.get("last_warnings") or []:
+                external_position_warnings[str(warning)] += 1
+
+        mavlink = record.get("mavlink") or {}
+        mavlink_details = mavlink.get("details") or {}
+        if mavlink_details.get("reset_counter") is not None:
+            mavlink_reset_counters.append(float(mavlink_details["reset_counter"]))
+
     total = len(records)
     accepted = statuses.get("accepted", 0)
     summary: dict[str, Any] = {
@@ -137,6 +162,16 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "sharpness_laplacian_var": numeric_summary(sharpness_values),
         "entropy_bits": numeric_summary(entropy_values),
         "covariance_sigma_xy_m": numeric_summary(covariance_sigma_values),
+        "external_position": {
+            "status_counts": dict(sorted(external_position_statuses.items())),
+            "message_counts": dict(sorted(external_position_messages.items())),
+            "skip_reasons": dict(sorted(external_position_skip_reasons.items())),
+            "warning_counts": dict(sorted(external_position_warnings.items())),
+            "send_rate_hz": numeric_summary(external_position_rates),
+            "latency_ms": numeric_summary(external_position_latencies_ms),
+            "reset_counter": numeric_summary(mavlink_reset_counters),
+            "last_reset_counter": int(mavlink_reset_counters[-1]) if mavlink_reset_counters else None,
+        },
     }
 
     if latitudes and longitudes:
@@ -190,6 +225,17 @@ def print_human(summary: dict[str, Any]) -> None:
     print(format_metric("Sharpness Laplacian var", summary["sharpness_laplacian_var"]))
     print(format_metric("Entropy bits", summary["entropy_bits"]))
     print(format_metric("Covariance sigma xy m", summary["covariance_sigma_xy_m"]))
+    external_position = summary.get("external_position") or {}
+    if external_position.get("status_counts"):
+        print(f"External position statuses: {external_position['status_counts']}")
+        print(f"External position messages: {external_position['message_counts']}")
+        print(f"External position skip reasons: {external_position['skip_reasons']}")
+        print(f"External position warnings: {external_position['warning_counts']}")
+        print(format_metric("External position send rate hz", external_position["send_rate_hz"]))
+        print(format_metric("External position latency ms", external_position["latency_ms"]))
+        print(format_metric("External position reset counter", external_position["reset_counter"]))
+        if external_position.get("last_reset_counter") is not None:
+            print(f"External position last reset counter: {external_position['last_reset_counter']}")
     position = summary.get("estimated_position")
     if position:
         print(

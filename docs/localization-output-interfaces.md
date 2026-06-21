@@ -61,7 +61,9 @@ If implemented, NMEA output must:
 
 ## Recommended First Implementation
 
-1. Publish `nav_msgs/Odometry` from the estimator.
+1. Publish `nav_msgs/Odometry` from the estimator or from replayed runtime logs.
+   The first adapter is `vision-nav-ros2-replay-log`; see
+   [ROS 2 Runtime Adapter](ros2-runtime.md).
 2. Publish estimator diagnostics.
 3. Bridge odometry to PX4 through MAVLink `ODOMETRY` or PX4 ROS 2 external-vision topics.
 4. Add `GPS_INPUT` only if PX4 integration tests show it is the right abstraction for global map-derived estimates.

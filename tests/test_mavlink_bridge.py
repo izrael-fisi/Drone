@@ -90,3 +90,122 @@ def test_send_match_result_maps_optional_z_to_px4_down():
     assert z_down == -3.0
     assert covariance[11] == 6.0
     assert covariance[20] == 0.1
+
+
+def test_send_odometry_match_result_uses_payload_for_px4_path():
+    calls = []
+
+    class FakeMav:
+        def odometry_send(self, *args):
+            calls.append(args)
+
+    class FakeConnection:
+        mav = FakeMav()
+
+    bridge = MavlinkVisionBridge("udp:14550")
+    bridge._conn = FakeConnection()
+    bridge._last_heartbeat_s = time.monotonic()
+
+    result = bridge.send_odometry_match_result(
+        {
+            "status": "accepted",
+            "confidence": 0.5,
+            "measurement": {
+                "frame": "local_enu",
+                "x_m": 1.0,
+                "y_m": 2.0,
+                "z_m": 3.0,
+                "covariance": {"x_m2": 4.0, "y_m2": 5.0, "z_m2": 6.0, "yaw_rad2": 0.1},
+            },
+        }
+    )
+
+    assert result.sent is True
+    assert calls
+    _, frame_id, child_frame_id, x_north, y_east, z_down, *_rest = calls[0]
+    assert frame_id == 20
+    assert child_frame_id == 12
+    assert x_north == 2.0
+    assert y_east == 1.0
+    assert z_down == -3.0
+
+
+def test_send_odometry_match_result_increments_reset_counter():
+    calls = []
+
+    class FakeMav:
+        def odometry_send(self, *args):
+            calls.append(args)
+
+    class FakeConnection:
+        mav = FakeMav()
+
+    bridge = MavlinkVisionBridge("udp:14550")
+    bridge._conn = FakeConnection()
+    bridge._last_heartbeat_s = time.monotonic()
+
+    first = bridge.send_odometry_match_result(
+        {
+            "status": "accepted",
+            "timestamp_us": 100,
+            "map_id": "a",
+            "estimator": {"reset_counter": 1},
+            "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0},
+        }
+    )
+    second = bridge.send_odometry_match_result(
+        {
+            "status": "accepted",
+            "timestamp_us": 110,
+            "map_id": "a",
+            "estimator": {"reset_counter": 2},
+            "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0},
+        }
+    )
+    third = bridge.send_odometry_match_result(
+        {
+            "status": "accepted",
+            "timestamp_us": 120,
+            "map_id": "b",
+            "estimator": {"reset_counter": 2},
+            "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0},
+        }
+    )
+
+    assert first.details["reset_counter"] == 0
+    assert second.details["reset_counter"] == 1
+    assert third.details["reset_counter"] == 2
+    assert calls[0][15] == 0
+    assert calls[1][15] == 1
+    assert calls[2][15] == 2
+
+
+def test_send_match_result_dispatches_odometry_mode():
+    calls = []
+
+    class FakeMav:
+        def odometry_send(self, *args):
+            calls.append(args)
+
+    class FakeConnection:
+        mav = FakeMav()
+
+    bridge = MavlinkVisionBridge("udp:14550")
+    bridge._conn = FakeConnection()
+    bridge._last_heartbeat_s = time.monotonic()
+
+    result = bridge.send_match_result(
+        {
+            "status": "accepted",
+            "measurement": {
+                "frame": "local_enu",
+                "x_m": 1.0,
+                "y_m": 2.0,
+            },
+        },
+        message_type="odometry",
+    )
+
+    assert result.sent is True
+    assert result.message == "ODOMETRY"
+    assert calls

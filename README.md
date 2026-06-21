@@ -52,6 +52,10 @@ Key docs:
 - [Raspberry Pi Setup](docs/raspberry-pi-setup.md)
 - [Camera Calibration](docs/camera-calibration.md)
 - [Vision Pipeline](docs/vision-pipeline.md)
+- [Autonomy And Ground Control Research](docs/autonomy-ground-control-research.md)
+- [Autonomy And Ground Control Implementation Plan](docs/autonomy-ground-control-implementation-plan.md)
+- [PX4 External Vision Bench Guide](docs/px4-external-vision-bench.md)
+- [ROS 2 Runtime Adapter](docs/ros2-runtime.md)
 - [SSH And File Transfer](docs/ssh-and-transfer.md)
 - [Desktop App](docs/desktop-app.md)
 - [Operator Handoff](docs/operator-handoff.md)
@@ -97,7 +101,14 @@ It captures camera frames, matches them against the bundle, and writes logs to
 By default, Pi runtime matching undistorts frames with
 `config/camera/down_camera.yaml`.
 When `VISION_NAV_MAVLINK_ENDPOINT` is set, accepted local map measurements are
-also sent as MAVLink `VISION_POSITION_ESTIMATE`.
+also sent as MAVLink `VISION_POSITION_ESTIMATE`. Set
+`VISION_NAV_MAVLINK_MESSAGE=odometry` to bench MAVLink `ODOMETRY` output.
+MAVLink-enabled logs include external-position health with send rate, latency,
+skip reasons, and covariance warnings.
+
+For ROS 2 bench work, set `VISION_NAV_ROS2_PUBLISH=1` before
+`./scripts/pi/run_terrain_nav_loop.sh` to publish `/vision_nav/odometry` and
+`/diagnostics` while the terrain runtime is running.
 
 Replay saved frames without using the camera:
 
