@@ -45,8 +45,29 @@ bundle.
 
 ## Register Field Logs
 
-Use the registry helper to turn Pi runtime/replay logs into manifest cases with
-consistent condition tags and manifest-relative paths:
+On the Pi, use the wrapper to turn runtime/replay logs into manifest cases,
+generate the combined field-evidence report, and place it where support bundles
+will include it automatically:
+
+```bash
+VISION_NAV_FIELD_CASE_NAME=field-good-texture \
+VISION_NAV_FIELD_EXPECTED=good_map \
+VISION_NAV_FIELD_CONDITION=good_texture \
+VISION_NAV_FIELD_NOTES="clear texture, matching map, nominal lighting" \
+./scripts/pi/register_field_replay_case.sh
+```
+
+The wrapper defaults to:
+
+- manifest: `~/DroneTransfer/outgoing/replay-cases/field_manifest.json`
+- evidence report:
+  `~/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`
+- log: `~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl`
+
+Use `VISION_NAV_FIELD_REPLACE=1` to update an existing case and
+`VISION_NAV_FIELD_GATE_STRICT=1` once the complete field dataset is expected to
+pass. Use the lower-level registry helper when curating a desktop dataset folder
+or when custom manifest paths are needed:
 
 ```bash
 vision-nav-register-replay-case \

@@ -43,6 +43,7 @@ The flow is:
    - calibration image capture
    - synthetic vision smoke test
    - deployed runtime bundle validation
+   - field replay-case registration for terrain evidence gates
    - bench-report support bundle creation and desktop download
 9. Save a local setup report from the collected checks when you need an audit
    trail for a bench run or customer install.
@@ -257,8 +258,8 @@ git/app state, log status counts, accepted-rate summaries, bench-readiness
 checks, replay-gate case results, PX4 receiver sample counts, MAVLink
 version/link hints, PX4 external-vision parameter readiness, ArduPilot
 ExternalNav parameter readiness, feature-method benchmark recommendations,
-field-evidence case coverage, and compact per-record previews from bundled
-runtime/replay JSONL logs. It also
+field-evidence case coverage, per-condition coverage status, and compact
+per-record previews from bundled runtime/replay JSONL logs. It also
 previews a bounded set of small image artifacts from camera, debug, replay,
 smoke, or extra-file paths while skipping full map, orthophoto, and tile
 assets.
@@ -274,6 +275,13 @@ counted in the bench-readiness report.
 Module Setup uses the same support-bundle path for its `Bench Report` action,
 after validating the deployed terrain bundle at the configured runtime bundle
 path.
+
+Module Setup can also register the latest Pi terrain runtime log as a field
+evidence case. The operator selects expected behavior, condition tags, notes,
+and whether to replace an existing case. The app runs
+`scripts/pi/register_field_replay_case.sh` over SSH, which updates the Pi-side
+field replay manifest and writes the field-evidence report that the next
+support bundle will include automatically.
 
 After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
 `Open Bench Report In Module Setup` action opens that device's setup tab with

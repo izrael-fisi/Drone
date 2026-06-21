@@ -478,6 +478,27 @@ Use `--expected degraded` or `--expected wrong_map` for those field cases.
 Neural/SuperPoint-LightGlue is reported as unavailable until those descriptors
 are generated for the bundle.
 
+Register each field run as a replay case from the Pi after a terrain runtime or
+replay log exists:
+
+```bash
+VISION_NAV_FIELD_CASE_NAME=field-good-texture \
+VISION_NAV_FIELD_EXPECTED=good_map \
+VISION_NAV_FIELD_CONDITION=good_texture \
+VISION_NAV_FIELD_NOTES="clear texture, matching map, nominal lighting" \
+./scripts/pi/register_field_replay_case.sh
+```
+
+Use `VISION_NAV_FIELD_CONDITIONS="low_texture blur"` for runs that cover
+multiple tags. The wrapper updates
+`~/DroneTransfer/outgoing/replay-cases/field_manifest.json`, copies the log by
+default, writes
+`~/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`, and leaves
+the report where `./scripts/pi/create_support_bundle.sh` automatically includes
+it. Set `VISION_NAV_FIELD_REPLACE=1` to retest a case, or
+`VISION_NAV_FIELD_GATE_STRICT=1` once the full eight-condition field dataset is
+expected to pass.
+
 After registering a full field replay manifest, run the combined evidence gate:
 
 ```bash

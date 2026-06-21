@@ -38,6 +38,10 @@ Status:
   `scripts/dev/evaluate_px4_sitl_receiver_evidence.sh` convert captured PX4
   `listener vehicle_visual_odometry` / `mavlink status` output into pass/fail
   receiver evidence for SITL bench runs.
+- Done: `scripts/dev/run_px4_sitl_external_vision_capture.sh` provides a
+  tmux-based bench harness that can start PX4 SITL, send the synthetic
+  external-vision stream, capture PX4 shell receiver output, and run the session
+  evaluator when a local PX4 checkout is available.
 - Done: support bundles can package PX4 SITL receiver captures and the generated
   receiver-evidence report so bench verification can be reviewed later from the
   desktop app.
@@ -68,8 +72,9 @@ Next tasks:
 
 1. Run PX4 SITL receiver verification and save the evaluator report proving
    that EKF2/uORB receives the selected message path at the expected rate.
-2. Add direct PX4 console/log capture automation once the local PX4 environment
-   is available for repeatable receiver artifacts.
+2. Use the automated capture harness to collect repeatable receiver artifacts
+   from the local PX4 environment, then include those artifacts in a support
+   bundle.
 
 Acceptance checks:
 
@@ -209,6 +214,10 @@ Status:
 - In progress: Module Setup now has per-check run actions, a bench-report
   action that validates the deployed terrain bundle and downloads the Pi support
   bundle, plus a local JSON setup-report export for install/bench audit trails.
+- In progress: Module Setup can register the latest Pi terrain log as a field
+  evidence case with expected behavior, condition tags, notes, replace control,
+  and strict full-gate control, then leave the generated report for support
+  bundle auto-ingest.
 - In progress: Mission Planner now hands an uploaded Pi mission bundle directly
   to the matching Module Setup tab for one-click bench-report creation.
 - In progress: Devices and Module Setup now provide local Wi-Fi discovery for
@@ -322,14 +331,25 @@ Status:
   them under `extras/field_evidence/`, publish parsed JSON under
   `summaries/field_evidence/`, and count the result in bench readiness when
   present.
+- Done: `scripts/pi/register_field_replay_case.sh` registers Pi terrain
+  runtime/replay logs into the outgoing field replay manifest, writes the
+  combined field-evidence report, and leaves it at the default path that support
+  bundles auto-ingest.
+- Done: the desktop Module Setup flow can run the same field-case registration
+  over SSH so evidence collection can be driven from the customer app, not only
+  from a Pi shell.
+- Done: downloaded support-bundle details show field-evidence requirement
+  status per condition, making missing real-world coverage visible from the app
+  without opening JSON reports.
 
 Tasks:
 
 1. Fill `data/replay_cases/` with real field logs that pass
    `vision-nav-field-evidence-gate` for good texture, low texture, blur,
    seasonal change, lighting change, altitude/scale change, repeated patterns,
-   and wrong map. Use `vision-nav-register-replay-case` when bringing Pi logs
-   into the repo dataset folder.
+   and wrong map. Use `scripts/pi/register_field_replay_case.sh` on the Pi, or
+   `vision-nav-register-replay-case` when bringing copied logs into the repo
+   dataset folder.
 2. Run `vision-nav-benchmark-feature-methods` on real field logs and use the
    generated reports to choose the Pi default and higher-compute fallback.
 3. Tune replay-gate thresholds against real field logs for blur, seasonal

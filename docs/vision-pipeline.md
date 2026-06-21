@@ -296,19 +296,20 @@ The readiness gate combines terrain bundle health, runtime logs, replay gates,
 PX4 receiver evidence, and PX4 parameter checks into one pass/degraded/fail
 report.
 
-Register field logs before treating them as dataset coverage:
+On the Pi, register field logs before treating them as dataset coverage:
 
 ```bash
-vision-nav-register-replay-case \
-  --manifest data/replay_cases/field_manifest.json \
-  --case-name field-good-texture \
-  --expected good_map \
-  --dataset-type field \
-  --condition good_texture \
-  --bundle ~/drone-data/map_bundles/mission_bundle \
-  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
-  --copy-log
+VISION_NAV_FIELD_CASE_NAME=field-good-texture \
+VISION_NAV_FIELD_EXPECTED=good_map \
+VISION_NAV_FIELD_CONDITION=good_texture \
+./scripts/pi/register_field_replay_case.sh
 ```
+
+The wrapper writes `field_manifest.json`, per-case gate reports, and
+`field_evidence_report.json` under `~/DroneTransfer/outgoing/replay-cases/`.
+Support bundles include that field-evidence report automatically when it exists.
+Use `vision-nav-register-replay-case` directly on a desktop dataset folder when
+you need custom manifest paths.
 
 Audit whether the manifest covers the required real field cases:
 

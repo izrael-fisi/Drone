@@ -251,6 +251,12 @@ export interface SupportBundleDetails {
     field_case_count?: number;
     covered_conditions?: unknown;
     required_conditions?: unknown;
+    requirements: Array<{
+      key?: string;
+      status?: "covered" | "missing" | "synthetic_only" | "failed" | string;
+      case_count?: number;
+      field_case_count?: number;
+    }>;
   }>;
   bench_readiness?: {
     status?: "passed" | "failed" | "degraded" | string;

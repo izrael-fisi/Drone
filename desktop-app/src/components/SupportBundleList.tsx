@@ -15,8 +15,8 @@ function formatLabel(value?: string | number | null) {
 }
 
 function statusClass(status?: string) {
-  if (status === "passed" || status === "healthy") return "badge-green";
-  if (status === "failed" || status === "error") return "badge-red";
+  if (status === "passed" || status === "healthy" || status === "covered") return "badge-green";
+  if (status === "failed" || status === "error" || status === "missing") return "badge-red";
   return "badge-yellow";
 }
 
@@ -311,6 +311,16 @@ function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }
                 field cases {report.field_case_count ?? 0}/{report.case_count ?? 0}
                 {arrayCount(report.covered_conditions) > 0 ? `, conditions ${arrayCount(report.covered_conditions)}/${arrayCount(report.required_conditions)}` : ""}
               </div>
+              {report.requirements.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {report.requirements.slice(0, 8).map((requirement) => (
+                    <span key={`${report.manifest_path}-${requirement.key}`} className={statusClass(requirement.status)}>
+                      {statusIcon(requirement.status)}
+                      {formatLabel(requirement.key)} {formatLabel(requirement.status)}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

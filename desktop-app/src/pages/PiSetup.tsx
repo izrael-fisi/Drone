@@ -50,6 +50,24 @@ const SUPPORT_EVIDENCE_ENV =
 
 type AuthForm = "password" | "key";
 type StepStatus = "idle" | "running" | "passed" | "failed";
+type FieldExpected = "good_map" | "degraded" | "wrong_map";
+
+const FIELD_EXPECTED_OPTIONS: Array<{ value: FieldExpected; label: string }> = [
+  { value: "good_map", label: "Good Map" },
+  { value: "degraded", label: "Degraded" },
+  { value: "wrong_map", label: "Wrong Map" },
+];
+
+const FIELD_CONDITION_OPTIONS = [
+  "good_texture",
+  "low_texture",
+  "blur",
+  "seasonal_change",
+  "lighting_change",
+  "altitude_scale_change",
+  "repeated_patterns",
+  "wrong_map",
+];
 
 interface SetupResult {
   status: StepStatus;
@@ -68,6 +86,15 @@ interface PiForm {
   passphrase: string;
   remotePath: string;
   mavlinkEndpoint: string;
+}
+
+interface FieldCaseForm {
+  caseName: string;
+  expected: FieldExpected;
+  conditions: string;
+  notes: string;
+  replace: boolean;
+  strict: boolean;
 }
 
 interface SetupStep {
@@ -141,6 +168,19 @@ function benchReportCommand(remoteProject: string, remoteBundle: string, mavlink
   ].join("; ");
 }
 
+function fieldEvidenceCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {
+  const env = [
+    `VISION_NAV_FIELD_CASE_NAME=${shellQuote(fieldCase.caseName)}`,
+    `VISION_NAV_FIELD_EXPECTED=${shellQuote(fieldCase.expected)}`,
+    `VISION_NAV_FIELD_CONDITIONS=${shellQuote(fieldCase.conditions)}`,
+    `VISION_NAV_FIELD_BUNDLE=${shellQuote(remoteBundle)}`,
+    fieldCase.notes ? `VISION_NAV_FIELD_NOTES=${shellQuote(fieldCase.notes)}` : "",
+    fieldCase.replace ? "VISION_NAV_FIELD_REPLACE=1" : "",
+    fieldCase.strict ? "VISION_NAV_FIELD_GATE_STRICT=1" : "",
+  ].filter(Boolean).join(" ");
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/register_field_replay_case.sh`;
+}
+
 function defaultRemotePath(username: string) {
   return `/home/${username || "user"}/Drone`;
 }
@@ -157,6 +197,17 @@ function defaultForm(): PiForm {
     passphrase: "",
     remotePath: "/home/user/Drone",
     mavlinkEndpoint: "serial:/dev/ttyAMA0:921600",
+  };
+}
+
+function defaultFieldCaseForm(): FieldCaseForm {
+  return {
+    caseName: "field-good-texture",
+    expected: "good_map",
+    conditions: "good_texture",
+    notes: "",
+    replace: false,
+    strict: false,
   };
 }
 
@@ -212,6 +263,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
   const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
+  const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => defaultFieldCaseForm());
   const [discovering, setDiscovering] = useState(false);
   const [discoveryCandidates, setDiscoveryCandidates] = useState<PiDiscoveryCandidate[]>(() => loadDiscoveryHistory());
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
@@ -485,6 +537,18 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const registerFieldEvidenceCase = async () => {
+    if (!fieldCase.caseName.trim() || !fieldCase.conditions.trim()) {
+      setError("Field case name and condition tags are required.");
+      return;
+    }
+    await runRemote(
+      "field-evidence",
+      "Register Field Evidence Case",
+      fieldEvidenceCommand(remoteProject, remoteBundle, fieldCase),
+    );
+  };
+
   const syncProject = async () => {
     const resolvedAuth = auth();
     if (!resolvedAuth || !form.host) {
@@ -738,6 +802,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         mavlink_endpoint: form.mavlinkEndpoint,
         ssh_fingerprint: connectionResult?.fingerprint ?? selectedDevice?.known_fingerprint ?? null,
       },
+      field_evidence_case: fieldCase,
       mission_planner_handoff: activeHandoff,
       local: {
         repo_path: repoPath,
@@ -1177,6 +1242,91 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 <label className="label">Runtime bundle path</label>
                 <input className="input-field font-mono text-xs" value={remoteBundle} readOnly />
               </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg-card p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-200 flex items-center gap-2">
+                    <ShieldCheck size={14} className="text-cyan-400" /> Field Evidence Case
+                  </div>
+                </div>
+                <button
+                  onClick={registerFieldEvidenceCase}
+                  disabled={!connectionReady || !!runningStep || !fieldCase.caseName.trim() || !fieldCase.conditions.trim()}
+                  className="btn-secondary text-xs py-1 px-3"
+                >
+                  {runningStep === "field-evidence" ? <Loader2 size={11} className="animate-spin" /> : <ShieldCheck size={11} />}
+                  Register
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Case name</label>
+                  <input
+                    className="input-field font-mono text-xs"
+                    value={fieldCase.caseName}
+                    onChange={(event) => setFieldCase((value) => ({ ...value, caseName: event.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="label">Expected behavior</label>
+                  <select
+                    className="input-field text-xs"
+                    value={fieldCase.expected}
+                    onChange={(event) => setFieldCase((value) => ({ ...value, expected: event.target.value as FieldExpected }))}
+                  >
+                    {FIELD_EXPECTED_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Condition tags</label>
+                  <input
+                    className="input-field font-mono text-xs"
+                    list="field-condition-options"
+                    value={fieldCase.conditions}
+                    onChange={(event) => setFieldCase((value) => ({ ...value, conditions: event.target.value }))}
+                  />
+                  <datalist id="field-condition-options">
+                    {FIELD_CONDITION_OPTIONS.map((condition) => (
+                      <option key={condition} value={condition} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="label">Notes</label>
+                  <input
+                    className="input-field text-xs"
+                    value={fieldCase.notes}
+                    onChange={(event) => setFieldCase((value) => ({ ...value, notes: event.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3 text-[11px] text-slate-400">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={fieldCase.replace}
+                    onChange={(event) => setFieldCase((value) => ({ ...value, replace: event.target.checked }))}
+                  />
+                  Replace existing case
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={fieldCase.strict}
+                    onChange={(event) => setFieldCase((value) => ({ ...value, strict: event.target.checked }))}
+                  />
+                  Strict full gate
+                </label>
+              </div>
+              {results["field-evidence"]?.output && selectedOutputId !== "field-evidence" && (
+                <button onClick={() => setSelectedOutputId("field-evidence")} className="text-[10px] text-cyan-400 hover:text-cyan-300">
+                  Show field evidence output
+                </button>
+              )}
             </div>
 
             <div className="rounded-lg border border-border bg-bg-card p-3 space-y-3">

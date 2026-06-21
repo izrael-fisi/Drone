@@ -270,6 +270,35 @@ vision-nav-support-bundle \
 The session folder is copied under `extras/px4_sitl_session/`, and the parsed
 receiver report is still written under `summaries/px4_sitl_evidence/`.
 
+## Automated SITL Capture Harness
+
+When PX4 SITL and `tmux` are installed locally, this repo can start PX4 SITL,
+send the synthetic external-vision stream, capture the PX4 shell outputs, and
+evaluate the evidence session in one command:
+
+```bash
+VISION_NAV_SITL_SMOKE_DIR="$PWD/px4-sitl-evidence" \
+./scripts/dev/run_px4_sitl_external_vision_capture.sh
+```
+
+Useful overrides:
+
+```text
+VISION_NAV_PX4_AUTOPILOT_DIR=$HOME/PX4-Autopilot
+VISION_NAV_PX4_SITL_TARGET="px4_sitl gz_x500"
+VISION_NAV_PX4_TMUX_SESSION=vision-nav-px4-sitl
+VISION_NAV_PX4_BOOT_WAIT_S=45
+VISION_NAV_PX4_LISTENER_ARM_WAIT_S=1
+VISION_NAV_PX4_CAPTURE_WAIT_S=4
+VISION_NAV_PX4_KEEP_TMUX=1
+VISION_NAV_SITL_MAVLINK_MESSAGE=odometry
+```
+
+The harness is intentionally a bench helper, not proof by itself. The proof
+artifact is still the generated `receiver_evidence.json` plus raw captures in
+the evidence-session folder. Use `VISION_NAV_SITL_CAPTURE_DRY_RUN=1` to verify
+the folder scaffold without starting PX4 or sending MAVLink.
+
 Support bundles include the combined bench-readiness report automatically under
 `summaries/bench_readiness.json`. Re-run the same gate against an existing ZIP
 with:

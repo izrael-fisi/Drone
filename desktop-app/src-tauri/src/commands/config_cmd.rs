@@ -130,6 +130,14 @@ pub struct SupportBundleFeatureMethodBenchmarkReport {
 }
 
 #[derive(Serialize)]
+pub struct SupportBundleFieldEvidenceCondition {
+    pub key: Option<String>,
+    pub status: Option<String>,
+    pub case_count: Option<u64>,
+    pub field_case_count: Option<u64>,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleFieldEvidenceReport {
     pub status: Option<String>,
     pub manifest_path: Option<String>,
@@ -139,6 +147,7 @@ pub struct SupportBundleFieldEvidenceReport {
     pub field_case_count: Option<u64>,
     pub covered_conditions: Option<serde_json::Value>,
     pub required_conditions: Option<serde_json::Value>,
+    pub requirements: Vec<SupportBundleFieldEvidenceCondition>,
 }
 
 #[derive(Serialize)]
@@ -714,6 +723,23 @@ fn feature_method_report_from_json(
 
 fn field_evidence_report_from_json(value: &serde_json::Value) -> SupportBundleFieldEvidenceReport {
     let summary = value.get("summary");
+    let requirements = value
+        .pointer("/coverage/requirements")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| SupportBundleFieldEvidenceCondition {
+                    key: json_string(item.get("key")),
+                    status: json_string(item.get("status")),
+                    case_count: item.get("case_count").and_then(|value| value.as_u64()),
+                    field_case_count: item
+                        .get("field_case_count")
+                        .and_then(|value| value.as_u64()),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     SupportBundleFieldEvidenceReport {
         status: json_string(value.get("status")),
         manifest_path: json_string(value.get("manifest_path")),
@@ -731,6 +757,7 @@ fn field_evidence_report_from_json(value: &serde_json::Value) -> SupportBundleFi
         required_conditions: summary
             .and_then(|value| value.get("required_conditions"))
             .cloned(),
+        requirements,
     }
 }
 
@@ -1346,6 +1373,13 @@ mod tests {
                 serde_json::json!({
                     "status": "passed",
                     "manifest_path": "field_manifest.json",
+                    "coverage": {
+                        "requirements": [
+                            {"key": "good_texture", "status": "covered", "case_count": 1, "field_case_count": 1},
+                            {"key": "low_texture", "status": "covered", "case_count": 1, "field_case_count": 1},
+                            {"key": "blur", "status": "covered", "case_count": 1, "field_case_count": 1}
+                        ]
+                    },
                     "summary": {
                         "coverage_status": "passed",
                         "replay_status": "passed",
@@ -1460,6 +1494,19 @@ mod tests {
             Some("passed")
         );
         assert_eq!(details.field_evidence_reports[0].field_case_count, Some(8));
+        assert_eq!(details.field_evidence_reports[0].requirements.len(), 3);
+        assert_eq!(
+            details.field_evidence_reports[0].requirements[0]
+                .key
+                .as_deref(),
+            Some("good_texture")
+        );
+        assert_eq!(
+            details.field_evidence_reports[0].requirements[0]
+                .status
+                .as_deref(),
+            Some("covered")
+        );
         let readiness = details.bench_readiness.expect("bench readiness report");
         assert_eq!(readiness.status.as_deref(), Some("degraded"));
         assert_eq!(readiness.degraded_count, Some(1));
