@@ -144,7 +144,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       <div className="grid grid-cols-3 gap-3 mb-8">
         {[
           { icon: "map", label: "Satellite Maps", desc: "Download & manage flight regions" },
-          { icon: "cv", label: "Vision Modes", desc: "Classical or SuperPoint + LightGlue" },
+          { icon: "cv", label: "Vision Pipeline", desc: "Classical or SuperPoint + LightGlue" },
           { icon: "mod", label: "Module Setup", desc: "Install and test runtime modules" },
         ].map((f) => (
           <div key={f.label} className="bg-bg-surface rounded-lg p-3 text-center border border-border">
@@ -258,7 +258,6 @@ function DeviceStep({
     authMethod: "password" as "password" | "key",
     password: "",
     keyPath: "",
-    remotePath: "/home/user/Drone",
   });
   const [showPass, setShowPass] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -295,11 +294,9 @@ function DeviceStep({
       port: kind === "pi5" ? form.port : undefined,
       username: kind === "pi5" ? form.username : undefined,
       auth: kind === "pi5" ? auth : undefined,
-      remote_project_path: kind === "pi5" ? form.remotePath : undefined,
+      remote_project_path: kind === "pi5" ? `/home/${form.username || "user"}/Drone` : undefined,
       mavlink_endpoint: kind === "pi5" ? "serial:/dev/ttyAMA0:921600" : undefined,
       autopilot: kind === "pi5" ? "px4" : undefined,
-      vision_pipeline: kind === "pi5" ? "classical" : undefined,
-      feature_method: kind === "pi5" ? "orb" : undefined,
     };
     onFinishWithDevice(device);
   };
@@ -435,11 +432,6 @@ function DeviceStep({
             <input className="input-field" placeholder="~/.ssh/id_rsa" value={form.keyPath} onChange={(e) => setForm({ ...form, keyPath: e.target.value })} />
           </div>
         )}
-
-        <div>
-          <label className="label">Remote project path</label>
-          <input className="input-field font-mono text-sm" value={form.remotePath} onChange={(e) => setForm({ ...form, remotePath: e.target.value })} />
-        </div>
 
         {/* Test connection */}
         <button

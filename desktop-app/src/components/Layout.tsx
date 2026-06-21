@@ -19,14 +19,14 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 const NAV = [
   { to: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
   { to: "/maps", label: "Maps", Icon: Map },
-  { to: "/models", label: "Models", Icon: Cpu },
+  { to: "/vision-pipeline", label: "Vision Pipeline", Icon: Cpu },
   { to: "/devices", label: "Devices", Icon: Server },
   { to: "/mission-planner", label: "Mission Planner", Icon: Upload },
   { to: "/settings", label: "Settings", Icon: Settings },
 ];
 
 export function Layout() {
-  const { profile, devices, activeDeviceId, setActiveDevice } = useAppStore();
+  const { profile } = useAppStore();
   const appWindow = getCurrentWindow();
 
   return (
@@ -70,31 +70,6 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
-
-        {/* Active device picker */}
-        <div className="border-t border-border px-3 py-3">
-          <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-2">
-            Active Device
-          </div>
-          {devices.length === 0 ? (
-            <NavLink to="/devices" className="text-xs text-cyan-400 hover:text-cyan-300">
-              + Add device
-            </NavLink>
-          ) : (
-            <select
-              value={activeDeviceId ?? ""}
-              onChange={(e) => setActiveDevice(e.target.value || null)}
-              className="w-full bg-bg-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
-            >
-              <option value="">None selected</option>
-              {devices.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
 
         {/* Profile */}
         <div className="border-t border-border px-3 py-3 flex items-center gap-2">

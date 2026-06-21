@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Server, HardDrive, Plus, Trash2, Edit2, Wifi, CheckCircle2, XCircle,
   Loader2, Eye, EyeOff, ShieldCheck, ShieldAlert, FolderOpen, KeyRound, Lock,
   Terminal, Play, Square, FileText, ChevronDown, ChevronUp,
-  Cable, Cpu, BookOpen,
+  Cable, Cpu, BookOpen, Save, SlidersHorizontal,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cmd } from "../lib/tauri";
@@ -24,6 +24,119 @@ function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\"'\"'")}'`;
 }
 
+function defaultRemotePath(username = "user") {
+  return `/home/${username || "user"}/Drone`;
+}
+
+function deviceWithRuntimeDefaults(device: Device): Device {
+  const username = device.username ?? "user";
+  return {
+    ...device,
+    remote_project_path: device.remote_project_path ?? defaultRemotePath(username),
+    mavlink_endpoint: device.mavlink_endpoint ?? "serial:/dev/ttyAMA0:921600",
+    autopilot: device.autopilot ?? "px4",
+  };
+}
+
+function DeviceConfigurationPanel({
+  device,
+  devices,
+  updateDevice,
+}: {
+  device: Device;
+  devices: Device[];
+  updateDevice: (device: Device) => void;
+}) {
+  const normalized = deviceWithRuntimeDefaults(device);
+  const [form, setForm] = useState({
+    remotePath: normalized.remote_project_path ?? defaultRemotePath(normalized.username),
+    mavlinkEndpoint: normalized.mavlink_endpoint ?? "serial:/dev/ttyAMA0:921600",
+    autopilot: normalized.autopilot ?? "px4",
+  });
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const next = deviceWithRuntimeDefaults(device);
+    setForm({
+      remotePath: next.remote_project_path ?? defaultRemotePath(next.username),
+      mavlinkEndpoint: next.mavlink_endpoint ?? "serial:/dev/ttyAMA0:921600",
+      autopilot: next.autopilot ?? "px4",
+    });
+    setSaved(false);
+  }, [device.id, device.remote_project_path, device.mavlink_endpoint, device.autopilot]);
+
+  const saveConfiguration = async () => {
+    const { vision_pipeline: _visionPipeline, feature_method: _featureMethod, ...deviceWithoutPipeline } = device;
+    const updated: Device = {
+      ...deviceWithoutPipeline,
+      remote_project_path: form.remotePath || defaultRemotePath(device.username),
+      mavlink_endpoint: form.mavlinkEndpoint,
+      autopilot: form.autopilot as "px4" | "ardupilot",
+    };
+    updateDevice(updated);
+    await cmd.saveDevices(devices.map((candidate) => (candidate.id === updated.id ? updated : candidate)));
+    setSaved(true);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">Module project path</label>
+          <input
+            className="input-field font-mono text-xs"
+            value={form.remotePath}
+            onChange={(e) => {
+              setForm((value) => ({ ...value, remotePath: e.target.value }));
+              setSaved(false);
+            }}
+          />
+        </div>
+        <div>
+          <label className="label">MAVLink endpoint</label>
+          <input
+            className="input-field font-mono text-xs"
+            value={form.mavlinkEndpoint}
+            onChange={(e) => {
+              setForm((value) => ({ ...value, mavlinkEndpoint: e.target.value }));
+              setSaved(false);
+            }}
+            placeholder="serial:/dev/ttyAMA0:921600"
+          />
+        </div>
+      </div>
+
+      <div className="max-w-xs">
+        <label className="label">Flight controller</label>
+        <div className="grid grid-cols-2 gap-2">
+          {(["px4", "ardupilot"] as const).map((value) => (
+            <button
+              key={value}
+              onClick={() => {
+                setForm((current) => ({ ...current, autopilot: value }));
+                setSaved(false);
+              }}
+              className={cn(
+                "py-2 rounded-lg border text-xs font-medium transition-colors",
+                form.autopilot === value ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-400" : "border-border text-slate-400",
+              )}
+            >
+              {value === "px4" ? "PX4" : "ArduPilot"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={saveConfiguration} className="btn-primary text-xs py-1.5 px-3">
+          <Save size={12} /> Save Configuration
+        </button>
+        {saved && <span className="text-xs text-emerald-400">Saved</span>}
+      </div>
+    </div>
+  );
+}
+
 export function Devices() {
   const { devices, addDevice, updateDevice, removeDevice, activeDeviceId } = useAppStore();
   const [showForm, setShowForm] = useState(false);
@@ -32,7 +145,7 @@ export function Devices() {
   const [showPass, setShowPass] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [controlOpenId, setControlOpenId] = useState<string | null>(null);
-  const [controlTab, setControlTab] = useState<Record<string, "control" | "setup">>({});
+  const [controlTab, setControlTab] = useState<Record<string, "control" | "config" | "setup">>({});
   const [cmdOutputs, setCmdOutputs] = useState<Record<string, string>>({});
   const [cmdRunning, setCmdRunning] = useState<string | null>(null);
 
@@ -68,11 +181,9 @@ export function Devices() {
     password: "",
     keyPath: "",
     passphrase: "",
-    remotePath: "/home/user/Drone",
+    remotePath: defaultRemotePath("user"),
     mavlinkEndpoint: "serial:/dev/ttyAMA0:921600",
     autopilot: "px4" as "px4" | "ardupilot",
-    visionPipeline: "classical" as "classical" | "neural",
-    featureMethod: "orb" as "orb" | "akaze" | "sift",
   };
   const [form, setForm] = useState(emptyForm);
 
@@ -89,11 +200,9 @@ export function Devices() {
       password: d.auth?.type === "Password" ? d.auth.password : "",
       keyPath: d.auth?.type === "Key" ? d.auth.key_path : "",
       passphrase: d.auth?.type === "Key" ? (d.auth.passphrase ?? "") : "",
-      remotePath: d.remote_project_path ?? "/home/user/Drone",
+      remotePath: d.remote_project_path ?? defaultRemotePath(d.username ?? "user"),
       mavlinkEndpoint: d.mavlink_endpoint ?? "serial:/dev/ttyAMA0:921600",
       autopilot: d.autopilot ?? "px4",
-      visionPipeline: d.vision_pipeline ?? "classical",
-      featureMethod: d.feature_method ?? "orb",
     });
     setEditId(d.id);
     setShowForm(true);
@@ -120,22 +229,20 @@ export function Devices() {
             }
         : undefined;
 
+    const existing = editId ? devices.find((x: Device) => x.id === editId) : undefined;
+    const username = form.username || "user";
     const device: Device = {
       id: editId ?? generateId(),
       name: form.name || (form.kind === "pi5" ? "Raspberry Pi 5" : "Local Machine"),
       kind: form.kind,
       host: form.kind === "pi5" ? form.host : undefined,
       port: form.kind === "pi5" ? form.port : undefined,
-      username: form.kind === "pi5" ? form.username : undefined,
+      username: form.kind === "pi5" ? username : undefined,
       auth,
-      remote_project_path: form.kind === "pi5" ? form.remotePath : undefined,
-      mavlink_endpoint: form.kind === "pi5" ? form.mavlinkEndpoint : undefined,
-      autopilot: form.kind === "pi5" ? form.autopilot : undefined,
-      vision_pipeline: form.kind === "pi5" ? form.visionPipeline : undefined,
-      feature_method: form.kind === "pi5" ? form.featureMethod : undefined,
-      known_fingerprint: editId
-        ? devices.find((x: Device) => x.id === editId)?.known_fingerprint
-        : undefined,
+      remote_project_path: form.kind === "pi5" ? existing?.remote_project_path ?? defaultRemotePath(username) : undefined,
+      mavlink_endpoint: form.kind === "pi5" ? existing?.mavlink_endpoint ?? "serial:/dev/ttyAMA0:921600" : undefined,
+      autopilot: form.kind === "pi5" ? existing?.autopilot ?? "px4" : undefined,
+      known_fingerprint: existing?.known_fingerprint,
     };
 
     editId ? updateDevice(device) : addDevice(device);
@@ -250,9 +357,6 @@ export function Devices() {
                           <ShieldCheck size={9} /> Trusted
                         </span>
                       )}
-                      <span className="inline-flex items-center gap-0.5 text-[10px] text-violet-400 border border-violet-400/20 bg-violet-400/10 rounded px-1.5 py-0.5">
-                        <Cpu size={9} /> {(d.vision_pipeline ?? "classical") === "neural" ? "SP+LG" : (d.feature_method ?? "orb").toUpperCase()}
-                      </span>
                     </div>
                     {d.kind === "pi5" && (
                       <div className="text-[11px] font-mono text-slate-500 mt-0.5">
@@ -305,7 +409,7 @@ export function Devices() {
                   <div className="border-t border-border pt-3 space-y-3">
                     {/* Tab bar */}
                     <div className="flex gap-1">
-                      {(["control", "setup"] as const).map((tab) => (
+                      {(["control", "config", "setup"] as const).map((tab) => (
                         <button
                           key={tab}
                           onClick={() => setControlTab((t) => ({ ...t, [d.id]: tab }))}
@@ -316,8 +420,8 @@ export function Devices() {
                               : "text-slate-500 hover:text-slate-300"
                           )}
                         >
-                          {tab === "control" ? <Terminal size={11} /> : <BookOpen size={11} />}
-                          {tab === "control" ? "Control" : "Module setup"}
+                          {tab === "control" ? <Terminal size={11} /> : tab === "config" ? <SlidersHorizontal size={11} /> : <BookOpen size={11} />}
+                          {tab === "control" ? "Control" : tab === "config" ? "Configuration" : "Module setup"}
                         </button>
                       ))}
                     </div>
@@ -354,6 +458,11 @@ export function Devices() {
                           </div>
                         )}
                       </div>
+                    )}
+
+                    {/* ── CONFIGURATION TAB ── */}
+                    {getTab(d.id) === "config" && (
+                      <DeviceConfigurationPanel device={d} devices={devices} updateDevice={updateDevice} />
                     )}
 
                     {/* ── MODULE SETUP TAB ── */}
@@ -470,7 +579,14 @@ export function Devices() {
 
               <div>
                 <label className="label">Username</label>
-                <input className="input-field" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+                <input
+                  className="input-field"
+                  value={form.username}
+                  onChange={(e) => {
+                    const username = e.target.value;
+                    setForm({ ...form, username, remotePath: defaultRemotePath(username) });
+                  }}
+                />
               </div>
 
               <div>
@@ -549,79 +665,6 @@ export function Devices() {
                 </div>
               )}
 
-              <div>
-                <label className="label">Remote project path</label>
-                <input className="input-field font-mono text-sm" value={form.remotePath} onChange={(e) => setForm({ ...form, remotePath: e.target.value })} />
-              </div>
-
-              <div>
-                <label className="label">MAVLink endpoint</label>
-                <input
-                  className="input-field font-mono text-sm"
-                  value={form.mavlinkEndpoint}
-                  onChange={(e) => setForm({ ...form, mavlinkEndpoint: e.target.value })}
-                  placeholder="serial:/dev/ttyAMA0:921600"
-                />
-                <p className="text-[10px] text-slate-500 mt-1">
-                  serial:/dev/ttyAMA0:921600 · udp:14550 · tcp:192.168.x.x:5760
-                </p>
-              </div>
-
-              <div>
-                <label className="label">Vision pipeline</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {([
-                    ["classical", "Classical CPU"],
-                    ["neural", "SuperPoint + LightGlue"],
-                  ] as const).map(([value, label]) => (
-                    <button
-                      key={value}
-                      onClick={() => setForm({ ...form, visionPipeline: value })}
-                      className={cn(
-                        "py-2 rounded-lg border text-sm font-medium transition-colors",
-                        form.visionPipeline === value
-                          ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-400"
-                          : "border-border text-slate-400"
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="label">Classical feature method</label>
-                <select
-                  className="input-field"
-                  value={form.featureMethod}
-                  onChange={(e) => setForm({ ...form, featureMethod: e.target.value as "orb" | "akaze" | "sift" })}
-                >
-                  <option value="orb">ORB</option>
-                  <option value="akaze">AKAZE</option>
-                  <option value="sift">SIFT</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="label">Autopilot</label>
-                <div className="flex gap-2">
-                  {(["px4", "ardupilot"] as const).map((ap) => (
-                    <button
-                      key={ap}
-                      onClick={() => setForm({ ...form, autopilot: ap })}
-                      className={cn(
-                        "flex-1 py-2 rounded-lg border text-sm font-medium transition-colors",
-                        form.autopilot === ap
-                          ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-400"
-                          : "border-border text-slate-400"
-                      )}
-                    >
-                      {ap === "px4" ? "PX4" : "ArduPilot"}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </>
           )}
 

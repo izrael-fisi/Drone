@@ -37,7 +37,7 @@ export function Dashboard() {
 
   const QUICK_ACTIONS = [
     { label: "Download Region", desc: "Select & fetch satellite tiles", icon: Map, to: "/maps", color: "cyan" },
-    { label: "Vision Modes", desc: "Classical and SuperPoint + LightGlue", icon: Cpu, to: "/models", color: "violet" },
+    { label: "Vision Pipeline", desc: "Configure matching defaults", icon: Cpu, to: "/vision-pipeline", color: "violet" },
     { label: "Manage Devices", desc: "Pi5 and local targets", icon: Server, to: "/devices", color: "emerald" },
     { label: "Mission Planner", desc: "Plan flight area, path, and bundle", icon: Upload, to: "/mission-planner", color: "amber" },
   ] as const;

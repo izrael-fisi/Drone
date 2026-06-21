@@ -8,9 +8,8 @@ It is used for:
 - guided module setup over local Wi-Fi/SSH from the Devices page
 - selecting or importing satellite map regions
 - importing your own map/image files
-- building a Drone `mission_bundle`
-- choosing the low-compute classical feature path or high-compute neural path
-- recursively uploading mission bundles to the runtime module
+- building and uploading a Drone `mission_bundle`
+- configuring the low-compute classical feature path or high-compute neural path
 - running module validation, camera view, and short runtime checks over SSH
 - enabling MAVLink output for accepted vision measurements when ready
 
@@ -23,10 +22,12 @@ The flow is:
 
 1. Connect the desktop computer and Raspberry Pi to the same Wi-Fi network.
 2. Open Devices, expand the module, then choose `Module setup`.
-3. Enter the module hostname or IP, username, and SSH authentication.
+3. Add the module hostname or IP, username, and SSH authentication.
 4. Run `Test Wi-Fi SSH` and save the module as the active device.
-5. Run `Install Module` to sync runtime files and execute the module bootstrap.
-6. Run setup and vision checks from the app:
+5. Open the expanded device menu to adjust runtime paths, MAVLink, and flight
+   controller settings only after connection exists.
+6. Run `Install Module` to sync runtime files and execute the module bootstrap.
+7. Run setup and vision checks from the app:
    - Wi-Fi SSH identity
    - project file check
    - module dependency bootstrap
@@ -41,7 +42,7 @@ folders such as `.git`, `desktop-app`, `node_modules`, `target`, `data`, `logs`,
 and `map_bundles`. Bootstrap uses the existing `scripts/pi/bootstrap_pi5.sh`
 script on the module and may require a reboot afterward.
 
-## Vision Modes
+## Vision Pipeline
 
 The default mode is `classical`.
 
@@ -55,6 +56,11 @@ satellite region
 The optional `neural` mode keeps SuperPoint + LightGlue metadata and region files
 inside the bundle for higher-compute devices. The Raspberry Pi-safe classical
 feature index is still built as a fallback.
+
+The Vision Pipeline page stores the default pipeline, feature method, feature
+count, match thresholds, and neural weight paths used by new mission bundle
+builds. Devices and Mission Planner show or consume these values, but the Vision
+Pipeline page is the only editable configuration surface for matching defaults.
 
 ## Map Sources
 
@@ -112,10 +118,32 @@ repo's dependencies installed.
 ## Mission Planner
 
 The Mission Planner tab is the ground-control style workspace. The user selects
-a flight area/map source, clicks the map to add waypoints or generates a survey
-path, sets flight altitude and speed, then builds the selected map source into a
-complete mission bundle and uploads it to the runtime compute module. By default
-this overwrites the active bundle at:
+a flight area/map source and the interactive planner map displays that saved
+source's local `satellite.png` mosaic.
+
+The planner is organized into four operator layers:
+
+- `Mission`: takeoff, waypoint, and land items.
+- `GeoFence`: an optional polygon safety boundary.
+- `Rally`: optional emergency rally points.
+- `Vision Map`: localization checkpoints used to reason about GNSS-denied
+  feature-map coverage.
+
+Mission Planner opens without auto-selecting a saved map source, so large local
+mosaics do not block the first tab render. The saved `satellite.png` mosaic is
+loaded only after the user selects a map source. The stats panel reports mission
+item count, distance, estimated time, map area, and readiness checks for map
+quality, mission path, fence shape, and MAVLink endpoint.
+
+Mission plans can be imported from the app's JSON format or QGroundControl-style
+`.plan` files. Export writes a `.plan` file with QGC mission, geofence, rally,
+and `visionNavigation` metadata for this project.
+
+The mission bundle action builds the selected map source, writes the desktop
+mission JSON to `mission/mission_plan.json`, writes the QGC-style file to
+`mission/qgc.plan`, records both in `manifest.json`, and uploads the bundle to
+the runtime compute module. Feature extraction settings are read from the saved
+Vision Pipeline defaults. By default this overwrites the active bundle at:
 
 ```text
 /home/<pi-user>/drone-data/map_bundles/mission_bundle
@@ -134,7 +162,8 @@ It then runs the existing Pi scripts:
 
 ## MAVLink
 
-MAVLink output is opt-in. When enabled in the deployment page, the app sets:
+MAVLink output is opt-in. When enabled in Mission Planner runtime controls, the
+app sets:
 
 ```bash
 VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600

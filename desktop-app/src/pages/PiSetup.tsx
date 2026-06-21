@@ -217,8 +217,6 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       remote_project_path: remoteProject,
       mavlink_endpoint: form.mavlinkEndpoint,
       autopilot: selectedDevice?.autopilot ?? "px4",
-      vision_pipeline: selectedDevice?.vision_pipeline ?? "classical",
-      feature_method: selectedDevice?.feature_method ?? "orb",
       known_fingerprint: connectionResult?.fingerprint ?? selectedDevice?.known_fingerprint,
     };
     const next = selectedDevice
@@ -443,10 +441,32 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
 
       <div className="grid grid-cols-[0.95fr_1.05fr] gap-6">
         <div className="space-y-4">
+          {embedded ? (
+            <div className="card space-y-3">
+              <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+                <Wifi size={15} className="text-cyan-400" /> Saved SSH Connection
+              </h3>
+              {connectionReady ? (
+                <div className="rounded-lg border border-border bg-bg-card px-3 py-2">
+                  <div className="text-xs text-slate-400">Using saved device connection</div>
+                  <div className="font-mono text-xs text-slate-200 mt-1">{form.username}@{form.host}:{form.port}</div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                  Edit this device and add SSH connection details before installing the module.
+                </div>
+              )}
+              {error && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {error}
+                </div>
+              )}
+            </div>
+          ) : (
           <div className="card space-y-4">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
-                <Wifi size={15} className="text-cyan-400" /> Module Wi-Fi Connection
+                <Wifi size={15} className="text-cyan-400" /> SSH Connection
               </h3>
               {!embedded && (
                 <select
@@ -623,6 +643,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               </div>
             )}
           </div>
+          )}
 
           <div className="card space-y-3">
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">

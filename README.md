@@ -41,7 +41,7 @@ after the classical pipeline has been measured and its failure modes are known.
 - `scripts/pi/`: Raspberry Pi bootstrap, Docker, SSH, and transfer setup
 - `scripts/mac/`: Mac transfer and SSH helpers
 - `docker/pi/`: Docker runtime for the Pi vision environment
-- `desktop-app/`: Tauri + React desktop operator app for map selection/import, Mission Planner, module setup, camera preview, and MAVLink-enabled runtime checks
+- `desktop-app/`: Tauri + React desktop operator app for map selection/import, Vision Pipeline configuration, QGC-style Mission Planner layers, module setup, camera preview, and MAVLink-enabled runtime checks
 - `src/vision_nav/`: First feature-map and frame-to-map matching tools
 - `transfer/`: Local staging folder for Mac-to-Pi and Pi-to-Mac file movement
 - `docs/`: Setup and architecture notes

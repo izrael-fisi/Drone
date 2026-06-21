@@ -92,6 +92,8 @@ export interface BuildDroneBundleRequest {
   pipeline: VisionPipeline;
   feature_method: FeatureMethod;
   max_features: number;
+  mission_plan_json?: string;
+  qgc_plan_json?: string;
 }
 
 export interface BuildDroneBundleResult {
@@ -100,6 +102,8 @@ export interface BuildDroneBundleResult {
   orthophoto_path: string;
   features_path: string;
   checksums_path: string;
+  mission_plan_path?: string;
+  qgc_plan_path?: string;
   command: string;
   stdout: string;
   stderr: string;

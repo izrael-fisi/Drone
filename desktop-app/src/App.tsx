@@ -6,7 +6,7 @@ import { useAppStore } from "./lib/store";
 import { Onboarding } from "./pages/Onboarding";
 import { Dashboard } from "./pages/Dashboard";
 import { Maps } from "./pages/Maps";
-import { Models } from "./pages/Models";
+import { VisionPipelinePage } from "./pages/VisionPipeline";
 import { Devices } from "./pages/Devices";
 import { MissionPlanner } from "./pages/MissionPlanner";
 import { Settings } from "./pages/Settings";
@@ -63,7 +63,8 @@ export default function App() {
         >
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/maps" element={<Maps />} />
-          <Route path="/models" element={<Models />} />
+          <Route path="/vision-pipeline" element={<VisionPipelinePage />} />
+          <Route path="/models" element={<Navigate to="/vision-pipeline" replace />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/mission-planner" element={<MissionPlanner />} />
           <Route path="/upload" element={<Navigate to="/mission-planner" replace />} />

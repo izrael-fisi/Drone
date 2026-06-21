@@ -4,7 +4,7 @@ import L from "leaflet";
 import "leaflet-draw";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 import { homeDir, join } from "@tauri-apps/api/path";
 import {
   Download, FileImage, FolderOpen, Layers, Info, CheckCircle2, Loader2, X, FolderInput, Upload,
@@ -401,6 +401,9 @@ export function Maps() {
     const folder = dir as string;
     try {
       const text = await readTextFile(`${folder}/metadata.json`);
+      if (!(await exists(`${folder}/satellite.png`))) {
+        throw new Error("Selected folder is missing satellite.png");
+      }
       const meta = JSON.parse(text);
       if (meta.origin_lat == null || meta.origin_lon == null || !meta.gsd_m_per_px || !meta.width_px || !meta.height_px) {
         throw new Error("metadata.json is missing required fields (origin_lat, origin_lon, gsd_m_per_px, width_px, height_px)");
