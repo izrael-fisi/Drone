@@ -42,6 +42,10 @@ Status:
   tmux-based bench harness that can start PX4 SITL, send the synthetic
   external-vision stream, capture PX4 shell receiver output, and run the session
   evaluator when a local PX4 checkout is available.
+- Done: the PX4 SITL smoke script, automated capture harness, and session
+  evaluator emit stable `__VISION_NAV_PX4_SITL_SESSION__` /
+  `__VISION_NAV_PX4_SITL_REPORT__` markers so receiver proof artifacts can be
+  copied into support bundles and final readiness audits without path guessing.
 - Done: support bundles can package PX4 SITL receiver captures and the generated
   receiver-evidence report so bench verification can be reviewed later from the
   desktop app.
@@ -323,6 +327,13 @@ Status:
   future neural methods on the same replay case, using the same replay gates as
   support bundles and marking neural descriptors unavailable until they are
   generated.
+- Done: `scripts/pi/run_feature_method_benchmark.sh` wraps feature-method
+  benchmark generation on the Pi, writes a stable JSON report under
+  `~/DroneTransfer/outgoing/feature-method-bench/`, and emits a marker for
+  desktop download.
+- Done: Module Setup exposes a `Feature Benchmark` SSH action that compares
+  low-compute methods against the latest field replay log, downloads the JSON
+  report, and lists recommended method plus per-method accepted rates.
 - Done: support bundles ingest feature-method benchmark report files or output
   directories, copy them into `extras/feature_method_benchmarks/`, publish
   parsed JSON under `summaries/feature_method_benchmarks/`, and count the result
@@ -338,6 +349,9 @@ Status:
 - Done: the desktop Module Setup flow can run the same field-case registration
   over SSH so evidence collection can be driven from the customer app, not only
   from a Pi shell.
+- Done: field-case registration emits a stable field-evidence report marker so
+  Module Setup downloads `field_evidence_report.json` after each registration
+  and shows the real-field coverage checklist from the desktop app.
 - Done: downloaded support-bundle details show field-evidence requirement
   status per condition, making missing real-world coverage visible from the app
   without opening JSON reports.
@@ -364,9 +378,17 @@ Status:
 - Done: `scripts/pi/run_autonomy_readiness_audit.sh` runs the same final audit
   on the Pi against the latest support bundle and writes
   `autonomy_readiness_report.json` for transfer or support review.
+- Done: `scripts/dev/run_local_autonomy_readiness_audit.sh` scans the
+  conventional downloaded desktop artifact folders, writes the same strict
+  autonomy-readiness report locally, and fails closed while preserving a report
+  that explains which proof artifacts are missing.
 - Done: Module Setup exposes an `Autonomy Readiness` SSH action after the bench
   report step, so operators can run the strict final audit from the desktop app
   and download the JSON report to `~/DroneTransfer/from-pi/replay-cases/`.
+- Done: Module Setup lists downloaded autonomy-readiness JSON reports from
+  `~/DroneTransfer/from-pi/replay-cases/` with pass/degraded/fail counts and
+  the support-bundle, PX4 receiver, field-evidence, feature-benchmark, and
+  threshold-tuning gate statuses.
 
 Tasks:
 

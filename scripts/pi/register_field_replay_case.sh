@@ -122,6 +122,8 @@ The support-bundle wrapper auto-includes this report when present:
   ./scripts/pi/create_support_bundle.sh
 EOF
 
+echo "__VISION_NAV_FIELD_EVIDENCE_REPORT__=$report"
+
 if [[ "$gate_status" -ne 0 ]]; then
   echo
   echo "Field evidence gate is not passing yet. This is expected until all required real field conditions are registered." >&2

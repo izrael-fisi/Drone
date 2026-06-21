@@ -64,6 +64,10 @@ The wrapper defaults to:
   `~/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`
 - log: `~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl`
 
+It also prints `__VISION_NAV_FIELD_EVIDENCE_REPORT__=...`, which lets the
+desktop Module Setup workflow download the latest evidence report and show the
+per-condition coverage checklist.
+
 Use `VISION_NAV_FIELD_REPLACE=1` to update an existing case and
 `VISION_NAV_FIELD_GATE_STRICT=1` once the complete field dataset is expected to
 pass. Use the lower-level registry helper when curating a desktop dataset folder
@@ -97,7 +101,20 @@ vision-nav-audit-replay-coverage \
   --manifest data/replay_cases/field_manifest.json
 ```
 
-Then generate the threshold-tuning report used by the autonomy readiness audit:
+Then generate feature-method benchmark evidence used by the autonomy readiness
+audit:
+
+```bash
+VISION_NAV_FEATURE_BENCH_EXPECTED=good_map \
+./scripts/pi/run_feature_method_benchmark.sh
+```
+
+The Pi wrapper writes feature-method benchmark reports under
+`~/DroneTransfer/outgoing/feature-method-bench/`, emits
+`__VISION_NAV_FEATURE_METHOD_REPORT__=...` for Module Setup downloads, and lets
+support bundles include method-comparison evidence automatically when present.
+
+Then tune replay thresholds:
 
 ```bash
 vision-nav-tune-replay-thresholds \

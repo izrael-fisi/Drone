@@ -283,12 +283,29 @@ evidence case. The operator selects expected behavior, condition tags, notes,
 and whether to replace an existing case. The app runs
 `scripts/pi/register_field_replay_case.sh` over SSH, which updates the Pi-side
 field replay manifest and writes the field-evidence report that the next
-support bundle will include automatically.
+support bundle will include automatically. The same action downloads
+`field_evidence_report.json` to `~/DroneTransfer/from-pi/replay-cases/` and the
+Field Evidence Coverage list shows which required real-world conditions are
+covered or still missing.
 
 Module Setup can run `Threshold Tuning` after enough field cases are registered.
 The action runs `scripts/pi/run_threshold_tuning_report.sh` over SSH, writes the
 threshold report under the Pi replay-cases folder, and downloads it to
 `~/DroneTransfer/from-pi/replay-cases/` on the desktop.
+
+Module Setup can also run `Feature Benchmark` against the latest field replay
+log and active runtime bundle. The action runs
+`scripts/pi/run_feature_method_benchmark.sh` over SSH, writes the report under
+the Pi feature-method benchmark folder, downloads it to
+`~/DroneTransfer/from-pi/feature-method-bench/`, and shows the recommended
+method plus per-method accepted rates.
+
+Module Setup also indexes downloaded final audit reports from
+`~/DroneTransfer/from-pi/replay-cases/`. The Autonomy Readiness Reports list
+shows the latest JSON reports with pass/degraded/fail counts, support-bundle
+bench status, PX4 receiver proof status, field-evidence status,
+feature-benchmark status, and threshold-tuning status. Each report can be
+revealed in the local file manager or copied by path for support notes.
 
 After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
 `Open Bench Report In Module Setup` action opens that device's setup tab with

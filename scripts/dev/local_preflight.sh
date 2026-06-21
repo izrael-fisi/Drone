@@ -48,12 +48,22 @@ if PYTHONPATH=src python3 -m vision_nav.autonomy_readiness --json >/tmp/vision_n
   exit 1
 fi
 tail -n 18 /tmp/vision_nav_autonomy_readiness_preflight.txt
+local_audit_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-local-audit-preflight.XXXXXX")"
+VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
+VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
+VISION_NAV_AUTONOMY_ALLOW_FAILED=1 \
+./scripts/dev/run_local_autonomy_readiness_audit.sh >/tmp/vision_nav_local_autonomy_readiness_preflight.txt 2>&1
+grep -q "__VISION_NAV_AUTONOMY_REPORT__=" /tmp/vision_nav_local_autonomy_readiness_preflight.txt
+test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+rm -rf "$local_audit_dir"
 
 echo "[7/8] Preparing PX4 SITL evidence session dry-run"
 smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-sitl-smoke-preflight.XXXXXX")"
 VISION_NAV_SITL_DRY_RUN=1 \
 VISION_NAV_SITL_SMOKE_DIR="$smoke_dir" \
 ./scripts/dev/px4_sitl_external_vision_smoke.sh >/tmp/vision_nav_px4_sitl_smoke_dry_run.txt
+grep -q "__VISION_NAV_PX4_SITL_SESSION__=" /tmp/vision_nav_px4_sitl_smoke_dry_run.txt
+grep -q "__VISION_NAV_PX4_SITL_REPORT__=" /tmp/vision_nav_px4_sitl_smoke_dry_run.txt
 test -f "$smoke_dir/px4_sitl_evidence_session.json"
 test -f "$smoke_dir/receiver_capture/README.md"
 test -f "$smoke_dir/synthetic_external_vision.jsonl"
@@ -61,6 +71,8 @@ capture_smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-sitl-capture-prefligh
 VISION_NAV_SITL_CAPTURE_DRY_RUN=1 \
 VISION_NAV_SITL_SMOKE_DIR="$capture_smoke_dir" \
 ./scripts/dev/run_px4_sitl_external_vision_capture.sh >/tmp/vision_nav_px4_sitl_capture_dry_run.txt
+grep -q "__VISION_NAV_PX4_SITL_SESSION__=" /tmp/vision_nav_px4_sitl_capture_dry_run.txt
+grep -q "__VISION_NAV_PX4_SITL_REPORT__=" /tmp/vision_nav_px4_sitl_capture_dry_run.txt
 test -f "$capture_smoke_dir/px4_sitl_evidence_session.json"
 test -f "$capture_smoke_dir/receiver_capture/README.md"
 if VISION_NAV_ALLOW_DEGRADED=1 ./scripts/dev/evaluate_px4_sitl_session.sh "$smoke_dir" >/tmp/vision_nav_px4_sitl_session_missing_capture.txt; then

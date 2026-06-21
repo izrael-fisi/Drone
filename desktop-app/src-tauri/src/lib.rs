@@ -2,8 +2,10 @@ mod commands;
 
 use commands::{
     config_cmd::{
-        delete_support_bundle, list_support_bundles, list_yaml_configs,
-        read_support_bundle_details, read_yaml_config, reveal_support_bundle, write_yaml_config,
+        delete_support_bundle, list_autonomy_readiness_reports,
+        list_feature_method_benchmark_reports, list_field_evidence_reports, list_support_bundles,
+        list_yaml_configs, read_support_bundle_details, read_yaml_config, reveal_support_bundle,
+        write_yaml_config,
     },
     discovery::{discover_pi_devices, local_network_hints},
     drone::{build_drone_bundle, import_elevation_assets, import_map_file},
@@ -46,6 +48,9 @@ pub fn run() {
             read_yaml_config,
             write_yaml_config,
             list_yaml_configs,
+            list_autonomy_readiness_reports,
+            list_field_evidence_reports,
+            list_feature_method_benchmark_reports,
             list_support_bundles,
             reveal_support_bundle,
             delete_support_bundle,

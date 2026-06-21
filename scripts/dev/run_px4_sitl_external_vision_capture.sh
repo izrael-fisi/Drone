@@ -30,6 +30,8 @@ PX4 SITL capture dry run prepared:
   PX4 dir: $px4_dir
   PX4 target: $px4_target
 EOF
+  echo "__VISION_NAV_PX4_SITL_SESSION__=$session_dir"
+  echo "__VISION_NAV_PX4_SITL_REPORT__=$receiver_report"
   exit 0
 fi
 
@@ -93,10 +95,14 @@ tmux capture-pane -t "$tmux_session" -p -S -2000 > "$mavlink_status_capture"
 
 cat <<EOF
 PX4 SITL receiver capture complete:
+  session:  $session_dir
   listener: $listener_capture
   mavlink status: $mavlink_status_capture
   report: $receiver_report
 EOF
+
+echo "__VISION_NAV_PX4_SITL_SESSION__=$session_dir"
+echo "__VISION_NAV_PX4_SITL_REPORT__=$receiver_report"
 
 if [[ "$keep_tmux" == "1" ]]; then
   echo "Keeping tmux session '$tmux_session' because VISION_NAV_PX4_KEEP_TMUX=1."

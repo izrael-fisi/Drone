@@ -7,6 +7,8 @@ import type {
   Device,
   DownloadFileResult,
   DownloadProgress,
+  FieldEvidenceReportFile,
+  FeatureMethodBenchmarkReportFile,
   ImportElevationAssetsRequest,
   ImportElevationAssetsResult,
   ImportMapFileRequest,
@@ -15,6 +17,7 @@ import type {
   PiDiscoveryCandidate,
   Profile,
   Region,
+  AutonomyReadinessReportFile,
   SupportBundleFile,
   SupportBundleDetails,
   TileEstimate,
@@ -117,6 +120,12 @@ export const cmd = {
   writeYamlConfig: (path: string, data: Record<string, unknown>) =>
     invoke<void>("write_yaml_config", { path, data }),
   listYamlConfigs: (dir: string) => invoke<string[]>("list_yaml_configs", { dir }),
+  listAutonomyReadinessReports: (dir: string) =>
+    invoke<AutonomyReadinessReportFile[]>("list_autonomy_readiness_reports", { dir }),
+  listFieldEvidenceReports: (dir: string) =>
+    invoke<FieldEvidenceReportFile[]>("list_field_evidence_reports", { dir }),
+  listFeatureMethodBenchmarkReports: (dir: string) =>
+    invoke<FeatureMethodBenchmarkReportFile[]>("list_feature_method_benchmark_reports", { dir }),
   listSupportBundles: (dir: string) => invoke<SupportBundleFile[]>("list_support_bundles", { dir }),
   revealSupportBundle: (path: string) => invoke<void>("reveal_support_bundle", { path }),
   deleteSupportBundle: (path: string) => invoke<void>("delete_support_bundle", { path }),

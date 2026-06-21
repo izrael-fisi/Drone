@@ -222,6 +222,14 @@ The folder contains:
 - `receiver_capture/mavlink_status.txt`: where to save MAVLink status output
 - `receiver_evidence.json`: recommended evaluator output path
 
+The smoke script prints machine-readable artifact markers:
+
+```text
+__VISION_NAV_PX4_SITL_SESSION__=/path/to/px4-sitl-evidence
+__VISION_NAV_PX4_SITL_MANIFEST__=/path/to/px4_sitl_evidence_session.json
+__VISION_NAV_PX4_SITL_REPORT__=/path/to/receiver_evidence.json
+```
+
 For a no-MAVLink scaffolding check, use `VISION_NAV_SITL_DRY_RUN=1`.
 
 This script proves the project can emit the selected MAVLink message path to
@@ -244,7 +252,9 @@ The evaluator checks that PX4 published `vehicle_visual_odometry`, that multiple
 fresh samples are present, that local position and position variance arrived,
 and that the optional MAVLink status capture looks like a MAVLink 2 UDP link.
 It emits a JSON-compatible report through the
-`vision-nav-evaluate-px4-sitl-evidence` CLI. A `failed` or `degraded` result
+`vision-nav-evaluate-px4-sitl-evidence` CLI and prints
+`__VISION_NAV_PX4_SITL_SESSION__=...` plus
+`__VISION_NAV_PX4_SITL_REPORT__=...` markers. A `failed` or `degraded` result
 means the SITL receiver requirement is not proven yet.
 
 For loose capture files outside a session folder, use:
@@ -296,8 +306,11 @@ VISION_NAV_SITL_MAVLINK_MESSAGE=odometry
 
 The harness is intentionally a bench helper, not proof by itself. The proof
 artifact is still the generated `receiver_evidence.json` plus raw captures in
-the evidence-session folder. Use `VISION_NAV_SITL_CAPTURE_DRY_RUN=1` to verify
-the folder scaffold without starting PX4 or sending MAVLink.
+the evidence-session folder. The harness prints
+`__VISION_NAV_PX4_SITL_SESSION__=...` and
+`__VISION_NAV_PX4_SITL_REPORT__=...` so those paths can be copied into support
+bundle or final readiness commands. Use `VISION_NAV_SITL_CAPTURE_DRY_RUN=1` to
+verify the folder scaffold without starting PX4 or sending MAVLink.
 
 Support bundles include the combined bench-readiness report automatically under
 `summaries/bench_readiness.json`. Re-run the same gate against an existing ZIP

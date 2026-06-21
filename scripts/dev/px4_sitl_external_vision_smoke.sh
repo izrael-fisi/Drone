@@ -164,6 +164,7 @@ PX4 external-vision SITL smoke
   synthetic log $log_path
   session:      $session_manifest
   capture help: $capture_readme
+  report:       $receiver_report
 
 Start PX4 SITL separately, for example:
   cd ~/PX4-Autopilot
@@ -175,6 +176,10 @@ In the PX4 shell or QGroundControl MAVLink console, watch:
 
 Sending synthetic accepted records now. The rejected record should be skipped.
 EOF
+
+echo "__VISION_NAV_PX4_SITL_SESSION__=$out_dir"
+echo "__VISION_NAV_PX4_SITL_MANIFEST__=$session_manifest"
+echo "__VISION_NAV_PX4_SITL_REPORT__=$receiver_report"
 
 if [[ "$dry_run" == "1" ]]; then
   echo "Dry run enabled; not sending MAVLink records."

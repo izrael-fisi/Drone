@@ -285,6 +285,71 @@ export interface SupportBundleDetails {
   };
 }
 
+export interface AutonomyReadinessReportFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  summary: {
+    status?: "passed" | "failed" | "degraded" | string;
+    failed_count?: number;
+    degraded_count?: number;
+    passed_count?: number;
+    support_bundle_bench_readiness_status?: "passed" | "failed" | "degraded" | string;
+    px4_receiver_proof_status?: "passed" | "failed" | "degraded" | string;
+    field_evidence_proof_status?: "passed" | "failed" | "degraded" | string;
+    feature_method_benchmark_status?: "passed" | "failed" | "degraded" | string;
+    threshold_tuning_status?: "passed" | "failed" | "degraded" | string;
+  };
+  checks: Array<{
+    name?: string;
+    status?: "passed" | "failed" | "degraded" | string;
+    message?: string;
+  }>;
+}
+
+export interface FieldEvidenceReportFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  report: {
+    status?: "passed" | "failed" | "degraded" | string;
+    manifest_path?: string;
+    coverage_status?: "passed" | "failed" | "degraded" | string;
+    replay_status?: "passed" | "failed" | "degraded" | string;
+    case_count?: number;
+    field_case_count?: number;
+    covered_conditions?: unknown;
+    required_conditions?: unknown;
+    requirements: Array<{
+      key?: string;
+      status?: "covered" | "missing" | "synthetic_only" | "failed" | string;
+      case_count?: number;
+      field_case_count?: number;
+    }>;
+  };
+}
+
+export interface FeatureMethodBenchmarkReportFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  report: {
+    status?: "passed" | "failed" | "degraded" | "not_available" | string;
+    case_name?: string;
+    expected?: "good_map" | "degraded" | "wrong_map" | string;
+    recommended_method?: string;
+    methods: Array<{
+      method?: string;
+      status?: "passed" | "failed" | "degraded" | "not_available" | string;
+      accepted_rate?: number;
+      total_records?: number;
+    }>;
+  };
+}
+
 export interface BuildDroneBundleRequest {
   region_dir: string;
   output_dir: string;

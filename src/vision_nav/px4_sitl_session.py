@@ -111,6 +111,8 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"Status: {report['status']}")
     print(f"Expected sender message: {report.get('expected_message')}")
     print(f"Report: {report.get('report_path')}")
+    print(f"__VISION_NAV_PX4_SITL_SESSION__={report.get('session_dir')}")
+    print(f"__VISION_NAV_PX4_SITL_REPORT__={report.get('report_path')}")
     listener = report.get("listener") or {}
     print(f"Listener samples: {listener.get('sample_count')}")
     print(f"Last position: {listener.get('last_position')}")

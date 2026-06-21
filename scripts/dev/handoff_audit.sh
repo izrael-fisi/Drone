@@ -94,6 +94,7 @@ required_pi_scripts=(
   "scripts/pi/replay_terrain_nav_log.sh"
   "scripts/pi/summarize_vision_nav_logs.sh"
   "scripts/pi/create_support_bundle.sh"
+  "scripts/pi/run_feature_method_benchmark.sh"
   "scripts/pi/run_threshold_tuning_report.sh"
   "scripts/pi/run_autonomy_readiness_audit.sh"
   "scripts/pi/install_vision_nav_service.sh"

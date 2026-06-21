@@ -133,6 +133,15 @@ pub struct SupportBundleFeatureMethodBenchmarkReport {
 }
 
 #[derive(Serialize)]
+pub struct FeatureMethodBenchmarkReportFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub report: SupportBundleFeatureMethodBenchmarkReport,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleFieldEvidenceCondition {
     pub key: Option<String>,
     pub status: Option<String>,
@@ -151,6 +160,15 @@ pub struct SupportBundleFieldEvidenceReport {
     pub covered_conditions: Option<serde_json::Value>,
     pub required_conditions: Option<serde_json::Value>,
     pub requirements: Vec<SupportBundleFieldEvidenceCondition>,
+}
+
+#[derive(Serialize)]
+pub struct FieldEvidenceReportFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub report: SupportBundleFieldEvidenceReport,
 }
 
 #[derive(Serialize)]
@@ -180,6 +198,36 @@ pub struct SupportBundleBenchReadinessReport {
     pub degraded_count: Option<u64>,
     pub passed_count: Option<u64>,
     pub checks: Vec<SupportBundleBenchReadinessCheck>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessCheck {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessSummary {
+    pub status: Option<String>,
+    pub failed_count: Option<u64>,
+    pub degraded_count: Option<u64>,
+    pub passed_count: Option<u64>,
+    pub support_bundle_bench_readiness_status: Option<String>,
+    pub px4_receiver_proof_status: Option<String>,
+    pub field_evidence_proof_status: Option<String>,
+    pub feature_method_benchmark_status: Option<String>,
+    pub threshold_tuning_status: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessReportFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub summary: AutonomyReadinessSummary,
+    pub checks: Vec<AutonomyReadinessCheck>,
 }
 
 #[derive(Serialize)]
@@ -435,6 +483,181 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         entry_count,
         manifest,
     })
+}
+
+#[tauri::command]
+pub fn list_autonomy_readiness_reports(
+    dir: String,
+) -> Result<Vec<AutonomyReadinessReportFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let (summary, checks) = match autonomy_readiness_report_from_json(&value) {
+            Some(value) => value,
+            None => continue,
+        };
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(AutonomyReadinessReportFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("autonomy_readiness_report.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            summary,
+            checks,
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn list_field_evidence_reports(dir: String) -> Result<Vec<FieldEvidenceReportFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if !value.get("coverage").is_some_and(|value| value.is_object())
+            || !value
+                .get("replay_gates")
+                .is_some_and(|value| value.is_object())
+        {
+            continue;
+        }
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(FieldEvidenceReportFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("field_evidence_report.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            report: field_evidence_report_from_json(&value),
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn list_feature_method_benchmark_reports(
+    dir: String,
+) -> Result<Vec<FeatureMethodBenchmarkReportFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if !value.get("methods").is_some_and(|value| value.is_array()) {
+            continue;
+        }
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(FeatureMethodBenchmarkReportFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("feature-method-benchmark.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            report: feature_method_report_from_json(&value),
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
 }
 
 fn read_json_entry(
@@ -840,6 +1063,56 @@ fn bench_readiness_report_from_json(
     }
 }
 
+fn autonomy_readiness_report_from_json(
+    value: &serde_json::Value,
+) -> Option<(AutonomyReadinessSummary, Vec<AutonomyReadinessCheck>)> {
+    let checks_value = value.get("checks")?.as_array()?;
+    if !value
+        .get("summary")
+        .is_some_and(|summary| summary.is_object())
+    {
+        return None;
+    }
+    let checks = checks_value
+        .iter()
+        .filter(|item| item.is_object())
+        .map(|item| AutonomyReadinessCheck {
+            name: json_string(item.get("name")),
+            status: json_string(item.get("status")),
+            message: json_string(item.get("message")),
+        })
+        .collect::<Vec<_>>();
+    if checks.is_empty() {
+        return None;
+    }
+    let check_status = |name: &str| {
+        checks
+            .iter()
+            .find(|check| check.name.as_deref() == Some(name))
+            .and_then(|check| check.status.clone())
+    };
+    Some((
+        AutonomyReadinessSummary {
+            status: json_string(value.get("status")),
+            failed_count: value
+                .pointer("/summary/failed")
+                .and_then(|value| value.as_u64()),
+            degraded_count: value
+                .pointer("/summary/degraded")
+                .and_then(|value| value.as_u64()),
+            passed_count: value
+                .pointer("/summary/passed")
+                .and_then(|value| value.as_u64()),
+            support_bundle_bench_readiness_status: check_status("support_bundle_bench_readiness"),
+            px4_receiver_proof_status: check_status("px4_receiver_proof"),
+            field_evidence_proof_status: check_status("field_evidence_proof"),
+            feature_method_benchmark_status: check_status("feature_method_benchmark"),
+            threshold_tuning_status: check_status("threshold_tuning"),
+        },
+        checks,
+    ))
+}
+
 fn image_mime_type(name: &str) -> Option<&'static str> {
     match Path::new(name)
         .extension()
@@ -1110,8 +1383,9 @@ fn expand_local_path(path: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_support_bundle, expand_local_path, read_support_bundle_details,
-        support_summary_from_manifest,
+        delete_support_bundle, expand_local_path, list_autonomy_readiness_reports,
+        list_feature_method_benchmark_reports, list_field_evidence_reports,
+        read_support_bundle_details, support_summary_from_manifest,
     };
     use std::fs::File;
     use std::io::Write;
@@ -1251,6 +1525,165 @@ mod tests {
         let result = delete_support_bundle(path.to_string_lossy().into_owned());
         let _ = std::fs::remove_file(&path);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn lists_autonomy_readiness_reports_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-readiness-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create readiness dir");
+        let report_path = dir.join("autonomy_readiness_report.json");
+        std::fs::write(
+            &report_path,
+            serde_json::json!({
+                "status": "failed",
+                "summary": {"failed": 2, "degraded": 1, "passed": 4},
+                "checks": [
+                    {"name": "research_doc", "status": "passed", "message": "Research doc ready."},
+                    {"name": "support_bundle_bench_readiness", "status": "failed", "message": "Support bundle missing."},
+                    {"name": "px4_receiver_proof", "status": "failed", "message": "Receiver proof missing."},
+                    {"name": "field_evidence_proof", "status": "degraded", "message": "Needs more logs."},
+                    {"name": "feature_method_benchmark", "status": "passed", "message": "Benchmark present."},
+                    {"name": "threshold_tuning", "status": "passed", "message": "Threshold report present."}
+                ]
+            })
+            .to_string(),
+        )
+        .expect("write readiness report");
+        std::fs::write(
+            dir.join("threshold_tuning_report.json"),
+            serde_json::json!({"status": "passed", "method": "field-replay-gate-threshold-audit"})
+                .to_string(),
+        )
+        .expect("write unrelated report");
+        let reports = list_autonomy_readiness_reports(dir.to_string_lossy().into_owned())
+            .expect("list reports");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].name, "autonomy_readiness_report.json");
+        assert_eq!(reports[0].summary.status.as_deref(), Some("failed"));
+        assert_eq!(reports[0].summary.failed_count, Some(2));
+        assert_eq!(
+            reports[0]
+                .summary
+                .support_bundle_bench_readiness_status
+                .as_deref(),
+            Some("failed")
+        );
+        assert_eq!(
+            reports[0].summary.field_evidence_proof_status.as_deref(),
+            Some("degraded")
+        );
+        assert_eq!(reports[0].checks.len(), 6);
+    }
+
+    #[test]
+    fn lists_field_evidence_reports_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-field-evidence-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create evidence dir");
+        std::fs::write(
+            dir.join("field_evidence_report.json"),
+            serde_json::json!({
+                "status": "failed",
+                "manifest_path": "field_manifest.json",
+                "coverage": {
+                    "requirements": [
+                        {"key": "good_texture", "status": "covered", "case_count": 1, "field_case_count": 1},
+                        {"key": "low_texture", "status": "missing", "case_count": 0, "field_case_count": 0}
+                    ]
+                },
+                "replay_gates": {"status": "passed", "case_count": 1, "reports": []},
+                "summary": {
+                    "coverage_status": "failed",
+                    "replay_status": "passed",
+                    "case_count": 1,
+                    "field_case_count": 1,
+                    "covered_conditions": ["good_texture"],
+                    "required_conditions": ["good_texture", "low_texture"]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write field evidence report");
+        std::fs::write(
+            dir.join("autonomy_readiness_report.json"),
+            serde_json::json!({"status": "failed", "checks": [], "summary": {}}).to_string(),
+        )
+        .expect("write unrelated report");
+        let reports =
+            list_field_evidence_reports(dir.to_string_lossy().into_owned()).expect("list reports");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].name, "field_evidence_report.json");
+        assert_eq!(reports[0].report.status.as_deref(), Some("failed"));
+        assert_eq!(reports[0].report.coverage_status.as_deref(), Some("failed"));
+        assert_eq!(reports[0].report.replay_status.as_deref(), Some("passed"));
+        assert_eq!(reports[0].report.field_case_count, Some(1));
+        assert_eq!(reports[0].report.requirements.len(), 2);
+        assert_eq!(
+            reports[0].report.requirements[0].status.as_deref(),
+            Some("covered")
+        );
+        assert_eq!(
+            reports[0].report.requirements[1].status.as_deref(),
+            Some("missing")
+        );
+    }
+
+    #[test]
+    fn lists_feature_method_benchmark_reports_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-feature-bench-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create benchmark dir");
+        std::fs::write(
+            dir.join("feature-method-benchmark.json"),
+            serde_json::json!({
+                "status": "passed",
+                "case_name": "field-good-texture",
+                "expected": "good_map",
+                "recommended_method": "orb",
+                "methods": [
+                    {
+                        "method": "orb",
+                        "status": "passed",
+                        "gate": {"metrics": {"accepted_rate": 0.9, "total_records": 10}}
+                    },
+                    {
+                        "method": "neural",
+                        "status": "not_available",
+                        "reason": "not generated"
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("write feature benchmark report");
+        std::fs::write(
+            dir.join("field_evidence_report.json"),
+            serde_json::json!({"status": "failed", "coverage": {}, "replay_gates": {}}).to_string(),
+        )
+        .expect("write unrelated report");
+        let reports = list_feature_method_benchmark_reports(dir.to_string_lossy().into_owned())
+            .expect("list reports");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].name, "feature-method-benchmark.json");
+        assert_eq!(reports[0].report.status.as_deref(), Some("passed"));
+        assert_eq!(reports[0].report.recommended_method.as_deref(), Some("orb"));
+        assert_eq!(reports[0].report.methods.len(), 2);
+        assert_eq!(reports[0].report.methods[0].method.as_deref(), Some("orb"));
+        assert_eq!(reports[0].report.methods[0].accepted_rate, Some(0.9));
+        assert_eq!(reports[0].report.methods[0].total_records, Some(10));
     }
 
     #[test]

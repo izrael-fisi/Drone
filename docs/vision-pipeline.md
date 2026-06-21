@@ -308,6 +308,9 @@ VISION_NAV_FIELD_CONDITION=good_texture \
 The wrapper writes `field_manifest.json`, per-case gate reports, and
 `field_evidence_report.json` under `~/DroneTransfer/outgoing/replay-cases/`.
 Support bundles include that field-evidence report automatically when it exists.
+The wrapper also emits a stable `__VISION_NAV_FIELD_EVIDENCE_REPORT__=...`
+marker so Module Setup can download the report and show the required-condition
+coverage checklist.
 Use `vision-nav-register-replay-case` directly on a desktop dataset folder when
 you need custom manifest paths.
 
@@ -336,6 +339,20 @@ This gate requires real field log files, checks that all required field
 conditions are covered, and evaluates every replay case with the same
 accepted/degraded/wrong-map gates used in support bundles.
 
+Compare feature methods on the same real field replay log before promoting a
+runtime default:
+
+```bash
+VISION_NAV_FEATURE_BENCH_EXPECTED=good_map \
+./scripts/pi/run_feature_method_benchmark.sh
+```
+
+Use `VISION_NAV_FEATURE_BENCH_EXPECTED=degraded` or
+`VISION_NAV_FEATURE_BENCH_EXPECTED=wrong_map` for those field cases. The wrapper
+writes reports under `~/DroneTransfer/outgoing/feature-method-bench/`, emits a
+stable download marker for Module Setup, and lets support bundles include the
+benchmark evidence automatically.
+
 Generate the threshold-tuning report from the same real field manifest:
 
 ```bash
@@ -354,11 +371,14 @@ After a support bundle, field-evidence report, feature-method benchmark report,
 and threshold-tuning report exist, run the goal-level readiness audit:
 
 ```bash
-vision-nav-autonomy-readiness \
-  --support-bundle "$HOME/DroneTransfer/from-pi/support-bundles/<bundle>.zip" \
-  --field-evidence-report data/replay_cases/field_evidence_report.json \
-  --threshold-tuning-report data/replay_cases/threshold_tuning_report.json
+./scripts/dev/run_local_autonomy_readiness_audit.sh
 ```
+
+The wrapper scans conventional downloaded artifact folders under
+`~/DroneTransfer/from-pi/`, writes
+`~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json`, and
+prints `__VISION_NAV_AUTONOMY_REPORT__=...`. Use
+`vision-nav-autonomy-readiness` directly when custom artifact paths are needed.
 
 This is intentionally stricter than the synthetic smoke tests. It fails until
 PX4 receiver proof, real field coverage, feature-method benchmark evidence, and

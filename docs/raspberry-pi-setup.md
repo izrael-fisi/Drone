@@ -466,17 +466,17 @@ cd Drone
 To compare low-compute methods on the same replay case:
 
 ```bash
-vision-nav-benchmark-feature-methods \
-  --bundle "$HOME/drone-data/map_bundles/mission_bundle" \
-  --replay-log "$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl" \
-  --methods orb,akaze,sift,neural \
-  --expected good_map \
-  --output-dir "$HOME/DroneTransfer/outgoing/feature-method-bench"
+VISION_NAV_FEATURE_BENCH_EXPECTED=good_map \
+./scripts/pi/run_feature_method_benchmark.sh
 ```
 
-Use `--expected degraded` or `--expected wrong_map` for those field cases.
-Neural/SuperPoint-LightGlue is reported as unavailable until those descriptors
-are generated for the bundle.
+Use `VISION_NAV_FEATURE_BENCH_EXPECTED=degraded` or
+`VISION_NAV_FEATURE_BENCH_EXPECTED=wrong_map` for those field cases. The wrapper
+defaults to the deployed mission bundle and latest terrain runtime log, writes
+the summary under `~/DroneTransfer/outgoing/feature-method-bench/`, and prints
+`__VISION_NAV_FEATURE_METHOD_REPORT__=...` for desktop download. Neural/
+SuperPoint-LightGlue is reported as unavailable until those descriptors are
+generated for the bundle.
 
 Register each field run as a replay case from the Pi after a terrain runtime or
 replay log exists:
@@ -495,7 +495,10 @@ multiple tags. The wrapper updates
 default, writes
 `~/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`, and leaves
 the report where `./scripts/pi/create_support_bundle.sh` automatically includes
-it. Set `VISION_NAV_FIELD_REPLACE=1` to retest a case, or
+it. The wrapper also prints `__VISION_NAV_FIELD_EVIDENCE_REPORT__=...` so
+Module Setup can download the current coverage report after each registration
+and show which required field conditions are still missing. Set
+`VISION_NAV_FIELD_REPLACE=1` to retest a case, or
 `VISION_NAV_FIELD_GATE_STRICT=1` once the full eight-condition field dataset is
 expected to pass.
 
@@ -612,8 +615,12 @@ VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" \
 ./scripts/pi/create_support_bundle.sh
 ```
 
-The session folder is copied under `extras/px4_sitl_session/`, and the parsed
-pass/fail report is still written under `summaries/px4_sitl_evidence/`.
+The desktop SITL smoke and capture scripts print
+`__VISION_NAV_PX4_SITL_SESSION__=...` and
+`__VISION_NAV_PX4_SITL_REPORT__=...` markers after preparing or evaluating a
+session. Use the session marker as `VISION_NAV_PX4_SITL_SESSION`. The session
+folder is copied under `extras/px4_sitl_session/`, and the parsed pass/fail
+report is still written under `summaries/px4_sitl_evidence/`.
 
 To include the PX4 parameter readiness report in the same support bundle:
 
@@ -720,6 +727,20 @@ when reviewing an older artifact. The audit intentionally fails until the
 external PX4 receiver proof and real field-log evidence are present. Use it as
 the final proof artifact, not as a synthetic preflight substitute.
 
+After artifacts have been downloaded to the desktop, run the local wrapper to
+scan the conventional `~/DroneTransfer/from-pi/` folders and write the same
+strict audit report locally:
+
+```bash
+./scripts/dev/run_local_autonomy_readiness_audit.sh
+```
+
+It uses the latest downloaded support bundle, downloaded field-evidence and
+threshold-tuning reports, and a local PX4 SITL evidence session when present.
+It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and writes
+`~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.json` even when
+the audit fails, so the missing proof artifacts are visible in one report.
+
 The desktop Module Setup `Bench Report` action runs the terrain bundle validator
 against the configured deployed bundle, creates this same support bundle, and
 downloads the latest zip back to `~/DroneTransfer/from-pi/support-bundles/` on
@@ -727,7 +748,14 @@ the desktop. The `Autonomy Readiness` action runs the same strict final audit on
 the Pi against the latest support bundle and downloads the readiness report to
 `~/DroneTransfer/from-pi/replay-cases/` on the desktop. It also lets you save a
 local JSON setup report containing the check results, selected discovery
-adapter, copyable discovery checklist, and downloaded support-bundle summaries.
+adapter, copyable discovery checklist, downloaded support-bundle summaries,
+downloaded feature-benchmark summaries, downloaded field-evidence coverage
+summaries, and downloaded autonomy-readiness report summaries. The same Module
+Setup panel lists the latest downloaded feature-method benchmark JSON reports
+with recommended method and accepted rates, lists field-evidence JSON reports
+with per-condition coverage, then lists autonomy-readiness JSON reports with
+pass, degraded, and fail counts plus the support-bundle, PX4 receiver,
+field-evidence, feature-benchmark, and threshold-tuning gate statuses.
 The desktop support-bundle list can reveal
 downloaded ZIPs in the local file manager, copy their path, show compact
 manifest details, inspect log/replay-gate summaries and per-record JSONL
