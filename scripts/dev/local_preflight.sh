@@ -4,20 +4,20 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-echo "[1/7] Checking shell script syntax"
+echo "[1/8] Checking shell script syntax"
 find scripts -type f -name '*.sh' -exec bash -n {} \;
 
-echo "[2/7] Compiling Python"
+echo "[2/8] Compiling Python"
 python3 -m compileall src tests
 
-echo "[3/7] Running unit tests"
+echo "[3/8] Running unit tests"
 PYTHONPATH=src python3 tests/run_unit_tests.py
 
-echo "[4/7] Evaluating synthetic replay cases"
+echo "[4/8] Evaluating synthetic replay cases"
 ./scripts/dev/evaluate_synthetic_replay_cases.sh >/tmp/vision_nav_synthetic_replay_cases.txt
 tail -n 8 /tmp/vision_nav_synthetic_replay_cases.txt
 
-echo "[5/7] Auditing replay coverage template"
+echo "[5/8] Auditing replay coverage template"
 PYTHONPATH=src python3 -m vision_nav.replay_dataset_audit \
   --manifest data/replay_cases/manifest.example.json \
   --skip-log-exists >/tmp/vision_nav_replay_coverage_template.txt
@@ -42,7 +42,14 @@ test -f "$field_smoke_dir/field_manifest.json"
 test -f "$field_smoke_dir/field_evidence_report.json"
 rm -rf "$field_smoke_dir"
 
-echo "[6/7] Preparing PX4 SITL evidence session dry-run"
+echo "[6/8] Checking autonomy-readiness fail-closed behavior"
+if PYTHONPATH=src python3 -m vision_nav.autonomy_readiness --json >/tmp/vision_nav_autonomy_readiness_preflight.txt; then
+  echo "Expected autonomy readiness to fail before support bundle, PX4, field, and threshold evidence exist." >&2
+  exit 1
+fi
+tail -n 18 /tmp/vision_nav_autonomy_readiness_preflight.txt
+
+echo "[7/8] Preparing PX4 SITL evidence session dry-run"
 smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-sitl-smoke-preflight.XXXXXX")"
 VISION_NAV_SITL_DRY_RUN=1 \
 VISION_NAV_SITL_SMOKE_DIR="$smoke_dir" \
@@ -63,7 +70,7 @@ fi
 rm -rf "$smoke_dir"
 rm -rf "$capture_smoke_dir"
 
-echo "[7/7] Checking unrelated agent/chatbot scope is absent"
+echo "[8/8] Checking unrelated agent/chatbot scope is absent"
 scope_pattern="M""CP|L""LM|Chat""GPT"
 if rg -n "$scope_pattern" .; then
   echo "Found unrelated agent/chatbot scope text. Remove it before committing." >&2

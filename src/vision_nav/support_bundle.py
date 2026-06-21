@@ -60,6 +60,12 @@ def parse_args() -> argparse.Namespace:
         help="Field evidence gate JSON report. Can be repeated.",
     )
     parser.add_argument(
+        "--threshold-tuning-report",
+        action="append",
+        default=[],
+        help="Threshold tuning JSON report. Can be repeated.",
+    )
+    parser.add_argument(
         "--replay-case",
         action="append",
         default=[],
@@ -659,6 +665,91 @@ def copy_field_evidence_reports(paths: list[str], support_dir: Path) -> dict[str
     }
 
 
+def summarize_threshold_tuning_report(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    margins = {}
+    metrics = report.get("metrics") if isinstance(report.get("metrics"), dict) else {}
+    if isinstance(metrics.get("margins"), dict):
+        margins = metrics["margins"]
+    return {
+        "path": str(report_path),
+        "status": report.get("status"),
+        "method": report.get("method"),
+        "manifest_path": report.get("manifest_path"),
+        "coverage_status": summary.get("coverage_status"),
+        "replay_status": summary.get("replay_status"),
+        "case_count": summary.get("case_count"),
+        "field_case_count": summary.get("field_case_count"),
+        "covered_conditions": summary.get("covered_conditions") or report.get("conditions") or [],
+        "margins": margins,
+    }
+
+
+def copy_threshold_tuning_reports(paths: list[str], support_dir: Path) -> dict[str, Any]:
+    if not paths:
+        return {"status": "not_provided", "report_count": 0}
+
+    summary_dir = support_dir / "summaries" / "threshold_tuning"
+    raw_dir = support_dir / "extras" / "threshold_tuning"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"Threshold tuning report is missing: {source}"})
+            continue
+        if source.is_dir():
+            copied.append(copy_tree(source, raw_dir / safe_relpath(source)))
+            json_files = sorted(source.rglob("*.json"))
+        else:
+            copied.append(copy_file(source, raw_dir / source.name))
+            json_files = [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception as exc:
+                issues.append({"severity": "warning", "message": f"Could not parse threshold tuning report {report_file}: {exc}"})
+                continue
+            if not isinstance(report, dict) or report.get("method") != "field-replay-gate-threshold-audit":
+                continue
+            report_summary = summarize_threshold_tuning_report(report, report_path=report_file)
+            reports.append(report_summary)
+            output_name = f"{sanitize_filename(Path(str(report_summary.get('manifest_path') or report_file.stem)).stem)}-{len(reports):02d}.json"
+            (summary_dir / output_name).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+    statuses = {str(report.get("status") or "").lower() for report in reports}
+    if missing or "failed" in statuses:
+        status = "failed"
+    elif not reports:
+        status = "degraded" if issues else "not_provided"
+    elif statuses.intersection({"degraded", "warming_up"}):
+        status = "degraded"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "report_count": len(reports),
+        "reports": reports,
+        "field_case_count": max((int(report.get("field_case_count") or 0) for report in reports), default=0),
+        "covered_conditions": sorted(
+            {
+                str(condition)
+                for report in reports
+                for condition in report.get("covered_conditions", [])
+            }
+        ),
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
 def zip_directory(source_dir: Path, zip_path: Path) -> None:
     if zip_path.exists():
         zip_path.unlink()
@@ -688,6 +779,7 @@ def create_support_bundle(
     inline_replay_cases: list[str] | None = None,
     feature_method_benchmark_paths: list[str] | None = None,
     field_evidence_report_paths: list[str] | None = None,
+    threshold_tuning_report_paths: list[str] | None = None,
     include_map_assets: bool = False,
     max_log_bytes: int = DEFAULT_MAX_LOG_BYTES,
 ) -> dict[str, Any]:
@@ -745,6 +837,10 @@ def create_support_bundle(
         field_evidence_report_paths or [],
         support_dir,
     )
+    threshold_tuning = copy_threshold_tuning_reports(
+        threshold_tuning_report_paths or [],
+        support_dir,
+    )
     manifest = {
         "support_bundle_version": "0.1.0",
         "name": support_name,
@@ -757,6 +853,7 @@ def create_support_bundle(
         "ardupilot_params": ardupilot_params_summary,
         "feature_method_benchmarks": feature_method_benchmarks,
         "field_evidence": field_evidence,
+        "threshold_tuning": threshold_tuning,
         "extras": extra_summary,
     }
     bench_readiness = evaluate_bench_readiness(manifest)
@@ -810,6 +907,9 @@ def print_human(result: dict[str, Any]) -> None:
     field_evidence = manifest.get("field_evidence") or {}
     if field_evidence.get("status") not in {None, "not_provided"}:
         print(f"Field evidence: {field_evidence.get('status')} ({field_evidence.get('report_count')} report(s))")
+    threshold_tuning = manifest.get("threshold_tuning") or {}
+    if threshold_tuning.get("status") not in {None, "not_provided"}:
+        print(f"Threshold tuning: {threshold_tuning.get('status')} ({threshold_tuning.get('report_count')} report(s))")
     readiness = manifest.get("bench_readiness") or {}
     print(f"Bench readiness: {readiness.get('status') or 'unknown'}")
 
@@ -835,6 +935,7 @@ def main() -> None:
         inline_replay_cases=args.replay_case,
         feature_method_benchmark_paths=args.feature_method_benchmark,
         field_evidence_report_paths=args.field_evidence_report,
+        threshold_tuning_report_paths=args.threshold_tuning_report,
         include_map_assets=args.include_map_assets,
         max_log_bytes=args.max_log_bytes,
     )

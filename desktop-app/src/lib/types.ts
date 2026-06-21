@@ -146,6 +146,9 @@ export interface SupportBundleFile {
     field_evidence_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     field_evidence_field_case_count?: number;
     field_evidence_report_count?: number;
+    threshold_tuning_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    threshold_tuning_field_case_count?: number;
+    threshold_tuning_report_count?: number;
     bench_readiness_status?: "passed" | "failed" | "degraded" | string;
     bench_readiness_failed_count?: number;
     bench_readiness_degraded_count?: number;
@@ -257,6 +260,17 @@ export interface SupportBundleDetails {
       case_count?: number;
       field_case_count?: number;
     }>;
+  }>;
+  threshold_tuning_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    method?: string;
+    manifest_path?: string;
+    coverage_status?: "passed" | "failed" | "degraded" | string;
+    replay_status?: "passed" | "failed" | "degraded" | string;
+    case_count?: number;
+    field_case_count?: number;
+    covered_conditions?: unknown;
+    margins?: unknown;
   }>;
   bench_readiness?: {
     status?: "passed" | "failed" | "degraded" | string;

@@ -167,7 +167,7 @@ def case_tokens(case: dict[str, Any], *, include_dataset_type: bool = True) -> s
                 tokens.update(tokenize(str(item)))
         elif isinstance(value, str):
             tokens.update(tokenize(value))
-    for key in ("case_name", "expected", "notes", "bundle"):
+    for key in ("case_name", "notes", "bundle"):
         value = case.get(key)
         if value is not None:
             tokens.update(tokenize(str(value)))

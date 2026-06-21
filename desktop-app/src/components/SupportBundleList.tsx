@@ -51,6 +51,10 @@ function arrayCount(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
 }
 
+function formatMargin(value: unknown) {
+  return typeof value === "number" ? value.toFixed(2) : "n/a";
+}
+
 function nestedString(root: unknown, path: string[]) {
   let current: unknown = root;
   for (const key of path) {
@@ -326,6 +330,37 @@ function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }
         </div>
       )}
 
+      {details.threshold_tuning_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Threshold tuning</div>
+          {details.threshold_tuning_reports.slice(0, 2).map((report, index) => {
+            const margins = asRecord(report.margins);
+            return (
+              <div key={`${report.manifest_path}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={statusClass(report.status)}>
+                    {statusIcon(report.status)}
+                    {formatLabel(report.status)}
+                  </span>
+                  <span className="font-mono text-slate-400 truncate">{formatLabel(report.manifest_path)}</span>
+                  <span className="font-mono text-slate-500">coverage {formatLabel(report.coverage_status)}</span>
+                  <span className="font-mono text-slate-500">replay {formatLabel(report.replay_status)}</span>
+                </div>
+                <div className="font-mono text-slate-500">
+                  field cases {report.field_case_count ?? 0}/{report.case_count ?? 0}
+                  {arrayCount(report.covered_conditions) > 0 ? `, conditions ${arrayCount(report.covered_conditions)}` : ""}
+                </div>
+                <div className="flex flex-wrap gap-1.5 font-mono text-slate-500">
+                  <span>good margin {formatMargin(margins?.good_map_accepted_rate)}</span>
+                  <span>degraded margin {formatMargin(margins?.degraded_accepted_rate)}</span>
+                  <span>wrong margin {formatMargin(margins?.wrong_map_accepted_rate)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {details.replay_reports.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Replay gates</div>
@@ -498,6 +533,12 @@ export function SupportBundleList({
                     field {formatLabel(bundle.summary.field_evidence_status)}
                   </span>
                 )}
+                {bundle.summary.threshold_tuning_status && bundle.summary.threshold_tuning_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.threshold_tuning_status)}>
+                    {statusIcon(bundle.summary.threshold_tuning_status)}
+                    thresholds {formatLabel(bundle.summary.threshold_tuning_status)}
+                  </span>
+                )}
                 {bundle.summary.elevation_status && (
                   <span className={bundle.summary.vertical_sanity_ready ? "badge-green" : statusClass(bundle.summary.elevation_status)}>
                     {statusIcon(bundle.summary.vertical_sanity_ready ? "passed" : bundle.summary.elevation_status)}
@@ -546,6 +587,8 @@ export function SupportBundleList({
                   <span>pick {formatLabel(bundle.summary.feature_method_benchmark_recommended)}</span>
                   <span>field {formatLabel(bundle.summary.field_evidence_status)}</span>
                   <span>field cases {bundle.summary.field_evidence_field_case_count ?? 0}</span>
+                  <span>thresholds {formatLabel(bundle.summary.threshold_tuning_status)}</span>
+                  <span>threshold cases {bundle.summary.threshold_tuning_field_case_count ?? 0}</span>
                   <span>ready {formatLabel(bundle.summary.bench_readiness_status)}</span>
                   <span>
                     gate {bundle.summary.bench_readiness_failed_count ?? 0} fail / {bundle.summary.bench_readiness_degraded_count ?? 0} degrade

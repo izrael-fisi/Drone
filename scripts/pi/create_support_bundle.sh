@@ -8,6 +8,7 @@ output_dir="${VISION_NAV_SUPPORT_OUTPUT_DIR:-$HOME/DroneTransfer/outgoing/suppor
 mavlink_endpoint="${VISION_NAV_MAVLINK_ENDPOINT:-}"
 feature_method_benchmark="${VISION_NAV_FEATURE_METHOD_BENCHMARK:-$HOME/DroneTransfer/outgoing/feature-method-bench}"
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json}"
+threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
 
 if [[ ! -x "$venv_python" ]]; then
   echo "Missing Python venv: $venv_python" >&2
@@ -73,6 +74,10 @@ fi
 
 if [[ -n "$field_evidence_report" && -e "$field_evidence_report" ]]; then
   args+=(--field-evidence-report "$field_evidence_report")
+fi
+
+if [[ -n "$threshold_tuning_report" && -e "$threshold_tuning_report" ]]; then
+  args+=(--threshold-tuning-report "$threshold_tuning_report")
 fi
 
 if [[ "${VISION_NAV_SUPPORT_INCLUDE_MAP_ASSETS:-0}" == "1" ]]; then

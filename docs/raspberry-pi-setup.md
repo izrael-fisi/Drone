@@ -661,6 +661,19 @@ The raw report is copied under `extras/field_evidence/`, parsed reports are
 written under `summaries/field_evidence/`, and the status is counted in bench
 readiness when present.
 
+If a threshold-tuning report exists at
+`~/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json`, the Pi
+wrapper includes it automatically. Override the location with:
+
+```bash
+VISION_NAV_THRESHOLD_TUNING_REPORT="$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json" \
+./scripts/pi/create_support_bundle.sh
+```
+
+The raw report is copied under `extras/threshold_tuning/`, parsed reports are
+written under `summaries/threshold_tuning/`, and the final
+`vision-nav-autonomy-readiness` audit can use it from the support bundle.
+
 Every support bundle now includes a combined bench-readiness report under
 `summaries/bench_readiness.json`. Re-run the same gate against an existing ZIP
 with:
@@ -679,12 +692,43 @@ bench runs. Use
 `--allow-missing-replay-gates` only for local software smoke checks before the
 real bench evidence exists.
 
+For the full autonomy/ground-control implementation goal, use the stricter
+audit after the downloaded support bundle, field-evidence report, feature-method
+benchmark evidence, and threshold-tuning report exist. Generate the threshold
+report from the real field manifest with:
+
+```bash
+./scripts/pi/run_threshold_tuning_report.sh
+```
+
+The wrapper writes `threshold_tuning_report.json` and per-case tuning reports
+under `~/DroneTransfer/outgoing/replay-cases/`. Set
+`VISION_NAV_THRESHOLD_ALLOW_FAILED=1` only when you want to download a failing
+intermediate report without treating the command as a passing validation step.
+
+Then run:
+
+```bash
+./scripts/pi/run_autonomy_readiness_audit.sh
+```
+
+The wrapper uses the latest Pi-side support bundle under
+`~/DroneTransfer/outgoing/support-bundles/` by default and writes
+`~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json`. Override
+the support bundle with `VISION_NAV_AUTONOMY_SUPPORT_BUNDLE=/path/to/bundle.zip`
+when reviewing an older artifact. The audit intentionally fails until the
+external PX4 receiver proof and real field-log evidence are present. Use it as
+the final proof artifact, not as a synthetic preflight substitute.
+
 The desktop Module Setup `Bench Report` action runs the terrain bundle validator
 against the configured deployed bundle, creates this same support bundle, and
 downloads the latest zip back to `~/DroneTransfer/from-pi/support-bundles/` on
-the desktop. It also lets you save a local JSON setup report containing the
-check results, selected discovery adapter, copyable discovery checklist, and
-downloaded support-bundle summaries. The desktop support-bundle list can reveal
+the desktop. The `Autonomy Readiness` action runs the same strict final audit on
+the Pi against the latest support bundle and downloads the readiness report to
+`~/DroneTransfer/from-pi/replay-cases/` on the desktop. It also lets you save a
+local JSON setup report containing the check results, selected discovery
+adapter, copyable discovery checklist, and downloaded support-bundle summaries.
+The desktop support-bundle list can reveal
 downloaded ZIPs in the local file manager, copy their path, show compact
 manifest details, inspect log/replay-gate summaries and per-record JSONL
 previews from inside the ZIP, inspect PX4 receiver evidence reports, preview

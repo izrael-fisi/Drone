@@ -44,6 +44,7 @@ import type { Device, LocalNetworkHint, PiDiscoveryCandidate, SupportBundleFile,
 const DEFAULT_LOCAL_REPO = "/Users/izzyfisi/Documents/DRONE";
 const HOST_SUGGESTIONS = ["dronecompute.local", "raspberrypi.local", "192.168.1.158"];
 const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
+const AUTONOMY_REPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/replay-cases";
 const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 const SUPPORT_EVIDENCE_ENV =
   'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
@@ -137,6 +138,22 @@ function parseSupportBundleZip(output: string) {
     .map((line) => line.trim())
     .find((line) => line.startsWith("__VISION_NAV_SUPPORT_ZIP__="))
     ?.replace("__VISION_NAV_SUPPORT_ZIP__=", "");
+}
+
+function parseAutonomyReadinessReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_AUTONOMY_REPORT__="))
+    ?.replace("__VISION_NAV_AUTONOMY_REPORT__=", "");
+}
+
+function parseThresholdTuningReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_THRESHOLD_REPORT__="))
+    ?.replace("__VISION_NAV_THRESHOLD_REPORT__=", "");
 }
 
 function readModuleSetupHandoff(): ModuleSetupHandoff | null {
@@ -537,6 +554,110 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const runAutonomyReadiness = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before running the autonomy readiness audit.");
+      return;
+    }
+    setRunningStep("autonomy-readiness");
+    setError(null);
+    setResult("autonomy-readiness", { status: "running", output: "$ autonomy readiness\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        `cd ${shellQuote(remoteProject)} && ./scripts/pi/run_autonomy_readiness_audit.sh`,
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteReport = parseAutonomyReadinessReport(output);
+      if (!remoteReport) {
+        setResult("autonomy-readiness", {
+          status: "failed",
+          output: `$ autonomy readiness\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      setResult("autonomy-readiness", {
+        status: "running",
+        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nDownloading ${remoteReport}...`,
+      });
+      const downloaded = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remoteReport,
+        AUTONOMY_REPORT_DOWNLOAD_DIR,
+      );
+      setResult("autonomy-readiness", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+    } catch (err) {
+      setResult("autonomy-readiness", { status: "failed", output: `$ autonomy readiness\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
+  const runThresholdTuning = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before running threshold tuning.");
+      return;
+    }
+    setRunningStep("threshold-tuning");
+    setError(null);
+    setResult("threshold-tuning", { status: "running", output: "$ threshold tuning\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        `cd ${shellQuote(remoteProject)} && ./scripts/pi/run_threshold_tuning_report.sh`,
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteReport = parseThresholdTuningReport(output);
+      if (!remoteReport) {
+        setResult("threshold-tuning", {
+          status: "failed",
+          output: `$ threshold tuning\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      setResult("threshold-tuning", {
+        status: "running",
+        output: `$ threshold tuning\n${output}\n\n$ download threshold report\nDownloading ${remoteReport}...`,
+      });
+      const downloaded = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remoteReport,
+        AUTONOMY_REPORT_DOWNLOAD_DIR,
+      );
+      setResult("threshold-tuning", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ threshold tuning\n${output}\n\n$ download threshold report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+    } catch (err) {
+      setResult("threshold-tuning", { status: "failed", output: `$ threshold tuning\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const registerFieldEvidenceCase = async () => {
     if (!fieldCase.caseName.trim() || !fieldCase.conditions.trim()) {
       setError("Field case name and condition tags are required.");
@@ -747,11 +868,30 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       title: "Bench Report",
       detail: "Validates the deployed terrain bundle, creates a Pi support bundle, and downloads it.",
     },
+    {
+      id: "threshold-tuning",
+      title: "Threshold Tuning",
+      detail: "Generates and downloads the replay-gate threshold report from registered real field cases.",
+    },
+    {
+      id: "autonomy-readiness",
+      title: "Autonomy Readiness",
+      detail: "Runs the strict final audit against the latest Pi support bundle and field evidence artifacts.",
+      command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/run_autonomy_readiness_audit.sh`,
+    },
   ];
 
   const runSetupStep = async (step: SetupStep) => {
     if (step.id === "bench-report") {
       await createBenchReport();
+      return;
+    }
+    if (step.id === "threshold-tuning") {
+      await runThresholdTuning();
+      return;
+    }
+    if (step.id === "autonomy-readiness") {
+      await runAutonomyReadiness();
       return;
     }
     if (!step.command) return;

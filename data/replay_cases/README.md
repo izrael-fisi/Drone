@@ -97,6 +97,21 @@ vision-nav-audit-replay-coverage \
   --manifest data/replay_cases/field_manifest.json
 ```
 
+Then generate the threshold-tuning report used by the autonomy readiness audit:
+
+```bash
+vision-nav-tune-replay-thresholds \
+  --manifest data/replay_cases/field_manifest.json \
+  --output data/replay_cases/threshold_tuning_report.json
+```
+
+The report records the gate config, observed accepted-rate margins, covered
+conditions, and per-case gate status. It passes only when full real field
+coverage and all replay gates pass under the selected thresholds. Pi support
+bundles automatically include this report from
+`~/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json` when it
+exists.
+
 ## Coverage Audit
 
 Before treating replay validation as field-ready, audit the manifest for the

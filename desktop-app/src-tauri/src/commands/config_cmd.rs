@@ -41,6 +41,9 @@ pub struct SupportBundleSummary {
     pub field_evidence_status: Option<String>,
     pub field_evidence_field_case_count: Option<u64>,
     pub field_evidence_report_count: Option<u64>,
+    pub threshold_tuning_status: Option<String>,
+    pub threshold_tuning_field_case_count: Option<u64>,
+    pub threshold_tuning_report_count: Option<u64>,
     pub bench_readiness_status: Option<String>,
     pub bench_readiness_failed_count: Option<u64>,
     pub bench_readiness_degraded_count: Option<u64>,
@@ -151,6 +154,19 @@ pub struct SupportBundleFieldEvidenceReport {
 }
 
 #[derive(Serialize)]
+pub struct SupportBundleThresholdTuningReport {
+    pub status: Option<String>,
+    pub method: Option<String>,
+    pub manifest_path: Option<String>,
+    pub coverage_status: Option<String>,
+    pub replay_status: Option<String>,
+    pub case_count: Option<u64>,
+    pub field_case_count: Option<u64>,
+    pub covered_conditions: Option<serde_json::Value>,
+    pub margins: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleBenchReadinessCheck {
     pub name: Option<String>,
     pub status: Option<String>,
@@ -213,6 +229,7 @@ pub struct SupportBundleDetails {
     pub ardupilot_param_reports: Vec<SupportBundleArduPilotParamReport>,
     pub feature_method_benchmark_reports: Vec<SupportBundleFeatureMethodBenchmarkReport>,
     pub field_evidence_reports: Vec<SupportBundleFieldEvidenceReport>,
+    pub threshold_tuning_reports: Vec<SupportBundleThresholdTuningReport>,
     pub bench_readiness: Option<SupportBundleBenchReadinessReport>,
     pub entry_count: usize,
 }
@@ -339,6 +356,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut ardupilot_param_reports = Vec::new();
     let mut feature_method_benchmark_reports = Vec::new();
     let mut field_evidence_reports = Vec::new();
+    let mut threshold_tuning_reports = Vec::new();
     let mut bench_readiness = manifest
         .get("bench_readiness")
         .map(bench_readiness_report_from_json);
@@ -384,6 +402,10 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 field_evidence_reports.push(field_evidence_report_from_json(&value));
             }
+        } else if name.starts_with("summaries/threshold_tuning/") && name.ends_with(".json") {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                threshold_tuning_reports.push(threshold_tuning_report_from_json(&value));
+            }
         } else if name == "summaries/bench_readiness.json" {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 bench_readiness = Some(bench_readiness_report_from_json(&value));
@@ -408,6 +430,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         ardupilot_param_reports,
         feature_method_benchmark_reports,
         field_evidence_reports,
+        threshold_tuning_reports,
         bench_readiness,
         entry_count,
         manifest,
@@ -761,6 +784,30 @@ fn field_evidence_report_from_json(value: &serde_json::Value) -> SupportBundleFi
     }
 }
 
+fn threshold_tuning_report_from_json(
+    value: &serde_json::Value,
+) -> SupportBundleThresholdTuningReport {
+    let summary = value.get("summary");
+    SupportBundleThresholdTuningReport {
+        status: json_string(value.get("status")),
+        method: json_string(value.get("method")),
+        manifest_path: json_string(value.get("manifest_path")),
+        coverage_status: json_string(summary.and_then(|value| value.get("coverage_status"))),
+        replay_status: json_string(summary.and_then(|value| value.get("replay_status"))),
+        case_count: summary
+            .and_then(|value| value.get("case_count"))
+            .and_then(|value| value.as_u64()),
+        field_case_count: summary
+            .and_then(|value| value.get("field_case_count"))
+            .and_then(|value| value.as_u64()),
+        covered_conditions: summary
+            .and_then(|value| value.get("covered_conditions"))
+            .cloned()
+            .or_else(|| value.get("conditions").cloned()),
+        margins: value.pointer("/metrics/margins").cloned(),
+    }
+}
+
 fn bench_readiness_report_from_json(
     value: &serde_json::Value,
 ) -> SupportBundleBenchReadinessReport {
@@ -1009,6 +1056,13 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         field_evidence_report_count: manifest
             .pointer("/field_evidence/report_count")
             .and_then(|value| value.as_u64()),
+        threshold_tuning_status: json_string(manifest.pointer("/threshold_tuning/status")),
+        threshold_tuning_field_case_count: manifest
+            .pointer("/threshold_tuning/field_case_count")
+            .and_then(|value| value.as_u64()),
+        threshold_tuning_report_count: manifest
+            .pointer("/threshold_tuning/report_count")
+            .and_then(|value| value.as_u64()),
         bench_readiness_status: json_string(manifest.pointer("/bench_readiness/status")),
         bench_readiness_failed_count: manifest
             .pointer("/bench_readiness/summary/failed")
@@ -1027,6 +1081,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.ardupilot_params_status.is_none()
         && summary.feature_method_benchmark_status.is_none()
         && summary.field_evidence_status.is_none()
+        && summary.threshold_tuning_status.is_none()
         && summary.bench_readiness_status.is_none()
     {
         return None;
@@ -1132,6 +1187,11 @@ mod tests {
                 "report_count": 1,
                 "field_case_count": 8
             },
+            "threshold_tuning": {
+                "status": "passed",
+                "report_count": 1,
+                "field_case_count": 8
+            },
             "bench_readiness": {
                 "status": "degraded",
                 "summary": {
@@ -1172,6 +1232,9 @@ mod tests {
         assert_eq!(summary.field_evidence_status.as_deref(), Some("passed"));
         assert_eq!(summary.field_evidence_field_case_count, Some(8));
         assert_eq!(summary.field_evidence_report_count, Some(1));
+        assert_eq!(summary.threshold_tuning_status.as_deref(), Some("passed"));
+        assert_eq!(summary.threshold_tuning_field_case_count, Some(8));
+        assert_eq!(summary.threshold_tuning_report_count, Some(1));
         assert_eq!(summary.bench_readiness_status.as_deref(), Some("degraded"));
         assert_eq!(summary.bench_readiness_failed_count, Some(0));
         assert_eq!(summary.bench_readiness_degraded_count, Some(1));
@@ -1393,6 +1456,31 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write field evidence");
+            zip.start_file("summaries/threshold_tuning/field_manifest-01.json", options)
+                .expect("threshold tuning entry");
+            zip.write_all(
+                serde_json::json!({
+                    "status": "passed",
+                    "method": "field-replay-gate-threshold-audit",
+                    "manifest_path": "field_manifest.json",
+                    "summary": {
+                        "coverage_status": "passed",
+                        "replay_status": "passed",
+                        "case_count": 8,
+                        "field_case_count": 8,
+                        "covered_conditions": ["good_texture", "low_texture", "blur"]
+                    },
+                    "metrics": {
+                        "margins": {
+                            "good_map_accepted_rate": 0.25,
+                            "wrong_map_accepted_rate": 0.0
+                        }
+                    }
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write threshold tuning");
             zip.start_file("summaries/bench_readiness.json", options)
                 .expect("bench readiness entry");
             zip.write_all(
@@ -1419,7 +1507,7 @@ mod tests {
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(details.entry_count, 12);
+        assert_eq!(details.entry_count, 13);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(details.log_previews.len(), 1);
@@ -1506,6 +1594,29 @@ mod tests {
                 .status
                 .as_deref(),
             Some("covered")
+        );
+        assert_eq!(details.threshold_tuning_reports.len(), 1);
+        assert_eq!(
+            details.threshold_tuning_reports[0].status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            details.threshold_tuning_reports[0].method.as_deref(),
+            Some("field-replay-gate-threshold-audit")
+        );
+        assert_eq!(
+            details.threshold_tuning_reports[0]
+                .coverage_status
+                .as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            details.threshold_tuning_reports[0].replay_status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            details.threshold_tuning_reports[0].field_case_count,
+            Some(8)
         );
         let readiness = details.bench_readiness.expect("bench readiness report");
         assert_eq!(readiness.status.as_deref(), Some("degraded"));

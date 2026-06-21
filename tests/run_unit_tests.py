@@ -14,6 +14,7 @@ import numpy as np
 
 from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
 from vision_nav.ardupilot_params import check_ardupilot_external_nav_params, params_from_text as ardupilot_params_from_text
+from vision_nav.autonomy_readiness import REQUIRED_FIELD_CONDITIONS, evaluate_autonomy_readiness
 from vision_nav.bench_readiness import evaluate_bench_readiness, evaluate_bench_readiness_file
 from vision_nav.benchmark_retrieval import benchmark_retrieval
 from vision_nav.bundle import (
@@ -50,6 +51,7 @@ from vision_nav.replay_dataset_audit import audit_replay_dataset_coverage
 from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
 from vision_nav.support_bundle import create_support_bundle
+from vision_nav.threshold_tuning import evaluate_threshold_tuning
 from vision_nav.terrain_estimator import TerrainEstimator
 from vision_nav.terrain_tiles import (
     create_tile_schema,
@@ -1389,6 +1391,32 @@ RC8_OPTION,90
                 }
             )
         )
+        threshold_tuning_report = root / "threshold_tuning_report.json"
+        threshold_tuning_report.write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "method": "field-replay-gate-threshold-audit",
+                    "manifest_path": "field_manifest.json",
+                    "conditions": REQUIRED_FIELD_CONDITIONS,
+                    "summary": {
+                        "coverage_status": "passed",
+                        "replay_status": "passed",
+                        "case_count": 8,
+                        "field_case_count": 8,
+                        "covered_conditions": REQUIRED_FIELD_CONDITIONS,
+                        "tuned_conditions": REQUIRED_FIELD_CONDITIONS,
+                    },
+                    "metrics": {
+                        "margins": {
+                            "good_map_accepted_rate": 0.25,
+                            "degraded_accepted_rate": 0.4,
+                            "wrong_map_accepted_rate": 0.0,
+                        }
+                    },
+                }
+            )
+        )
 
         result = create_support_bundle(
             bundle=str(bundle),
@@ -1404,6 +1432,7 @@ RC8_OPTION,90
             replay_case_manifest_path=str(replay_manifest),
             feature_method_benchmark_paths=[str(feature_benchmark_dir)],
             field_evidence_report_paths=[str(field_evidence_report)],
+            threshold_tuning_report_paths=[str(threshold_tuning_report)],
             include_map_assets=True,
         )
         assert_equal(result["status"], "passed", "support bundle status")
@@ -1426,6 +1455,7 @@ RC8_OPTION,90
             "summaries/ardupilot_params/param_check.json",
             "summaries/feature_method_benchmarks/unit-method-benchmark-01.json",
             "summaries/field_evidence/field_manifest-01.json",
+            "summaries/threshold_tuning/field_manifest-01.json",
             "summaries/bench_readiness.json",
             "extras/px4_sitl_session/px4_sitl_evidence_session.json",
             "extras/px4_sitl_session/receiver_capture/vehicle_visual_odometry.txt",
@@ -1434,6 +1464,7 @@ RC8_OPTION,90
             "extras/ardupilot_params/ardupilot.params",
             "extras/feature_method_benchmarks/feature-method-bench/unit-method-benchmark.json",
             "extras/field_evidence/field_evidence_report.json",
+            "extras/threshold_tuning/threshold_tuning_report.json",
         }:
             if expected not in names:
                 raise AssertionError(f"Missing {expected} from support bundle zip")
@@ -1451,6 +1482,8 @@ RC8_OPTION,90
         assert_equal(manifest["feature_method_benchmarks"]["reports"][0]["recommended_method"], "orb", "support feature benchmark recommendation")
         assert_equal(manifest["field_evidence"]["status"], "passed", "support field evidence status")
         assert_equal(manifest["field_evidence"]["field_case_count"], 8, "support field evidence case count")
+        assert_equal(manifest["threshold_tuning"]["status"], "passed", "support threshold tuning status")
+        assert_equal(manifest["threshold_tuning"]["field_case_count"], 8, "support threshold tuning field case count")
         assert_equal(manifest["bench_readiness"]["status"], "degraded", "support bench readiness status")
         assert_equal(manifest["bench_readiness"]["summary"]["degraded"], 1, "support bench readiness degraded count")
         readiness = evaluate_bench_readiness_file(zip_path)
@@ -1514,6 +1547,142 @@ RC8_OPTION,90
             raise AssertionError("Field evidence should be optional unless required")
         field_required = evaluate_bench_readiness(missing_field_evidence, require_field_evidence=True)
         assert_equal(field_required["status"], "failed", "bench readiness required missing field evidence")
+
+
+def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        research_doc = root / "autonomy-ground-control-research.md"
+        research_doc.write_text(
+            "\n".join(
+                [
+                    "# Autonomy And Ground Control Research",
+                    "## Highest-Value References",
+                    "## Recommended Product Architecture Changes",
+                    "## Near-Term Repo Integration Plan",
+                ]
+            )
+        )
+        implementation_plan = root / "autonomy-ground-control-implementation-plan.md"
+        implementation_plan.write_text(
+            "\n".join(
+                [
+                    "# Autonomy And Ground Control Implementation Plan",
+                    "### Track 1: External Position Output",
+                    "### Track 2: ROS 2 Companion Runtime",
+                    "### Track 3: Terrain Map Bundle Pipeline",
+                    "### Track 4: Desktop Setup And Mission UX",
+                    "### Track 5: Validation And Product Risk Controls",
+                ]
+            )
+        )
+        support_manifest = root / "support_manifest.json"
+        support_manifest.write_text(
+            json.dumps(
+                {
+                    "name": "unit-support",
+                    "metadata": {"generated_at": "2026-06-21T00:00:00Z"},
+                    "bundle": {"bundle_id": "unit-bundle", "health": {"status": "passed"}},
+                    "logs": {
+                        "copied": ["logs/terrain_matches.jsonl"],
+                        "missing": [],
+                        "summaries": [{"accepted_rate": 1.0}],
+                    },
+                    "replay_gates": {"status": "passed", "case_count": 8},
+                    "px4_sitl_evidence": {
+                        "status": "passed",
+                        "expected_message": "odometry",
+                        "listener": {"sample_count": 5},
+                    },
+                    "px4_params": {
+                        "status": "passed",
+                        "parameters": {"EKF2_EV_CTRL": 1, "EKF2_HGT_REF": 0, "EKF2_GPS_CTRL": 7},
+                    },
+                    "feature_method_benchmarks": {
+                        "status": "passed",
+                        "report_count": 1,
+                        "reports": [{"recommended_method": "orb"}],
+                    },
+                    "field_evidence": {
+                        "status": "passed",
+                        "report_count": 1,
+                        "field_case_count": 8,
+                        "covered_conditions": REQUIRED_FIELD_CONDITIONS,
+                    },
+                }
+            )
+        )
+        field_report = root / "field_evidence.json"
+        field_report.write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "summary": {
+                        "coverage_status": "passed",
+                        "replay_status": "passed",
+                        "case_count": 8,
+                        "field_case_count": 8,
+                        "covered_conditions": REQUIRED_FIELD_CONDITIONS,
+                    },
+                }
+            )
+        )
+        threshold_report = root / "threshold_tuning.json"
+        threshold_report.write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "method": "unit-field-grid-search",
+                    "conditions": REQUIRED_FIELD_CONDITIONS,
+                }
+            )
+        )
+
+        ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=support_manifest,
+            field_evidence_report_path=field_report,
+            threshold_tuning_report_path=threshold_report,
+        )
+        assert_equal(ready["status"], "passed", "autonomy readiness full proof status")
+        ready_checks = {check["name"]: check["status"] for check in ready["checks"]}
+        assert_equal(ready_checks["support_bundle_bench_readiness"], "passed", "autonomy readiness support bundle")
+        assert_equal(ready_checks["field_evidence_proof"], "passed", "autonomy readiness field evidence")
+        assert_equal(ready_checks["threshold_tuning"], "passed", "autonomy readiness threshold tuning")
+
+        bundled_threshold_manifest = root / "support_manifest_with_threshold.json"
+        bundled_threshold_data = json.loads(support_manifest.read_text())
+        bundled_threshold_data["threshold_tuning"] = {
+            "status": "passed",
+            "report_count": 1,
+            "field_case_count": 8,
+            "covered_conditions": REQUIRED_FIELD_CONDITIONS,
+            "reports": [
+                {
+                    "status": "passed",
+                    "covered_conditions": REQUIRED_FIELD_CONDITIONS,
+                }
+            ],
+        }
+        bundled_threshold_manifest.write_text(json.dumps(bundled_threshold_data))
+        bundled_threshold_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=bundled_threshold_manifest,
+            field_evidence_report_path=field_report,
+        )
+        assert_equal(bundled_threshold_ready["status"], "passed", "autonomy readiness bundled threshold status")
+
+        missing_threshold = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=support_manifest,
+            field_evidence_report_path=field_report,
+        )
+        assert_equal(missing_threshold["status"], "failed", "autonomy readiness missing threshold report")
+        missing_checks = {check["name"]: check["status"] for check in missing_threshold["checks"]}
+        assert_equal(missing_checks["threshold_tuning"], "failed", "autonomy readiness threshold fail closed")
 
 
 def test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance() -> None:
@@ -1770,6 +1939,73 @@ def test_field_evidence_gate_combines_coverage_and_replay_gates() -> None:
         assert_equal(failed["status"], "failed", "field evidence gate missing log status")
         if not any(issue["severity"] == "error" for issue in failed["coverage"]["case_issues"]):
             raise AssertionError("Expected missing field log to create coverage error")
+
+
+def test_threshold_tuning_report_requires_full_field_coverage() -> None:
+    def good_record(x_m: float, y_m: float) -> dict:
+        return {
+            "result": {
+                "status": "accepted",
+                "confidence": 0.84,
+                "inliers": 34,
+                "reprojection_error_px": 1.6,
+                "scale_confidence": 0.76,
+                "local_enu_m": {"x": x_m, "y": y_m},
+                "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
+            }
+        }
+
+    def rejected_record(reason: str) -> dict:
+        return {"result": {"status": "rejected", "reason": reason}}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        case_specs = [
+            ("field-good-texture", "good_map", "good_texture", [good_record(0.0, 0.0), good_record(1.0, 0.2)]),
+            ("field-low-texture", "degraded", "low_texture", [rejected_record("low_texture")]),
+            ("field-blur", "degraded", "blur", [rejected_record("blur")]),
+            ("field-seasonal-change", "degraded", "seasonal_change", [rejected_record("seasonal_change")]),
+            ("field-lighting-change", "degraded", "lighting_change", [rejected_record("lighting_change")]),
+            ("field-altitude-scale-change", "good_map", "altitude_scale_change", [good_record(2.0, 0.3), good_record(3.0, 0.8)]),
+            ("field-repeated-patterns", "wrong_map", "repeated_patterns", [rejected_record("ambiguous")]),
+            ("field-wrong-map", "wrong_map", "wrong_map", [rejected_record("wrong_map")]),
+        ]
+        manifest_cases = []
+        for case_name, expected, condition, records in case_specs:
+            log = base / "logs" / condition / "terrain_matches.jsonl"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+            manifest_cases.append(
+                {
+                    "case_name": case_name,
+                    "expected": expected,
+                    "dataset_type": "field",
+                    "conditions": [condition],
+                    "bundle": "field-bundle",
+                    "log": str(log.relative_to(base)),
+                }
+            )
+        manifest = base / "manifest.json"
+        manifest.write_text(json.dumps({"version": "0.1.0", "cases": manifest_cases}))
+
+        output = base / "threshold_tuning_report.json"
+        report = evaluate_threshold_tuning(manifest, output_path=output)
+        assert_equal(report["status"], "passed", "threshold tuning status")
+        assert_equal(report["method"], "field-replay-gate-threshold-audit", "threshold tuning method")
+        assert_equal(set(report["conditions"]), set(REQUIRED_FIELD_CONDITIONS), "threshold tuning covered conditions")
+        assert_equal(report["summary"]["field_case_count"], 8, "threshold tuning field case count")
+        assert_equal(report["metrics"]["by_expected"]["good_map"]["case_count"], 2, "threshold tuning good-map cases")
+        if report["metrics"]["margins"]["wrong_map_accepted_rate"] is None:
+            raise AssertionError("Expected wrong-map margin to be reported")
+        if not output.exists():
+            raise AssertionError("Expected threshold tuning report to be written")
+
+        missing_manifest = base / "missing_threshold_manifest.json"
+        missing_manifest.write_text(json.dumps({"version": "0.1.0", "cases": manifest_cases[:-1]}))
+        failed = evaluate_threshold_tuning(missing_manifest)
+        assert_equal(failed["status"], "failed", "threshold tuning missing coverage status")
+        if "wrong_map" not in {item["key"] for item in failed["coverage"]["requirements"] if item["status"] == "missing"}:
+            raise AssertionError("Expected missing wrong-map coverage in threshold tuning report")
 
 
 def test_replay_case_registry_registers_and_replaces_cases() -> None:
@@ -2159,11 +2395,13 @@ def main() -> None:
         test_gdal_metadata_degrades_gracefully_when_unavailable,
         test_terrain_profile_reports_agl_and_gsd_warnings,
         test_support_bundle_collects_manifest_health_logs_and_summary,
+        test_autonomy_readiness_requires_external_proof_artifacts,
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
         test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance,
         test_synthetic_replay_case_manifest_passes_all_cases,
         test_replay_dataset_coverage_audit_requires_real_field_cases,
         test_field_evidence_gate_combines_coverage_and_replay_gates,
+        test_threshold_tuning_report_requires_full_field_coverage,
         test_replay_case_registry_registers_and_replaces_cases,
         test_geospatial_health_blocks_missing_georef,
         test_terrain_tile_origins_cover_edges,

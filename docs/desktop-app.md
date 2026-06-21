@@ -241,16 +241,18 @@ map metadata, bundle health, runtime logs, generated summaries, app/git state,
 the configured MAVLink endpoint, optional replay-gate reports, optional PX4
 SITL receiver evidence and parameter checks, optional ArduPilot parameter
 checks, optional feature-method benchmarks, optional field-evidence gates, and
-an automatic bench-readiness summary. The panel lists recent downloaded support
-bundle ZIPs with parsed bench-readiness status, bundle health, checksum status,
-map source provenance, georeference confidence, replay-gate status, PX4
-evidence status, PX4 parameter status, ArduPilot parameter status,
-feature-method benchmark status, and field-evidence status so the operator can
-confirm what was captured without manually opening the archive. Feature-method
-benchmark reports from `$HOME/DroneTransfer/outgoing/feature-method-bench` and
-field-evidence reports from
-`$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json` are also
-packaged automatically when present and counted in bench readiness. The list can
+optional threshold-tuning reports, and an automatic bench-readiness summary. The
+panel lists recent downloaded support bundle ZIPs with parsed bench-readiness
+status, bundle health, checksum status, map source provenance, georeference
+confidence, replay-gate status, PX4 evidence status, PX4 parameter status,
+ArduPilot parameter status, feature-method benchmark status, field-evidence
+status, and threshold-tuning status so the operator can confirm what was
+captured without manually opening the archive. Feature-method benchmark reports
+from `$HOME/DroneTransfer/outgoing/feature-method-bench`, field-evidence reports
+from `$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`, and
+threshold-tuning reports from
+`$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json` are also
+packaged automatically when present. The list can
 reveal a ZIP in the local file manager, copy the full path for support notes,
 show a compact detail view, or delete stale ZIP files after a bench session. The
 detail view reads the ZIP archive directly and shows support metadata,
@@ -258,8 +260,8 @@ git/app state, log status counts, accepted-rate summaries, bench-readiness
 checks, replay-gate case results, PX4 receiver sample counts, MAVLink
 version/link hints, PX4 external-vision parameter readiness, ArduPilot
 ExternalNav parameter readiness, feature-method benchmark recommendations,
-field-evidence case coverage, per-condition coverage status, and compact
-per-record previews from bundled runtime/replay JSONL logs. It also
+field-evidence case coverage, per-condition coverage status, threshold-tuning
+margins, and compact per-record previews from bundled runtime/replay JSONL logs. It also
 previews a bounded set of small image artifacts from camera, debug, replay,
 smoke, or extra-file paths while skipping full map, orthophoto, and tile
 assets.
@@ -283,11 +285,19 @@ and whether to replace an existing case. The app runs
 field replay manifest and writes the field-evidence report that the next
 support bundle will include automatically.
 
+Module Setup can run `Threshold Tuning` after enough field cases are registered.
+The action runs `scripts/pi/run_threshold_tuning_report.sh` over SSH, writes the
+threshold report under the Pi replay-cases folder, and downloads it to
+`~/DroneTransfer/from-pi/replay-cases/` on the desktop.
+
 After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
 `Open Bench Report In Module Setup` action opens that device's setup tab with
 the uploaded bundle path already handed off. From there, `Create Bench Report`
 validates the deployed terrain bundle, creates the support bundle on the Pi, and
-downloads it to the desktop.
+downloads it to the desktop. The following `Autonomy Readiness` setup action
+runs `scripts/pi/run_autonomy_readiness_audit.sh` over SSH against the latest
+Pi-side support bundle, then downloads the strict final audit report to
+`~/DroneTransfer/from-pi/replay-cases/` on the desktop.
 
 ## MAVLink
 

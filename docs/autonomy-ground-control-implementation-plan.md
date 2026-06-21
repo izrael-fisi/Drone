@@ -341,6 +341,32 @@ Status:
 - Done: downloaded support-bundle details show field-evidence requirement
   status per condition, making missing real-world coverage visible from the app
   without opening JSON reports.
+- Done: `vision-nav-tune-replay-thresholds` generates the
+  `threshold_tuning_report.json` artifact from a replay manifest, records the
+  selected gate config and observed margins, and fails unless the real field
+  coverage audit and replay gates both pass.
+- Done: `scripts/pi/run_threshold_tuning_report.sh` wraps threshold report
+  generation on the Pi and emits a stable report marker for desktop download.
+- Done: Module Setup exposes a `Threshold Tuning` SSH action that generates and
+  downloads the threshold report after field cases are registered.
+- Done: support bundles ingest threshold-tuning reports, copy the raw JSON under
+  `extras/threshold_tuning/`, publish parsed reports under
+  `summaries/threshold_tuning/`, and let the final autonomy-readiness audit use
+  the bundled threshold proof.
+- Done: downloaded support-bundle details show threshold-tuning status,
+  field-case counts, and accepted-rate margins beside field evidence and method
+  benchmark evidence.
+- Done: `vision-nav-autonomy-readiness` provides a strict goal-level audit
+  across this research document, the implementation plan, support-bundle bench
+  readiness, PX4 receiver proof, real field evidence, feature-method benchmark
+  evidence, and threshold-tuning proof. It intentionally fails until the
+  external PX4 and field-log artifacts exist.
+- Done: `scripts/pi/run_autonomy_readiness_audit.sh` runs the same final audit
+  on the Pi against the latest support bundle and writes
+  `autonomy_readiness_report.json` for transfer or support review.
+- Done: Module Setup exposes an `Autonomy Readiness` SSH action after the bench
+  report step, so operators can run the strict final audit from the desktop app
+  and download the JSON report to `~/DroneTransfer/from-pi/replay-cases/`.
 
 Tasks:
 
@@ -353,9 +379,13 @@ Tasks:
 2. Run `vision-nav-benchmark-feature-methods` on real field logs and use the
    generated reports to choose the Pi default and higher-compute fallback.
 3. Tune replay-gate thresholds against real field logs for blur, seasonal
-   change, altitude/scale change, repeated patterns, and wrong-map cases.
+   change, altitude/scale change, repeated patterns, and wrong-map cases, then
+   save the generated `threshold_tuning_report.json` artifact.
 4. Add native replay artifact views for full extracted support-bundle logs and
    frame timelines after real field datasets exist.
+5. Run `vision-nav-autonomy-readiness` against the final support bundle, field
+   evidence report, and threshold-tuning report before calling the autonomy and
+   ground-control implementation goal complete.
 
 Acceptance checks:
 
@@ -363,6 +393,9 @@ Acceptance checks:
   through the synthetic replay manifest. Real field cases remain required before
   threshold tuning is considered complete.
 - Support bundles are enough to reproduce a failed bench run offline.
+- The autonomy-readiness audit passes only when bench evidence, real field
+  evidence, feature-method benchmark evidence, and threshold tuning are all
+  present and passing.
 
 ### Track 6: ArduPilot Adapter Path
 

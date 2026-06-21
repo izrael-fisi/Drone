@@ -336,6 +336,34 @@ This gate requires real field log files, checks that all required field
 conditions are covered, and evaluates every replay case with the same
 accepted/degraded/wrong-map gates used in support bundles.
 
+Generate the threshold-tuning report from the same real field manifest:
+
+```bash
+vision-nav-tune-replay-thresholds \
+  --manifest data/replay_cases/field_manifest.json \
+  --output data/replay_cases/threshold_tuning_report.json
+```
+
+Use the CLI threshold flags, such as `--min-confidence`,
+`--min-good-accepted-rate`, and `--max-reprojection-error-px`, when promoting a
+new set of gate thresholds after reviewing the field cases. Support bundles
+include `threshold_tuning_report.json` automatically from the same
+`~/DroneTransfer/outgoing/replay-cases/` folder when it exists.
+
+After a support bundle, field-evidence report, feature-method benchmark report,
+and threshold-tuning report exist, run the goal-level readiness audit:
+
+```bash
+vision-nav-autonomy-readiness \
+  --support-bundle "$HOME/DroneTransfer/from-pi/support-bundles/<bundle>.zip" \
+  --field-evidence-report data/replay_cases/field_evidence_report.json \
+  --threshold-tuning-report data/replay_cases/threshold_tuning_report.json
+```
+
+This is intentionally stricter than the synthetic smoke tests. It fails until
+PX4 receiver proof, real field coverage, feature-method benchmark evidence, and
+field-tuned acceptance thresholds are all present.
+
 For a dependency-free local registry smoke test:
 
 ```bash
