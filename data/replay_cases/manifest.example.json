@@ -1,0 +1,19 @@
+{
+  "version": "0.1.0",
+  "cases": [
+    {
+      "case_name": "good-texture-bench",
+      "expected": "good_map",
+      "bundle": "mission_bundle",
+      "log": "terrain-run/terrain_matches.jsonl",
+      "notes": "Clear texture, matching map, nominal focus and lighting."
+    },
+    {
+      "case_name": "wrong-map-bench",
+      "expected": "wrong_map",
+      "bundle": "mission_bundle",
+      "log": "terrain-run/wrong_map_matches.jsonl",
+      "notes": "Frames intentionally replayed against the wrong map. Accepted rate must remain zero."
+    }
+  ]
+}

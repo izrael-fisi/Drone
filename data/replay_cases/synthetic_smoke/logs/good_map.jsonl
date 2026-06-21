@@ -1,0 +1,4 @@
+{"sequence":1,"timestamp_us":1000000,"result":{"status":"accepted","confidence":0.82,"inliers":34,"reprojection_error_px":1.6,"scale_confidence":0.74,"local_enu_m":{"x":0.0,"y":0.0,"z":null},"covariance":{"x_m2":4.0,"y_m2":4.0,"z_m2":null,"yaw_rad2":null}}}
+{"sequence":2,"timestamp_us":2000000,"result":{"status":"accepted","confidence":0.84,"inliers":36,"reprojection_error_px":1.4,"scale_confidence":0.76,"local_enu_m":{"x":4.0,"y":1.0,"z":null},"covariance":{"x_m2":4.0,"y_m2":4.0,"z_m2":null,"yaw_rad2":null}}}
+{"sequence":3,"timestamp_us":3000000,"result":{"status":"accepted","confidence":0.8,"inliers":31,"reprojection_error_px":1.9,"scale_confidence":0.71,"local_enu_m":{"x":8.0,"y":2.0,"z":null},"covariance":{"x_m2":5.0,"y_m2":5.0,"z_m2":null,"yaw_rad2":null}}}
+{"sequence":4,"timestamp_us":4000000,"result":{"status":"rejected","reason":"synthetic_low_texture_patch"}}

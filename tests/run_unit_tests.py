@@ -33,9 +33,10 @@ from vision_nav.external_position import (
 from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
 from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health_report
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
-from vision_nav.mavlink_bridge import MavlinkVisionBridge, parse_mavlink_endpoint
+from vision_nav.mavlink_bridge import MavlinkSendResult, MavlinkVisionBridge, parse_mavlink_endpoint, send_records_once
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
 from vision_nav.ros2_bridge import export_rosbag_jsonl, ros_records_from_log
+from vision_nav.replay_case_manifest import evaluate_replay_case_manifest
 from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
 from vision_nav.support_bundle import create_support_bundle
@@ -497,6 +498,32 @@ def test_mavlink_endpoint_parsing_and_axis_mapping() -> None:
     assert_equal(covariance[6], 9.0, "MAVLink east covariance")
 
 
+def test_mavlink_log_sender_uses_selected_message_type() -> None:
+    calls = []
+
+    class FakeBridge:
+        def send_match_result(self, result, *, message_type="vision_position_estimate"):
+            calls.append((result, message_type))
+            if result.get("status") != "accepted":
+                return MavlinkSendResult(False, reason="match_not_accepted")
+            return MavlinkSendResult(True, message="ODOMETRY" if message_type == "odometry" else "VISION_POSITION_ESTIMATE")
+
+    report = send_records_once(
+        [
+            {"result": {"status": "accepted", "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0}}},
+            {"result": {"status": "rejected", "reason": "low_inliers"}},
+        ],
+        FakeBridge(),
+        message_type="odometry",
+        repeat=2,
+    )
+    assert_equal(report["message_type"], "odometry", "mavlink log sender message type")
+    assert_equal(report["sent"], 2, "mavlink log sender sent count")
+    assert_equal(report["skipped"], 2, "mavlink log sender skipped count")
+    assert_equal(report["skip_reasons"], {"match_not_accepted": 2}, "mavlink log sender skip reasons")
+    assert_equal({message_type for _result, message_type in calls}, {"odometry"}, "mavlink log sender dispatch type")
+
+
 def test_external_position_payloads() -> None:
     estimate, reason = external_position_from_match_result(
         {
@@ -615,6 +642,9 @@ def test_ros2_odometry_and_diagnostics_adapters() -> None:
 def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        frame = root / "frames" / "frame_000001.png"
+        frame.parent.mkdir(parents=True)
+        write_minimal_png(frame, 2, 2)
         log = root / "terrain_matches.jsonl"
         log.write_text(
             "\n".join(
@@ -623,6 +653,7 @@ def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
                         {
                             "sequence": 1,
                             "timestamp_us": 1_000_000,
+                            "frame_path": "frames/frame_000001.png",
                             "result": {
                                 "status": "accepted",
                                 "timestamp_us": 1_000_000,
@@ -649,16 +680,29 @@ def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
             + "\n"
         )
         records = ros_records_from_log(log)
-        result = export_rosbag_jsonl(records, root / "rosbag-jsonl", source_log=log)
+        result = export_rosbag_jsonl(
+            records,
+            root / "rosbag-jsonl",
+            source_log=log,
+            frame_topic="/vision_nav/camera/image/compressed",
+        )
         metadata = json.loads(Path(result["metadata_path"]).read_text())
         messages = [json.loads(line) for line in Path(result["messages_path"]).read_text().splitlines()]
         assert_equal(metadata["format"], "vision_nav_rosbag_jsonl_v1", "rosbag jsonl format")
-        assert_equal(metadata["message_count"], 3, "rosbag jsonl message count")
-        assert_equal(metadata["topics"][0]["message_count"], 1, "rosbag odometry count")
-        assert_equal(metadata["topics"][1]["message_count"], 2, "rosbag diagnostics count")
-        assert_equal(messages[0]["topic"], "/vision_nav/odometry", "first rosbag jsonl topic")
-        assert_equal(messages[1]["topic"], "/diagnostics", "second rosbag jsonl topic")
-        assert_equal(messages[2]["message"]["status"][0]["message"], "terrain match rejected: low_inliers", "rejected diagnostic message")
+        assert_equal(metadata["message_count"], 4, "rosbag jsonl message count")
+        assert_equal(metadata["topics"][0]["type"], "sensor_msgs/msg/CompressedImage", "rosbag frame topic type")
+        assert_equal(metadata["topics"][0]["message_count"], 1, "rosbag frame count")
+        assert_equal(metadata["topics"][1]["message_count"], 1, "rosbag odometry count")
+        assert_equal(metadata["topics"][2]["message_count"], 2, "rosbag diagnostics count")
+        assert_equal(metadata["frame_export"]["enabled"], True, "rosbag frame export enabled")
+        assert_equal(messages[0]["topic"], "/vision_nav/camera/image/compressed", "first rosbag jsonl topic")
+        assert_equal(messages[0]["message"]["format"], "png", "rosbag frame format")
+        assert_equal(messages[0]["message"]["metadata"]["source_name"], "frame_000001.png", "rosbag frame source")
+        if not messages[0]["message"]["data_base64"]:
+            raise AssertionError("Expected frame export to include base64 image payload")
+        assert_equal(messages[1]["topic"], "/vision_nav/odometry", "second rosbag jsonl topic")
+        assert_equal(messages[2]["topic"], "/diagnostics", "third rosbag jsonl topic")
+        assert_equal(messages[3]["message"]["status"][0]["message"], "terrain match rejected: low_inliers", "rejected diagnostic message")
 
 
 def test_ros2_launch_profiles_static() -> None:
@@ -671,6 +715,30 @@ def test_ros2_launch_profiles_static() -> None:
     for expected in ("vision_nav.ros2_bridge", "--publish", "/vision_nav/odometry", "/diagnostics"):
         if expected not in replay:
             raise AssertionError(f"Replay ROS 2 launch profile missing {expected}")
+
+
+def test_ros2_package_wrapper_static() -> None:
+    root = Path(__file__).resolve().parents[1]
+    package_root = root / "ros2" / "drone_vision_nav"
+    package_xml = (package_root / "package.xml").read_text()
+    setup_py = (package_root / "setup.py").read_text()
+    live_wrapper = (package_root / "drone_vision_nav" / "terrain_nav_live.py").read_text()
+    replay_wrapper = (package_root / "drone_vision_nav" / "terrain_nav_replay.py").read_text()
+    for expected in ("<name>drone_vision_nav</name>", "<build_type>ament_python</build_type>", "rclpy", "nav_msgs", "sensor_msgs"):
+        if expected not in package_xml:
+            raise AssertionError(f"ROS 2 package.xml missing {expected}")
+    for expected in (
+        "terrain_nav_live = drone_vision_nav.terrain_nav_live:main",
+        "terrain_nav_replay = drone_vision_nav.terrain_nav_replay:main",
+        "share/{PACKAGE_NAME}/launch",
+        "vision_nav",
+    ):
+        if expected not in setup_py:
+            raise AssertionError(f"ROS 2 setup.py missing {expected}")
+    if "vision_nav.run_terrain_loop" not in live_wrapper:
+        raise AssertionError("Live ROS 2 wrapper does not call terrain runtime")
+    if "vision_nav.ros2_bridge" not in replay_wrapper:
+        raise AssertionError("Replay ROS 2 wrapper does not call ROS 2 bridge")
 
 
 def test_camera_health_report_on_synthetic_image() -> None:
@@ -1106,6 +1174,27 @@ def test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance() ->
         raise AssertionError(f"Expected covariance inflation issue, got {weak_messages}")
 
 
+def test_synthetic_replay_case_manifest_passes_all_cases() -> None:
+    root = Path(__file__).resolve().parents[1]
+    manifest = root / "data" / "replay_cases" / "synthetic_smoke" / "manifest.json"
+    with tempfile.TemporaryDirectory() as tmp:
+        summary = evaluate_replay_case_manifest(manifest, output_dir=Path(tmp))
+        assert_equal(summary["status"], "passed", "synthetic replay manifest status")
+        assert_equal(summary["case_count"], 3, "synthetic replay manifest case count")
+        statuses = {report["case_name"]: report["status"] for report in summary["reports"]}
+        assert_equal(
+            statuses,
+            {
+                "synthetic-good-map": "passed",
+                "synthetic-degraded-low-texture": "passed",
+                "synthetic-wrong-map": "passed",
+            },
+            "synthetic replay case statuses",
+        )
+        if not Path(summary["summary_path"]).exists():
+            raise AssertionError("Expected synthetic replay manifest summary to be written")
+
+
 def test_geospatial_health_blocks_missing_georef() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         bundle = Path(tmp) / "bundle"
@@ -1361,11 +1450,13 @@ def main() -> None:
         test_summarize_match_records,
         test_quality_metrics_and_covariance,
         test_mavlink_endpoint_parsing_and_axis_mapping,
+        test_mavlink_log_sender_uses_selected_message_type,
         test_external_position_payloads,
         test_external_position_stream_health,
         test_ros2_odometry_and_diagnostics_adapters,
         test_ros2_bag_jsonl_export_writes_topic_records,
         test_ros2_launch_profiles_static,
+        test_ros2_package_wrapper_static,
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
@@ -1375,6 +1466,7 @@ def main() -> None:
         test_support_bundle_collects_manifest_health_logs_and_summary,
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
         test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance,
+        test_synthetic_replay_case_manifest_passes_all_cases,
         test_geospatial_health_blocks_missing_georef,
         test_terrain_tile_origins_cover_edges,
         test_global_image_descriptor_separates_simple_textures,

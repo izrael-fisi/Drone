@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import math
+import mimetypes
 import time
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,7 @@ DIAG_OK = 0
 DIAG_WARN = 1
 DIAG_ERROR = 2
 DIAG_STALE = 3
+DEFAULT_MAX_FRAME_BYTES = 2_000_000
 
 
 def ros_stamp_from_us(timestamp_us: int | None) -> dict[str, int]:
@@ -199,6 +202,7 @@ def ros_record_from_runtime_record(
         "sequence": record.get("sequence"),
         "timestamp_us": record.get("timestamp_us", result.get("timestamp_us") if isinstance(result, dict) else None),
         "timestamp_utc": record.get("timestamp_utc"),
+        "frame_path": frame_path_from_runtime_record(record),
         "published": odometry is not None,
         "skip_reason": reason,
         "odometry": odometry,
@@ -223,10 +227,24 @@ def rosbag_jsonl_events_from_records(
     *,
     odometry_topic: str = "/vision_nav/odometry",
     diagnostics_topic: str = "/diagnostics",
+    frame_topic: str | None = None,
+    camera_frame_id: str = "down_camera",
+    frame_root: str | Path | None = None,
+    max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
 ) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for record in records:
         stamp = _record_stamp(record)
+        if frame_topic:
+            frame_event = compressed_image_event_from_record(
+                record,
+                frame_topic=frame_topic,
+                camera_frame_id=camera_frame_id,
+                frame_root=frame_root,
+                max_frame_bytes=max_frame_bytes,
+            )
+            if frame_event is not None:
+                events.append(frame_event)
         if record.get("odometry") is not None:
             events.append(
                 {
@@ -252,7 +270,11 @@ def rosbag_jsonl_events_from_records(
                 },
             }
         )
-    topic_rank = {odometry_topic: 0, diagnostics_topic: 1}
+    topic_rank = {}
+    if frame_topic:
+        topic_rank[frame_topic] = 0
+    topic_rank[odometry_topic] = 1
+    topic_rank[diagnostics_topic] = 2
     events.sort(key=lambda event: (int(event["timestamp_ns"]), topic_rank.get(str(event["topic"]), 99), str(event["topic"])))
     return events
 
@@ -264,15 +286,26 @@ def export_rosbag_jsonl(
     source_log: str | Path | None = None,
     odometry_topic: str = "/vision_nav/odometry",
     diagnostics_topic: str = "/diagnostics",
+    frame_topic: str | None = None,
+    camera_frame_id: str = "down_camera",
+    frame_root: str | Path | None = None,
+    max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
 ) -> dict[str, Any]:
     output_path = Path(output_dir).expanduser()
     output_path.mkdir(parents=True, exist_ok=True)
     messages_path = output_path / "messages.jsonl"
     metadata_path = output_path / "metadata.json"
+    effective_frame_root = frame_root
+    if effective_frame_root is None and source_log is not None:
+        effective_frame_root = Path(source_log).expanduser().parent
     events = rosbag_jsonl_events_from_records(
         records,
         odometry_topic=odometry_topic,
         diagnostics_topic=diagnostics_topic,
+        frame_topic=frame_topic,
+        camera_frame_id=camera_frame_id,
+        frame_root=effective_frame_root,
+        max_frame_bytes=max_frame_bytes,
     )
     with messages_path.open("w", encoding="utf-8") as stream:
         for event in events:
@@ -281,24 +314,41 @@ def export_rosbag_jsonl(
     for event in events:
         topic = str(event["topic"])
         topic_counts[topic] = topic_counts.get(topic, 0) + 1
+    topics = [
+        {
+            "name": odometry_topic,
+            "type": "nav_msgs/msg/Odometry",
+            "message_count": topic_counts.get(odometry_topic, 0),
+        },
+        {
+            "name": diagnostics_topic,
+            "type": "diagnostic_msgs/msg/DiagnosticArray",
+            "message_count": topic_counts.get(diagnostics_topic, 0),
+        },
+    ]
+    if frame_topic:
+        topics.insert(
+            0,
+            {
+                "name": frame_topic,
+                "type": "sensor_msgs/msg/CompressedImage",
+                "message_count": topic_counts.get(frame_topic, 0),
+            },
+        )
     metadata = {
         "format": "vision_nav_rosbag_jsonl_v1",
         "source_log": str(source_log) if source_log is not None else None,
         "message_file": messages_path.name,
         "message_count": len(events),
         "source_record_count": len(records),
-        "topics": [
-            {
-                "name": odometry_topic,
-                "type": "nav_msgs/msg/Odometry",
-                "message_count": topic_counts.get(odometry_topic, 0),
-            },
-            {
-                "name": diagnostics_topic,
-                "type": "diagnostic_msgs/msg/DiagnosticArray",
-                "message_count": topic_counts.get(diagnostics_topic, 0),
-            },
-        ],
+        "frame_export": {
+            "enabled": bool(frame_topic),
+            "topic": frame_topic,
+            "camera_frame_id": camera_frame_id if frame_topic else None,
+            "frame_root": str(effective_frame_root) if effective_frame_root is not None and frame_topic else None,
+            "max_frame_bytes": max_frame_bytes if frame_topic else None,
+        },
+        "topics": topics,
     }
     metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {
@@ -367,6 +417,11 @@ def parse_args() -> argparse.Namespace:
         "--export-rosbag-jsonl",
         help="Write a dependency-free ROS-bag-like directory with metadata.json and topic messages.jsonl.",
     )
+    parser.add_argument("--include-frame-topic", action="store_true", help="Include bounded camera frame messages in --export-rosbag-jsonl output.")
+    parser.add_argument("--frame-topic", default="/vision_nav/camera/image/compressed")
+    parser.add_argument("--camera-frame-id", default="down_camera")
+    parser.add_argument("--frame-root", help="Resolve relative frame_path entries from this directory. Defaults to the log directory.")
+    parser.add_argument("--max-frame-bytes", type=int, default=DEFAULT_MAX_FRAME_BYTES)
     return parser.parse_args()
 
 
@@ -380,6 +435,10 @@ def main() -> None:
             source_log=args.log,
             odometry_topic=args.odometry_topic,
             diagnostics_topic=args.diagnostics_topic,
+            frame_topic=args.frame_topic if args.include_frame_topic else None,
+            camera_frame_id=args.camera_frame_id,
+            frame_root=args.frame_root,
+            max_frame_bytes=args.max_frame_bytes,
         )
         print(json.dumps(result["metadata"], indent=2, sort_keys=True))
         return
@@ -441,6 +500,79 @@ def _publish_with_rclpy(
 
 def _stamp_to_ns(stamp: dict[str, int]) -> int:
     return int(stamp.get("sec") or 0) * 1_000_000_000 + int(stamp.get("nanosec") or 0)
+
+
+def frame_path_from_runtime_record(record: dict[str, Any]) -> str | None:
+    for key in ("frame_path", "frame", "image_path", "path"):
+        value = record.get(key)
+        if isinstance(value, str) and value:
+            return value
+    capture = record.get("capture")
+    if isinstance(capture, dict):
+        value = capture.get("frame_path")
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def resolve_frame_path(frame_path: str, frame_root: str | Path | None = None) -> Path:
+    path = Path(frame_path).expanduser()
+    if path.is_absolute():
+        return path
+    if frame_root is not None:
+        return Path(frame_root).expanduser() / path
+    return path
+
+
+def compressed_image_event_from_record(
+    record: dict[str, Any],
+    *,
+    frame_topic: str,
+    camera_frame_id: str,
+    frame_root: str | Path | None = None,
+    max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
+) -> dict[str, Any] | None:
+    frame_path = record.get("frame_path")
+    if not isinstance(frame_path, str) or not frame_path:
+        return None
+    path = resolve_frame_path(frame_path, frame_root)
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    if stat.st_size <= 0 or stat.st_size > max_frame_bytes:
+        return None
+    data = path.read_bytes()
+    mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    if mime_type == "image/jpeg":
+        image_format = "jpeg"
+    elif mime_type == "image/png":
+        image_format = "png"
+    elif mime_type.startswith("image/"):
+        image_format = mime_type.removeprefix("image/")
+    else:
+        image_format = path.suffix.lower().lstrip(".") or "unknown"
+    stamp = _record_stamp(record)
+    return {
+        "topic": frame_topic,
+        "type": "sensor_msgs/msg/CompressedImage",
+        "timestamp_ns": _stamp_to_ns(stamp),
+        "sequence": record.get("sequence"),
+        "message": {
+            "header": {
+                "stamp": stamp,
+                "frame_id": camera_frame_id,
+            },
+            "format": image_format,
+            "data_base64": base64.b64encode(data).decode("ascii"),
+            "metadata": {
+                "source_path": str(path),
+                "source_name": path.name,
+                "size_bytes": stat.st_size,
+                "mime_type": mime_type,
+            },
+        },
+    }
 
 
 def _record_stamp(record: dict[str, Any]) -> dict[str, int]:

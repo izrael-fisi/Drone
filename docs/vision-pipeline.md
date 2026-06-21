@@ -284,6 +284,17 @@ vision-nav-support-bundle \
   --replay-case-manifest data/replay_cases/manifest.example.json
 ```
 
+For a dependency-free local registry smoke test:
+
+```bash
+./scripts/dev/evaluate_synthetic_replay_cases.sh
+```
+
+This evaluates `data/replay_cases/synthetic_smoke/manifest.json`, covering a
+good-map case, a degraded low-texture case, and a wrong-map rejection case. It
+is synthetic coverage for the gate machinery; real field logs are still needed
+before tuning operational thresholds.
+
 ## Match Acceptance Checks
 
 Require:

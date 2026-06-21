@@ -12,6 +12,11 @@ venv/
 data/*
 logs/*
 !data/.gitkeep
+!data/replay_cases/
+!data/replay_cases/**/*.md
+!data/replay_cases/**/*.json
+!data/replay_cases/**/*.jsonl
+data/replay_cases/**/reports/
 !logs/.gitkeep
 map_bundles/
 !map_bundles/

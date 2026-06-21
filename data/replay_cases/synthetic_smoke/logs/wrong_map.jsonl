@@ -1,0 +1,3 @@
+{"sequence":1,"timestamp_us":1000000,"result":{"status":"rejected","reason":"wrong_map_low_inliers"}}
+{"sequence":2,"timestamp_us":2000000,"result":{"status":"rejected","reason":"wrong_map_ransac_failed"}}
+{"sequence":3,"timestamp_us":3000000,"result":{"status":"rejected","reason":"wrong_map_geometry_failed"}}

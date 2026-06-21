@@ -1,6 +1,6 @@
 import time
 
-from vision_nav.mavlink_bridge import MavlinkVisionBridge, parse_mavlink_endpoint
+from vision_nav.mavlink_bridge import MavlinkSendResult, MavlinkVisionBridge, parse_mavlink_endpoint, send_records_once
 
 
 def test_parse_mavlink_endpoint_aliases():
@@ -209,3 +209,30 @@ def test_send_match_result_dispatches_odometry_mode():
     assert result.sent is True
     assert result.message == "ODOMETRY"
     assert calls
+
+
+def test_send_records_once_uses_selected_message_type_and_reports_skips():
+    calls = []
+
+    class FakeBridge:
+        def send_match_result(self, result, *, message_type="vision_position_estimate"):
+            calls.append((result, message_type))
+            if result.get("status") != "accepted":
+                return MavlinkSendResult(False, reason="match_not_accepted")
+            return MavlinkSendResult(True, message="ODOMETRY" if message_type == "odometry" else "VISION_POSITION_ESTIMATE")
+
+    report = send_records_once(
+        [
+            {"result": {"status": "accepted", "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0}}},
+            {"result": {"status": "rejected", "reason": "low_inliers"}},
+        ],
+        FakeBridge(),
+        message_type="odometry",
+        repeat=2,
+    )
+
+    assert report["message_type"] == "odometry"
+    assert report["sent"] == 2
+    assert report["skipped"] == 2
+    assert report["skip_reasons"] == {"match_not_accepted": 2}
+    assert {message_type for _result, message_type in calls} == {"odometry"}

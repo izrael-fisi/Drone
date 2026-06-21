@@ -528,4 +528,5 @@ check results, selected discovery adapter, copyable discovery checklist, and
 downloaded support-bundle summaries. The desktop support-bundle list can reveal
 downloaded ZIPs in the local file manager, copy their path, show compact
 manifest details, inspect log/replay-gate summaries and per-record JSONL
-previews from inside the ZIP, or delete stale ZIPs.
+previews from inside the ZIP, preview bounded camera/debug/replay image
+artifacts, or delete stale ZIPs.

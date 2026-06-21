@@ -51,6 +51,24 @@ topics, timestamps, and payloads. It is intentionally dependency-free; convert
 it to native rosbag2/MCAP later on a ROS 2 workstation when that workflow is
 needed.
 
+To include the captured camera frames referenced by each `frame_path` in the
+runtime log, add the compressed frame topic export:
+
+```bash
+vision-nav-ros2-replay-log \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl \
+  --include-frame-topic \
+  --frame-topic /vision_nav/camera/image/compressed \
+  --camera-frame-id down_camera
+```
+
+Frame paths are resolved relative to the log directory unless `--frame-root` is
+provided. Frames larger than `--max-frame-bytes` are skipped so support exports
+do not accidentally embed full map assets or huge captures. The JSONL message
+uses ROS type `sensor_msgs/msg/CompressedImage` and stores the compressed bytes
+as base64 so the artifact remains plain JSON.
+
 ## Publish With ROS 2
 
 On a ROS 2 machine, source the ROS environment first:
@@ -128,8 +146,39 @@ ros2 launch ros2/launch/terrain_nav_live.launch.py \
 ```
 
 These are repo-local launch profiles. If this project later needs colcon-native
-packaging, move them into a dedicated ROS 2 package and install them through the
-package's `launch/` directory.
+packaging, the repo now includes a thin `ament_python` package wrapper under
+`ros2/drone_vision_nav/`. Build it from a ROS 2 workspace that has this repo
+checked out:
+
+```bash
+mkdir -p ~/drone_ros2_ws/src
+ln -s /path/to/Drone/ros2/drone_vision_nav ~/drone_ros2_ws/src/drone_vision_nav
+cd ~/drone_ros2_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select drone_vision_nav
+source install/setup.bash
+```
+
+The wrapper installs the existing Python `vision_nav` runtime package, the
+repo launch files, and two console scripts:
+
+```bash
+ros2 run drone_vision_nav terrain_nav_replay \
+  --log /path/to/terrain_matches.jsonl \
+  --publish
+
+ros2 run drone_vision_nav terrain_nav_live \
+  --bundle /path/to/mission_bundle \
+  --output-dir terrain-run \
+  --ros2-publish
+```
+
+You can also launch the installed profiles:
+
+```bash
+ros2 launch drone_vision_nav terrain_nav_replay.launch.py log:=terrain-run/terrain_matches.jsonl
+ros2 launch drone_vision_nav terrain_nav_live.launch.py bundle:=mission_bundle output_dir:=terrain-run
+```
 
 ## PX4 Bridge Direction
 

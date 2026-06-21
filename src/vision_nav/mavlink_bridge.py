@@ -278,25 +278,85 @@ def _mavlink_enum_value(name: str) -> int:
     return int(getattr(mavutil.mavlink, name, defaults[name]))
 
 
-def send_log_once(log_path: str, endpoint: str, ev_delay_ms: int = 50) -> dict[str, Any]:
-    bridge = MavlinkVisionBridge(endpoint, ev_delay_ms=ev_delay_ms)
-    bridge.connect()
+def load_match_log_records(log_path: str | Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for line_number, line in enumerate(Path(log_path).read_text().splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{log_path}:{line_number}: invalid JSONL record") from exc
+    return records
+
+
+def send_records_once(
+    records: list[dict[str, Any]],
+    bridge: MavlinkVisionBridge,
+    *,
+    message_type: str = "vision_position_estimate",
+    rate_hz: float = 0.0,
+    repeat: int = 1,
+) -> dict[str, Any]:
+    if message_type not in {"vision_position_estimate", "odometry"}:
+        raise ValueError("message_type must be vision_position_estimate or odometry")
+    repeat_count = max(int(repeat), 1)
+    period_s = 1.0 / float(rate_hz) if rate_hz and rate_hz > 0 else 0.0
     sent = 0
     skipped = 0
-    try:
-        for line in Path(log_path).read_text().splitlines():
-            if not line.strip():
-                continue
-            record = json.loads(line)
+    reasons: dict[str, int] = {}
+    started_s = time.monotonic()
+    for _ in range(repeat_count):
+        for record in records:
+            loop_start = time.monotonic()
             result = record.get("result", record)
-            send_result = bridge.send_match_result(result)
+            send_result = bridge.send_match_result(result, message_type=message_type)
             if send_result.sent:
                 sent += 1
             else:
                 skipped += 1
+                reason = send_result.reason or "unknown"
+                reasons[reason] = reasons.get(reason, 0) + 1
+            if period_s > 0:
+                sleep_s = period_s - (time.monotonic() - loop_start)
+                if sleep_s > 0:
+                    time.sleep(sleep_s)
+    return {
+        "message_type": message_type,
+        "record_count": len(records),
+        "repeat": repeat_count,
+        "sent": sent,
+        "skipped": skipped,
+        "skip_reasons": reasons,
+        "duration_s": round(time.monotonic() - started_s, 3),
+        "target_rate_hz": rate_hz,
+    }
+
+
+def send_log_once(
+    log_path: str,
+    endpoint: str,
+    ev_delay_ms: int = 50,
+    *,
+    message_type: str = "vision_position_estimate",
+    rate_hz: float = 0.0,
+    repeat: int = 1,
+) -> dict[str, Any]:
+    records = load_match_log_records(log_path)
+    bridge = MavlinkVisionBridge(endpoint, ev_delay_ms=ev_delay_ms)
+    bridge.connect()
+    try:
+        result = send_records_once(
+            records,
+            bridge,
+            message_type=message_type,
+            rate_hz=rate_hz,
+            repeat=repeat,
+        )
     finally:
         bridge.close()
-    return {"log_path": log_path, "endpoint": endpoint, "sent": sent, "skipped": skipped}
+    result.update({"log_path": log_path, "endpoint": endpoint})
+    return result
 
 
 def parse_args() -> argparse.Namespace:
@@ -304,12 +364,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log", required=True, help="matches.jsonl path.")
     parser.add_argument("--endpoint", required=True, help="MAVLink endpoint such as udp:14550 or serial:/dev/ttyAMA0:921600.")
     parser.add_argument("--ev-delay-ms", type=int, default=50)
+    parser.add_argument(
+        "--message-type",
+        choices=["vision_position_estimate", "odometry"],
+        default="vision_position_estimate",
+        help="External-position MAVLink message to send.",
+    )
+    parser.add_argument("--rate-hz", type=float, default=0.0, help="Optional send rate. Default sends records as fast as possible.")
+    parser.add_argument("--repeat", type=int, default=1, help="Repeat the log this many times.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    print(json.dumps(send_log_once(args.log, args.endpoint, args.ev_delay_ms), indent=2))
+    print(
+        json.dumps(
+            send_log_once(
+                args.log,
+                args.endpoint,
+                args.ev_delay_ms,
+                message_type=args.message_type,
+                rate_hz=args.rate_hz,
+                repeat=args.repeat,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":

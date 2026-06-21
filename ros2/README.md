@@ -24,6 +24,20 @@ vision-nav-ros2-replay-log \
   --export-rosbag-jsonl terrain-run/rosbag-jsonl
 ```
 
+Add captured camera frames as bounded compressed-image topic records:
+
+```bash
+vision-nav-ros2-replay-log \
+  --log terrain-run/terrain_matches.jsonl \
+  --export-rosbag-jsonl terrain-run/rosbag-jsonl \
+  --include-frame-topic \
+  --frame-topic /vision_nav/camera/image/compressed
+```
+
+The frame export resolves relative `frame_path` values from the log directory
+and writes `sensor_msgs/msg/CompressedImage` JSONL messages with base64
+compressed bytes.
+
 For live Pi or desktop camera runtime:
 
 ```bash
@@ -41,3 +55,33 @@ These launch files publish:
 - `/diagnostics`
 
 Direct MAVLink output remains a separate runtime option.
+
+## Colcon Package Wrapper
+
+`ros2/drone_vision_nav/` is a thin `ament_python` package for ROS 2
+workstations that should use `ros2 run` or installed launch profiles. It
+installs the existing repo Python runtime package and reuses the launch files in
+`ros2/launch/`.
+
+Example workspace setup:
+
+```bash
+mkdir -p ~/drone_ros2_ws/src
+ln -s /path/to/Drone/ros2/drone_vision_nav ~/drone_ros2_ws/src/drone_vision_nav
+cd ~/drone_ros2_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select drone_vision_nav
+source install/setup.bash
+```
+
+Then run:
+
+```bash
+ros2 run drone_vision_nav terrain_nav_replay \
+  --log terrain-run/terrain_matches.jsonl \
+  --publish
+
+ros2 launch drone_vision_nav terrain_nav_live.launch.py \
+  bundle:=mission_bundle \
+  output_dir:=terrain-run
+```

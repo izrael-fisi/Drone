@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose, Engine as _};
 use serde::Serialize;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
@@ -8,6 +9,8 @@ use std::time::UNIX_EPOCH;
 use zip::ZipArchive;
 
 const LOG_PREVIEW_LIMIT: usize = 5;
+const IMAGE_PREVIEW_LIMIT: usize = 4;
+const IMAGE_PREVIEW_MAX_BYTES: u64 = 1_500_000;
 
 #[derive(Serialize)]
 pub struct SupportBundleSummary {
@@ -81,12 +84,22 @@ pub struct SupportBundleLogPreview {
 }
 
 #[derive(Serialize)]
+pub struct SupportBundleImagePreview {
+    pub name: String,
+    pub path: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+    pub base64_data: String,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleDetails {
     pub manifest: serde_json::Value,
     pub metadata: Option<serde_json::Value>,
     pub bundle_health: Option<serde_json::Value>,
     pub logs: Vec<SupportBundleLogSummary>,
     pub log_previews: Vec<SupportBundleLogPreview>,
+    pub image_previews: Vec<SupportBundleImagePreview>,
     pub replay_reports: Vec<SupportBundleReplayReport>,
     pub entry_count: usize,
 }
@@ -206,11 +219,12 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         .ok_or_else(|| "Missing support_manifest.json".to_string())?;
     let mut logs = Vec::new();
     let mut log_previews = Vec::new();
+    let mut image_previews = Vec::new();
     let mut replay_reports = Vec::new();
     for index in 0..archive.len() {
-        let name = {
+        let (name, size_bytes) = {
             let entry = archive.by_index(index).map_err(|e| e.to_string())?;
-            entry.name().to_string()
+            (entry.name().to_string(), entry.size())
         };
         if name.starts_with("summaries/")
             && name.ends_with(".summary.json")
@@ -227,6 +241,12 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 replay_reports.push(replay_report_from_json(&value));
             }
+        } else if image_previews.len() < IMAGE_PREVIEW_LIMIT
+            && should_preview_image_entry(&name, size_bytes)
+        {
+            if let Some(preview) = read_image_preview_entry(&mut archive, &name, size_bytes)? {
+                image_previews.push(preview);
+            }
         }
     }
     Ok(SupportBundleDetails {
@@ -234,6 +254,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         bundle_health: manifest.pointer("/bundle/health").cloned(),
         logs,
         log_previews,
+        image_previews,
         replay_reports,
         entry_count,
         manifest,
@@ -393,6 +414,89 @@ fn replay_report_from_json(value: &serde_json::Value) -> SupportBundleReplayRepo
             .and_then(|value| value.as_u64()),
         issues,
     }
+}
+
+fn image_mime_type(name: &str) -> Option<&'static str> {
+    match Path::new(name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => Some("image/png"),
+        Some("jpg") | Some("jpeg") => Some("image/jpeg"),
+        Some("webp") => Some("image/webp"),
+        Some("gif") => Some("image/gif"),
+        Some("bmp") => Some("image/bmp"),
+        _ => None,
+    }
+}
+
+fn should_preview_image_entry(name: &str, size_bytes: u64) -> bool {
+    if size_bytes == 0 || size_bytes > IMAGE_PREVIEW_MAX_BYTES || image_mime_type(name).is_none() {
+        return false;
+    }
+    let lower = name.to_ascii_lowercase();
+    if lower.starts_with("bundle/ortho/")
+        || lower.starts_with("bundle/imagery/")
+        || lower.starts_with("bundle/index/")
+        || lower.starts_with("bundle/elevation/")
+        || lower.contains("/imagery/tiles/")
+        || lower.contains("/index/descriptors/")
+        || lower.ends_with("/satellite.png")
+    {
+        return false;
+    }
+    lower.starts_with("extras/")
+        || lower.starts_with("logs/")
+        || lower.starts_with("summaries/")
+        || [
+            "camera",
+            "frame",
+            "debug",
+            "match",
+            "replay",
+            "smoke",
+            "calibration",
+            "preview",
+        ]
+        .iter()
+        .any(|token| lower.contains(token))
+}
+
+fn read_image_preview_entry(
+    archive: &mut ZipArchive<File>,
+    name: &str,
+    size_bytes: u64,
+) -> Result<Option<SupportBundleImagePreview>, String> {
+    let mime_type = match image_mime_type(name) {
+        Some(value) => value,
+        None => return Ok(None),
+    };
+    if !should_preview_image_entry(name, size_bytes) {
+        return Ok(None);
+    }
+    let mut entry = match archive.by_name(name) {
+        Ok(entry) => entry,
+        Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut bytes = Vec::new();
+    entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > IMAGE_PREVIEW_MAX_BYTES {
+        return Ok(None);
+    }
+    Ok(Some(SupportBundleImagePreview {
+        name: Path::new(name)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(name)
+            .to_string(),
+        path: name.to_string(),
+        mime_type: mime_type.to_string(),
+        size_bytes,
+        base64_data: general_purpose::STANDARD.encode(bytes),
+    }))
 }
 
 fn reveal_path(path: &Path) -> Result<()> {
@@ -602,6 +706,12 @@ mod tests {
 
     #[test]
     fn reads_support_bundle_details_from_zip() {
+        const TINY_PNG: &[u8] = &[
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
+            8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 248, 255,
+            255, 63, 0, 5, 254, 2, 254, 167, 53, 129, 132, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96,
+            130,
+        ];
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time")
@@ -680,16 +790,26 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write gate");
+            zip.start_file("extras/camera-health/frame.png", options)
+                .expect("image entry");
+            zip.write_all(TINY_PNG).expect("write image");
+            zip.start_file("bundle/ortho/map.png", options)
+                .expect("map asset entry");
+            zip.write_all(TINY_PNG).expect("write map asset");
             zip.finish().expect("finish zip");
         }
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
         let _ = std::fs::remove_file(&path);
-        assert_eq!(details.entry_count, 4);
+        assert_eq!(details.entry_count, 6);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(details.log_previews.len(), 1);
         assert_eq!(details.log_previews[0].records.len(), 2);
+        assert_eq!(details.image_previews.len(), 1);
+        assert_eq!(details.image_previews[0].name, "frame.png");
+        assert_eq!(details.image_previews[0].mime_type, "image/png");
+        assert!(!details.image_previews[0].base64_data.is_empty());
         assert_eq!(
             details.log_previews[0].records[0].tile_id.as_deref(),
             Some("tile_001")

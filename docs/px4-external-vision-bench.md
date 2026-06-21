@@ -151,6 +151,50 @@ flight controller after changing EKF parameters.
    - PX4 local position does not jump on weak matches,
    - vertical fusion is disabled unless valid vertical measurements exist.
 
+## PX4 SITL Smoke Sender
+
+For a quick sender-path check before using camera captures, run PX4 SITL in one
+terminal:
+
+```bash
+cd ~/PX4-Autopilot
+make px4_sitl gz_x500
+```
+
+Then send a synthetic external-vision stream from this repo:
+
+```bash
+./scripts/dev/px4_sitl_external_vision_smoke.sh
+```
+
+Defaults:
+
+```text
+VISION_NAV_SITL_MAVLINK_ENDPOINT=udp:14550
+VISION_NAV_SITL_MAVLINK_MESSAGE=odometry
+VISION_NAV_SITL_RATE_HZ=5.0
+VISION_NAV_SITL_REPEAT=6
+```
+
+Use `VISION_NAV_SITL_MAVLINK_MESSAGE=vision_position_estimate` to check the
+pose-only compatibility path. The script creates a temporary synthetic
+`terrain_matches.jsonl`, sends accepted records through
+`vision-nav-send-mavlink-log`, and includes one rejected record that should be
+skipped.
+
+This script proves the project can emit the selected MAVLink message path to
+the SITL endpoint. It does not, by itself, prove EKF2 fusion. Confirm reception
+from the PX4 shell or QGroundControl MAVLink console:
+
+```bash
+listener vehicle_visual_odometry 5
+mavlink status
+```
+
+Only count the SITL requirement as passed after PX4 shows the selected external
+vision stream arriving at a stable rate and rejected records are absent from the
+receiver-side stream.
+
 ## Do Not Fly Yet Unless These Are True
 
 - Camera calibration and camera-to-body extrinsics are measured.

@@ -168,6 +168,13 @@ export interface SupportBundleDetails {
       external_position_message_type?: string;
     }>;
   }>;
+  image_previews: Array<{
+    name: string;
+    path: string;
+    mime_type: string;
+    size_bytes: number;
+    base64_data: string;
+  }>;
   replay_reports: Array<{
     case_name?: string;
     expected?: string;

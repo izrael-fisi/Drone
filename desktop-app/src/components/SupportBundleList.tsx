@@ -119,6 +119,27 @@ function SupportBundleDetailPanel({ details }: { details: SupportBundleDetails }
         </div>
       )}
 
+      {details.image_previews.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Image artifacts</div>
+          <div className="grid grid-cols-2 gap-2">
+            {details.image_previews.map((image) => (
+              <div key={image.path} className="rounded border border-border/60 bg-bg-surface/40 p-1.5 space-y-1">
+                <img
+                  src={`data:${image.mime_type};base64,${image.base64_data}`}
+                  alt={image.name}
+                  className="h-24 w-full rounded border border-border/50 bg-bg-base object-contain"
+                  loading="lazy"
+                />
+                <div className="font-mono text-[10px] text-slate-500 truncate" title={image.path}>
+                  {image.name} / {formatBundleSize(image.size_bytes)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {details.replay_reports.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Replay gates</div>

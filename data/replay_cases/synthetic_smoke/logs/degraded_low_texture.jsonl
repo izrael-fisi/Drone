@@ -1,0 +1,4 @@
+{"sequence":1,"timestamp_us":1000000,"result":{"status":"rejected","reason":"low_texture"}}
+{"sequence":2,"timestamp_us":2000000,"result":{"status":"accepted","confidence":0.42,"inliers":16,"reprojection_error_px":4.8,"scale_confidence":0.22,"local_enu_m":{"x":0.0,"y":0.0,"z":null},"covariance":{"x_m2":225.0,"y_m2":225.0,"z_m2":null,"yaw_rad2":null}}}
+{"sequence":3,"timestamp_us":3000000,"result":{"status":"rejected","reason":"motion_blur"}}
+{"sequence":4,"timestamp_us":4000000,"result":{"status":"rejected","reason":"not_enough_inliers"}}

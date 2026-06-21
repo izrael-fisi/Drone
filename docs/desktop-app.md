@@ -185,8 +185,12 @@ Mission Planner also records terrain planning constraints before bundle build.
 The operator can confirm the offline map-cache path, set minimum AGL, maximum
 terrain relief, minimum AGL-to-GSD ratio, and maximum route-segment length. The
 same metadata is exported in the app mission JSON and in the QGroundControl
-`.plan` file under `visionNavigation.terrain_planning`. After a bundle build,
-the app compares those limits with `bundle_health.json` terrain-profile values.
+`.plan` file under `visionNavigation.terrain_planning`. The planner also
+generates deterministic route-segment records with split coordinates,
+cumulative distance, longest segment length, and split reason so long
+terrain-aware routes can be reviewed in the bundle without changing the
+underlying flight-controller mission items. After a bundle build, the app
+compares terrain limits with `bundle_health.json` terrain-profile values.
 
 The mission bundle action builds the selected map source, writes the desktop
 mission JSON to `mission/mission_plan.json`, writes the QGC-style file to
@@ -241,7 +245,9 @@ the local file manager, copy the full path for support notes, show a compact
 detail view, or delete stale ZIP files after a bench session. The detail view
 reads the ZIP archive directly and shows support metadata, git/app state, log
 status counts, accepted-rate summaries, replay-gate case results, and compact
-per-record previews from bundled runtime/replay JSONL logs.
+per-record previews from bundled runtime/replay JSONL logs. It also previews a
+bounded set of small image artifacts from camera, debug, replay, smoke, or
+extra-file paths while skipping full map, orthophoto, and tile assets.
 
 Module Setup uses the same support-bundle path for its `Bench Report` action,
 after validating the deployed terrain bundle at the configured runtime bundle

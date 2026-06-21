@@ -80,6 +80,23 @@ type TerrainPlanningConstraints = {
   min_agl_to_gsd_ratio: number;
   max_route_segment_m: number;
 };
+type RouteSegmentEndpoint = Waypoint & {
+  mission_item_id?: string;
+  mission_item_index?: number;
+  leg_start_index?: number;
+  leg_end_index?: number;
+  interpolated: boolean;
+};
+type RouteSegment = {
+  id: string;
+  sequence: number;
+  start: RouteSegmentEndpoint;
+  end: RouteSegmentEndpoint;
+  distance_m: number;
+  cumulative_start_m: number;
+  cumulative_end_m: number;
+  split_reason: "max_segment_m" | "mission_end";
+};
 type TerrainPlanningMetadata = {
   constraints: TerrainPlanningConstraints;
   offline_cache: {
@@ -90,6 +107,9 @@ type TerrainPlanningMetadata = {
     max_segment_m: number;
     estimated_segment_count: number;
     mission_distance_m: number;
+    split_required: boolean;
+    longest_segment_m: number;
+    segments: RouteSegment[];
   };
 };
 type TerrainConstraintStatus = "passed" | "failed" | "unknown";
@@ -142,7 +162,7 @@ type MissionPlanPayload = {
 };
 
 const DEFAULT_LOCAL_REPO = "/Users/izzyfisi/Documents/DRONE";
-const PLAN_VERSION = "0.2.0";
+const PLAN_VERSION = "0.3.0";
 const MISSION_PLANNER_STATE_KEY = "drone_mission_planner_state_v1";
 const DEFAULT_MISSION_DEFAULTS: MissionDefaults = {
   altitudeM: 35,
@@ -398,6 +418,85 @@ function waypointDistanceM(a: Waypoint, b: Waypoint): number {
 
 function missionDistanceM(waypoints: Waypoint[]): number {
   return waypoints.slice(1).reduce((sum, waypoint, index) => sum + waypointDistanceM(waypoints[index], waypoint), 0);
+}
+
+function roundMeters(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function routeEndpointForItem(item: MissionItem, index: number): RouteSegmentEndpoint {
+  return {
+    lat: Number(item.lat.toFixed(7)),
+    lon: Number(item.lon.toFixed(7)),
+    mission_item_id: item.id,
+    mission_item_index: index,
+    interpolated: false,
+  };
+}
+
+function interpolateRouteEndpoint(start: MissionItem, end: MissionItem, legStartIndex: number, fraction: number): RouteSegmentEndpoint {
+  return {
+    lat: Number((start.lat + (end.lat - start.lat) * fraction).toFixed(7)),
+    lon: Number((start.lon + (end.lon - start.lon) * fraction).toFixed(7)),
+    leg_start_index: legStartIndex,
+    leg_end_index: legStartIndex + 1,
+    interpolated: true,
+  };
+}
+
+function buildRouteSegments(items: MissionItem[], maxSegmentM: number): RouteSegment[] {
+  if (items.length < 2 || maxSegmentM <= 0) return [];
+  const epsilon = 0.01;
+  const segments: RouteSegment[] = [];
+  let sequence = 1;
+  let segmentStart = routeEndpointForItem(items[0], 0);
+  let segmentStartDistance = 0;
+  let currentSegmentDistance = 0;
+  let cumulativeDistance = 0;
+
+  for (let legIndex = 0; legIndex < items.length - 1; legIndex += 1) {
+    const legStart = items[legIndex];
+    const legEnd = items[legIndex + 1];
+    const legDistance = waypointDistanceM(legStart, legEnd);
+    if (legDistance <= epsilon) continue;
+    let legOffset = 0;
+
+    while (legOffset < legDistance - epsilon) {
+      const remainingLegDistance = legDistance - legOffset;
+      const remainingSegmentDistance = Math.max(maxSegmentM - currentSegmentDistance, epsilon);
+      const stepDistance = Math.min(remainingLegDistance, remainingSegmentDistance);
+      const nextLegOffset = legOffset + stepDistance;
+      const legComplete = nextLegOffset >= legDistance - epsilon;
+      const missionComplete = legIndex === items.length - 2 && legComplete;
+      const end = legComplete
+        ? routeEndpointForItem(legEnd, legIndex + 1)
+        : interpolateRouteEndpoint(legStart, legEnd, legIndex, nextLegOffset / legDistance);
+
+      currentSegmentDistance += stepDistance;
+      cumulativeDistance += stepDistance;
+
+      if (currentSegmentDistance >= maxSegmentM - epsilon || missionComplete) {
+        segments.push({
+          id: `segment_${String(sequence).padStart(3, "0")}`,
+          sequence,
+          start: segmentStart,
+          end,
+          distance_m: roundMeters(currentSegmentDistance),
+          cumulative_start_m: roundMeters(segmentStartDistance),
+          cumulative_end_m: roundMeters(cumulativeDistance),
+          split_reason: missionComplete ? "mission_end" : "max_segment_m",
+        });
+        sequence += 1;
+        segmentStart = end;
+        segmentStartDistance = cumulativeDistance;
+        currentSegmentDistance = 0;
+      }
+
+      legOffset = nextLegOffset;
+    }
+  }
+
+  return segments;
 }
 
 function makePoint(lat: number, lon: number): PlanPoint {
@@ -677,6 +776,11 @@ function normalizeTerrainPlanningMetadata(value: unknown): TerrainPlanningMetada
       max_segment_m: Number(source.route_segmentation?.max_segment_m) || DEFAULT_TERRAIN_CONSTRAINTS.max_route_segment_m,
       estimated_segment_count: Number(source.route_segmentation?.estimated_segment_count) || 0,
       mission_distance_m: Number(source.route_segmentation?.mission_distance_m) || 0,
+      split_required: source.route_segmentation?.split_required === true,
+      longest_segment_m: Number(source.route_segmentation?.longest_segment_m) || 0,
+      segments: Array.isArray(source.route_segmentation?.segments)
+        ? source.route_segmentation.segments as RouteSegment[]
+        : [],
     },
   };
 }
@@ -1005,9 +1109,9 @@ export function MissionPlanner() {
   const hasVisionReadyMap = !!selectedRegion && georefConfidence >= 0.7 && (selectedRegion.gsd_m_per_px ?? 1) <= 1;
   const terrainPlanningMetadata = useMemo<TerrainPlanningMetadata>(() => {
     const maxSegment = terrainConstraints.max_route_segment_m;
-    const estimatedSegments = maxSegment > 0 && missionDistance > 0
-      ? Math.max(1, Math.ceil(missionDistance / maxSegment))
-      : 0;
+    const segments = buildRouteSegments(missionItems, maxSegment);
+    const longestSegmentM = segments.reduce((max, segment) => Math.max(max, segment.distance_m), 0);
+    const estimatedSegments = segments.length || (maxSegment > 0 && missionDistance > 0 ? Math.max(1, Math.ceil(missionDistance / maxSegment)) : 0);
     return {
       constraints: terrainConstraints,
       offline_cache: {
@@ -1018,9 +1122,12 @@ export function MissionPlanner() {
         max_segment_m: maxSegment,
         estimated_segment_count: estimatedSegments,
         mission_distance_m: Number(missionDistance.toFixed(2)),
+        split_required: segments.length > 1,
+        longest_segment_m: Number(longestSegmentM.toFixed(2)),
+        segments,
       },
     };
-  }, [terrainConstraints, missionDistance, selectedRegion, mosaicState.error, mosaicState.path]);
+  }, [terrainConstraints, missionDistance, missionItems, selectedRegion, mosaicState.error, mosaicState.path]);
   const terrainChecks = useMemo(
     () => terrainConstraintChecks(bundleResult?.geospatial_health?.terrain_profile, terrainConstraints),
     [bundleResult?.geospatial_health?.terrain_profile, terrainConstraints],
@@ -2017,6 +2124,33 @@ export function MissionPlanner() {
                 <span className="text-slate-200 font-medium">{terrainProfileLabel(bundleResult?.geospatial_health?.terrain_profile)}</span>
               </div>
             </div>
+            {terrainPlanningMetadata.route_segmentation.segments.length > 0 && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="text-slate-500">Route splits</span>
+                  <span className={terrainPlanningMetadata.route_segmentation.split_required ? "badge-yellow" : "badge-green"}>
+                    {terrainPlanningMetadata.route_segmentation.split_required ? <AlertTriangle size={11} /> : <CheckCircle2 size={11} />}
+                    longest {terrainPlanningMetadata.route_segmentation.longest_segment_m.toFixed(0)} m
+                  </span>
+                </div>
+                {terrainPlanningMetadata.route_segmentation.segments.slice(0, 4).map((segment) => (
+                  <div key={segment.id} className="flex items-center justify-between gap-2 rounded-md border border-border/70 bg-bg-card px-2 py-1 text-[11px]">
+                    <span className="font-mono text-slate-400">S{segment.sequence}</span>
+                    <span className="truncate text-slate-500">
+                      {segment.start.interpolated ? "split" : `item ${(segment.start.mission_item_index ?? 0) + 1}`}
+                      {" -> "}
+                      {segment.end.interpolated ? "split" : `item ${(segment.end.mission_item_index ?? 0) + 1}`}
+                    </span>
+                    <span className="font-mono text-slate-300">{segment.distance_m.toFixed(0)} m</span>
+                  </div>
+                ))}
+                {terrainPlanningMetadata.route_segmentation.segments.length > 4 && (
+                  <div className="text-[10px] text-slate-500 font-mono">
+                    +{terrainPlanningMetadata.route_segmentation.segments.length - 4} more exported segment records
+                  </div>
+                )}
+              </div>
+            )}
             <div className="space-y-1">
               {terrainChecks.map((check) => (
                 <div key={check.label} className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-bg-card px-2 py-1.5 text-[11px]">

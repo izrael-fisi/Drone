@@ -1,0 +1,27 @@
+{
+  "version": "0.1.0",
+  "description": "Deterministic synthetic replay-gate smoke suite. These are not field logs.",
+  "cases": [
+    {
+      "case_name": "synthetic-good-map",
+      "expected": "good_map",
+      "bundle": "synthetic",
+      "log": "logs/good_map.jsonl",
+      "notes": "Accepted records include confidence, inliers, reprojection error, scale confidence, covariance, and smooth local motion."
+    },
+    {
+      "case_name": "synthetic-degraded-low-texture",
+      "expected": "degraded",
+      "bundle": "synthetic",
+      "log": "logs/degraded_low_texture.jsonl",
+      "notes": "Mostly rejected low-texture records with one weak accepted match that inflates covariance."
+    },
+    {
+      "case_name": "synthetic-wrong-map",
+      "expected": "wrong_map",
+      "bundle": "synthetic",
+      "log": "logs/wrong_map.jsonl",
+      "notes": "All records are rejected; any accepted record should fail the gate."
+    }
+  ]
+}

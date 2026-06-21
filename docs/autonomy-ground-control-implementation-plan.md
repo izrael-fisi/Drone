@@ -21,6 +21,12 @@ Status:
 - In progress: `send_odometry_match_result()` and
   `VISION_NAV_MAVLINK_MESSAGE=odometry` are available for bench testing the
   richer PX4 external-vision path.
+- In progress: `vision-nav-send-mavlink-log` now supports selectable
+  `vision_position_estimate` or `odometry` output, rate limiting, repeated log
+  sends, and skip-reason summaries for sender-side PX4 SITL smoke tests.
+- In progress: `scripts/dev/px4_sitl_external_vision_smoke.sh` generates a
+  synthetic accepted/rejected external-vision log and sends it to a PX4 SITL UDP
+  endpoint so the operator can verify `vehicle_visual_odometry` reception.
 - Done: PX4 external-vision bench guidance is documented in
   [PX4 External Vision Bench Guide](px4-external-vision-bench.md).
 - Done: runtime logs include `external_position_health` snapshots with message
@@ -30,9 +36,10 @@ Status:
 
 Next tasks:
 
-1. Add PX4 SITL tests that confirm EKF2 receives the selected message path.
-2. Add live ROS 2 wrapper launch profiles for camera, matcher, estimator,
-   health, and external-position output.
+1. Run PX4 SITL receiver verification and capture evidence that EKF2/uORB
+   receives the selected message path at the expected rate.
+2. Add PX4 SITL receiver automation once the local PX4 environment is available
+   for repeatable log capture.
 
 Acceptance checks:
 
@@ -63,15 +70,19 @@ Status:
   dependency-free topic replay artifact with ROS message types, topics,
   timestamps, and payloads for offline field-log review before native rosbag2 is
   required.
+- In progress: the same JSONL export can include bounded
+  `sensor_msgs/msg/CompressedImage` camera-frame topic records from runtime
+  `frame_path` entries, with relative paths resolved from the log directory.
+- Done: `ros2/drone_vision_nav/` provides a thin `ament_python` package wrapper
+  with package metadata, installed launch profiles, and `terrain_nav_live` /
+  `terrain_nav_replay` console scripts for colcon-based ROS 2 workstations.
 
 Tasks:
 
 1. Add PX4 SITL launch profile arguments once SITL receiver verification is
    available.
-2. Add a package-style ROS 2 entrypoint if the project later needs colcon-native
-   packaging.
-3. Add native rosbag2/MCAP conversion and camera-frame topic export after a ROS
-   2 workstation workflow is available.
+2. Add native rosbag2/MCAP conversion after a ROS 2 workstation workflow is
+   available.
 
 Acceptance checks:
 
@@ -181,11 +192,15 @@ Status:
 - In progress: Mission Planner now exposes terrain planning constraints,
   offline cache state, and route segmentation metadata, then compares the
   configured terrain limits against bundle terrain-profile health after build.
+- In progress: Mission Planner now exports deterministic terrain route-segment
+  records with split coordinates, cumulative distances, longest segment length,
+  and split reasons in the app mission JSON and QGC `visionNavigation`
+  metadata.
 
 Tasks:
 
-1. Add route splitting/export behavior for long terrain-aware segments after
-   field replay data confirms the preferred segmentation rule.
+1. Tune route splitting defaults after field replay data confirms the preferred
+   segmentation rule.
 2. Wire GNSS-denied readiness actions to live runtime telemetry and autopilot
    checklist validation.
 
@@ -233,23 +248,33 @@ Status:
 - In progress: support-bundle details now include compact per-record previews
   from bundled runtime/replay JSONL logs so accepted/rejected match reasons,
   confidence, tile IDs, and external-position state are visible in the app.
+- In progress: support-bundle details now include bounded previews for small
+  camera/debug/replay image artifacts inside downloaded ZIPs while skipping
+  full map, orthophoto, tile, descriptor, and elevation assets.
 - In progress: `data/replay_cases/` defines the replay case registry shape for
   good texture, degraded, and wrong-map datasets.
+- Done: `vision-nav-evaluate-replay-manifest` evaluates replay-case manifests
+  outside support-bundle creation and writes per-case gate reports.
+- Done: `data/replay_cases/synthetic_smoke/` provides deterministic local
+  smoke coverage for good-map, degraded low-texture, and wrong-map rejection
+  behavior; `local_preflight.sh` evaluates this suite.
 
 Tasks:
 
-1. Fill `data/replay_cases/` with real logs for good texture, low texture,
+1. Fill `data/replay_cases/` with real field logs for good texture, low texture,
    blur, seasonal change, altitude/scale change, repeated patterns, and wrong
    map.
 2. Compare ORB/AKAZE against optional higher-compute features on the same logs.
 3. Tune replay-gate thresholds against real field logs for blur, seasonal
    change, altitude/scale change, repeated patterns, and wrong-map cases.
-4. Add image/replay artifact previews from extracted support-bundle assets.
+4. Add native replay artifact views for full extracted support-bundle logs and
+   frame timelines after real field datasets exist.
 
 Acceptance checks:
 
-- CI or local smoke tests cover accepted, degraded, and rejected localization
-  cases.
+- Local smoke tests cover accepted, degraded, and rejected localization cases
+  through the synthetic replay manifest. Real field cases remain required before
+  threshold tuning is considered complete.
 - Support bundles are enough to reproduce a failed bench run offline.
 
 ## Execution Order
