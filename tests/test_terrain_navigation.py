@@ -89,6 +89,27 @@ def test_match_terrain_frame_accepts_synthetic_crop(tmp_path: Path):
     assert result["covariance"]["z_m2"] is None
 
 
+def test_match_terrain_frame_rejects_wrong_map_crop(tmp_path: Path):
+    bundle, _ = write_synthetic_bundle(tmp_path)
+    wrong_frame = tmp_path / "wrong_frame.png"
+    wrong = np.zeros((220, 220), dtype=np.uint8)
+    cv2.putText(wrong, "WRONG", (35, 115), cv2.FONT_HERSHEY_SIMPLEX, 1.4, 255, 3)
+    cv2.circle(wrong, (170, 40), 25, 180, 2)
+    cv2.imwrite(str(wrong_frame), wrong)
+    build_terrain_bundle(str(bundle), tile_size_px=240, overlap_px=80)
+
+    result = match_terrain_frame(
+        load_terrain_bundle(bundle),
+        str(wrong_frame),
+        TerrainMatchOptions(max_features=1000, ratio=0.75, min_inliers=8, max_candidates=8),
+    )
+
+    assert result["status"] == "rejected"
+    assert result["reason"] == "no_candidate_tile_accepted"
+    assert result["confidence"] == 0.0
+    assert result["local_enu_m"]["x"] is None
+
+
 def test_terrain_estimator_updates_and_inflates_covariance():
     estimator = TerrainEstimator(process_noise_m2_per_s=2.0)
     result = estimator.update_from_match(

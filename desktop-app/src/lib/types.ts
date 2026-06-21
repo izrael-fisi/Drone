@@ -85,6 +85,19 @@ export interface UploadProgress {
   percent: number;
 }
 
+export interface DownloadFileResult {
+  remote_path: string;
+  local_path: string;
+  bytes_received: number;
+}
+
+export interface SupportBundleFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+}
+
 export interface BuildDroneBundleRequest {
   region_dir: string;
   output_dir: string;
@@ -108,6 +121,33 @@ export interface BuildDroneBundleResult {
   terrain_feature_count?: number;
   terrain_gsd_m?: number;
   terrain_tile_size_px?: number;
+  geospatial_health?: {
+    status?: "passed" | "degraded" | "failed";
+    georef?: {
+      crs?: string;
+      gsd_m?: number;
+      confidence?: number;
+    };
+    stac?: {
+      status?: "passed" | "degraded" | "failed";
+    };
+    tile_index?: {
+      status?: "passed" | "degraded" | "failed";
+      tile_count?: number;
+      feature_count?: number;
+      quality?: {
+        estimated_pi_runtime_cost?: "low" | "moderate" | "high";
+        low_texture_tile_count?: number;
+        low_texture_ratio?: number;
+      };
+    };
+    map_quality?: {
+      estimated_pi_runtime_cost?: "low" | "moderate" | "high";
+      low_texture_tile_count?: number;
+      low_texture_ratio?: number;
+    };
+    issues?: Array<{ severity: "error" | "warning" | "info"; message: string }>;
+  };
   checksums_path: string;
   mission_plan_path?: string;
   qgc_plan_path?: string;

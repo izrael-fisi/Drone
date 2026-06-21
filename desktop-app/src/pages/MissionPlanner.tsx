@@ -7,6 +7,7 @@ import { CircleMarker, ImageOverlay, MapContainer, Polygon, Polyline, useMap, us
 import "leaflet/dist/leaflet.css";
 import {
   AlertTriangle,
+  Archive,
   ArrowDown,
   ArrowUp,
   CheckCircle2,
@@ -40,6 +41,7 @@ import type {
   BuildDroneBundleResult,
   Device,
   Region,
+  SupportBundleFile,
   UploadProgress,
 } from "../lib/types";
 
@@ -48,6 +50,7 @@ type Waypoint = { lat: number; lon: number };
 type PlanLayer = "mission" | "fence" | "rally" | "vision";
 type MissionItemType = "takeoff" | "waypoint" | "land";
 type PlanPoint = Waypoint & { id: string };
+type MissionPlanStateStatus = "invalid" | "not_built" | "stale_bundle" | "not_uploaded" | "uploaded" | "bundle_ready";
 type MissionItem = PlanPoint & {
   type: MissionItemType;
   altitudeM: number;
@@ -108,6 +111,32 @@ const LAYER_META: Record<PlanLayer, { label: string; hint: string; icon: typeof 
 
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\"'\"'")}'`;
+}
+
+const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
+
+function supportBundleCommand(remoteProject: string, remoteBundle: string, mavlinkEnv: string) {
+  return [
+    `cd ${shellQuote(remoteProject)}`,
+    `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ${mavlinkEnv}./scripts/pi/create_support_bundle.sh`,
+    `latest=$(ls -t "$HOME/DroneTransfer/outgoing/support-bundles/"*.zip 2>/dev/null | head -n 1)`,
+    `test -n "$latest"`,
+    `echo "__VISION_NAV_SUPPORT_ZIP__=$latest"`,
+  ].join(" && ");
+}
+
+function parseSupportBundleZip(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_SUPPORT_ZIP__="))
+    ?.replace("__VISION_NAV_SUPPORT_ZIP__=", "");
+}
+
+function formatBundleSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
 }
 
 function defaultRemoteBundleDir(device?: Device) {
@@ -193,6 +222,27 @@ function qgcCommandForItem(type: MissionItemType) {
 
 function missionReadinessClass(ok: boolean) {
   return ok ? "badge-green" : "badge-yellow";
+}
+
+function missionPlanStateClass(status: MissionPlanStateStatus) {
+  if (status === "uploaded" || status === "bundle_ready") return "badge-green";
+  if (status === "invalid" || status === "stale_bundle") return "badge-red";
+  return "badge-yellow";
+}
+
+function missionPlanStateCopy(status: MissionPlanStateStatus, activeDevice?: Device | null) {
+  const piDevice = activeDevice?.kind === "pi5";
+  if (status === "invalid") return { label: "Invalid", detail: "Resolve readiness checks before building a bundle." };
+  if (status === "not_built") return { label: "Not built", detail: "Build a mission bundle before running or uploading." };
+  if (status === "stale_bundle") return { label: "Stale bundle", detail: "Plan, map, device, or pipeline settings changed after the last build." };
+  if (status === "not_uploaded") return { label: "Not uploaded", detail: piDevice ? "Bundle is built locally but has not been uploaded to the Pi." : "Bundle is built locally." };
+  if (status === "uploaded") return { label: "Uploaded", detail: "Current bundle has been uploaded to the active Pi." };
+  return { label: "Bundle ready", detail: "Current bundle is built for local validation." };
+}
+
+function formatMissionStateTime(value: string | null) {
+  if (!value) return "n/a";
+  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function buildMissionPlanPayload({
@@ -540,10 +590,23 @@ export function MissionPlanner() {
   const [bundleResult, setBundleResult] = useState<BuildDroneBundleResult | null>(null);
   const [commandOutput, setCommandOutput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
+  const [lastBuiltFingerprint, setLastBuiltFingerprint] = useState<string | null>(null);
+  const [lastUploadedFingerprint, setLastUploadedFingerprint] = useState<string | null>(null);
+  const [lastBuiltAt, setLastBuiltAt] = useState<string | null>(null);
+  const [lastUploadedAt, setLastUploadedAt] = useState<string | null>(null);
+
+  const refreshSupportBundles = async () => {
+    setSupportBundles(await cmd.listSupportBundles(SUPPORT_DOWNLOAD_DIR));
+  };
 
   useEffect(() => {
     setRemoteBundleDir(defaultRemoteBundleDir(activeDevice));
   }, [activeDevice?.id]);
+
+  useEffect(() => {
+    refreshSupportBundles().catch(() => setSupportBundles([]));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -629,6 +692,16 @@ export function MissionPlanner() {
   const qgcPlan = useMemo(() => buildQgcPlan(planPayload), [planPayload]);
   const missionPlanJson = useMemo(() => JSON.stringify(planPayload, null, 2), [planPayload]);
   const qgcPlanJson = useMemo(() => JSON.stringify(qgcPlan, null, 2), [qgcPlan]);
+  const planFingerprint = useMemo(
+    () => JSON.stringify({
+      mission: planPayload,
+      qgc: qgcPlan,
+      region_path: selectedRegion?.output_path,
+      local_bundle_dir: effectiveBundleDir,
+      remote_bundle_dir: remoteBundleDir,
+    }),
+    [planPayload, qgcPlan, selectedRegion?.output_path, effectiveBundleDir, remoteBundleDir],
+  );
   const readinessChecks = [
     { label: "Map source", ok: !!selectedRegion },
     { label: "Mission path", ok: missionItems.length >= 2 },
@@ -636,6 +709,19 @@ export function MissionPlanner() {
     { label: "Fence optional", ok: fencePoints.length === 0 || fencePoints.length >= 3 },
     { label: "MAVLink endpoint", ok: !enableMavlink || !!activeDevice?.mavlink_endpoint },
   ];
+  const allReadinessChecksPass = readinessChecks.every((check) => check.ok);
+  const missionPlanStateStatus: MissionPlanStateStatus = !allReadinessChecksPass
+    ? "invalid"
+    : !lastBuiltFingerprint
+      ? "not_built"
+      : lastBuiltFingerprint !== planFingerprint
+        ? "stale_bundle"
+        : activeDevice?.kind === "pi5"
+          ? lastUploadedFingerprint === planFingerprint
+            ? "uploaded"
+            : "not_uploaded"
+          : "bundle_ready";
+  const missionPlanState = missionPlanStateCopy(missionPlanStateStatus, activeDevice);
 
   const pickRepo = async () => {
     const dir = await open({ directory: true, multiple: false, title: "Select Drone repo folder" });
@@ -779,6 +865,10 @@ export function MissionPlanner() {
         qgc_plan_json: qgcPlanJson,
       });
       setBundleResult(result);
+      setLastBuiltFingerprint(planFingerprint);
+      setLastBuiltAt(new Date().toISOString());
+      if (lastUploadedFingerprint !== planFingerprint) setLastUploadedFingerprint(null);
+      setLastUploadedAt(null);
       setCommandOutput([result.command, result.stdout, result.stderr].filter(Boolean).join("\n"));
       return result;
     } catch (e) {
@@ -806,6 +896,8 @@ export function MissionPlanner() {
         bundle.bundle_dir,
         remoteBundleDir,
       );
+      setLastUploadedFingerprint(planFingerprint);
+      setLastUploadedAt(new Date().toISOString());
     } catch (e) {
       setError(String(e));
     } finally {
@@ -836,6 +928,44 @@ export function MissionPlanner() {
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       setCommandOutput(`$ ${label}\n${output || "(no output)"}\n[exit ${result.exit_code}]`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCmdRunning(false);
+    }
+  };
+
+  const createAndDownloadSupportBundle = async () => {
+    if (!activeDevice || activeDevice.kind !== "pi5" || !activeDevice.host || !activeDevice.auth) return;
+    setCmdRunning(true);
+    setError(null);
+    setCommandOutput("$ create support bundle\n");
+    try {
+      const result = await cmd.sshRunCommand(
+        activeDevice.host,
+        activeDevice.port ?? 22,
+        activeDevice.username ?? "user",
+        activeDevice.auth,
+        supportBundleCommand(remoteProject, remoteBundleDir, mavlinkEnv),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteZip = parseSupportBundleZip(output);
+      if (result.exit_code !== 0 || !remoteZip) {
+        setCommandOutput(`$ create support bundle\n${output || "(no output)"}\n[exit ${result.exit_code}]`);
+        return;
+      }
+
+      setCommandOutput(`$ create support bundle\n${output}\n\n$ download support bundle\nDownloading ${remoteZip}...`);
+      const downloaded = await cmd.sshDownloadFile(
+        activeDevice.host,
+        activeDevice.port ?? 22,
+        activeDevice.username ?? "user",
+        activeDevice.auth,
+        remoteZip,
+        SUPPORT_DOWNLOAD_DIR,
+      );
+      setCommandOutput(`$ create support bundle\n${output}\n\n$ download support bundle\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]`);
+      await refreshSupportBundles();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -1146,6 +1276,25 @@ export function MissionPlanner() {
             </div>
           </div>
 
+          <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-slate-300">Mission state</span>
+              <span className={missionPlanStateClass(missionPlanStateStatus)}>
+                {missionPlanStateStatus === "uploaded" || missionPlanStateStatus === "bundle_ready" ? (
+                  <CheckCircle2 size={11} />
+                ) : (
+                  <AlertTriangle size={11} />
+                )}
+                {missionPlanState.label}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">{missionPlanState.detail}</p>
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-500">
+              <span>built {formatMissionStateTime(lastBuiltAt)}</span>
+              <span>uploaded {formatMissionStateTime(lastUploadedAt)}</span>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-2">
             {readinessChecks.map((check) => (
               <span key={check.label} className={missionReadinessClass(check.ok)}>
@@ -1313,7 +1462,7 @@ export function MissionPlanner() {
                 />
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 disabled={activeDevice.kind !== "pi5" || cmdRunning}
                 onClick={() => runPiCommand(
@@ -1336,6 +1485,14 @@ export function MissionPlanner() {
                 <Play size={13} />
                 Run 30 Frames
               </button>
+              <button
+                disabled={activeDevice.kind !== "pi5" || cmdRunning}
+                onClick={createAndDownloadSupportBundle}
+                className="btn-secondary justify-center text-amber-300 border-amber-500/20"
+              >
+                <Archive size={13} />
+                Support Bundle
+              </button>
             </div>
           </div>
 
@@ -1350,23 +1507,51 @@ export function MissionPlanner() {
                 </div>
               )}
               {bundleResult.terrain_index_path && (
-                <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] text-emerald-300/80">
+                <div className="grid grid-cols-5 gap-2 pt-1 text-[11px] text-emerald-300/80">
                   <div>
                     <span className="block text-emerald-300/60">Tiles</span>
-                    <span className="font-mono">{bundleResult.terrain_tile_count ?? "ready"}</span>
+                    <span className="font-mono">
+                      {bundleResult.geospatial_health?.tile_index?.tile_count ?? bundleResult.terrain_tile_count ?? "ready"}
+                    </span>
                   </div>
                   <div>
                     <span className="block text-emerald-300/60">Features</span>
-                    <span className="font-mono">{bundleResult.terrain_feature_count?.toLocaleString() ?? "ready"}</span>
+                    <span className="font-mono">
+                      {(bundleResult.geospatial_health?.tile_index?.feature_count ?? bundleResult.terrain_feature_count)?.toLocaleString() ?? "ready"}
+                    </span>
                   </div>
                   <div>
                     <span className="block text-emerald-300/60">GSD</span>
                     <span className="font-mono">
-                      {bundleResult.terrain_gsd_m != null ? `${bundleResult.terrain_gsd_m.toFixed(2)} m/px` : "set"}
+                      {(bundleResult.geospatial_health?.georef?.gsd_m ?? bundleResult.terrain_gsd_m) != null
+                        ? `${(bundleResult.geospatial_health?.georef?.gsd_m ?? bundleResult.terrain_gsd_m ?? 0).toFixed(2)} m/px`
+                        : "set"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-emerald-300/60">Map health</span>
+                    <span className="font-mono uppercase">
+                      {bundleResult.geospatial_health?.status ?? "passed"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="block text-emerald-300/60">Pi cost</span>
+                    <span className="font-mono uppercase">
+                      {bundleResult.geospatial_health?.map_quality?.estimated_pi_runtime_cost
+                        ?? bundleResult.geospatial_health?.tile_index?.quality?.estimated_pi_runtime_cost
+                        ?? "low"}
                     </span>
                   </div>
                 </div>
               )}
+              {bundleResult.geospatial_health?.issues?.slice(0, 2).map((issue) => (
+                <div
+                  key={`${issue.severity}-${issue.message}`}
+                  className={issue.severity === "error" ? "text-[11px] text-red-300" : "text-[11px] text-amber-200"}
+                >
+                  {issue.message}
+                </div>
+              ))}
             </div>
           )}
 
@@ -1380,6 +1565,20 @@ export function MissionPlanner() {
             <pre className="bg-bg-base border border-border rounded-lg px-3 py-2.5 text-[11px] font-mono text-slate-300 whitespace-pre-wrap max-h-72 overflow-y-auto leading-relaxed">
               {cmdRunning ? commandOutput + "..." : commandOutput}
             </pre>
+          )}
+          {supportBundles.length > 0 && (
+            <div className="rounded-lg border border-border bg-bg-base px-3 py-2 text-[11px] text-slate-400 space-y-1">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium text-slate-300">Downloaded support bundles</span>
+                <span className="font-mono truncate">{SUPPORT_DOWNLOAD_DIR}</span>
+              </div>
+              {supportBundles.slice(0, 3).map((bundle) => (
+                <div key={bundle.path} className="flex items-center justify-between gap-3 font-mono">
+                  <span className="truncate">{bundle.name}</span>
+                  <span className="shrink-0 text-slate-500">{formatBundleSize(bundle.size_bytes)}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>

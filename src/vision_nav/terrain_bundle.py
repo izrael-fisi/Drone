@@ -135,6 +135,9 @@ def stac_manifest(bundle: TerrainBundle) -> dict[str, Any]:
 
 def summarize_terrain_bundle(bundle_path: str | Path) -> dict[str, Any]:
     bundle = load_terrain_bundle(bundle_path)
+    from vision_nav.geospatial_health import geospatial_health_report
+
+    health = geospatial_health_report(bundle_path)
     issues: list[dict[str, str]] = []
     if not bundle.orthophoto_path.exists():
         issues.append({"severity": "error", "message": f"Missing orthophoto: {bundle.orthophoto_path}"})
@@ -144,6 +147,9 @@ def summarize_terrain_bundle(bundle_path: str | Path) -> dict[str, Any]:
         issues.append({"severity": "warning", "message": "Manifest has no terrain_bundle.tile_index_path."})
     elif not bundle.tile_index_path.exists():
         issues.append({"severity": "error", "message": f"Missing terrain tile index: {bundle.tile_index_path}"})
+    for issue in health.get("issues", []):
+        if issue not in issues:
+            issues.append(issue)
 
     terrain = bundle.manifest.get("terrain_bundle") or {}
     return {
@@ -158,8 +164,11 @@ def summarize_terrain_bundle(bundle_path: str | Path) -> dict[str, Any]:
         "gsd_m": bundle.gsd_m,
         "crs": bundle.crs,
         "has_tile_index": bundle.has_tile_index,
+        "geospatial_health": health,
         "issues": issues,
-        "status": "failed" if any(issue["severity"] == "error" for issue in issues) else "passed",
+        "status": "failed"
+        if any(issue["severity"] == "error" for issue in issues) or health["status"] == "failed"
+        else "passed",
     }
 
 
@@ -171,12 +180,17 @@ def parse_args() -> argparse.Namespace:
 
 
 def print_human(summary: dict[str, Any]) -> None:
+    health = summary.get("geospatial_health") or {}
+    map_quality = health.get("map_quality") or {}
     print(f"Terrain bundle: {summary.get('bundle_id') or '(unnamed)'}")
     print(f"Directory: {summary['bundle_dir']}")
     print(f"Status: {summary['status']}")
+    print(f"Map health: {health.get('status') or 'unknown'}")
     print(f"Tile index: {summary.get('tile_index_path')}")
     print(f"Tiles: {summary.get('tile_count') or 0}")
     print(f"Features: {summary.get('feature_count') or 0}")
+    if map_quality:
+        print(f"Pi runtime cost: {map_quality.get('estimated_pi_runtime_cost') or 'unknown'}")
     for issue in summary["issues"]:
         print(f"[{issue['severity'].upper()}] {issue['message']}")
 

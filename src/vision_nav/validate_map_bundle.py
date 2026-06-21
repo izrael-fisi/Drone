@@ -18,6 +18,7 @@ from vision_nav.bundle import (
 )
 from vision_nav.camera import load_camera_calibration
 from vision_nav.bundle_checksums import CHECKSUM_FILENAME, verify_checksum_file
+from vision_nav.geospatial_health import geospatial_health_report
 
 
 def parse_args() -> argparse.Namespace:
@@ -206,6 +207,14 @@ def validate_bundle(
         add_issue(issues, "error", f"Invalid feature config: {exc}")
 
     summary["georef"] = validate_georef(manifest, issues)
+    if manifest.get("terrain_bundle"):
+        try:
+            summary["geospatial_health"] = geospatial_health_report(bundle)
+            for issue in summary["geospatial_health"].get("issues", []):
+                if issue not in issues:
+                    issues.append(issue)
+        except Exception as exc:
+            add_issue(issues, "error", f"Invalid geospatial bundle health: {exc}")
     summary["calibration"] = validate_calibration(bundle_dir, manifest, require_calibration, issues)
     summary["checksums"] = validate_checksums(bundle, require_checksums, issues)
     summary["status"] = "failed" if any(issue["severity"] == "error" for issue in issues) else "passed"

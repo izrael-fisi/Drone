@@ -84,6 +84,7 @@ pub struct BuildDroneBundleResult {
     pub terrain_feature_count: Option<u64>,
     pub terrain_gsd_m: Option<f64>,
     pub terrain_tile_size_px: Option<u32>,
+    pub geospatial_health: Option<serde_json::Value>,
     pub checksums_path: String,
     pub mission_plan_path: Option<String>,
     pub qgc_plan_path: Option<String>,
@@ -798,6 +799,10 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         .and_then(|value| value.as_u64())
         .map(|value| value as u32)
         .or(Some(512));
+    let geospatial_health = terrain_output
+        .as_ref()
+        .and_then(|value| value.get("geospatial_health"))
+        .cloned();
 
     Ok(BuildDroneBundleResult {
         bundle_dir: bundle_dir.to_string_lossy().into_owned(),
@@ -811,6 +816,7 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         terrain_feature_count,
         terrain_gsd_m,
         terrain_tile_size_px,
+        geospatial_health,
         checksums_path: bundle_dir.join("checksums.sha256").to_string_lossy().into_owned(),
         mission_plan_path: mission_plan_path.map(|path| path.to_string_lossy().into_owned()),
         qgc_plan_path: qgc_plan_path.map(|path| path.to_string_lossy().into_owned()),

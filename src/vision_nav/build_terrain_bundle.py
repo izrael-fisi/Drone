@@ -9,6 +9,7 @@ import yaml
 
 from vision_nav.build_map_bundle import build_map_bundle
 from vision_nav.bundle import load_manifest, manifest_feature_options, manifest_orthophoto_path
+from vision_nav.geospatial_health import write_geospatial_health_report
 from vision_nav.terrain_bundle import (
     DEFAULT_TERRAIN_OVERLAP_PX,
     DEFAULT_TERRAIN_TILE_INDEX,
@@ -126,11 +127,14 @@ def build_terrain_bundle(
     terrain_bundle = load_terrain_bundle(bundle_dir)
     stac_path = bundle_dir / "manifest.stac.json"
     stac_path.write_text(json.dumps(stac_manifest(terrain_bundle), indent=2) + "\n")
+    geospatial_health = write_geospatial_health_report(bundle_dir)
 
     result = {
         "bundle_dir": str(bundle_dir),
         "manifest_path": str(manifest_path),
         "stac_manifest_path": str(stac_path),
+        "geospatial_health_path": geospatial_health.get("path"),
+        "geospatial_health": geospatial_health,
         "legacy_feature_index": legacy.get("output"),
         "terrain_bundle": manifest["terrain_bundle"],
         "tile_index": {

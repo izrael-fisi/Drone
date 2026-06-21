@@ -1,0 +1,451 @@
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import platform
+import shutil
+import subprocess
+import sys
+import zipfile
+from typing import Any
+
+from vision_nav.bundle import load_manifest
+from vision_nav.geospatial_health import write_geospatial_health_report
+from vision_nav.replay_gates import ReplayGateConfig, evaluate_replay_log
+from vision_nav.summarize_match_log import summarize_log
+
+
+DEFAULT_MAX_LOG_BYTES = 50 * 1024 * 1024
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Create a field support bundle for a vision-nav bench run.")
+    parser.add_argument("--bundle", help="Mission/terrain bundle directory or manifest.json path.")
+    parser.add_argument("--log", action="append", default=[], help="Runtime or replay JSONL log. Can be repeated.")
+    parser.add_argument("--extra", action="append", default=[], help="Extra file or directory to include. Can be repeated.")
+    parser.add_argument("--repo", default=".", help="Repo path for git/app metadata. Defaults to current directory.")
+    parser.add_argument("--output-dir", default="support-bundles", help="Directory for generated support bundles.")
+    parser.add_argument("--name", help="Stable bundle name. Defaults to timestamp plus bundle id.")
+    parser.add_argument("--autopilot-metadata", help="Optional JSON file with PX4/ArduPilot metadata.")
+    parser.add_argument("--mavlink-endpoint", help="Optional MAVLink endpoint used during the run.")
+    parser.add_argument("--replay-case-manifest", help="Optional JSON replay-case manifest to evaluate and include.")
+    parser.add_argument(
+        "--replay-case",
+        action="append",
+        default=[],
+        help="Inline replay case as case_name:expected:log_path. Can be repeated.",
+    )
+    parser.add_argument("--include-map-assets", action="store_true", help="Include orthophoto/tile/descriptor assets.")
+    parser.add_argument("--max-log-bytes", type=int, default=DEFAULT_MAX_LOG_BYTES, help="Copy full logs up to this size; tail larger logs.")
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    return parser.parse_args()
+
+
+def safe_relpath(path: Path, root: Path | None = None) -> str:
+    path = path.expanduser().resolve()
+    if root is not None:
+        try:
+            return str(path.relative_to(root.expanduser().resolve())).replace("\\", "/")
+        except ValueError:
+            pass
+    return path.name
+
+
+def copy_file(src: Path, dst: Path) -> dict[str, Any]:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return {"source": str(src), "path": str(dst), "bytes": dst.stat().st_size, "truncated": False}
+
+
+def copy_log(src: Path, dst: Path, *, max_bytes: int) -> dict[str, Any]:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    size = src.stat().st_size
+    if max_bytes > 0 and size > max_bytes:
+        with src.open("rb") as source:
+            source.seek(max(size - max_bytes, 0))
+            data = source.read()
+        marker = (
+            f'{{"support_bundle_note":"log truncated to last {max_bytes} bytes",'
+            f'"original_bytes":{size}}}\n'
+        ).encode("utf-8")
+        dst.write_bytes(marker + data)
+        return {"source": str(src), "path": str(dst), "bytes": dst.stat().st_size, "original_bytes": size, "truncated": True}
+    return copy_file(src, dst)
+
+
+def copy_tree(src: Path, dst: Path) -> dict[str, Any]:
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
+    files = [path for path in dst.rglob("*") if path.is_file()]
+    return {"source": str(src), "path": str(dst), "file_count": len(files), "bytes": sum(path.stat().st_size for path in files)}
+
+
+def read_os_release() -> dict[str, str]:
+    path = Path("/etc/os-release")
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for line in path.read_text(errors="replace").splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value.strip().strip('"')
+    return values
+
+
+def git_metadata(repo: Path) -> dict[str, Any]:
+    if not (repo / ".git").exists():
+        return {"available": False, "reason": "not a git repository"}
+
+    def run_git(*args: str) -> str | None:
+        try:
+            return subprocess.check_output(["git", *args], cwd=repo, text=True, stderr=subprocess.DEVNULL).strip()
+        except Exception:
+            return None
+
+    return {
+        "available": True,
+        "commit": run_git("rev-parse", "HEAD"),
+        "branch": run_git("branch", "--show-current"),
+        "dirty": bool(run_git("status", "--short")),
+        "remote": run_git("remote", "get-url", "origin"),
+    }
+
+
+def project_version(repo: Path) -> str | None:
+    pyproject = repo / "pyproject.toml"
+    if not pyproject.exists():
+        return None
+    for line in pyproject.read_text(errors="replace").splitlines():
+        if line.strip().startswith("version"):
+            _, value = line.split("=", 1)
+            return value.strip().strip('"')
+    return None
+
+
+def metadata_snapshot(repo: Path, *, mavlink_endpoint: str | None = None, autopilot_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "vision_nav": {
+            "project_version": project_version(repo),
+            "repo": str(repo),
+            "git": git_metadata(repo),
+        },
+        "host": {
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "python": sys.version,
+            "os_release": read_os_release(),
+        },
+        "runtime": {
+            "mavlink_endpoint": mavlink_endpoint,
+        },
+        "autopilot": autopilot_metadata,
+    }
+
+
+def default_name(bundle_id: str | None) -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    suffix = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in (bundle_id or "vision-nav"))
+    return f"{stamp}-{suffix}-support"
+
+
+def copy_bundle_metadata(bundle_path: str | Path, support_dir: Path, *, include_map_assets: bool) -> dict[str, Any]:
+    bundle_dir, manifest = load_manifest(bundle_path)
+    bundle_root = support_dir / "bundle"
+    bundle_root.mkdir(parents=True, exist_ok=True)
+    copied: list[dict[str, Any]] = []
+    missing: list[str] = []
+
+    for rel in [
+        "manifest.json",
+        "manifest.stac.json",
+        "bundle_health.json",
+        "checksums.sha256",
+        "config/terrain_nav.yaml",
+        "calibration/down_camera.yaml",
+        "calibration/camera_to_body.yaml",
+        "mission/mission_plan.json",
+        "mission/qgc.plan",
+    ]:
+        src = bundle_dir / rel
+        if src.exists():
+            copied.append(copy_file(src, bundle_root / rel))
+        else:
+            missing.append(rel)
+
+    try:
+        health = write_geospatial_health_report(bundle_dir, bundle_root / "bundle_health.generated.json")
+    except Exception as exc:
+        health = {"status": "failed", "error": str(exc)}
+
+    if include_map_assets:
+        for rel in ["ortho", "imagery/tiles", "index/descriptors", "index/tiles.sqlite", "features/map_features.npz"]:
+            src = bundle_dir / rel
+            if src.is_dir():
+                copied.append(copy_tree(src, bundle_root / rel))
+            elif src.exists():
+                copied.append(copy_file(src, bundle_root / rel))
+            else:
+                missing.append(rel)
+
+    return {
+        "bundle_dir": str(bundle_dir),
+        "bundle_id": manifest.get("bundle_id"),
+        "include_map_assets": include_map_assets,
+        "copied": copied,
+        "missing_optional": missing,
+        "health": health,
+    }
+
+
+def copy_logs(logs: list[str], support_dir: Path, *, max_log_bytes: int) -> dict[str, Any]:
+    copied: list[dict[str, Any]] = []
+    summaries: list[dict[str, Any]] = []
+    missing: list[str] = []
+    logs_dir = support_dir / "logs"
+    summaries_dir = support_dir / "summaries"
+    for log in logs:
+        src = Path(log).expanduser()
+        if not src.exists():
+            missing.append(str(src))
+            continue
+        dst = logs_dir / src.name
+        copied_info = copy_log(src, dst, max_bytes=max_log_bytes)
+        copied.append(copied_info)
+        try:
+            summary = summarize_log(src)
+        except Exception as exc:
+            summary = {"log_path": str(src), "status": "failed", "error": str(exc)}
+        summaries.append(summary)
+        summary_path = summaries_dir / f"{src.stem}.summary.json"
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    return {"copied": copied, "summaries": summaries, "missing": missing}
+
+
+def copy_extras(extras: list[str], support_dir: Path) -> dict[str, Any]:
+    copied: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for extra in extras:
+        src = Path(extra).expanduser()
+        if not src.exists():
+            missing.append(str(src))
+            continue
+        dst = support_dir / "extras" / safe_relpath(src)
+        copied.append(copy_tree(src, dst) if src.is_dir() else copy_file(src, dst))
+    return {"copied": copied, "missing": missing}
+
+
+def sanitize_filename(value: str) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "-" for ch in value)
+    return safe.strip("-") or "replay-case"
+
+
+def parse_inline_replay_case(value: str) -> dict[str, Any]:
+    parts = value.split(":", 2)
+    if len(parts) != 3:
+        raise ValueError("--replay-case must use case_name:expected:log_path")
+    case_name, expected, log_path = parts
+    return {"case_name": case_name, "expected": expected, "log": log_path, "source": "inline"}
+
+
+def load_replay_cases(
+    *,
+    replay_case_manifest: str | None = None,
+    inline_replay_cases: list[str] | None = None,
+) -> dict[str, Any]:
+    inline_replay_cases = inline_replay_cases or []
+    cases: list[dict[str, Any]] = []
+    sources: list[str] = []
+    if replay_case_manifest:
+        manifest_path = Path(replay_case_manifest).expanduser()
+        raw = json.loads(manifest_path.read_text())
+        sources.append(str(manifest_path))
+        manifest_cases = raw.get("cases") or []
+        for case in manifest_cases:
+            if not isinstance(case, dict):
+                continue
+            normalized = dict(case)
+            if normalized.get("log"):
+                log_path = Path(str(normalized["log"])).expanduser()
+                if not log_path.is_absolute():
+                    log_path = manifest_path.parent / log_path
+                normalized["log"] = str(log_path)
+            normalized["source"] = str(manifest_path)
+            cases.append(normalized)
+    for inline in inline_replay_cases:
+        cases.append(parse_inline_replay_case(inline))
+    return {"sources": sources, "cases": cases}
+
+
+def evaluate_replay_cases(replay_cases: dict[str, Any], support_dir: Path) -> dict[str, Any]:
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    report_dir = support_dir / "summaries" / "replay_gates"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    for index, case in enumerate(replay_cases.get("cases") or [], start=1):
+        case_name = str(case.get("case_name") or f"replay-case-{index}")
+        expected = str(case.get("expected") or "")
+        log_path = case.get("log")
+        if expected not in {"good_map", "degraded", "wrong_map"}:
+            report = {
+                "case_name": case_name,
+                "expected": expected,
+                "status": "failed",
+                "issues": [{"severity": "error", "message": f"Unsupported expected behavior: {expected}"}],
+            }
+        elif not log_path or not Path(str(log_path)).expanduser().exists():
+            missing.append(str(log_path or case_name))
+            report = {
+                "case_name": case_name,
+                "expected": expected,
+                "status": "failed",
+                "log_path": str(log_path) if log_path else None,
+                "issues": [{"severity": "error", "message": "Replay case log is missing."}],
+            }
+        else:
+            report = evaluate_replay_log(
+                str(log_path),
+                case_name=case_name,
+                expected=expected,
+                config=ReplayGateConfig(),
+            )
+        report["notes"] = case.get("notes")
+        report["source"] = case.get("source")
+        report_path = report_dir / f"{sanitize_filename(case_name)}.gate.json"
+        report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        report["report_path"] = str(report_path)
+        reports.append(report)
+    return {
+        "sources": replay_cases.get("sources") or [],
+        "case_count": len(replay_cases.get("cases") or []),
+        "reports": reports,
+        "missing_logs": missing,
+        "status": "failed" if any(report.get("status") == "failed" for report in reports) else "passed",
+    }
+
+
+def zip_directory(source_dir: Path, zip_path: Path) -> None:
+    if zip_path.exists():
+        zip_path.unlink()
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(source_dir.rglob("*")):
+            if path.is_file():
+                archive.write(path, path.relative_to(source_dir))
+
+
+def create_support_bundle(
+    *,
+    bundle: str | None = None,
+    logs: list[str] | None = None,
+    extras: list[str] | None = None,
+    repo: str | Path = ".",
+    output_dir: str | Path = "support-bundles",
+    name: str | None = None,
+    autopilot_metadata_path: str | None = None,
+    mavlink_endpoint: str | None = None,
+    replay_case_manifest_path: str | None = None,
+    inline_replay_cases: list[str] | None = None,
+    include_map_assets: bool = False,
+    max_log_bytes: int = DEFAULT_MAX_LOG_BYTES,
+) -> dict[str, Any]:
+    logs = logs or []
+    extras = extras or []
+    repo_path = Path(repo).expanduser().resolve()
+    autopilot_metadata = None
+    if autopilot_metadata_path:
+        autopilot_metadata = json.loads(Path(autopilot_metadata_path).expanduser().read_text())
+
+    bundle_id: str | None = None
+    bundle_summary: dict[str, Any] | None = None
+    if bundle:
+        _, manifest = load_manifest(bundle)
+        bundle_id = manifest.get("bundle_id")
+
+    output_root = Path(output_dir).expanduser().resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+    support_name = name or default_name(bundle_id)
+    support_dir = output_root / support_name
+    if support_dir.exists():
+        shutil.rmtree(support_dir)
+    support_dir.mkdir(parents=True)
+
+    if bundle:
+        bundle_summary = copy_bundle_metadata(bundle, support_dir, include_map_assets=include_map_assets)
+
+    log_summary = copy_logs(logs, support_dir, max_log_bytes=max_log_bytes)
+    extra_summary = copy_extras(extras, support_dir)
+    replay_cases = load_replay_cases(
+        replay_case_manifest=replay_case_manifest_path,
+        inline_replay_cases=inline_replay_cases,
+    )
+    replay_gate_summary = evaluate_replay_cases(replay_cases, support_dir)
+    manifest = {
+        "support_bundle_version": "0.1.0",
+        "name": support_name,
+        "metadata": metadata_snapshot(repo_path, mavlink_endpoint=mavlink_endpoint, autopilot_metadata=autopilot_metadata),
+        "bundle": bundle_summary,
+        "logs": log_summary,
+        "replay_gates": replay_gate_summary,
+        "extras": extra_summary,
+    }
+    manifest_path = support_dir / "support_manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+    zip_path = output_root / f"{support_name}.zip"
+    zip_directory(support_dir, zip_path)
+    result = {
+        "status": "passed",
+        "support_dir": str(support_dir),
+        "zip_path": str(zip_path),
+        "zip_bytes": zip_path.stat().st_size,
+        "manifest_path": str(manifest_path),
+        "manifest": manifest,
+    }
+    return result
+
+
+def print_human(result: dict[str, Any]) -> None:
+    manifest = result["manifest"]
+    print(f"Support bundle: {manifest['name']}")
+    print(f"Directory: {result['support_dir']}")
+    print(f"Zip: {result['zip_path']} ({result['zip_bytes']} bytes)")
+    bundle = manifest.get("bundle") or {}
+    if bundle:
+        health = bundle.get("health") or {}
+        print(f"Bundle: {bundle.get('bundle_id') or '(unnamed)'} health={health.get('status') or 'unknown'}")
+    logs = manifest.get("logs") or {}
+    print(f"Logs: {len(logs.get('copied') or [])} copied, {len(logs.get('missing') or [])} missing")
+    replay_gates = manifest.get("replay_gates") or {}
+    if replay_gates.get("case_count"):
+        print(f"Replay gates: {replay_gates.get('status')} ({replay_gates.get('case_count')} case(s))")
+
+
+def main() -> None:
+    args = parse_args()
+    result = create_support_bundle(
+        bundle=args.bundle,
+        logs=args.log,
+        extras=args.extra,
+        repo=args.repo,
+        output_dir=args.output_dir,
+        name=args.name,
+        autopilot_metadata_path=args.autopilot_metadata,
+        mavlink_endpoint=args.mavlink_endpoint,
+        replay_case_manifest_path=args.replay_case_manifest,
+        inline_replay_cases=args.replay_case,
+        include_map_assets=args.include_map_assets,
+        max_log_bytes=args.max_log_bytes,
+    )
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print_human(result)
+
+
+if __name__ == "__main__":
+    main()

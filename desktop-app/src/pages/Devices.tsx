@@ -3,14 +3,14 @@ import {
   Server, HardDrive, Plus, Trash2, Edit2, Wifi, CheckCircle2, XCircle,
   Loader2, Eye, EyeOff, ShieldCheck, ShieldAlert, FolderOpen, KeyRound, Lock,
   Terminal, Play, Square, FileText, ChevronDown, ChevronUp,
-  Cable, Cpu, BookOpen, Save, SlidersHorizontal,
+  Cable, Cpu, BookOpen, Save, SlidersHorizontal, Archive,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cmd } from "../lib/tauri";
 import { useAppStore } from "../lib/store";
 import { cn, generateId } from "../lib/utils";
 import { ModuleSetup } from "./PiSetup";
-import type { Device } from "../lib/types";
+import type { Device, SupportBundleFile } from "../lib/types";
 
 type TestResult = {
   ok: boolean;
@@ -22,6 +22,32 @@ type TestState = "idle" | "testing" | TestResult;
 
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\"'\"'")}'`;
+}
+
+const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
+
+function supportBundleCommand(remotePath: string, remoteBundle: string, mavlinkEnv: string) {
+  return [
+    `cd ${shellQuote(remotePath)}`,
+    `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ${mavlinkEnv}./scripts/pi/create_support_bundle.sh`,
+    `latest=$(ls -t "$HOME/DroneTransfer/outgoing/support-bundles/"*.zip 2>/dev/null | head -n 1)`,
+    `test -n "$latest"`,
+    `echo "__VISION_NAV_SUPPORT_ZIP__=$latest"`,
+  ].join(" && ");
+}
+
+function parseSupportBundleZip(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_SUPPORT_ZIP__="))
+    ?.replace("__VISION_NAV_SUPPORT_ZIP__=", "");
+}
+
+function formatBundleSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
 }
 
 function defaultRemotePath(username = "user") {
@@ -148,6 +174,15 @@ export function Devices() {
   const [controlTab, setControlTab] = useState<Record<string, "control" | "config" | "setup">>({});
   const [cmdOutputs, setCmdOutputs] = useState<Record<string, string>>({});
   const [cmdRunning, setCmdRunning] = useState<string | null>(null);
+  const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
+
+  const refreshSupportBundles = async () => {
+    setSupportBundles(await cmd.listSupportBundles(SUPPORT_DOWNLOAD_DIR));
+  };
+
+  useEffect(() => {
+    refreshSupportBundles().catch(() => setSupportBundles([]));
+  }, []);
 
   const runPiCommand = async (d: Device, label: string, command: string) => {
     if (!d.host || !d.auth) return;
@@ -164,6 +199,52 @@ export function Devices() {
       }));
     } catch (e) {
       setCmdOutputs((o) => ({ ...o, [d.id]: `$ ${label}\nERROR: ${e}` }));
+    } finally {
+      setCmdRunning(null);
+    }
+  };
+
+  const createAndDownloadSupportBundle = async (d: Device, remotePath: string, remoteBundle: string, mavlinkEnv: string) => {
+    if (!d.host || !d.auth) return;
+    setCmdRunning(d.id);
+    setCmdOutputs((o) => ({ ...o, [d.id]: "$ create support bundle\n" }));
+    try {
+      const r = await cmd.sshRunCommand(
+        d.host,
+        d.port ?? 22,
+        d.username ?? "user",
+        d.auth,
+        supportBundleCommand(remotePath, remoteBundle, mavlinkEnv),
+      );
+      const output = [r.stdout, r.stderr].filter(Boolean).join("\n").trim();
+      const remoteZip = parseSupportBundleZip(output);
+      if (r.exit_code !== 0 || !remoteZip) {
+        setCmdOutputs((o) => ({
+          ...o,
+          [d.id]: `$ create support bundle\n${output || "(no output)"}\n[exit ${r.exit_code}]`,
+        }));
+        return;
+      }
+
+      setCmdOutputs((o) => ({
+        ...o,
+        [d.id]: `$ create support bundle\n${output}\n\n$ download support bundle\nDownloading ${remoteZip}...`,
+      }));
+      const downloaded = await cmd.sshDownloadFile(
+        d.host,
+        d.port ?? 22,
+        d.username ?? "user",
+        d.auth,
+        remoteZip,
+        SUPPORT_DOWNLOAD_DIR,
+      );
+      setCmdOutputs((o) => ({
+        ...o,
+        [d.id]: `$ create support bundle\n${output}\n\n$ download support bundle\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]`,
+      }));
+      await refreshSupportBundles();
+    } catch (e) {
+      setCmdOutputs((o) => ({ ...o, [d.id]: `$ create support bundle\nERROR: ${e}` }));
     } finally {
       setCmdRunning(null);
     }
@@ -442,6 +523,9 @@ export function Devices() {
                           <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "logs (last 60 lines)", "tail -n 60 $HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl 2>/dev/null || tail -n 60 $HOME/DroneTransfer/outgoing/runtime-match/matches.jsonl 2>/dev/null || echo '(no match log yet)'")} className="btn-secondary text-xs py-1 px-3">
                             <FileText size={11} />View Logs
                           </button>
+                          <button disabled={!!cmdRunning} onClick={() => createAndDownloadSupportBundle(d, remotePath, remoteBundle, mavlinkEnv)} className="btn-secondary text-xs py-1 px-3 text-amber-300 border-amber-500/20">
+                            <Archive size={11} />Support Bundle
+                          </button>
                           <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "systemd status", "systemctl --user status drone-vision-nav.service --no-pager 2>&1 || echo 'service not installed'")} className="btn-secondary text-xs py-1 px-3">
                             <Cpu size={11} />Service
                           </button>
@@ -450,6 +534,20 @@ export function Devices() {
                           <pre className="bg-bg-base border border-border rounded-lg px-3 py-2.5 text-[11px] font-mono text-slate-300 whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed">
                             {cmdRunning === d.id ? cmdOutputs[d.id] + "▋" : cmdOutputs[d.id]}
                           </pre>
+                        )}
+                        {supportBundles.length > 0 && (
+                          <div className="rounded-lg border border-border bg-bg-base px-3 py-2 text-[11px] text-slate-400 space-y-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-medium text-slate-300">Downloaded support bundles</span>
+                              <span className="font-mono truncate">{SUPPORT_DOWNLOAD_DIR}</span>
+                            </div>
+                            {supportBundles.slice(0, 3).map((bundle) => (
+                              <div key={bundle.path} className="flex items-center justify-between gap-3 font-mono">
+                                <span className="truncate">{bundle.name}</span>
+                                <span className="shrink-0 text-slate-500">{formatBundleSize(bundle.size_bytes)}</span>
+                              </div>
+                            ))}
+                          </div>
                         )}
                         {d.mavlink_endpoint && (
                           <div className="flex items-center gap-2 text-[11px] text-slate-500">

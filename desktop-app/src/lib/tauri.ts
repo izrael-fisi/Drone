@@ -5,11 +5,13 @@ import type {
   BuildDroneBundleResult,
   CommandResult,
   Device,
+  DownloadFileResult,
   DownloadProgress,
   ImportMapFileRequest,
   ImportMapFileResult,
   Profile,
   Region,
+  SupportBundleFile,
   TileEstimate,
 } from "./types";
 
@@ -68,6 +70,14 @@ export const cmd = {
     localDir: string,
     remoteDir: string
   ) => invoke<void>("ssh_upload_project", { host, port, username, auth, localDir, remoteDir }),
+  sshDownloadFile: (
+    host: string,
+    port: number,
+    username: string,
+    auth: Device["auth"],
+    remotePath: string,
+    localDir: string
+  ) => invoke<DownloadFileResult>("ssh_download_file", { host, port, username, auth, remotePath, localDir }),
   sshCaptureCameraFrame: (
     host: string,
     port: number,
@@ -97,6 +107,7 @@ export const cmd = {
   writeYamlConfig: (path: string, data: Record<string, unknown>) =>
     invoke<void>("write_yaml_config", { path, data }),
   listYamlConfigs: (dir: string) => invoke<string[]>("list_yaml_configs", { dir }),
+  listSupportBundles: (dir: string) => invoke<SupportBundleFile[]>("list_support_bundles", { dir }),
 };
 
 export type { DownloadProgress };

@@ -290,6 +290,8 @@ The validator checks:
 - orthophoto file existence
 - georef completeness and ranges
 - feature method and feature index shape when present
+- terrain bundle geospatial health, including CRS/GSD, STAC assets, tile index,
+  and lightweight COG/GeoTIFF readiness when applicable
 - camera calibration and camera-to-body files
 - optional `checksums.sha256` integrity when required
 
@@ -317,6 +319,7 @@ Or build features and write checksums in one step:
 ```bash
 vision-nav-build-bundle --bundle mission_bundle --write-checksums
 vision-nav-build-terrain-bundle --bundle mission_bundle --write-checksums
+vision-nav-map-health --bundle mission_bundle
 ```
 
 Then run continuous capture and map matching:
@@ -420,3 +423,44 @@ The summary reports:
 - frame sharpness, entropy, and covariance sigma ranges
 - capture and match timing
 - estimated lat/lon spread when matches include georeferenced positions
+
+## Create A Support Bundle
+
+After every bench run or failed field check, package the active map metadata,
+bundle health report, runtime logs, generated summaries, git/app version, Pi OS
+metadata, and MAVLink endpoint into a zip file:
+
+```bash
+cd Drone
+./scripts/pi/create_support_bundle.sh
+```
+
+The zip is written under:
+
+```text
+~/DroneTransfer/outgoing/support-bundles/
+```
+
+When created from the desktop app, the latest zip is copied back to:
+
+```text
+~/DroneTransfer/from-pi/support-bundles/
+```
+
+By default this keeps the package small by excluding full orthophoto/tile
+assets. Include map assets for heavier offline reproduction with:
+
+```bash
+VISION_NAV_SUPPORT_INCLUDE_MAP_ASSETS=1 ./scripts/pi/create_support_bundle.sh
+```
+
+To include replay-gate pass/fail reports, point the support-bundle wrapper at a
+replay-case manifest:
+
+```bash
+VISION_NAV_REPLAY_CASE_MANIFEST="$HOME/Drone/replay_cases.json" \
+./scripts/pi/create_support_bundle.sh
+```
+
+Replay-gate reports are written under `summaries/replay_gates/` inside the
+support bundle.

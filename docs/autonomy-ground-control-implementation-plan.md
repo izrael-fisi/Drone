@@ -77,18 +77,33 @@ Acceptance checks:
 
 Goal: make map preparation reliable enough for customer field use.
 
+Status:
+
+- In progress: `vision_nav.geospatial_health` reports map georeference,
+  CRS/GSD, raster metadata, lightweight COG/GeoTIFF readiness, STAC asset
+  validity, tile-index readiness, feature counts, feature-density quality,
+  estimated Pi runtime cost, local bounds, and blocking issues.
+- In progress: `vision-nav-build-terrain-bundle` writes `bundle_health.json`
+  and returns the same health summary to the desktop app after bundle build.
+- In progress: `vision-nav-validate-bundle` and
+  `vision-nav-validate-terrain-bundle` include geospatial health checks for
+  terrain bundles.
+- In progress: Mission Planner shows bundle map health, tile count, feature
+  count, and GSD after a bundle build.
+
 Tasks:
 
-1. Add COG/GeoTIFF/STAC validation to the bundle builder.
-2. Record CRS, GSD, bounds, source, checksums, overviews, and tile count in the
-   bundle health report.
+1. Add stricter GDAL-backed COG/GeoTIFF validation when GDAL is available.
+2. Add checksum status and source provenance into the bundle health report
+   without creating checksum/report circularity.
 3. Add optional DEM/DSM assets for planning and vertical sanity checks.
-4. Add feature-density and map-quality heatmaps.
+4. Turn the current feature-density summary into operator-facing map-quality
+   heatmaps.
 5. Add hierarchical tile retrieval before local ORB/AKAZE matching.
 
 Acceptance checks:
 
-- Invalid georeference or missing map metadata blocks bundle upload.
+- Invalid georeference blocks terrain bundle validation.
 - The desktop app shows map health before the Pi uses the bundle.
 - A wrong-map replay produces rejected matches, not low-covariance outputs.
 
@@ -96,12 +111,21 @@ Acceptance checks:
 
 Goal: make the customer workflow guided, diagnosable, and hard to misuse.
 
+Status:
+
+- In progress: Mission Planner now tracks a session-local plan fingerprint and
+  shows invalid, not built, stale bundle, not uploaded, uploaded, or
+  bundle-ready state after build/upload actions.
+- In progress: plan-state checks include mission/map readiness, selected map
+  source, output bundle path, remote bundle path, QGC plan content, and desktop
+  mission JSON content.
+
 Tasks:
 
 1. Build a setup wizard that chains Pi discovery, runtime verification, camera
    test, MAVLink test, time sync, calibration, map upload, and bench test.
-2. Add QGroundControl-style plan state: unsaved, not uploaded, uploaded,
-   stale bundle, and invalid map/mission mismatch.
+2. Persist plan-state history across app restarts and add an explicit unsaved
+   file indicator for imported/exported `.plan` files.
 3. Add UgCS-style terrain planning: DEM/DSM import, terrain profile, GSD/AGL
    checks, offline cache state, and route segmentation.
 4. Add GNSS-denied readiness actions: set/reset map position, heading, home,
@@ -118,16 +142,37 @@ Acceptance checks:
 
 Goal: prove the estimator rejects bad information before field use.
 
+Status:
+
+- In progress: `vision_nav.support_bundle` creates a zip package containing
+  runtime metadata, git/app version state, bundle manifest/config/health,
+  selected logs, generated log summaries, optional autopilot metadata, and
+  optional full map assets.
+- In progress: `scripts/pi/create_support_bundle.sh` packages the default Pi
+  terrain/runtime/replay logs into `~/DroneTransfer/outgoing/support-bundles/`.
+- In progress: Devices and Mission Planner runtime controls expose one-click
+  support-bundle creation and desktop download for connected Raspberry Pi
+  modules.
+- In progress: Devices and Mission Planner list the most recent downloaded
+  support-bundle ZIPs under `~/DroneTransfer/from-pi/support-bundles/`.
+- In progress: `vision_nav.replay_gates` evaluates replay/runtime logs for
+  `good_map`, `degraded`, and `wrong_map` expected behavior. Wrong-map cases
+  fail if any map match is accepted by default.
+- In progress: support bundles include replay-gate reports when a replay-case
+  manifest is provided.
+- In progress: `data/replay_cases/` defines the replay case registry shape for
+  good texture, degraded, and wrong-map datasets.
+
 Tasks:
 
-1. Maintain replay cases for good texture, low texture, blur, seasonal change,
-   altitude/scale change, repeated patterns, and wrong map.
+1. Fill `data/replay_cases/` with real logs for good texture, low texture,
+   blur, seasonal change, altitude/scale change, repeated patterns, and wrong
+   map.
 2. Compare ORB/AKAZE against optional higher-compute features on the same logs.
 3. Add acceptance gates for inliers, reprojection error, scale confidence,
    geometry sanity, motion consistency, covariance inflation, and wrong-map
    rejection.
-4. Generate support bundles with app version, Pi version, autopilot metadata,
-   map manifest, config, logs, and summaries.
+4. Add a dedicated support-bundle browser with open/delete/share actions.
 
 Acceptance checks:
 
@@ -140,7 +185,7 @@ Acceptance checks:
 1. External-position conversion and MAVLink payloads.
 2. PX4 external-vision guidance and SITL smoke path.
 3. Desktop setup wizard and runtime health display.
-4. COG/STAC/GeoTIFF bundle validation.
+4. COG/STAC/GeoTIFF bundle validation and health report.
 5. ROS 2 package wrapper and replay.
 6. Hierarchical tile retrieval and map-quality heatmap.
 7. ArduPilot adapter after PX4 bench validation.

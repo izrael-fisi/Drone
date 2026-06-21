@@ -33,6 +33,13 @@ pub struct UploadProgress {
 }
 
 #[derive(Serialize)]
+pub struct DownloadFileResult {
+    pub remote_path: String,
+    pub local_path: String,
+    pub bytes_received: u64,
+}
+
+#[derive(Serialize)]
 pub struct TestConnectionResult {
     pub ok: bool,
     pub message: String,
@@ -235,6 +242,24 @@ pub async fn ssh_upload_project(
 }
 
 #[tauri::command]
+pub async fn ssh_download_file(
+    app: AppHandle,
+    host: String,
+    port: u16,
+    username: String,
+    auth: SshAuth,
+    remote_path: String,
+    local_dir: String,
+) -> Result<DownloadFileResult, String> {
+    tokio::task::spawn_blocking(move || {
+        inner_download_file(&app, &host, port, &username, &auth, &remote_path, &local_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e: anyhow::Error| e.to_string())
+}
+
+#[tauri::command]
 pub async fn ssh_capture_camera_frame(
     host: String,
     port: u16,
@@ -260,6 +285,79 @@ pub async fn ssh_capture_camera_frame(
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e: anyhow::Error| e.to_string())
+}
+
+fn inner_download_file(
+    app: &AppHandle,
+    host: &str,
+    port: u16,
+    username: &str,
+    auth: &SshAuth,
+    remote_path: &str,
+    local_dir: &str,
+) -> Result<DownloadFileResult> {
+    let sess = connect_session(host, port, username, auth)?;
+    let filename = Path::new(remote_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("Remote path has no filename: {remote_path}"))?
+        .to_string();
+    let local_root = expand_local_path(local_dir)?;
+    std::fs::create_dir_all(&local_root)
+        .with_context(|| format!("Cannot create {}", local_root.display()))?;
+    let local_path = local_root.join(&filename);
+
+    let (mut remote_file, stat) = sess.scp_recv(Path::new(remote_path))?;
+    let total = stat.size();
+    let _ = app.emit(
+        "download-progress",
+        UploadProgress {
+            file: filename.clone(),
+            bytes_sent: 0,
+            total_bytes: total,
+            percent: 0.0,
+        },
+    );
+
+    let mut output = std::fs::File::create(&local_path)?;
+    let mut buf = [0u8; 65536];
+    let mut received = 0u64;
+    loop {
+        let n = remote_file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        output.write_all(&buf[..n])?;
+        received += n as u64;
+        let percent = if total == 0 {
+            100.0
+        } else {
+            ((received as f64 / total as f64) * 100.0).min(100.0) as f32
+        };
+        let _ = app.emit(
+            "download-progress",
+            UploadProgress {
+                file: filename.clone(),
+                bytes_sent: received,
+                total_bytes: total,
+                percent,
+            },
+        );
+    }
+    let _ = app.emit(
+        "download-progress",
+        UploadProgress {
+            file: filename,
+            bytes_sent: received,
+            total_bytes: total,
+            percent: 100.0,
+        },
+    );
+    Ok(DownloadFileResult {
+        remote_path: remote_path.to_string(),
+        local_path: local_path.to_string_lossy().into_owned(),
+        bytes_received: received,
+    })
 }
 
 fn inner_upload(
@@ -536,4 +634,34 @@ fn should_skip_project_path(root: &Path, path: &Path) -> bool {
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn expand_local_path(path: &str) -> Result<PathBuf> {
+    if path.is_empty() {
+        return Err(anyhow!("Local download directory is empty"));
+    }
+    if path == "~" {
+        return std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow!("HOME is not set"));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow!("HOME is not set"))?;
+        return Ok(home.join(rest));
+    }
+    Ok(PathBuf::from(path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expand_local_path;
+
+    #[test]
+    fn expands_home_prefixed_download_paths() {
+        let expanded = expand_local_path("~/DroneTransfer/from-pi/support-bundles")
+            .expect("expand home path");
+        assert!(expanded.ends_with("DroneTransfer/from-pi/support-bundles"));
+    }
 }

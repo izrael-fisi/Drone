@@ -87,6 +87,7 @@ validate it, then start the logging-only bench loop:
 
 ```bash
 ./scripts/pi/validate_terrain_bundle.sh
+vision-nav-map-health --bundle ~/drone-data/map_bundles/mission_bundle
 ./scripts/pi/run_terrain_nav_loop.sh
 ```
 
@@ -120,6 +121,13 @@ Summarize runtime and replay match logs:
 
 ```bash
 ./scripts/pi/summarize_vision_nav_logs.sh
+vision-nav-evaluate-replay-gates --case-name bench --expected good_map --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl
+```
+
+Package a bench run for debugging or desktop transfer:
+
+```bash
+./scripts/pi/create_support_bundle.sh
 ```
 
 Before committing or handing the repo to the Pi:

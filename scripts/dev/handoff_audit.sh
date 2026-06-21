@@ -93,6 +93,7 @@ required_pi_scripts=(
   "scripts/pi/replay_vision_nav_frames.sh"
   "scripts/pi/replay_terrain_nav_log.sh"
   "scripts/pi/summarize_vision_nav_logs.sh"
+  "scripts/pi/create_support_bundle.sh"
   "scripts/pi/install_vision_nav_service.sh"
 )
 for path in "${required_pi_scripts[@]}"; do
@@ -129,14 +130,17 @@ entrypoints=(
   "vision-nav-bundle-checksums"
   "vision-nav-calibrate-camera"
   "vision-nav-camera-health"
+  "vision-nav-map-health"
   "vision-nav-match-frame"
   "vision-nav-match-bundle-frame"
   "vision-nav-match-terrain-frame"
   "vision-nav-run-bundle-loop"
   "vision-nav-run-terrain-loop"
+  "vision-nav-evaluate-replay-gates"
   "vision-nav-replay-bundle-frames"
   "vision-nav-replay-terrain-log"
   "vision-nav-summarize-match-log"
+  "vision-nav-support-bundle"
   "vision-nav-validate-bundle"
   "vision-nav-validate-terrain-bundle"
 )

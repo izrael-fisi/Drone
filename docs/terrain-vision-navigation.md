@@ -29,6 +29,7 @@ mission_bundle/
   calibration/down_camera.yaml
   calibration/camera_to_body.yaml
   config/terrain_nav.yaml
+  bundle_health.json
   checksums.sha256
 ```
 
@@ -41,10 +42,15 @@ descriptor files from `index/descriptors/`.
 ```bash
 vision-nav-build-terrain-bundle --bundle mission_bundle --write-checksums
 vision-nav-validate-terrain-bundle --bundle mission_bundle
+vision-nav-map-health --bundle mission_bundle --json
 ```
 
 The builder updates `manifest.json` with `terrain_bundle` metadata, writes a
-small STAC-style manifest, and creates `config/terrain_nav.yaml`.
+small STAC-style manifest, creates `config/terrain_nav.yaml`, and writes
+`bundle_health.json`. The health report checks georeference completeness, CRS,
+GSD, raster header metadata, lightweight COG/GeoTIFF readiness, STAC asset
+paths, tile-index readiness, feature count, first-pass feature-density quality,
+estimated Pi runtime cost, and local map bounds.
 
 ## Runtime
 

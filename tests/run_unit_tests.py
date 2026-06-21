@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+import sqlite3
+import struct
 import tempfile
 import time
+import zipfile
 
 import numpy as np
 
@@ -27,18 +30,124 @@ from vision_nav.external_position import (
     yaw_enu_to_ned,
 )
 from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
+from vision_nav.geospatial_health import geospatial_health_report
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
 from vision_nav.mavlink_bridge import MavlinkVisionBridge, parse_mavlink_endpoint
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
+from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
+from vision_nav.support_bundle import create_support_bundle
 from vision_nav.terrain_estimator import TerrainEstimator
-from vision_nav.terrain_tiles import tile_origins
+from vision_nav.terrain_tiles import create_tile_schema, tile_origins
 from vision_nav.validate_map_bundle import validate_bundle
 
 
 def assert_equal(actual, expected, label: str) -> None:
     if actual != expected:
         raise AssertionError(f"{label}: expected {expected!r}, got {actual!r}")
+
+
+def write_minimal_png(path: Path, width: int, height: int) -> None:
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + struct.pack(">I", 13)
+        + b"IHDR"
+        + struct.pack(">II", width, height)
+        + b"\x08\x02\x00\x00\x00"
+    )
+
+
+def create_minimal_terrain_bundle(root: Path, *, include_tile_index: bool = True) -> Path:
+    bundle = root / "bundle"
+    (bundle / "ortho").mkdir(parents=True)
+    (bundle / "imagery" / "tiles").mkdir(parents=True)
+    (bundle / "index" / "descriptors").mkdir(parents=True)
+    write_minimal_png(bundle / "ortho" / "map.png", 100, 60)
+    write_minimal_png(bundle / "imagery" / "tiles" / "tile_000000.png", 64, 60)
+    np.savez_compressed(
+        bundle / "index" / "descriptors" / "tile_000000.npz",
+        tile_id=np.array("tile_000000"),
+        image_path=np.array("imagery/tiles/tile_000000.png"),
+        image_shape=np.array((60, 64), dtype=np.int32),
+        method=np.array("orb"),
+        keypoints_xy=np.zeros((4, 2), dtype=np.float32),
+        descriptors=np.zeros((4, 32), dtype=np.uint8),
+        offset_xy_px=np.array((0, 0), dtype=np.int32),
+    )
+    if include_tile_index:
+        index_path = bundle / "index" / "tiles.sqlite"
+        with sqlite3.connect(index_path) as conn:
+            create_tile_schema(conn)
+            conn.execute(
+                """
+                INSERT INTO tiles (
+                    tile_id, row, col, x0_px, y0_px, x1_px, y1_px,
+                    min_east_m, max_east_m, min_north_m, max_north_m,
+                    image_path, descriptor_path, keypoint_count, method
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "tile_000000",
+                    0,
+                    0,
+                    0,
+                    0,
+                    64,
+                    60,
+                    0.0,
+                    32.0,
+                    -30.0,
+                    0.0,
+                    "imagery/tiles/tile_000000.png",
+                    "index/descriptors/tile_000000.npz",
+                    4,
+                    "orb",
+                ),
+            )
+            conn.commit()
+    (bundle / "manifest.json").write_text(
+        json.dumps(
+            {
+                "bundle_id": "health-test",
+                "orthophoto": {
+                    "path": "ortho/map.png",
+                    "origin_lat": 40.0,
+                    "origin_lon": -75.0,
+                    "gsd_m": 0.5,
+                    "georef_source": "geotiff_embedded",
+                    "georef_confidence": 0.95,
+                    "georef_crs": "EPSG:4326",
+                },
+                "features": {"path": "features/map_features.npz", "method": "orb", "max_features": 100},
+                "terrain_bundle": {
+                    "version": "0.1.0",
+                    "tile_index_path": "index/tiles.sqlite",
+                    "tile_size_px": 64,
+                    "overlap_px": 8,
+                    "local_origin": {"latitude": 40.0, "longitude": -75.0, "east_m": 0.0, "north_m": 0.0},
+                    "crs": "EPSG:4326",
+                    "gsd_m": 0.5,
+                },
+            }
+        )
+    )
+    (bundle / "manifest.stac.json").write_text(
+        json.dumps(
+            {
+                "stac_version": "1.0.0",
+                "type": "Feature",
+                "id": "health-test",
+                "properties": {},
+                "geometry": {"type": "Point", "coordinates": [-75.0, 40.0]},
+                "links": [],
+                "assets": {
+                    "orthophoto": {"href": "ortho/map.png"},
+                    "tile_index": {"href": "index/tiles.sqlite"},
+                },
+            }
+        )
+    )
+    return bundle
 
 
 class SkipTest(Exception):
@@ -566,6 +675,158 @@ rotation_quat_xyzw: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
         assert_equal(summary["checksums"]["status"], "passed", "bundle validation checksums")
 
 
+def test_geospatial_health_report_validates_stac_tiles_and_bounds() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        bundle = create_minimal_terrain_bundle(Path(tmp))
+
+        report = geospatial_health_report(bundle)
+        assert_equal(report["status"], "passed", "geospatial health status")
+        assert_equal(report["raster"]["format"], "PNG", "geospatial raster format")
+        assert_equal(report["tile_index"]["tile_count"], 1, "geospatial tile count")
+        assert_equal(report["map_quality"]["estimated_pi_runtime_cost"], "low", "geospatial runtime cost")
+        if report["georef"]["bounds"]["width_m"] <= 0:
+            raise AssertionError("Expected geospatial bounds width to be positive")
+
+
+def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bundle = create_minimal_terrain_bundle(root)
+        log = root / "terrain_matches.jsonl"
+        log.write_text(
+            json.dumps(
+                {
+                    "result": {
+                        "status": "accepted",
+                        "confidence": 0.8,
+                        "inliers": 20,
+                        "reprojection_error_px": 1.5,
+                        "scale_confidence": 0.7,
+                        "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
+                    },
+                    "external_position_health": {"status": "healthy", "message_type": "odometry"},
+                }
+            )
+            + "\n"
+        )
+        replay_manifest = root / "replay_cases.json"
+        replay_manifest.write_text(
+            json.dumps(
+                {
+                    "version": "0.1.0",
+                    "cases": [
+                        {
+                            "case_name": "unit-good",
+                            "expected": "good_map",
+                            "log": str(log),
+                            "notes": "Synthetic accepted support bundle case.",
+                        }
+                    ],
+                }
+            )
+        )
+
+        result = create_support_bundle(
+            bundle=str(bundle),
+            logs=[str(log)],
+            repo=".",
+            output_dir=root / "support",
+            name="unit-support",
+            mavlink_endpoint="udp:14550",
+            replay_case_manifest_path=str(replay_manifest),
+        )
+        assert_equal(result["status"], "passed", "support bundle status")
+        zip_path = Path(result["zip_path"])
+        if not zip_path.exists():
+            raise AssertionError("Expected support bundle zip to exist")
+        with zipfile.ZipFile(zip_path) as archive:
+            names = set(archive.namelist())
+        for expected in {
+            "support_manifest.json",
+            "bundle/manifest.json",
+            "bundle/bundle_health.generated.json",
+            "logs/terrain_matches.jsonl",
+            "summaries/terrain_matches.summary.json",
+            "summaries/replay_gates/unit-good.gate.json",
+        }:
+            if expected not in names:
+                raise AssertionError(f"Missing {expected} from support bundle zip")
+        manifest = json.loads(Path(result["manifest_path"]).read_text())
+        assert_equal(manifest["logs"]["summaries"][0]["accepted_rate"], 1.0, "support log accepted rate")
+        assert_equal(manifest["replay_gates"]["status"], "passed", "support replay gate status")
+        assert_equal(manifest["replay_gates"]["reports"][0]["status"], "passed", "support replay gate report")
+
+
+def test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance() -> None:
+    good_report = evaluate_replay_records(
+        [
+            {
+                "result": {
+                    "status": "accepted",
+                    "confidence": 0.82,
+                    "inliers": 32,
+                    "reprojection_error_px": 1.7,
+                    "scale_confidence": 0.8,
+                    "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
+                }
+            },
+            {"result": {"status": "rejected", "reason": "low_inliers"}},
+        ],
+        case_name="unit-good",
+        expected="good_map",
+    )
+    assert_equal(good_report["status"], "passed", "good-map replay gate status")
+
+    wrong_map_report = evaluate_replay_records(
+        [
+            {"result": {"status": "rejected", "reason": "no_candidate_tile_accepted"}},
+            {"result": {"status": "rejected", "reason": "no_candidate_tile_accepted"}},
+        ],
+        case_name="unit-wrong-map",
+        expected="wrong_map",
+    )
+    assert_equal(wrong_map_report["status"], "passed", "wrong-map rejected gate status")
+
+    bad_wrong_map_report = evaluate_replay_records(
+        [
+            {
+                "result": {
+                    "status": "accepted",
+                    "confidence": 0.9,
+                    "inliers": 40,
+                    "reprojection_error_px": 1.0,
+                    "scale_confidence": 0.9,
+                    "covariance": {"x_m2": 1.0, "y_m2": 1.0, "z_m2": None, "yaw_rad2": None},
+                }
+            }
+        ],
+        case_name="unit-wrong-map-bad",
+        expected="wrong_map",
+    )
+    assert_equal(bad_wrong_map_report["status"], "failed", "wrong-map accepted gate status")
+
+
+def test_geospatial_health_blocks_missing_georef() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        bundle = Path(tmp) / "bundle"
+        (bundle / "ortho").mkdir(parents=True)
+        write_minimal_png(bundle / "ortho" / "map.png", 20, 10)
+        (bundle / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "bundle_id": "missing-georef",
+                    "orthophoto": {"path": "ortho/map.png"},
+                    "features": {"path": "features/map_features.npz", "method": "orb", "max_features": 100},
+                    "terrain_bundle": {"tile_index_path": "index/tiles.sqlite"},
+                }
+            )
+        )
+        report = geospatial_health_report(bundle)
+        assert_equal(report["status"], "failed", "missing georef health status")
+        if not any("Missing georeference" in issue["message"] for issue in report["issues"]):
+            raise AssertionError("Expected missing georeference issue")
+
+
 def test_terrain_tile_origins_cover_edges() -> None:
     assert_equal(tile_origins(100, 128, 16), [0], "short tile origins")
     origins = tile_origins(300, 128, 16)
@@ -639,6 +900,10 @@ def main() -> None:
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
+        test_geospatial_health_report_validates_stac_tiles_and_bounds,
+        test_support_bundle_collects_manifest_health_logs_and_summary,
+        test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
+        test_geospatial_health_blocks_missing_georef,
         test_terrain_tile_origins_cover_edges,
         test_terrain_estimator_updates_and_inflates_covariance,
         test_barometer_tracker_and_estimator_fields,

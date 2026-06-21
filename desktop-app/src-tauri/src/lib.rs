@@ -1,13 +1,13 @@
 mod commands;
 
 use commands::{
-    config_cmd::{list_yaml_configs, read_yaml_config, write_yaml_config},
+    config_cmd::{list_support_bundles, list_yaml_configs, read_yaml_config, write_yaml_config},
     drone::{build_drone_bundle, import_map_file},
     profile::{load_devices, load_profile, load_regions, save_devices, save_profile, save_regions},
     satellite::{download_tiles, estimate_tiles},
     ssh::{
-        ssh_capture_camera_frame, ssh_run_command, ssh_upload_directory, ssh_upload_files,
-        ssh_upload_project, test_ssh_connection,
+        ssh_capture_camera_frame, ssh_download_file, ssh_run_command, ssh_upload_directory,
+        ssh_upload_files, ssh_upload_project, test_ssh_connection,
     },
 };
 
@@ -34,10 +34,12 @@ pub fn run() {
             ssh_upload_files,
             ssh_upload_directory,
             ssh_upload_project,
+            ssh_download_file,
             ssh_capture_camera_frame,
             read_yaml_config,
             write_yaml_config,
             list_yaml_configs,
+            list_support_bundles,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Drone Vision Nav");

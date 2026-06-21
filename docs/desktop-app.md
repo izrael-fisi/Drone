@@ -139,6 +139,13 @@ loaded only after the user selects a map source. The stats panel reports mission
 item count, distance, estimated time, map area, and readiness checks for map
 quality, mission path, fence shape, and MAVLink endpoint.
 
+The plan editor also tracks mission state during the app session. It marks the
+plan as invalid when required inputs are missing, not built before a bundle has
+been created, stale when the map/mission/output settings change after a build,
+not uploaded when the current bundle exists only locally, and uploaded when the
+current plan fingerprint has been sent to the active Raspberry Pi. Local-only
+devices show a bundle-ready state instead of upload status.
+
 Mission plans can be imported from the app's JSON format or QGroundControl-style
 `.plan` files. Export writes a `.plan` file with QGC mission, geofence, rally,
 and `visionNavigation` metadata for this project.
@@ -148,8 +155,11 @@ mission JSON to `mission/mission_plan.json`, writes the QGC-style file to
 `mission/qgc.plan`, records both in `manifest.json`, and uploads the bundle to
 the runtime compute module. Feature extraction settings are read from the saved
 Vision Pipeline defaults. It also builds the terrain tile index, STAC-style
-manifest, and terrain runtime config. By default this overwrites the active
-bundle at:
+manifest, `bundle_health.json`, and terrain runtime config. The Mission Planner
+bundle result shows map health, tile count, feature count, and GSD before the
+operator validates or runs the bundle on the Pi. It also shows a coarse Pi
+runtime-cost estimate from tile count and feature density. By default this
+overwrites the active bundle at:
 
 ```text
 /home/<pi-user>/drone-data/map_bundles/mission_bundle
@@ -165,6 +175,14 @@ It then runs the existing Pi scripts:
 ./scripts/pi/validate_terrain_bundle.sh
 ./scripts/pi/run_terrain_nav_loop.sh
 ```
+
+The Runtime And MAVLink panel can also create a support bundle on the connected
+Raspberry Pi. Support bundles are written under
+`~/DroneTransfer/outgoing/support-bundles/` on the Pi, then downloaded to
+`~/DroneTransfer/from-pi/support-bundles/` on the desktop. They include active
+map metadata, bundle health, runtime logs, generated summaries, app/git state,
+and the configured MAVLink endpoint. The panel lists recent downloaded support
+bundle ZIPs so the operator can confirm what was captured.
 
 ## MAVLink
 
@@ -184,3 +202,8 @@ with local NED position derived from the repo's local ENU measurement. Set
 `ODOMETRY` path. Rejected matches are logged but not sent. Runtime logs include
 `external_position_health` snapshots with output status, send rate, latency,
 skip reasons, and covariance warnings.
+
+The Devices Control tab mirrors the same runtime actions for a selected Pi:
+status, short terrain loop, stop loop, view logs, create support bundle, and
+service status. The support-bundle action also downloads the generated zip to
+the desktop transfer folder and shows recent downloaded bundles.

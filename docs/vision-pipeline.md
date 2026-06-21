@@ -245,6 +245,42 @@ geometry summaries, rejection reasons, quality metrics, covariance estimate,
 and timing summary to decide whether to adjust thresholds, lighting, focus, map
 imagery, or calibration before trusting the measurements.
 
+Create a transfer-ready support bundle after a bench run:
+
+```bash
+vision-nav-support-bundle \
+  --bundle ~/drone-data/map_bundles/mission_bundle \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl
+```
+
+Evaluate replay acceptance gates before trusting a bundle:
+
+```bash
+vision-nav-evaluate-replay-gates \
+  --case-name good-texture-bench \
+  --expected good_map \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl
+```
+
+For wrong-map checks, the gate fails if any record is accepted by default:
+
+```bash
+vision-nav-evaluate-replay-gates \
+  --case-name wrong-map-bench \
+  --expected wrong_map \
+  --log ~/DroneTransfer/outgoing/terrain-replay/wrong_map_matches.jsonl
+```
+
+Support bundles can include these gate reports when given a replay-case
+manifest:
+
+```bash
+vision-nav-support-bundle \
+  --bundle ~/drone-data/map_bundles/mission_bundle \
+  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
+  --replay-case-manifest data/replay_cases/manifest.example.json
+```
+
 ## Match Acceptance Checks
 
 Require:
