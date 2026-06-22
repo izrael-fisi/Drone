@@ -1032,6 +1032,10 @@ Status:
 - Done: evidence workflow reports now include repo commit, dirty-state, script
   checksum, and the required-step contract, and validation flags old reports
   without that provenance as rerun-needed diagnostics.
+- Done: support bundles now auto-detect, copy, and summarize the autonomy
+  evidence workflow report, validation JSON, and log archive, including
+  workflow provenance status, so offline support ZIPs expose stale or incomplete
+  workflow proof directly.
 - Done: the evidence workflow writes a compressed workflow-log archive and
   emits `__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=...`, so full per-step logs can
   be downloaded with the workflow report instead of relying only on bounded

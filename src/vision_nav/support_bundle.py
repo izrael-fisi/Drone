@@ -12,6 +12,7 @@ import zipfile
 from typing import Any
 
 from vision_nav.ardupilot_params import evaluate_ardupilot_param_file
+from vision_nav.autonomy_evidence_workflow import validate_workflow_report
 from vision_nav.bench_readiness import evaluate_bench_readiness
 from vision_nav.bundle import load_manifest
 from vision_nav.geospatial_health import write_geospatial_health_report
@@ -86,6 +87,9 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Native rosbag2 CLI review JSON report or directory. Can be repeated.",
     )
+    parser.add_argument("--evidence-workflow-report", help="Optional autonomy evidence workflow report JSON.")
+    parser.add_argument("--evidence-workflow-validation", help="Optional autonomy evidence workflow validation JSON.")
+    parser.add_argument("--evidence-workflow-log-archive", help="Optional autonomy evidence workflow logs tar.gz archive.")
     parser.add_argument(
         "--replay-case",
         action="append",
@@ -1460,6 +1464,129 @@ def copy_rosbag2_cli_reviews(paths: list[str], support_dir: Path) -> dict[str, A
     }
 
 
+def summarize_workflow_validation(validation: dict[str, Any]) -> dict[str, Any]:
+    checks = []
+    for check in validation.get("checks") or []:
+        if not isinstance(check, dict):
+            continue
+        item = {
+            "name": check.get("name"),
+            "status": check.get("status"),
+            "message": check.get("message"),
+        }
+        details = check.get("details") if isinstance(check.get("details"), dict) else {}
+        if check.get("name") == "required_step_results":
+            item["non_passed_count"] = details.get("non_passed_count")
+            item["missing_steps"] = details.get("missing_steps") or []
+        elif check.get("name") == "workflow_provenance":
+            item["repo_commit"] = details.get("repo_commit")
+            item["repo_dirty"] = details.get("repo_dirty")
+            item["script_sha256"] = details.get("script_sha256")
+            item["expected_required_step_count"] = details.get("expected_required_step_count")
+            item["reported_required_step_count"] = details.get("reported_required_step_count")
+        checks.append(item)
+    issues = [str(issue) for issue in (validation.get("issues") or [])[:8]]
+    return {
+        "schema_version": validation.get("schema_version"),
+        "status": validation.get("status"),
+        "workflow_status": validation.get("workflow_status"),
+        "workflow_generated_at": validation.get("workflow_generated_at"),
+        "workflow_provenance": validation.get("workflow_provenance"),
+        "step_count": validation.get("step_count"),
+        "marker_count": validation.get("marker_count"),
+        "issue_count": validation.get("issue_count", len(validation.get("issues") or [])),
+        "issues": issues,
+        "next_required_step": validation.get("next_required_step"),
+        "checks": checks,
+    }
+
+
+def copy_autonomy_evidence_workflow(
+    *,
+    report_path: str | None,
+    validation_path: str | None,
+    log_archive_path: str | None,
+    support_dir: Path,
+) -> dict[str, Any]:
+    if not report_path and not validation_path and not log_archive_path:
+        return {"status": "not_provided"}
+
+    raw_dir = support_dir / "extras" / "autonomy_evidence_workflow"
+    summary_dir = support_dir / "summaries" / "autonomy_evidence_workflow"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    summary_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    computed_validation: dict[str, Any] | None = None
+    provided_validation_summary: dict[str, Any] | None = None
+
+    def copy_optional(raw_path: str | None, label: str) -> Path | None:
+        if not raw_path:
+            return None
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"Evidence workflow {label} is missing: {source}"})
+            return None
+        if source.is_dir():
+            copied.append(copy_tree(source, raw_dir / safe_relpath(source)))
+            return source
+        copied.append(copy_file(source, raw_dir / source.name))
+        return source
+
+    report_source = copy_optional(report_path, "report")
+    validation_source = copy_optional(validation_path, "validation")
+    log_archive_source = copy_optional(log_archive_path, "log archive")
+
+    if report_source and report_source.is_file():
+        try:
+            computed_validation = validate_workflow_report(report_source)
+            (summary_dir / "workflow_validation.computed.json").write_text(
+                json.dumps(computed_validation, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            issues.append({"severity": "error", "message": f"Could not validate evidence workflow report {report_source}: {exc}"})
+
+    if validation_source and validation_source.is_file():
+        try:
+            provided_validation = json.loads(validation_source.read_text(errors="replace"))
+            if isinstance(provided_validation, dict):
+                provided_validation_summary = summarize_workflow_validation(provided_validation)
+        except Exception as exc:
+            issues.append({"severity": "warning", "message": f"Could not parse evidence workflow validation {validation_source}: {exc}"})
+
+    validation_summary = summarize_workflow_validation(computed_validation) if computed_validation else provided_validation_summary
+    if validation_summary:
+        (summary_dir / "workflow_validation.summary.json").write_text(
+            json.dumps(validation_summary, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    status = "not_provided"
+    if missing:
+        status = "failed"
+    elif validation_summary:
+        raw_status = str(validation_summary.get("status") or "unknown").lower()
+        status = raw_status if raw_status in {"passed", "failed", "degraded"} else "degraded"
+    elif report_source or validation_source or log_archive_source:
+        status = "degraded"
+
+    return {
+        "status": status,
+        "report_path": str(report_source) if report_source else None,
+        "validation_path": str(validation_source) if validation_source else None,
+        "log_archive_path": str(log_archive_source) if log_archive_source else None,
+        "validation_summary": validation_summary,
+        "provided_validation_summary": provided_validation_summary,
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
 def zip_directory(source_dir: Path, zip_path: Path) -> None:
     if zip_path.exists():
         zip_path.unlink()
@@ -1495,6 +1622,9 @@ def create_support_bundle(
     threshold_tuning_report_paths: list[str] | None = None,
     rosbag_export_validation_paths: list[str] | None = None,
     rosbag2_cli_review_paths: list[str] | None = None,
+    evidence_workflow_report_path: str | None = None,
+    evidence_workflow_validation_path: str | None = None,
+    evidence_workflow_log_archive_path: str | None = None,
     include_map_assets: bool = False,
     max_log_bytes: int = DEFAULT_MAX_LOG_BYTES,
 ) -> dict[str, Any]:
@@ -1588,6 +1718,12 @@ def create_support_bundle(
         rosbag2_cli_review_paths or [],
         support_dir,
     )
+    evidence_workflow = copy_autonomy_evidence_workflow(
+        report_path=evidence_workflow_report_path,
+        validation_path=evidence_workflow_validation_path,
+        log_archive_path=evidence_workflow_log_archive_path,
+        support_dir=support_dir,
+    )
     manifest = {
         "support_bundle_version": "0.1.0",
         "name": support_name,
@@ -1605,6 +1741,7 @@ def create_support_bundle(
         "threshold_tuning": threshold_tuning,
         "rosbag_export_validations": rosbag_export_validations,
         "rosbag2_cli_reviews": rosbag2_cli_reviews,
+        "autonomy_evidence_workflow": evidence_workflow,
         "extras": extra_summary,
     }
     bench_readiness = evaluate_bench_readiness(manifest)
@@ -1676,6 +1813,9 @@ def print_human(result: dict[str, Any]) -> None:
     rosbag2_reviews = manifest.get("rosbag2_cli_reviews") or {}
     if rosbag2_reviews.get("status") not in {None, "not_provided"}:
         print(f"rosbag2 CLI reviews: {rosbag2_reviews.get('status')} ({rosbag2_reviews.get('report_count')} review(s))")
+    evidence_workflow = manifest.get("autonomy_evidence_workflow") or {}
+    if evidence_workflow.get("status") not in {None, "not_provided"}:
+        print(f"Evidence workflow: {evidence_workflow.get('status')}")
     readiness = manifest.get("bench_readiness") or {}
     print(f"Bench readiness: {readiness.get('status') or 'unknown'}")
     print(f"__VISION_NAV_SUPPORT_ZIP__={result['zip_path']}")
@@ -1708,6 +1848,9 @@ def main() -> None:
         threshold_tuning_report_paths=args.threshold_tuning_report,
         rosbag_export_validation_paths=args.rosbag_export_validation,
         rosbag2_cli_review_paths=args.rosbag2_cli_review,
+        evidence_workflow_report_path=args.evidence_workflow_report,
+        evidence_workflow_validation_path=args.evidence_workflow_validation,
+        evidence_workflow_log_archive_path=args.evidence_workflow_log_archive,
         include_map_assets=args.include_map_assets,
         max_log_bytes=args.max_log_bytes,
     )

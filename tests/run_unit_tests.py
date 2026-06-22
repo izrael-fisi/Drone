@@ -2243,6 +2243,75 @@ RC8_OPTION,90
                 }
             )
         )
+        workflow_logs_dir = root / "workflow-logs"
+        workflow_logs_dir.mkdir()
+        for step_name in REQUIRED_WORKFLOW_STEPS:
+            (workflow_logs_dir / f"{step_name}.log").write_text(f"{step_name}\n")
+        workflow_log_archive = root / "autonomy_evidence_workflow.logs.tar.gz"
+        with tarfile.open(workflow_log_archive, "w:gz") as archive:
+            archive.add(workflow_logs_dir, arcname="logs")
+        workflow_readiness_report = root / "autonomy_readiness_report.workflow.json"
+        workflow_readiness_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_autonomy_readiness_v1",
+                    "status": "passed",
+                    "summary": {"passed": 11, "failed": 0, "degraded": 0},
+                }
+            )
+        )
+        workflow_report = root / "autonomy_evidence_workflow.json"
+        workflow_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_autonomy_evidence_workflow_v1",
+                    "generated_at": "2026-06-21T12:00:00Z",
+                    "status": "passed",
+                    "summary": {"passed": len(REQUIRED_WORKFLOW_STEPS), "failed": 0, "skipped": 0},
+                    "repo_root": str(root),
+                    "workflow_dir": str(root),
+                    "workflow_provenance": {
+                        "repo_commit": "unit-test",
+                        "repo_dirty": False,
+                        "script_path": str(root / "scripts/pi/run_autonomy_evidence_workflow.sh"),
+                        "script_sha256": "1" * 64,
+                        "required_steps": list(REQUIRED_WORKFLOW_STEPS),
+                        "required_step_count": len(REQUIRED_WORKFLOW_STEPS),
+                    },
+                    "steps": [
+                        {
+                            "name": step_name,
+                            "status": "passed",
+                            "readiness_report_status": "passed" if step_name == "run_autonomy_readiness_audit" else None,
+                            "exit_code": 0,
+                            "log_path": str(workflow_logs_dir / f"{step_name}.log"),
+                            "markers": {},
+                        }
+                        for step_name in REQUIRED_WORKFLOW_STEPS
+                    ],
+                    "markers": {
+                        "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__": str(workflow_log_archive),
+                        "__VISION_NAV_SUPPORT_ZIP__": str(root / "support.zip"),
+                        "__VISION_NAV_PX4_SITL_PREREQS__": str(root / "px4_sitl_capture_prereqs.json"),
+                        "__VISION_NAV_PX4_SITL_REPORT__": str(root / "receiver_evidence.json"),
+                        "__VISION_NAV_FIELD_COLLECTION_PLAN__": str(root / "field_collection_plan.json"),
+                        "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__": str(root / "field_collection_plan.md"),
+                        "__VISION_NAV_FIELD_EVIDENCE_REPORT__": str(root / "field_evidence_report.json"),
+                        "__VISION_NAV_FEATURE_METHOD_REPORT__": str(root / "feature_method_benchmark.json"),
+                        "__VISION_NAV_THRESHOLD_REPORT__": str(root / "threshold_tuning_report.json"),
+                        "__VISION_NAV_TERRAIN_LOG__": str(root / "terrain_matches.jsonl"),
+                        "__VISION_NAV_RUNTIME_STATUS__": str(root / "runtime_status.json"),
+                        "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__": str(root / "rosbag-jsonl-validation.json"),
+                        "__VISION_NAV_ROSBAG2_CLI_REVIEW__": str(root / "rosbag2-cli-review.json"),
+                        "__VISION_NAV_AUTONOMY_REPORT__": str(workflow_readiness_report),
+                        "__VISION_NAV_AUTONOMY_HANDOFF__": str(root / "autonomy_readiness_report.md"),
+                        "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__": str(root / "autonomy_readiness_report.evidence.zip"),
+                    },
+                }
+            )
+        )
+        workflow_validation_report = root / "autonomy_evidence_workflow.validation.json"
+        workflow_validation_report.write_text(json.dumps(validate_workflow_report(workflow_report)))
 
         result = create_support_bundle(
             bundle=str(bundle),
@@ -2262,6 +2331,9 @@ RC8_OPTION,90
             threshold_tuning_report_paths=[str(threshold_tuning_report)],
             rosbag_export_validation_paths=[str(rosbag_export_validation)],
             rosbag2_cli_review_paths=[str(rosbag2_cli_review)],
+            evidence_workflow_report_path=str(workflow_report),
+            evidence_workflow_validation_path=str(workflow_validation_report),
+            evidence_workflow_log_archive_path=str(workflow_log_archive),
             include_map_assets=True,
         )
         assert_equal(result["status"], "passed", "support bundle status")
@@ -2300,7 +2372,12 @@ RC8_OPTION,90
             "summaries/threshold_tuning/field_manifest-01.json",
             "summaries/rosbag_export_validations/vision_nav_rosbag_jsonl_v1-01.json",
             "summaries/rosbag2_cli_reviews/rosbag2-native-01.json",
+            "summaries/autonomy_evidence_workflow/workflow_validation.computed.json",
+            "summaries/autonomy_evidence_workflow/workflow_validation.summary.json",
             "summaries/bench_readiness.json",
+            "extras/autonomy_evidence_workflow/autonomy_evidence_workflow.json",
+            "extras/autonomy_evidence_workflow/autonomy_evidence_workflow.validation.json",
+            "extras/autonomy_evidence_workflow/autonomy_evidence_workflow.logs.tar.gz",
             "extras/field_collection_plans/field_collection_plan.json",
             "extras/field_collection_plans/field_collection_plan.md",
             "extras/px4_sitl_session/px4_sitl_evidence_session.json",
@@ -2486,6 +2563,30 @@ RC8_OPTION,90
         assert_equal(manifest["rosbag_export_validations"]["message_count"], 4, "support rosbag validation messages")
         assert_equal(manifest["rosbag2_cli_reviews"]["status"], "passed", "support rosbag2 cli review status")
         assert_equal(manifest["rosbag2_cli_reviews"]["report_count"], 1, "support rosbag2 cli review count")
+        assert_equal(
+            manifest["autonomy_evidence_workflow"]["status"],
+            "passed",
+            "support evidence workflow status",
+        )
+        assert_equal(
+            manifest["autonomy_evidence_workflow"]["validation_summary"]["workflow_status"],
+            "passed",
+            "support evidence workflow validation workflow status",
+        )
+        assert_equal(
+            manifest["autonomy_evidence_workflow"]["validation_summary"]["workflow_provenance"]["repo_commit"],
+            "unit-test",
+            "support evidence workflow provenance commit",
+        )
+        workflow_checks = {
+            check["name"]: check["status"]
+            for check in manifest["autonomy_evidence_workflow"]["validation_summary"]["checks"]
+        }
+        assert_equal(
+            workflow_checks["workflow_provenance"],
+            "passed",
+            "support evidence workflow provenance check",
+        )
         assert_equal(manifest["bench_readiness"]["status"], "degraded", "support bench readiness status")
         assert_equal(manifest["bench_readiness"]["summary"]["degraded"], 1, "support bench readiness degraded count")
         auto_logs_result = create_support_bundle(
