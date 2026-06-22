@@ -452,6 +452,10 @@ Status:
   field-preflight reports, workflow validation, goal-status output, and desktop
   support/preflight cards so operators can see where map and bundle candidates
   were looked for.
+- Done: workflow-validation and autonomy-readiness parsers now refresh compact
+  missing-bundle diagnostics from the current filesystem when older
+  field-preflight JSON lacks searched roots or current map-library candidates,
+  while keeping stale reports diagnostic-only rather than proof.
 - Done: support-bundle and final-readiness parsers backfill that bundle
   diagnostic onto `prepare_bundle` next actions from older field-preflight JSON
   files, so stale downloaded reports still show missing files and candidate

@@ -3374,6 +3374,10 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation preflight next step should include bundle diagnostics")
         if not preflight_next_diagnostic.get("bundle_candidates"):
             raise AssertionError("workflow validation preflight next step should include bundle candidates")
+        if not any("DroneVisionNav/maps" in root for root in preflight_next_diagnostic.get("search_roots", [])):
+            raise AssertionError(
+                f"workflow validation should refresh current searched roots, got {preflight_next_diagnostic.get('search_roots')}"
+            )
         preflight_blocked_output = io.StringIO()
         with contextlib.redirect_stdout(preflight_blocked_output):
             print_workflow_validation_human(preflight_blocked_validation)
@@ -3445,6 +3449,10 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         capture_next_diagnostic = capture_blocked_validation["next_required_step"].get("bundle_diagnostic") or {}
         if "manifest.json" not in capture_next_diagnostic.get("missing_required_files", []):
             raise AssertionError("workflow validation capture next step should include bundle diagnostics")
+        if not any("DroneVisionNav/maps" in root for root in capture_next_diagnostic.get("search_roots", [])):
+            raise AssertionError(
+                f"workflow validation capture step should refresh current searched roots, got {capture_next_diagnostic.get('search_roots')}"
+            )
         capture_blocked_checks = {check["name"]: check for check in capture_blocked_validation["checks"]}
         assert_equal(
             capture_blocked_checks["required_step_results"]["details"]["next_required_step"]["name"],
@@ -5383,6 +5391,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("Autonomy readiness bundle action should inherit preflight missing-file diagnostics")
         if not field_bundle_action_diagnostic.get("bundle_candidates"):
             raise AssertionError("Autonomy readiness bundle action should inherit preflight bundle candidates")
+        if not any("DroneVisionNav/maps" in root for root in field_bundle_action_diagnostic.get("search_roots", [])):
+            raise AssertionError(
+                f"Autonomy readiness bundle action should refresh current searched roots, got {field_bundle_action_diagnostic.get('search_roots')}"
+            )
         bench_foundation_phase = next(
             phase
             for phase in missing_bundle_with_next_field["proof_runbook"]["phases"]

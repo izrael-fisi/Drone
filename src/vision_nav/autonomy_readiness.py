@@ -1244,10 +1244,10 @@ def enrich_next_actions_with_field_preflight_diagnostic(
     next_actions: list[dict[str, Any]],
     field_capture_preflight_diagnostic: dict[str, Any],
 ) -> None:
-    bundle_diagnostic = field_preflight_bundle_action_diagnostic(field_capture_preflight_diagnostic)
+    preflight_bundle = field_capture_preflight_diagnostic.get("bundle_path")
+    bundle_diagnostic = refreshed_preflight_bundle_diagnostic(field_capture_preflight_diagnostic, preflight_bundle)
     if not bundle_diagnostic:
         return
-    preflight_bundle = field_capture_preflight_diagnostic.get("bundle_path")
     for action in next_actions:
         if not isinstance(action, dict):
             continue
@@ -1271,6 +1271,19 @@ def enrich_next_actions_with_field_preflight_diagnostic(
         report_path = field_capture_preflight_diagnostic.get("path")
         if isinstance(report_path, str) and report_path:
             action["field_preflight_report"] = report_path
+
+
+def refreshed_preflight_bundle_diagnostic(
+    field_capture_preflight_diagnostic: dict[str, Any],
+    bundle_path: Any,
+) -> dict[str, Any] | None:
+    existing = field_preflight_bundle_action_diagnostic(field_capture_preflight_diagnostic)
+    try:
+        from vision_nav.bundle_diagnostics import refresh_compact_bundle_diagnostic
+
+        return refresh_compact_bundle_diagnostic(bundle_path, existing)
+    except Exception:
+        return existing
 
 
 def field_preflight_bundle_action_diagnostic(
@@ -2015,9 +2028,12 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
                 if details.get(key) is not None:
                     item[key] = details.get(key)
             if details.get("diagnostic") is not None:
-                from vision_nav.bundle_diagnostics import compact_bundle_diagnostic
+                from vision_nav.bundle_diagnostics import compact_bundle_diagnostic, refresh_compact_bundle_diagnostic
 
-                item["bundle_diagnostic"] = compact_bundle_diagnostic(details.get("diagnostic"))
+                item["bundle_diagnostic"] = refresh_compact_bundle_diagnostic(
+                    report.get("bundle_path") or details.get("path"),
+                    compact_bundle_diagnostic(details.get("diagnostic")),
+                )
         checks.append(item)
         status = normalize_status(check.get("status"))
         if status == "failed":
@@ -2040,6 +2056,16 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
         action_bundle_diagnostic = action.get("bundle_diagnostic")
         if not isinstance(action_bundle_diagnostic, dict) and action.get("id") == "prepare_bundle":
             action_bundle_diagnostic = bundle_action_diagnostic
+        if action.get("id") == "prepare_bundle":
+            try:
+                from vision_nav.bundle_diagnostics import refresh_compact_bundle_diagnostic
+
+                action_bundle_diagnostic = refresh_compact_bundle_diagnostic(
+                    action.get("bundle_path") or report.get("bundle_path"),
+                    action_bundle_diagnostic,
+                )
+            except Exception:
+                pass
         next_actions.append(
             {
                 "id": action.get("id"),

@@ -148,6 +148,34 @@ def compact_search_roots(search_roots: list[str], *, max_items: int) -> list[str
     return sorted(deduped, key=priority)[:max_items]
 
 
+def refresh_compact_bundle_diagnostic(
+    bundle_path: str | Path | None,
+    existing: Any = None,
+    *,
+    max_items: int = 3,
+) -> dict[str, Any] | None:
+    fallback = existing if isinstance(existing, dict) else None
+    if not bundle_path:
+        return fallback
+    try:
+        fresh = compact_bundle_diagnostic(
+            diagnose_bundle_inputs(bundle_path),
+            max_items=max_items,
+        )
+    except Exception:
+        return fallback
+    if not isinstance(fresh, dict):
+        return fallback
+    if fallback is None:
+        return fresh
+    merged = dict(fallback)
+    for key, value in fresh.items():
+        if value in (None, [], {}) and merged.get(key):
+            continue
+        merged[key] = value
+    return merged
+
+
 def default_search_roots(bundle: Path, extra_roots: list[str | Path] | None = None) -> list[Path]:
     roots: list[Path] = []
     env_roots = os.environ.get("VISION_NAV_BUNDLE_SEARCH_ROOTS")

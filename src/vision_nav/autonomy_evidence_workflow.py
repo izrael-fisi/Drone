@@ -681,11 +681,11 @@ def apply_preflight_bundle_diagnostic(summary: dict[str, Any], markers: dict[str
     report = read_field_capture_preflight_report(preflight_report)
     if not report:
         return
-    diagnostic = preflight_bundle_diagnostic(report)
-    if not diagnostic:
-        return
     report_bundle = report.get("bundle_path")
     summary_bundle = summary.get("bundle_path")
+    diagnostic = refreshed_preflight_bundle_diagnostic(report, report_bundle or summary_bundle)
+    if not diagnostic:
+        return
     if (
         isinstance(report_bundle, str)
         and report_bundle.strip()
@@ -695,6 +695,19 @@ def apply_preflight_bundle_diagnostic(summary: dict[str, Any], markers: dict[str
     ):
         return
     summary["bundle_diagnostic"] = diagnostic
+
+
+def refreshed_preflight_bundle_diagnostic(
+    report: dict[str, Any],
+    bundle_path: Any,
+) -> dict[str, Any] | None:
+    existing = preflight_bundle_diagnostic(report)
+    try:
+        from vision_nav.bundle_diagnostics import refresh_compact_bundle_diagnostic
+
+        return refresh_compact_bundle_diagnostic(bundle_path, existing)
+    except Exception:
+        return existing
 
 
 def read_field_capture_preflight_report(path_text: str) -> dict[str, Any] | None:
