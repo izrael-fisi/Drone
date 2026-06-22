@@ -197,12 +197,7 @@ def evaluate_autonomy_readiness(
     support_checks = support_checks_by_name(support_report)
     support_manifest = support_report.get("manifest") if isinstance(support_report.get("manifest"), dict) else None
     checks = [
-        check_doc_markers(
-            "research_doc",
-            research_doc_path,
-            RESEARCH_DOC_MARKERS,
-            "Autonomy research doc covers references, architecture, and integration plan.",
-        ),
+        check_research_doc_source(research_doc_path),
         check_implementation_plan_source(implementation_plan_path),
         support_report["check"],
         check_px4_receiver_proof(px4_sitl_session_path, px4_sitl_report_path, support_checks),
@@ -863,6 +858,39 @@ def check_doc_markers(name: str, path: str | Path, markers: list[str], message: 
     if missing:
         return failed(name, f"{source} is missing required plan sections.", details)
     return passed(name, message, details)
+
+
+def check_research_doc_source(path: str | Path) -> dict[str, Any]:
+    summary = summarize_research_doc(path)
+    details = {
+        "path": summary["path"],
+        "required_marker_count": summary["required_marker_count"],
+        "missing_markers": summary["missing_markers"],
+        "highest_value_reference_count": summary["highest_value_reference_count"],
+        "fit_criteria_count": summary["fit_criteria_count"],
+        "architecture_section_count": summary["architecture_section_count"],
+        "near_term_item_count": summary["near_term_item_count"],
+        "avoid_choice_count": summary["avoid_choice_count"],
+    }
+    if not summary["exists"]:
+        return failed("research_doc", f"Missing {summary['path']}.", details)
+    if summary["missing_markers"]:
+        return failed("research_doc", f"{summary['path']} is missing required research sections.", details)
+    if summary["highest_value_reference_count"] <= 0:
+        return failed("research_doc", "Research doc is missing highest-value reference rows.", details)
+    if summary["fit_criteria_count"] <= 0:
+        return failed("research_doc", "Research doc is missing fit criteria.", details)
+    if summary["architecture_section_count"] <= 0:
+        return failed("research_doc", "Research doc is missing architecture recommendation sections.", details)
+    if summary["near_term_item_count"] <= 0:
+        return failed("research_doc", "Research doc is missing near-term integration plan items.", details)
+    if summary["avoid_choice_count"] <= 0:
+        return failed("research_doc", "Research doc is missing implementation choices to avoid.", details)
+    return passed(
+        "research_doc",
+        "Autonomy research doc covers references, fit criteria, architecture, near-term plan, and avoid choices.",
+        details,
+    )
 
 
 def check_implementation_plan_source(path: str | Path) -> dict[str, Any]:

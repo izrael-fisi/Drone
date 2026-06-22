@@ -2422,9 +2422,19 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "\n".join(
                 [
                     "# Autonomy And Ground Control Research",
+                    "## Fit Criteria",
+                    "- Runs offline after map preparation.",
                     "## Highest-Value References",
+                    "| Reference | What it proves | What to implement here |",
+                    "| --- | --- | --- |",
+                    "| PX4 External Vision | PX4 consumes external vision. | Keep ODOMETRY as the preferred path. |",
                     "## Recommended Product Architecture Changes",
+                    "### 1. External-Position Interface",
+                    "### 2. ROS 2 Companion Runtime",
                     "## Near-Term Repo Integration Plan",
+                    "1. Add external-position conversion and proof gates.",
+                    "## Implementation Choices To Avoid",
+                    "- Do not send unchecked external-position estimates.",
                 ]
             )
         )
@@ -2887,6 +2897,49 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         if "./scripts/dev/run_local_autonomy_readiness_audit.sh" not in ready_runbook_phases["final_audit"]["commands"]:
             raise AssertionError("autonomy readiness proof runbook missing final local audit command")
+
+        headings_only_research = root / "research_headings_only.md"
+        headings_only_research.write_text(
+            "\n".join(
+                [
+                    "# Autonomy And Ground Control Research",
+                    "## Highest-Value References",
+                    "## Recommended Product Architecture Changes",
+                    "## Near-Term Repo Integration Plan",
+                ]
+            )
+        )
+        headings_only_research_ready = evaluate_autonomy_readiness(
+            research_doc_path=headings_only_research,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=direct_report_support_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
+        )
+        headings_only_research_checks = {
+            check["name"]: check["status"]
+            for check in headings_only_research_ready["checks"]
+        }
+        assert_equal(headings_only_research_ready["status"], "failed", "autonomy readiness rejects headings-only research doc")
+        assert_equal(
+            headings_only_research_checks["research_doc"],
+            "failed",
+            "autonomy readiness research doc requires substantive sections",
+        )
+        research_doc_actions = [
+            action
+            for action in headings_only_research_ready["next_actions"]
+            if action.get("check") == "research_doc"
+        ]
+        assert_equal(len(research_doc_actions), 1, "autonomy readiness research doc next action")
+        if "autonomy-ground-control-research.md" not in research_doc_actions[0]["command"]:
+            raise AssertionError("autonomy readiness research doc action should point to the research doc")
 
         headings_only_plan = root / "implementation_plan_headings_only.md"
         headings_only_plan.write_text(
