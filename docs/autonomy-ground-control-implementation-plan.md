@@ -402,6 +402,12 @@ Status:
   commands with operator-editable `TODO_...` placeholders for required field
   notes, while preserving filled values in refreshed plans and avoiding fake
   passing metadata.
+- Done: workflow selection, autonomy-readiness next actions, and Markdown
+  handoffs now enrich older bare metadata-update commands from existing field
+  collection plans when capture metadata scaffolds are available.
+- Done: local goal-status and readiness-audit summaries also display the
+  enriched field metadata update command for stale workflow-validation reports
+  without mutating the archived evidence files.
 - Done: readiness reports, support-bundle summaries, Markdown handoffs, and the
   desktop parser normalize older field collection plans so stale capture-only
   commands are shown with the required runtime-status read step.

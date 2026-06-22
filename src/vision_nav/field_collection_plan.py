@@ -276,6 +276,20 @@ def metadata_update_command_for_condition(
     )
 
 
+def metadata_update_command_is_detailed(command: str | None) -> bool:
+    if not isinstance(command, str) or not command.strip():
+        return False
+    return any(
+        marker in command
+        for marker in (
+            "VISION_NAV_FIELD_OPERATOR",
+            "--operator",
+            "VISION_NAV_FIELD_CAPTURE_METADATA",
+            "--json-updates",
+        )
+    )
+
+
 def metadata_update_env_for_condition(
     *,
     manifest_path: str | Path,

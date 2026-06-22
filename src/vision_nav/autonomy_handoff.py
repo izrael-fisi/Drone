@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from vision_nav.field_collection_plan import metadata_update_command_for_condition, metadata_update_command_is_detailed
+
 
 COMMAND_GROUP_DESKTOP_ACTIONS = {
     "guided_workflow": "Module Setup > Evidence Workflow",
@@ -469,7 +471,7 @@ def field_collection_pending_conditions(plan: dict[str, Any]) -> list[dict[str, 
     if not isinstance(conditions, list):
         return []
     pending = [
-        normalize_field_collection_condition(item)
+        normalize_field_collection_condition(item, plan=plan)
         for item in conditions
         if isinstance(item, dict) and item.get("status") != "registered"
     ]
@@ -489,15 +491,26 @@ def field_collection_next_condition(
 ) -> dict[str, Any] | None:
     next_condition = plan.get("next_condition")
     if isinstance(next_condition, dict):
-        return normalize_field_collection_condition(next_condition)
+        return normalize_field_collection_condition(next_condition, plan=plan)
     return fallback
 
 
-def normalize_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
+def normalize_field_collection_condition(item: dict[str, Any], *, plan: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized = dict(item)
     command = normalized.get("capture_command")
     if isinstance(command, str) and command:
         normalized["capture_command"] = command_with_runtime_status_read(command)
+    metadata_command = str(normalized.get("metadata_update_command") or "")
+    if not metadata_update_command_is_detailed(metadata_command):
+        manifest_path = (plan or {}).get("manifest_path")
+        condition = normalized.get("condition")
+        metadata = normalized.get("capture_metadata")
+        if manifest_path and condition:
+            normalized["metadata_update_command"] = metadata_update_command_for_condition(
+                manifest_path=str(manifest_path),
+                condition=str(condition),
+                capture_metadata=metadata if isinstance(metadata, dict) else None,
+            )
     return normalized
 
 

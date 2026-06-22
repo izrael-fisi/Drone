@@ -22,7 +22,7 @@ from vision_nav.bench_readiness import (
 )
 from vision_nav.autonomy_evidence_workflow import REQUIRED_WORKFLOW_STEPS, validate_workflow_report
 from vision_nav.field_conditions import REQUIRED_FIELD_CONDITIONS
-from vision_nav.field_collection_plan import metadata_update_command_for_condition
+from vision_nav.field_collection_plan import metadata_update_command_for_condition, metadata_update_command_is_detailed
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 
 
@@ -683,16 +683,12 @@ def field_collection_commands(path: str | Path | None, key: str) -> list[str]:
     conditions = plan.get("conditions")
     if not isinstance(conditions, list):
         return []
-    commands = [
-        item.get(key)
-        for item in conditions
-        if isinstance(item, dict) and item.get("status") != "registered"
-    ]
-    if key == "capture_command":
-        commands = [
-            command_with_runtime_status_read(command) if isinstance(command, str) else command
-            for command in commands
-        ]
+    commands = []
+    for item in conditions:
+        if not isinstance(item, dict) or item.get("status") == "registered":
+            continue
+        normalized = condition_with_metadata_update_command(compact_field_collection_condition(item), plan)
+        commands.append(normalized.get(key))
     return unique_strings(commands)
 
 
@@ -2037,7 +2033,7 @@ def condition_with_metadata_update_command(condition: dict[str, Any], plan: dict
     updated = dict(condition)
     if updated.get("capture_command"):
         updated["capture_command"] = command_with_runtime_status_read(str(updated["capture_command"]))
-    if updated.get("metadata_update_command"):
+    if metadata_update_command_is_detailed(str(updated.get("metadata_update_command") or "")):
         return updated
     condition_name = condition.get("condition")
     manifest_path = plan.get("manifest_path")

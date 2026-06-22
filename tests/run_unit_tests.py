@@ -27,8 +27,13 @@ from vision_nav.autonomy_evidence_workflow import (
     validate_workflow_report,
     validation_exit_code,
 )
+from vision_nav.autonomy_handoff import field_collection_next_condition as handoff_field_collection_next_condition
 from vision_nav.autonomy_handoff import render_handoff_markdown
-from vision_nav.autonomy_readiness import REQUIRED_FIELD_CONDITIONS, evaluate_autonomy_readiness
+from vision_nav.autonomy_readiness import (
+    REQUIRED_FIELD_CONDITIONS,
+    evaluate_autonomy_readiness,
+    field_collection_next_condition as readiness_field_collection_next_condition,
+)
 from vision_nav.bench_readiness import evaluate_bench_readiness, evaluate_bench_readiness_file
 from vision_nav.benchmark_retrieval import benchmark_retrieval
 from vision_nav.bundle import (
@@ -4415,11 +4420,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh",
             "autonomy readiness incomplete field collection next capture command",
         )
-        assert_equal(
-            next_condition["metadata_update_command"],
-            "./scripts/pi/update_field_capture_metadata.sh --condition blur",
-            "autonomy readiness incomplete field collection next metadata command",
-        )
+        if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in next_condition["metadata_update_command"]:
+            raise AssertionError("autonomy readiness incomplete field collection next metadata command should prompt operator")
+        if "./scripts/pi/update_field_capture_metadata.sh" not in next_condition["metadata_update_command"]:
+            raise AssertionError("autonomy readiness incomplete field collection next metadata command should run helper")
         assert_equal(
             next_condition["register_command"],
             "./scripts/pi/register_field_replay_case.sh --condition blur",
@@ -4452,9 +4456,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             not in field_plan_bundle["field_collection_capture_commands"]
         ):
             raise AssertionError("autonomy readiness JSON missing field capture command bundle")
-        if (
-            "./scripts/pi/update_field_capture_metadata.sh --condition blur"
-            not in field_plan_bundle["field_collection_metadata_update_commands"]
+        if not any(
+            "VISION_NAV_FIELD_OPERATOR=TODO_operator" in command
+            and "./scripts/pi/update_field_capture_metadata.sh" in command
+            for command in field_plan_bundle["field_collection_metadata_update_commands"]
         ):
             raise AssertionError("autonomy readiness JSON missing field metadata update command bundle")
         if (
@@ -4489,7 +4494,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy readiness JSON missing structured field command items")
         if not any(
             item.get("group") == "field_collection_metadata_update"
-            and item.get("command") == "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+            and "VISION_NAV_FIELD_OPERATOR=TODO_operator" in item.get("command", "")
             and item.get("desktop_action") == "Module Setup > Field Evidence Case > Update Metadata"
             for item in field_plan_command_items
             if isinstance(item, dict)
@@ -4498,7 +4503,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         incomplete_handoff = render_handoff_markdown(incomplete_field_plan_ready)
         if "Field collection metadata update commands:" not in incomplete_handoff:
             raise AssertionError("autonomy handoff missing field metadata update command section")
-        if "./scripts/pi/update_field_capture_metadata.sh --condition blur" not in incomplete_handoff:
+        if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in incomplete_handoff:
             raise AssertionError("autonomy handoff missing field metadata update command")
         incomplete_report = root / "autonomy_readiness_incomplete_field_plan.json"
         incomplete_handoff_path = root / "autonomy_readiness_incomplete_field_plan.md"
@@ -4514,9 +4519,9 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             incomplete_package_bundle = incomplete_package_manifest.get("command_bundle")
             if not isinstance(incomplete_package_bundle, dict):
                 raise AssertionError("autonomy evidence package missing incomplete field plan command bundle")
-            if "./scripts/pi/update_field_capture_metadata.sh --condition blur" not in incomplete_package_bundle.get(
-                "field_collection_metadata_update_commands",
-                [],
+            if not any(
+                "VISION_NAV_FIELD_OPERATOR=TODO_operator" in command
+                for command in incomplete_package_bundle.get("field_collection_metadata_update_commands", [])
             ):
                 raise AssertionError("autonomy evidence package missing field metadata update command group")
             incomplete_command_items = incomplete_package_bundle.get("command_items")
@@ -4524,7 +4529,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package missing structured command items")
             if not any(
                 item.get("group") == "field_collection_metadata_update"
-                and item.get("command") == "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+                and "VISION_NAV_FIELD_OPERATOR=TODO_operator" in item.get("command", "")
                 and item.get("desktop_action") == "Module Setup > Field Evidence Case > Update Metadata"
                 for item in incomplete_command_items
                 if isinstance(item, dict)
@@ -5709,6 +5714,28 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected shell assignments to mark the selected field condition")
         if "VISION_NAV_FIELD_METADATA_UPDATE_COMMAND" not in selection_shell:
             raise AssertionError("Expected shell assignments to export metadata update command")
+
+        legacy_plan = json.loads(json.dumps(plan))
+        legacy_command = (
+            f"VISION_NAV_FIELD_MANIFEST={active_manifest} "
+            "VISION_NAV_FIELD_CONDITION=good_texture "
+            "./scripts/pi/update_field_capture_metadata.sh"
+        )
+        legacy_plan["next_condition"]["metadata_update_command"] = legacy_command
+        for item in legacy_plan["conditions"]:
+            if item["condition"] == "good_texture":
+                item["metadata_update_command"] = legacy_command
+        legacy_plan_path = base / "field_collection_plan_legacy_metadata.json"
+        legacy_plan_path.write_text(json.dumps(legacy_plan))
+        legacy_selection = select_next_field_condition(legacy_plan_path)
+        if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in legacy_selection["metadata_update_command"]:
+            raise AssertionError("Expected workflow selection to enrich stale metadata update commands")
+        readiness_next = readiness_field_collection_next_condition(legacy_plan)
+        if not readiness_next or "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in readiness_next["metadata_update_command"]:
+            raise AssertionError("Expected readiness next condition to enrich stale metadata update commands")
+        handoff_next = handoff_field_collection_next_condition(legacy_plan)
+        if not handoff_next or "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in handoff_next["metadata_update_command"]:
+            raise AssertionError("Expected handoff next condition to enrich stale metadata update commands")
 
         log_dir = base / "captures"
         log_dir.mkdir()

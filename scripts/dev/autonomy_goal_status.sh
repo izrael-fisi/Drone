@@ -350,6 +350,23 @@ except Exception:  # pragma: no cover - keeps this formatter useful from partial
     def label_for_condition(condition):
         return str(condition).replace("_", " ").title()
 
+try:
+    from vision_nav.field_collection_plan import metadata_update_command_is_detailed
+except Exception:  # pragma: no cover - keeps this formatter useful from partial checkouts.
+
+    def metadata_update_command_is_detailed(command):
+        if not isinstance(command, str) or not command.strip():
+            return False
+        return any(
+            marker in command
+            for marker in (
+                "VISION_NAV_FIELD_OPERATOR",
+                "--operator",
+                "VISION_NAV_FIELD_CAPTURE_METADATA",
+                "--json-updates",
+            )
+        )
+
 
 FIELD_COLLECTION_CHECKS = {"field_collection_plan", "field_evidence_proof", "threshold_tuning"}
 SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
@@ -419,6 +436,19 @@ def find_next_field_condition(report, missing_conditions):
             "expected": expected_behavior_for_condition(condition),
         }
     return None
+
+
+def enriched_metadata_update_command(command, next_field_condition):
+    command = str(command or "")
+    if not command.strip():
+        return ""
+    if metadata_update_command_is_detailed(command):
+        return command
+    if isinstance(next_field_condition, dict):
+        replacement = str(next_field_condition.get("metadata_update_command") or "")
+        if metadata_update_command_is_detailed(replacement):
+            return replacement
+    return command
 
 
 def check_details(report, name):
@@ -535,6 +565,9 @@ prerequisite_fix_commands = [
 if external_blockers and not guided_workflow_commands:
     guided_workflow_commands = ["./scripts/pi/run_autonomy_evidence_workflow.sh"]
 
+field_conditions = field_condition_names_from_report(report, external_blockers)
+next_field_condition = find_next_field_condition(report, field_conditions)
+
 passed = sum(1 for item in proof_items if item.get("status") == "passed")
 print(f"Autonomy goal status: {report.get('status', 'unknown')}")
 if repo.get("detected"):
@@ -645,8 +678,12 @@ if workflow_validation:
                 print(f"  runtime status: {next_step.get('runtime_status_path')}")
             if next_step.get("capture_command_after_bundle"):
                 print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
-            if next_step.get("metadata_update_command"):
-                print(f"  metadata update: {next_step.get('metadata_update_command')}")
+            metadata_update_command = enriched_metadata_update_command(
+                next_step.get("metadata_update_command"),
+                next_field_condition,
+            )
+            if metadata_update_command:
+                print(f"  metadata update: {metadata_update_command}")
         for issue in issues[:4]:
             print(f"- issue: {issue}")
         printed_missing_steps = set()
@@ -785,6 +822,8 @@ if bench_inputs or support_bundle_command or bench_actions:
                 ("metadata update", "field_metadata_update_command"),
             ):
                 value = action.get(key)
+                if key == "field_metadata_update_command":
+                    value = enriched_metadata_update_command(value, next_field_condition)
                 if value:
                     print(f"     {label}: {value}")
         if len(bench_actions) > max_bench_actions:
@@ -804,8 +843,6 @@ if bench_subchecks:
     if len(bench_subchecks) > 12:
         print(f"- ... {len(bench_subchecks) - 12} more")
 
-field_conditions = field_condition_names_from_report(report, external_blockers)
-next_field_condition = find_next_field_condition(report, field_conditions)
 if field_conditions or next_field_condition:
     print()
     print("Field collection preview:")
@@ -1000,10 +1037,12 @@ if next_actions:
             ("output", "field_capture_output_dir"),
             ("runtime status", "field_runtime_status_path"),
             ("metadata update", "field_metadata_update_command"),
-        ):
-            value = action.get(key)
-            if value:
-                print(f"   {label}: {value}")
+            ):
+                value = action.get(key)
+                if key == "field_metadata_update_command":
+                    value = enriched_metadata_update_command(value, next_field_condition)
+                if value:
+                    print(f"   {label}: {value}")
         if count >= 8:
             break
 if blocked_phase_commands:

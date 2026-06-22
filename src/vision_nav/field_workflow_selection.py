@@ -7,7 +7,7 @@ import shlex
 from typing import Any
 
 from vision_nav.field_capture_metadata import audit_capture_metadata
-from vision_nav.field_collection_plan import metadata_update_command_for_condition
+from vision_nav.field_collection_plan import metadata_update_command_for_condition, metadata_update_command_is_detailed
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,7 +61,7 @@ def select_next_field_condition(plan_path: str | Path) -> dict[str, Any]:
     )
     env = workflow_environment_for_condition(condition)
     metadata_update_command = str(condition.get("metadata_update_command") or "").strip()
-    if not metadata_update_command:
+    if not metadata_update_command_is_detailed(metadata_update_command):
         metadata_update_command = metadata_update_command_for_condition(
             manifest_path=str(plan.get("manifest_path") or ""),
             condition=condition_key,

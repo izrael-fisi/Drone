@@ -198,7 +198,7 @@ print_workflow_validation_summary() {
   if [[ ! -f "$evidence_workflow_validation_report" ]]; then
     return 0
   fi
-  PYTHONPATH="$repo_root/src" "$python_bin" - "$evidence_workflow_validation_report" <<'PY'
+  PYTHONPATH="$repo_root/src" "$python_bin" - "$evidence_workflow_validation_report" "$field_collection_plan" <<'PY'
 from __future__ import annotations
 
 import json
@@ -206,8 +206,11 @@ import sys
 from pathlib import Path
 
 from vision_nav.autonomy_evidence_workflow import workflow_validation_detail_lines
+from vision_nav.field_collection_plan import metadata_update_command_is_detailed
+from vision_nav.field_workflow_selection import select_next_field_condition
 
 path = Path(sys.argv[1]).expanduser()
+field_collection_plan = Path(sys.argv[2]).expanduser()
 try:
     report = json.loads(path.read_text(encoding="utf-8"))
 except Exception as exc:
@@ -225,6 +228,23 @@ checks = [
     for check in report.get("checks") or []
     if isinstance(check, dict) and check.get("status") != "passed"
 ]
+
+def enriched_metadata_update_command(command: object) -> str:
+    value = str(command or "")
+    if not value.strip():
+        return ""
+    if metadata_update_command_is_detailed(value):
+        return value
+    if field_collection_plan.is_file():
+        try:
+            selected = select_next_field_condition(field_collection_plan)
+        except Exception:
+            selected = {}
+        replacement = str(selected.get("metadata_update_command") or "")
+        if metadata_update_command_is_detailed(replacement):
+            return replacement
+    return value
+
 
 if validation_status == "passed" and workflow_status == "passed" and not issues and not next_step and not checks:
     raise SystemExit(0)
@@ -253,8 +273,9 @@ if next_step:
         print(f"  runtime status: {next_step.get('runtime_status_path')}")
     if next_step.get("capture_command_after_bundle"):
         print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
-    if next_step.get("metadata_update_command"):
-        print(f"  metadata update: {next_step.get('metadata_update_command')}")
+    metadata_update_command = enriched_metadata_update_command(next_step.get("metadata_update_command"))
+    if metadata_update_command:
+        print(f"  metadata update: {metadata_update_command}")
 for issue in issues[:4]:
     print(f"- issue: {issue}")
 detail_lines = workflow_validation_detail_lines(report)
