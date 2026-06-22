@@ -63,6 +63,57 @@ STRICT_SUPPORT_BUNDLE_INPUTS = [
     "feature-method benchmark report from real field logs",
     "optional ROS replay validation and native rosbag2 review artifacts when available",
 ]
+STRICT_SUPPORT_BUNDLE_ACTIONS = [
+    {
+        "label": "Prepare the GNSS-denied mission bundle.",
+        "desktop_action": "Mission Planner > GNSS-Denied Prep, Build Bundle, Upload Bundle",
+        "command": "./scripts/pi/validate_terrain_bundle.sh",
+        "notes": "The support bundle must include terrain bundle health plus GNSS-denied mission metadata.",
+    },
+    {
+        "label": "Capture a runtime terrain log and status snapshot.",
+        "desktop_action": "Module Setup > Field Log Capture, then Runtime Status",
+        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+        "notes": "Field Log Capture writes terrain_matches.jsonl and runtime_status.json for bench review.",
+    },
+    {
+        "label": "Capture PX4 ODOMETRY receiver proof.",
+        "desktop_action": "Module Setup > PX4 SITL Receiver Capture",
+        "command": "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+        "notes": "Receiver evidence must prove the MAVLink ODOMETRY path, not only VISION_POSITION_ESTIMATE.",
+    },
+    {
+        "label": "Check PX4 external-vision parameters.",
+        "desktop_action": "Module Setup > PX4 parameter check",
+        "command": "./scripts/pi/check_px4_params.sh",
+        "notes": "Export PX4 parameters first; the checker records guidance without modifying the flight controller.",
+    },
+    {
+        "label": "Create the field collection checklist.",
+        "desktop_action": "Module Setup > Create Plan",
+        "command": FIELD_COLLECTION_BOOTSTRAP_COMMAND,
+        "notes": "This creates the field evidence template and condition-specific collection plan.",
+    },
+    {
+        "label": "Collect and register real field evidence.",
+        "desktop_action": "Module Setup > Evidence Workflow",
+        "command": GUIDED_EVIDENCE_WORKFLOW_COMMAND,
+        "notes": "The workflow auto-loads the next field condition and preserves partial artifacts.",
+    },
+    {
+        "label": "Benchmark feature methods on field logs.",
+        "desktop_action": "Module Setup > Feature Benchmark",
+        "command": "./scripts/pi/run_feature_method_benchmark.sh",
+        "blocked_by": "field_dataset",
+        "notes": "Run after real field logs exist.",
+    },
+    {
+        "label": "Create or refresh the support bundle.",
+        "desktop_action": "Module Setup > Bench Report",
+        "command": SUPPORT_BUNDLE_COMMAND,
+        "notes": "Run after the relevant bench and field artifacts exist.",
+    },
+]
 
 PROOF_RUNBOOK_PHASES = [
     {
@@ -688,6 +739,23 @@ def compact_proof_runbook_action(action: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def compact_bench_evidence_actions(raw: Any) -> list[dict[str, str]]:
+    if not isinstance(raw, list):
+        return []
+    actions: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        compact: dict[str, str] = {}
+        for key in ("label", "desktop_action", "command", "blocked_by", "notes"):
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                compact[key] = value
+        if compact:
+            actions.append(compact)
+    return actions
+
+
 def evidence_manifest_item(
     check: dict[str, Any],
     inputs: dict[str, Any],
@@ -713,6 +781,9 @@ def evidence_manifest_item(
             item["expected_bench_inputs"] = [str(value) for value in expected_inputs if str(value)]
         if details.get("support_bundle_command"):
             item["support_bundle_command"] = str(details["support_bundle_command"])
+        actions = compact_bench_evidence_actions(details.get("bench_evidence_actions"))
+        if actions:
+            item["bench_evidence_actions"] = actions
     return item
 
 
@@ -753,6 +824,8 @@ def blocker_summary(item: dict[str, Any]) -> dict[str, Any]:
         summary["expected_bench_inputs"] = item["expected_bench_inputs"]
     if item.get("support_bundle_command"):
         summary["support_bundle_command"] = item["support_bundle_command"]
+    if item.get("bench_evidence_actions"):
+        summary["bench_evidence_actions"] = item["bench_evidence_actions"]
     return summary
 
 
@@ -986,6 +1059,7 @@ def evaluate_support_bundle(
     if path is None:
         details = {
             "expected_bench_inputs": STRICT_SUPPORT_BUNDLE_INPUTS,
+            "bench_evidence_actions": STRICT_SUPPORT_BUNDLE_ACTIONS,
             "support_bundle_command": SUPPORT_BUNDLE_COMMAND,
         }
         return {

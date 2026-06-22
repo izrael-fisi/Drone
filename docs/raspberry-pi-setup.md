@@ -969,7 +969,9 @@ option that preserves partial artifacts while prerequisites are collected. Its
 bench evidence preview lists the support-bundle inputs expected by the strict
 readiness gate, including runtime logs/status, PX4 receiver and parameter
 evidence, field evidence, feature benchmark reports, and optional ROS replay
-artifacts when available.
+artifacts when available. It also prints the suggested collection order with
+the matching Module Setup action and wrapper command for each bench evidence
+step.
 The field collection preview lists the next required condition, the remaining
 operator-readable conditions, and their expected `good_map`, `degraded`, or
 `wrong_map` behavior before real logs are registered. When PX4/tmux setup

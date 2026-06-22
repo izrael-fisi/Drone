@@ -474,7 +474,12 @@ bench_inputs = [
     if str(value)
 ]
 support_bundle_command = str(support_details.get("support_bundle_command") or "")
-if bench_inputs or support_bundle_command:
+bench_actions = [
+    item
+    for item in support_details.get("bench_evidence_actions") or []
+    if isinstance(item, dict)
+]
+if bench_inputs or support_bundle_command or bench_actions:
     print()
     print("Bench evidence preview:")
     if bench_inputs:
@@ -483,7 +488,24 @@ if bench_inputs or support_bundle_command:
             print(f"  - {value}")
         if len(bench_inputs) > 10:
             print(f"  - ... {len(bench_inputs) - 10} more")
-    if support_bundle_command:
+    if bench_actions:
+        print("- suggested collection order:")
+        for index, action in enumerate(bench_actions[:10], start=1):
+            label = action.get("label") or "bench evidence step"
+            print(f"  {index}. {label}")
+            desktop_action = action.get("desktop_action")
+            if desktop_action:
+                print(f"     app: {desktop_action}")
+            blocked_by = action.get("blocked_by")
+            if blocked_by:
+                print(f"     waits on: {blocked_by}")
+            command = action.get("command")
+            if command:
+                print(f"     command: {command}")
+        if len(bench_actions) > 10:
+            print(f"  - ... {len(bench_actions) - 10} more")
+    action_commands = {str(action.get("command") or "") for action in bench_actions}
+    if support_bundle_command and support_bundle_command not in action_commands:
         print(f"- create or refresh support bundle after inputs exist: {support_bundle_command}")
 
 field_conditions = field_condition_names_from_report(report, external_blockers)

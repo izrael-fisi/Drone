@@ -3148,6 +3148,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "./scripts/pi/create_support_bundle.sh",
             "autonomy readiness missing support bundle command",
         )
+        bench_actions = support_check["details"]["bench_evidence_actions"]
+        bench_action_commands = [action.get("command") for action in bench_actions]
+        if "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" not in bench_action_commands:
+            raise AssertionError("autonomy readiness missing support bundle should expose runtime capture action")
+        if "./scripts/pi/create_support_bundle.sh" not in bench_action_commands:
+            raise AssertionError("autonomy readiness missing support bundle should expose support bundle action")
         support_blocker = next(
             blocker
             for blocker in missing_proof_ready["evidence_manifest"]["external_blockers"]
@@ -3155,6 +3161,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         if "PX4 ODOMETRY receiver evidence report" not in support_blocker.get("expected_bench_inputs", []):
             raise AssertionError("autonomy readiness blocker missing support bundle expected inputs")
+        if not support_blocker.get("bench_evidence_actions"):
+            raise AssertionError("autonomy readiness blocker missing support bundle action hints")
         bench_commands = missing_proof_phases["bench_foundation"]["commands"]
         px4_capture_command = "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh"
         support_bundle_command = "./scripts/pi/create_support_bundle.sh"

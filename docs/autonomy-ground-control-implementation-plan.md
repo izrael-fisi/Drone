@@ -819,6 +819,10 @@ Status:
   support-review inputs the bundle is expected to contain, and
   `scripts/dev/autonomy_goal_status.sh` renders those as a bench evidence
   preview before the field-collection checklist.
+- Done: the same bench evidence preview now includes a structured collection
+  order with app locations and wrapper commands for mission prep, runtime log
+  capture, PX4 receiver proof, PX4 parameter checks, field evidence,
+  feature benchmarking, and support-bundle creation.
 - Done: `scripts/dev/autonomy_goal_status.sh` now promotes prerequisite fix
   commands from `command_bundle.prerequisite_fix_commands` ahead of the guided
   workflow and proof-capture command list, so missing PX4/tmux setup is fixed
