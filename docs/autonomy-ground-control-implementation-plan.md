@@ -456,6 +456,11 @@ Status:
   missing-bundle diagnostics from the current filesystem when older
   field-preflight JSON lacks searched roots or current map-library candidates,
   while keeping stale reports diagnostic-only rather than proof.
+- Done: `vision-nav-build-bundle-from-map-source` and
+  `scripts/pi/build_bundle_from_map_source.sh` can turn a saved Maps
+  `satellite.png` plus `metadata.json` source into the selected terrain mission
+  bundle, and missing-bundle diagnostics now print that copyable command when a
+  saved map source is detected.
 - Done: support-bundle and final-readiness parsers backfill that bundle
   diagnostic onto `prepare_bundle` next actions from older field-preflight JSON
   files, so stale downloaded reports still show missing files and candidate

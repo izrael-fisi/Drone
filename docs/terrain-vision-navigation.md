@@ -111,6 +111,7 @@ vision-nav-benchmark-feature-methods --bundle mission_bundle --replay-log replay
 The Pi wrappers are:
 
 ```bash
+./scripts/pi/build_bundle_from_map_source.sh
 ./scripts/pi/validate_terrain_bundle.sh
 ./scripts/pi/run_terrain_nav_loop.sh
 ./scripts/pi/replay_terrain_nav_log.sh

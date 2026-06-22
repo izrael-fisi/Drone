@@ -382,6 +382,19 @@ testing, but they do not satisfy real field-evidence proof.
 Set `VISION_NAV_BUNDLE_DIAGNOSTIC_JSON=/path/to/report.json` to save the full
 diagnostic as JSON for desktop download or support review.
 
+If the diagnostic finds a saved desktop map source, you can build the selected
+runtime bundle from the Pi or terminal without opening the app:
+
+```bash
+VISION_NAV_MAP_SOURCE=$HOME/DroneVisionNav/maps/flight-region \
+  VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
+  ./scripts/pi/build_bundle_from_map_source.sh
+```
+
+This copies the map source into the mission-bundle layout, builds the ORB/AKAZE
+terrain tile index, writes STAC/health/checksum artifacts, and keeps the same
+`VISION_NAV_BUNDLE` path used by field-capture preflight.
+
 The validator checks:
 
 - manifest schema and paths

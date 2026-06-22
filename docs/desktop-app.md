@@ -255,6 +255,18 @@ That path is what `./scripts/pi/run_terrain_nav_loop.sh` loads through
 `VISION_NAV_BUNDLE`, so the map selected in the desktop app becomes the active
 map used for feature comparison on the Raspberry Pi.
 
+When support is working from a shell or stale preflight report, the same saved
+map-source folder can be converted into a runtime bundle with:
+
+```bash
+VISION_NAV_MAP_SOURCE=$HOME/DroneVisionNav/maps/flight-region \
+  VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
+  ./scripts/pi/build_bundle_from_map_source.sh
+```
+
+Missing-bundle diagnostics print this command when they detect a saved map
+source under the app map library.
+
 The Maps page can attach optional DEM and DSM GeoTIFFs to a saved map source.
 Those files are copied into the map folder under `elevation/`, referenced from
 `metadata.json`, and carried into the next terrain mission bundle.

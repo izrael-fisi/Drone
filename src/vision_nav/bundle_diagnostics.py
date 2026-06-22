@@ -512,7 +512,13 @@ def recommended_actions(
                     "status": "optional",
                     "title": "Use a detected saved map source to build the runtime bundle.",
                     "desktop_action": "Mission Planner > Select Map Source, Build Bundle, Upload Bundle",
+                    "command": (
+                        f"VISION_NAV_MAP_SOURCE={shell_quote(str(first_source['path']))} "
+                        f"VISION_NAV_BUNDLE={shell_quote(str(bundle))} "
+                        "./scripts/pi/build_bundle_from_map_source.sh"
+                    ),
                     "map_source_path": first_source["path"],
+                    "bundle_path": str(bundle),
                 }
             )
     else:

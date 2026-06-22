@@ -46,6 +46,7 @@ from vision_nav.bundle import (
 )
 from vision_nav.bundle_checksums import verify_checksum_file, write_checksum_file
 from vision_nav.bundle_diagnostics import compact_bundle_diagnostic, diagnose_bundle_inputs
+from vision_nav.build_bundle_from_map_source import build_bundle_from_map_source
 from vision_nav.camera import load_camera_calibration, validate_image_size
 from vision_nav.external_position import (
     ExternalPositionEstimate,
@@ -1690,6 +1691,82 @@ rotation_quat_xyzw: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
         assert_equal(summary["checksums"]["status"], "passed", "bundle validation checksums")
 
 
+def test_build_bundle_from_map_source_creates_valid_terrain_bundle() -> None:
+    try:
+        import cv2
+    except ModuleNotFoundError as exc:
+        if exc.name == "cv2":
+            raise SkipTest("requires cv2") from exc
+        raise
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        map_source = root / "DroneVisionNav" / "maps" / "unit-field"
+        map_source.mkdir(parents=True)
+        image = np.zeros((220, 280), dtype=np.uint8)
+        cv2.rectangle(image, (20, 20), (120, 90), 180, -1)
+        cv2.circle(image, (205, 70), 42, 255, 3)
+        cv2.line(image, (10, 180), (260, 125), 140, 4)
+        cv2.putText(image, "NAV", (92, 165), cv2.FONT_HERSHEY_SIMPLEX, 1.2, 220, 3)
+        cv2.imwrite(str(map_source / "satellite.png"), image)
+        (map_source / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "id": "unit-field",
+                    "name": "Unit Field",
+                    "origin_lat": 37.777431,
+                    "origin_lon": -122.41465,
+                    "origin_pixel_x": 0.0,
+                    "origin_pixel_y": 0.0,
+                    "gsd_m_per_px": 0.25,
+                    "rotation_deg": 0.0,
+                    "georef_source": "unit_test",
+                    "georef_confidence": 0.95,
+                    "georef_crs": "EPSG:4326",
+                    "width_px": 280,
+                    "height_px": 220,
+                    "source": "uploaded",
+                    "original_file": "unit-field.png",
+                }
+            )
+        )
+        bundle = root / "drone-data" / "map_bundles" / "mission_bundle"
+        result = build_bundle_from_map_source(
+            map_source,
+            bundle,
+            repo=Path.cwd(),
+            feature_method="orb",
+            max_features=500,
+            write_checksums=True,
+        )
+
+        assert_equal(result["map_source_dir"], str(map_source), "map-source builder source")
+        assert_equal((bundle / "ortho" / "map.png").is_file(), True, "map-source builder orthophoto")
+        assert_equal((bundle / "high_compute_region" / "metadata.json").is_file(), True, "map-source builder high-compute metadata")
+        validation = validate_bundle(
+            str(bundle),
+            require_features=True,
+            require_calibration=True,
+            require_checksums=True,
+        )
+        assert_equal(validation["status"], "passed", "map-source bundle validation")
+        terrain = load_terrain_bundle(bundle)
+        assert_equal(terrain.has_tile_index, True, "map-source terrain tile index")
+        assert_equal(terrain.gsd_m, 0.25, "map-source terrain gsd")
+
+        diagnostic = diagnose_bundle_inputs(root / "missing_bundle", search_roots=[map_source.parent])
+        build_actions = [
+            action
+            for action in diagnostic.get("recommended_actions", [])
+            if action.get("id") == "build_from_detected_map_source"
+        ]
+        if not build_actions:
+            raise AssertionError("Expected diagnostics to recommend building from a detected saved map source")
+        command = build_actions[0].get("command") or ""
+        if "build_bundle_from_map_source.sh" not in command or "VISION_NAV_MAP_SOURCE=" not in command:
+            raise AssertionError(f"Expected copyable map-source build command, got {command!r}")
+
+
 def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -1735,7 +1812,21 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
         write_minimal_png(worldfile_image, 32, 32)
         (raw_sources / "worldfile_map.pgw").write_text("0.2\n0\n0\n-0.2\n500000\n4500000\n")
 
-        report = diagnose_bundle_inputs(expected_bundle, search_roots=[root])
+        old_home_initial = os.environ.get("HOME")
+        old_search_roots_initial = os.environ.get("VISION_NAV_BUNDLE_SEARCH_ROOTS")
+        try:
+            os.environ["HOME"] = str(root)
+            os.environ.pop("VISION_NAV_BUNDLE_SEARCH_ROOTS", None)
+            report = diagnose_bundle_inputs(expected_bundle, search_roots=[root])
+        finally:
+            if old_home_initial is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = old_home_initial
+            if old_search_roots_initial is None:
+                os.environ.pop("VISION_NAV_BUNDLE_SEARCH_ROOTS", None)
+            else:
+                os.environ["VISION_NAV_BUNDLE_SEARCH_ROOTS"] = old_search_roots_initial
         assert_equal(report["bundle_exists"], False, "bundle diagnostic missing expected bundle")
         if "manifest.json" not in report["missing_required_files"]:
             raise AssertionError("Expected diagnostic to list missing manifest")
@@ -1762,6 +1853,12 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
             raise AssertionError("Expected compact diagnostic to preserve raw map import hint")
         if compact["recommended_actions"][0]["id"] != "build_or_upload_selected_bundle":
             raise AssertionError("Expected bundle build/upload to remain the first diagnostic action")
+        saved_source_action = next(
+            (action for action in report["recommended_actions"] if action["id"] == "build_from_detected_map_source"),
+            None,
+        )
+        if not saved_source_action or "build_bundle_from_map_source.sh" not in saved_source_action.get("command", ""):
+            raise AssertionError("Expected saved map source diagnostic to include copyable build command")
         old_cwd = Path.cwd()
         old_home_for_raw = os.environ.get("HOME")
         try:
@@ -7569,6 +7666,7 @@ def main() -> None:
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
+        test_build_bundle_from_map_source_creates_valid_terrain_bundle,
         test_bundle_diagnostics_finds_bundle_and_map_source_candidates,
         test_geospatial_health_report_validates_stac_tiles_and_bounds,
         test_gdal_metadata_degrades_gracefully_when_unavailable,

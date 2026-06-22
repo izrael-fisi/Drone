@@ -58,9 +58,10 @@ Default axis convention:
 Example:
 
 ```bash
-vision-nav-validate-bundle --bundle mission_bundle --require-calibration
+vision-nav-build-bundle-from-map-source --map-source ~/DroneVisionNav/maps/flight-region --bundle mission_bundle --write-checksums
 vision-nav-build-bundle --bundle mission_bundle --write-checksums
 vision-nav-build-terrain-bundle --bundle mission_bundle --write-checksums
+vision-nav-validate-bundle --bundle mission_bundle --require-calibration
 vision-nav-bundle-checksums --bundle mission_bundle --verify
 ```
 

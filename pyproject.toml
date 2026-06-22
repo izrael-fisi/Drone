@@ -30,6 +30,7 @@ rosbag = [
 [project.scripts]
 vision-nav-build-map = "vision_nav.build_feature_map:main"
 vision-nav-build-bundle = "vision_nav.build_map_bundle:main"
+vision-nav-build-bundle-from-map-source = "vision_nav.build_bundle_from_map_source:main"
 vision-nav-build-terrain-bundle = "vision_nav.build_terrain_bundle:main"
 vision-nav-bench-readiness = "vision_nav.bench_readiness:main"
 vision-nav-autonomy-readiness = "vision_nav.autonomy_readiness:main"
