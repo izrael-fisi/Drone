@@ -603,8 +603,12 @@ def print_human(report: dict[str, Any]) -> None:
                 if map_sources:
                     print("  detected map sources:")
                     for source in map_sources[:3]:
-                        label = source.get("name") or "unnamed"
-                        print(f"    - {source.get('path')} [{label}]")
+                        label_parts = [str(source.get("name") or "unnamed")]
+                        if source.get("source_format"):
+                            label_parts.append(str(source["source_format"]))
+                        if source.get("requires_import"):
+                            label_parts.append("import required")
+                        print(f"    - {source.get('path')} [{'; '.join(label_parts)}]")
             if action.get("command"):
                 print(f"  command: {action['command']}")
     if report.get("output_path"):

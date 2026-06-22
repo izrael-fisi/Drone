@@ -1137,7 +1137,9 @@ function SupportBundleDetailPanel({
                               <div key={`${report.condition}-map-source-${source.path}`} className="flex min-w-0 flex-wrap items-center gap-1">
                                 <span className="font-mono text-slate-300 truncate">{formatLabel(source.path)}</span>
                                 <span className="badge-green">{formatLabel(source.name)}</span>
+                                {source.source_format && <span className="badge-cyan">{formatLabel(source.source_format)}</span>}
                                 {source.georef_source && <span className="badge-yellow">{formatLabel(source.georef_source)}</span>}
+                                {source.requires_import && <span className="badge-yellow">import</span>}
                               </div>
                             ))}
                           </div>

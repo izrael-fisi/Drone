@@ -426,6 +426,8 @@ export interface SupportBundleDetails {
           name?: string;
           source?: string;
           georef_source?: string;
+          source_format?: string;
+          requires_import?: boolean;
         }>;
         recommended_actions: Array<{
           id?: string;
@@ -466,6 +468,8 @@ export interface SupportBundleDetails {
           name?: string;
           source?: string;
           georef_source?: string;
+          source_format?: string;
+          requires_import?: boolean;
         }>;
         recommended_actions: Array<{
           id?: string;

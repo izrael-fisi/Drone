@@ -310,6 +310,10 @@ Status:
 - In progress: terrain profile health now emits bounded preview points, and
   Mission Planner renders a compact terrain/flight profile preview after bundle
   build.
+- Done: missing-bundle diagnostics now discover raw map inputs as well as saved
+  app map folders, including TIFF/GeoTIFF/COG candidates, STAC JSON
+  item/catalog metadata, and image files with matching worldfiles, then route
+  those candidates toward Maps import before Mission Planner bundle build.
 - Done: downloaded support-bundle browsing shows parsed checksum status, map
   source provenance, georeference confidence, and replay-gate state.
 - Done: `vision-nav-benchmark-retrieval` benchmarks both the lightweight

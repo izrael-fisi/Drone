@@ -372,6 +372,8 @@ pub struct SupportBundleDiagnosticMapSourceCandidate {
     pub name: Option<String>,
     pub source: Option<String>,
     pub georef_source: Option<String>,
+    pub source_format: Option<String>,
+    pub requires_import: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -4155,6 +4157,8 @@ fn support_bundle_diagnostic_from_json(
                     name: json_string(item.get("name")),
                     source: json_string(item.get("source")),
                     georef_source: json_string(item.get("georef_source")),
+                    source_format: json_string(item.get("source_format")),
+                    requires_import: item.get("requires_import").and_then(|value| value.as_bool()),
                 })
                 .collect::<Vec<_>>()
         })
@@ -7667,7 +7671,9 @@ mod tests {
                                         "path": "/home/user/maps/field-area",
                                         "name": "Field Area",
                                         "source": "uploaded_geotiff",
-                                        "georef_source": "geotiff_embedded"
+                                        "georef_source": "geotiff_embedded",
+                                        "source_format": "saved_map_source",
+                                        "requires_import": false
                                     }
                                 ],
                                 "recommended_actions": [
@@ -7717,7 +7723,9 @@ mod tests {
                                         "path": "/home/user/maps/field-area",
                                         "name": "Field Area",
                                         "source": "uploaded_geotiff",
-                                        "georef_source": "geotiff_embedded"
+                                        "georef_source": "geotiff_embedded",
+                                        "source_format": "saved_map_source",
+                                        "requires_import": false
                                     }
                                 ],
                                 "recommended_actions": [
@@ -8180,6 +8188,16 @@ mod tests {
         assert_eq!(
             bundle_diagnostic.map_source_candidates[0].name.as_deref(),
             Some("Field Area")
+        );
+        assert_eq!(
+            bundle_diagnostic.map_source_candidates[0]
+                .source_format
+                .as_deref(),
+            Some("saved_map_source")
+        );
+        assert_eq!(
+            bundle_diagnostic.map_source_candidates[0].requires_import,
+            Some(false)
         );
         assert_eq!(
             bundle_diagnostic.recommended_actions[0]

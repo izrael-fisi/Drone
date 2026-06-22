@@ -536,6 +536,15 @@ def defer_support_bundle_actions(actions):
     return other_actions + support_actions
 
 
+def map_source_label(source):
+    label_parts = [str(source.get("name") or "unnamed")]
+    if source.get("source_format"):
+        label_parts.append(str(source["source_format"]))
+    if source.get("requires_import"):
+        label_parts.append("import required")
+    return "; ".join(label_parts)
+
+
 report_path = sys.argv[1]
 with open(report_path, "r", encoding="utf-8") as handle:
     report = json.load(handle)
@@ -717,8 +726,7 @@ if workflow_validation:
                 if map_sources:
                     print("  detected map sources:")
                     for source in map_sources[:3]:
-                        label = source.get("name") or "unnamed"
-                        print(f"    - {source.get('path')} [{label}]")
+                        print(f"    - {source.get('path')} [{map_source_label(source)}]")
             if next_step.get("capture_command_after_bundle"):
                 print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
             if next_step.get("capture_command_after_preflight"):
@@ -1007,8 +1015,7 @@ if isinstance(field_preflight, dict):
                 if map_sources:
                     print("    detected map sources:")
                     for source in map_sources[:3]:
-                        label = source.get("name") or "unnamed"
-                        print(f"      - {source.get('path')} [{label}]")
+                        print(f"      - {source.get('path')} [{map_source_label(source)}]")
                 actions = [
                     action
                     for action in diagnostic.get("recommended_actions") or []
@@ -1064,8 +1071,7 @@ if isinstance(field_preflight, dict):
                     if map_sources:
                         print("    detected map sources:")
                         for source in map_sources[:3]:
-                            label = source.get("name") or "unnamed"
-                            print(f"      - {source.get('path')} [{label}]")
+                            print(f"      - {source.get('path')} [{map_source_label(source)}]")
                 if item.get("command"):
                     print(f"    command: {item.get('command')}")
 
@@ -1232,8 +1238,7 @@ if next_actions:
             if map_sources:
                 print("   detected map sources:")
                 for source in map_sources[:3]:
-                    label = source.get("name") or "unnamed"
-                    print(f"     - {source.get('path')} [{label}]")
+                    print(f"     - {source.get('path')} [{map_source_label(source)}]")
         for label, key in (
             ("field", "field_condition"),
             ("bundle", "field_bundle"),

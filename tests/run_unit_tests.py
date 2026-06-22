@@ -1713,6 +1713,25 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
                 }
             )
         )
+        raw_sources = root / "raw-map-sources"
+        raw_sources.mkdir()
+        raw_geotiff = raw_sources / "survey_ortho.tif"
+        raw_geotiff.write_bytes(b"candidate geotiff")
+        stac_item = raw_sources / "field_area_stac.json"
+        stac_item.write_text(
+            json.dumps(
+                {
+                    "stac_version": "1.0.0",
+                    "type": "Feature",
+                    "bbox": [-75.0, 40.0, -74.99, 40.01],
+                    "geometry": None,
+                    "assets": {"ortho": {"href": "survey_ortho.tif"}},
+                }
+            )
+        )
+        worldfile_image = raw_sources / "worldfile_map.png"
+        write_minimal_png(worldfile_image, 32, 32)
+        (raw_sources / "worldfile_map.pgw").write_text("0.2\n0\n0\n-0.2\n500000\n4500000\n")
 
         report = diagnose_bundle_inputs(expected_bundle, search_roots=[root])
         assert_equal(report["bundle_exists"], False, "bundle diagnostic missing expected bundle")
@@ -1724,13 +1743,25 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
         source_paths = {item["path"] for item in report["map_source_candidates"]}
         if str(map_source) not in source_paths:
             raise AssertionError(f"Expected map source {map_source}, got {source_paths}")
+        for raw_source in (raw_geotiff, stac_item, worldfile_image):
+            if str(raw_source) not in source_paths:
+                raise AssertionError(f"Expected raw map source {raw_source}, got {source_paths}")
+        raw_source_summary = next(item for item in report["map_source_candidates"] if item["path"] == str(raw_geotiff))
+        assert_equal(raw_source_summary["requires_import"], True, "raw map source requires import")
+        assert_equal(raw_source_summary["source_format"], "geotiff_or_cog", "raw geotiff source format")
         compact = compact_bundle_diagnostic(report)
         if compact["bundle_candidate_count"] < 1:
             raise AssertionError("Expected compact diagnostic to count bundle candidates")
-        if compact["map_source_candidate_count"] < 1:
+        if compact["map_source_candidate_count"] < 4:
             raise AssertionError("Expected compact diagnostic to count map source candidates")
+        if not any(item.get("requires_import") for item in compact["map_source_candidates"]):
+            raise AssertionError("Expected compact diagnostic to preserve raw map import hint")
         if compact["recommended_actions"][0]["id"] != "build_or_upload_selected_bundle":
             raise AssertionError("Expected bundle build/upload to remain the first diagnostic action")
+        raw_only_report = diagnose_bundle_inputs(expected_bundle, search_roots=[raw_sources])
+        action_ids = [action["id"] for action in raw_only_report["recommended_actions"]]
+        if "import_detected_map_source" not in action_ids:
+            raise AssertionError(f"Expected raw-source import action, got {action_ids}")
 
 
 def test_geospatial_health_report_validates_stac_tiles_and_bounds() -> None:

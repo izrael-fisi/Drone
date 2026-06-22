@@ -16,6 +16,24 @@ REQUIRED_TERRAIN_BUNDLE_FILES = (
     "index/tiles.sqlite",
 )
 
+RASTER_MAP_EXTENSIONS = {".tif", ".tiff", ".geotiff", ".cog"}
+WORLD_FILE_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"}
+WORLD_FILE_EXTENSIONS = {
+    ".wld",
+    ".tfw",
+    ".tifw",
+    ".jgw",
+    ".jpgw",
+    ".pgw",
+    ".pngw",
+    ".bpw",
+    ".bmpw",
+    ".gfw",
+    ".gifw",
+    ".wpg",
+    ".webpw",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Diagnose missing or invalid terrain mission bundle inputs.")
@@ -82,6 +100,8 @@ def compact_bundle_diagnostic(report: Any, *, max_items: int = 3) -> dict[str, A
             "name": item.get("name"),
             "source": item.get("source"),
             "georef_source": item.get("georef_source"),
+            "source_format": item.get("source_format"),
+            "requires_import": item.get("requires_import"),
         }
         for item in report.get("map_source_candidates") or []
         if isinstance(item, dict)
@@ -161,12 +181,24 @@ def find_map_source_candidates(roots: list[Path], *, max_candidates: int) -> lis
     seen: set[str] = set()
     for metadata_path in scan_for_files(roots, "metadata.json", max_depth=5):
         source_dir = metadata_path.parent
-        normalized = str(source_dir)
+        normalized = normalized_path_key(source_dir)
         if normalized in seen or not (source_dir / "satellite.png").exists():
             continue
         seen.add(normalized)
         candidates.append(summarize_map_source_candidate(source_dir))
-    candidates.sort(key=lambda item: item["path"])
+
+    for raw_path in scan_for_raw_map_sources(roots, max_depth=5):
+        normalized = normalized_path_key(raw_path)
+        parent_key = normalized_path_key(raw_path.parent)
+        if normalized in seen or parent_key in seen:
+            continue
+        summary = summarize_raw_map_source_candidate(raw_path)
+        if summary is None:
+            continue
+        seen.add(normalized)
+        candidates.append(summary)
+
+    candidates.sort(key=map_source_sort_key)
     return candidates[:max_candidates]
 
 
@@ -191,6 +223,38 @@ def scan_for_files(roots: list[Path], filename: str, *, max_depth: int) -> list[
             if filename in files:
                 found.append(current_path / filename)
     return found
+
+
+def scan_for_raw_map_sources(roots: list[Path], *, max_depth: int) -> list[Path]:
+    found: list[Path] = []
+    for root in roots:
+        if not root.exists() or not root.is_dir():
+            continue
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            root_resolved = root
+        for current, dirs, files in os.walk(root):
+            current_path = Path(current)
+            try:
+                relative_depth = len(current_path.resolve().relative_to(root_resolved).parts)
+            except Exception:
+                relative_depth = len(current_path.relative_to(root).parts)
+            if relative_depth >= max_depth:
+                dirs[:] = []
+            dirs[:] = [item for item in dirs if item not in {".git", "node_modules", "target", "__pycache__"}]
+            for filename in files:
+                path = current_path / filename
+                if is_raw_map_source_candidate(path):
+                    found.append(path)
+    return found
+
+
+def normalized_path_key(path: Path) -> str:
+    try:
+        return str(path.resolve())
+    except OSError:
+        return str(path)
 
 
 def summarize_bundle_candidate(bundle_dir: Path, *, expected_bundle: Path) -> dict[str, Any] | None:
@@ -256,7 +320,98 @@ def summarize_map_source_candidate(source_dir: Path) -> dict[str, Any]:
         "height_px": metadata.get("height_px"),
         "has_satellite_png": (source_dir / "satellite.png").exists(),
         "has_metadata_json": metadata_path.exists(),
+        "requires_import": False,
+        "source_format": "saved_map_source",
     }
+
+
+def summarize_raw_map_source_candidate(path: Path) -> dict[str, Any] | None:
+    suffix = path.suffix.lower()
+    if suffix in RASTER_MAP_EXTENSIONS:
+        return {
+            "path": str(path),
+            "name": path.stem,
+            "source": "raw_geotiff",
+            "georef_source": "geotiff_embedded_or_manual",
+            "source_format": "geotiff_or_cog",
+            "requires_import": True,
+            "has_satellite_png": False,
+            "has_metadata_json": False,
+        }
+    if suffix == ".json" and looks_like_stac_json(path):
+        return {
+            "path": str(path),
+            "name": path.stem,
+            "source": "stac",
+            "georef_source": "stac_metadata",
+            "source_format": "stac_json",
+            "requires_import": True,
+            "has_satellite_png": False,
+            "has_metadata_json": False,
+        }
+    if suffix in WORLD_FILE_IMAGE_EXTENSIONS:
+        worldfile = matching_world_file(path)
+        if worldfile is None:
+            return None
+        return {
+            "path": str(path),
+            "name": path.stem,
+            "source": "image_worldfile",
+            "georef_source": "worldfile",
+            "source_format": "image_with_worldfile",
+            "requires_import": True,
+            "worldfile_path": str(worldfile),
+            "has_satellite_png": False,
+            "has_metadata_json": False,
+        }
+    return None
+
+
+def is_raw_map_source_candidate(path: Path) -> bool:
+    suffix = path.suffix.lower()
+    if suffix in RASTER_MAP_EXTENSIONS:
+        return True
+    if suffix == ".json":
+        return looks_like_stac_json(path)
+    if suffix in WORLD_FILE_IMAGE_EXTENSIONS:
+        return matching_world_file(path) is not None
+    return False
+
+
+def looks_like_stac_json(path: Path) -> bool:
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(parsed, dict):
+        return False
+    if parsed.get("stac_version") and parsed.get("type") in {"Feature", "Catalog", "Collection"}:
+        return True
+    return isinstance(parsed.get("assets"), dict) and (
+        "bbox" in parsed or "geometry" in parsed or "extent" in parsed
+    )
+
+
+def matching_world_file(path: Path) -> Path | None:
+    candidates = [path.with_suffix(ext) for ext in WORLD_FILE_EXTENSIONS]
+    candidates.extend(path.parent / f"{path.name}{ext}" for ext in (".wld", ".world"))
+    if path.suffix.lower() in {".jpg", ".jpeg"}:
+        candidates.extend([path.with_suffix(".jgw"), path.with_suffix(".jpgw")])
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def map_source_sort_key(item: dict[str, Any]) -> tuple[int, str]:
+    source_format = item.get("source_format")
+    rank = {
+        "saved_map_source": 0,
+        "geotiff_or_cog": 1,
+        "stac_json": 2,
+        "image_with_worldfile": 3,
+    }.get(str(source_format), 9)
+    return rank, str(item.get("path") or "")
 
 
 def field_proof_warning(bundle_dir: Path, bundle_id: str) -> str | None:
@@ -292,15 +447,27 @@ def recommended_actions(
             }
         )
     if map_source_candidates:
-        actions.append(
-            {
-                "id": "build_from_detected_map_source",
-                "status": "optional",
-                "title": "Use a detected saved map source to build the runtime bundle.",
-                "desktop_action": "Mission Planner > Select Map Source, Build Bundle, Upload Bundle",
-                "map_source_path": map_source_candidates[0]["path"],
-            }
-        )
+        first_source = map_source_candidates[0]
+        if first_source.get("requires_import"):
+            actions.append(
+                {
+                    "id": "import_detected_map_source",
+                    "status": "optional",
+                    "title": "Import a detected raw map source, then build the runtime bundle.",
+                    "desktop_action": "Maps > Import Map, then Mission Planner > Build Bundle, Upload Bundle",
+                    "map_source_path": first_source["path"],
+                }
+            )
+        else:
+            actions.append(
+                {
+                    "id": "build_from_detected_map_source",
+                    "status": "optional",
+                    "title": "Use a detected saved map source to build the runtime bundle.",
+                    "desktop_action": "Mission Planner > Select Map Source, Build Bundle, Upload Bundle",
+                    "map_source_path": first_source["path"],
+                }
+            )
     else:
         actions.append(
             {
@@ -335,7 +502,12 @@ def print_human(report: dict[str, Any]) -> None:
     if report.get("map_source_candidates"):
         print("Detected map sources:")
         for item in report["map_source_candidates"]:
-            print(f"- {item.get('path')} [{item.get('name') or 'unnamed'}]")
+            label_parts = [str(item.get("name") or "unnamed")]
+            if item.get("source_format"):
+                label_parts.append(str(item["source_format"]))
+            if item.get("requires_import"):
+                label_parts.append("import required")
+            print(f"- {item.get('path')} [{'; '.join(label_parts)}]")
     print("Recommended actions:")
     for action in report.get("recommended_actions") or []:
         print(f"- {action.get('id')}: {action.get('title')}")

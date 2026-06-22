@@ -940,8 +940,12 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
             if isinstance(item, dict) and item.get("path")
         ]
         for source in map_sources[:3]:
-            label = source.get("name") or "unnamed"
-            lines.append(f"Detected map source: {source.get('path')} [{label}]")
+            label_parts = [str(source.get("name") or "unnamed")]
+            if source.get("source_format"):
+                label_parts.append(str(source["source_format"]))
+            if source.get("requires_import"):
+                label_parts.append("import required")
+            lines.append(f"Detected map source: {source.get('path')} [{'; '.join(label_parts)}]")
     return lines
 
 

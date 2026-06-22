@@ -6678,8 +6678,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                                       map sources {action.bundle_diagnostic.map_source_candidate_count ?? action.bundle_diagnostic.map_source_candidates.length}
                                     </div>
                                     {action.bundle_diagnostic.map_source_candidates.slice(0, 2).map((source) => (
-                                      <div key={`${action.id ?? "action"}-map-source-${source.path}`} className="font-mono text-slate-300 break-all">
-                                        {source.path ?? "n/a"} {source.name ? `(${source.name})` : ""}
+                                      <div key={`${action.id ?? "action"}-map-source-${source.path}`} className="flex min-w-0 flex-wrap items-center gap-1">
+                                        <span className="font-mono text-slate-300 break-all">{source.path ?? "n/a"}</span>
+                                        {source.name && <span className="badge-green text-[10px]">{formatReadinessLabel(source.name)}</span>}
+                                        {source.source_format && <span className="badge-cyan text-[10px]">{formatReadinessLabel(source.source_format)}</span>}
+                                        {source.georef_source && <span className="badge-yellow text-[10px]">{formatReadinessLabel(source.georef_source)}</span>}
+                                        {source.requires_import && <span className="badge-yellow text-[10px]">import</span>}
                                       </div>
                                     ))}
                                   </div>
