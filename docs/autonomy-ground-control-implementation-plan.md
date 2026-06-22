@@ -843,6 +843,11 @@ Status:
   commands separately from immediate next commands, so method/threshold and ROS
   replay actions remain visible without being presented as runnable before
   their field-dataset prerequisite is satisfied.
+- Done: `scripts/dev/autonomy_goal_status.sh` now prints the matching
+  customer-app action beside each immediate and blocked command, keeping the
+  terminal runbook aligned with Module Setup actions such as Field Log Capture,
+  Runtime Status, Feature Benchmark, ROS Bag Validation, and Native rosbag2
+  Review.
 - Done: proof-runbook command ordering now keeps support-bundle creation after
   the specific bench and field evidence collection steps, and delegates feature
   benchmarking, threshold tuning, and ROS replay proof to their blocked

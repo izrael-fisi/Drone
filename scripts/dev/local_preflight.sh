@@ -619,18 +619,30 @@ assert px4_prereq_app < px4_capture_app
 assert create_plan_app < load_next_app < evidence_workflow_app
 next_commands = text.index("Next commands:")
 px4 = text.index("VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh", next_commands)
+px4_app = text.index("app: Module Setup > PX4 SITL Receiver Capture, then Local Readiness Re-Audit", next_commands)
 support = text.index("./scripts/pi/create_support_bundle.sh", next_commands)
+support_app = text.index("app: Module Setup > Bench Report", next_commands)
 field_plan = text.index("./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh", next_commands)
+field_plan_app = text.index("app: Module Setup > Create Plan", next_commands)
 workflow = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", next_commands)
+workflow_app = text.index("app: Module Setup > Evidence Workflow", next_commands)
+assert px4_app < px4
 assert px4 < support
+assert field_plan_app < field_plan
+assert workflow_app < workflow
 assert field_plan < workflow < support
+assert workflow < support_app < support
 blocked_followups = text.index("Blocked follow-up commands:")
+feature_app = text.index("app: Module Setup > Feature Benchmark", blocked_followups)
+rosbag_app = text.index("app: Module Setup > ROS Bag Validation", blocked_followups)
+rosbag2_app = text.index("app: Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit", blocked_followups)
 assert "./scripts/pi/register_field_replay_case.sh" not in text[next_commands:blocked_followups]
 assert "./scripts/pi/run_feature_method_benchmark.sh" not in text[next_commands:blocked_followups]
 assert "./scripts/pi/run_feature_method_benchmark.sh" in text[blocked_followups:]
 assert "./scripts/pi/run_rosbag_export_validation.sh" not in text[next_commands:blocked_followups]
 assert "./scripts/pi/run_rosbag_export_validation.sh" in text[blocked_followups:]
 assert "./scripts/dev/run_rosbag2_cli_review.sh" in text[blocked_followups:]
+assert feature_app < rosbag_app < rosbag2_app
 PY
 local_autonomy_output="$preflight_tmp_dir/local_autonomy_readiness_preflight.txt"
 local_audit_dir="$(mktemp -d "$preflight_tmp_dir/local-audit.XXXXXX")"
@@ -750,13 +762,19 @@ load_next_app = text.index("Module Setup > Load Next Field Condition", bench_ord
 evidence_workflow_app = text.index("Module Setup > Evidence Workflow", bench_order)
 next_commands = text.index("Next commands:")
 field_plan = text.index("./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh", next_commands)
+field_plan_app = text.index("app: Module Setup > Create Plan", next_commands)
 workflow = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", next_commands)
+workflow_app = text.index("app: Module Setup > Evidence Workflow", next_commands)
 support_bundle = text.index("./scripts/pi/create_support_bundle.sh", next_commands)
+support_app = text.index("app: Module Setup > Bench Report", next_commands)
 blocked_followups = text.index("Blocked follow-up commands:")
 assert fixes < guided < next_commands
 assert px4_prereq_app < px4_capture_app
 assert create_plan_app < load_next_app < evidence_workflow_app
+assert field_plan_app < field_plan
+assert workflow_app < workflow
 assert field_plan < workflow < support_bundle
+assert workflow < support_app < support_bundle
 PY
 outgoing_fallback_dir="$(mktemp -d "$preflight_tmp_dir/outgoing-fallback.XXXXXX")"
 outgoing_fallback_from_pi="$outgoing_fallback_dir/from-pi-empty"

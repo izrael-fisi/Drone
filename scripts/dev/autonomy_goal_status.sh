@@ -706,6 +706,7 @@ if phases:
             phase_items.append(
                 {
                     "title": action.get("title") or phase.get("title") or phase.get("id") or "next action",
+                    "desktop_action": action.get("desktop_action"),
                     "command": command,
                 }
             )
@@ -748,6 +749,9 @@ if next_actions:
         count += 1
         title = action.get("title") or action.get("check") or "next action"
         print(f"{count}. {title}")
+        desktop_action = action.get("desktop_action")
+        if desktop_action:
+            print(f"   app: {desktop_action}")
         print(f"   {command}")
         if count >= 8:
             break
@@ -763,6 +767,9 @@ if blocked_phase_commands:
         count += 1
         title = action.get("title") or "blocked follow-up"
         print(f"{count}. {title}")
+        desktop_action = action.get("desktop_action")
+        if desktop_action:
+            print(f"   app: {desktop_action}")
         waiting_on = action.get("waiting_on")
         if waiting_on:
             print(f"   waiting on: {waiting_on}")
