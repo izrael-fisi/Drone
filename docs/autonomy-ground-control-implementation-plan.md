@@ -1175,6 +1175,9 @@ Status:
 - Done: strict bench-evidence previews and support-bundle external blockers now
   reuse the same pending field capture/status command details, so readiness
   handoffs do not drift back to generic runtime commands.
+- Done: bundle-health and GNSS-denied bench evidence actions now validate the
+  selected field-plan bundle with `VISION_NAV_BUNDLE=...`, keeping bundle prep
+  aligned with the next required field capture.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

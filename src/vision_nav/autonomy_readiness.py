@@ -1251,7 +1251,9 @@ def next_actions_for_bench_subchecks(
             "bench_message": subcheck["message"],
             **spec,
         }
-        if subcheck["name"] == "runtime_logs":
+        if subcheck["name"] in {"bundle_health", "gnss_denied_plan"}:
+            enrich_action_with_field_bundle(action, field_next_condition)
+        elif subcheck["name"] == "runtime_logs":
             enrich_action_with_field_capture(action, field_next_condition)
         elif subcheck["name"] == "runtime_status":
             enrich_action_with_field_capture(
@@ -1326,6 +1328,25 @@ def enrich_action_with_field_capture(
         action["notes"] = " ".join([str(action.get("notes") or ""), *detail_lines]).strip()
 
 
+def enrich_action_with_field_bundle(action: dict[str, Any], condition: dict[str, Any] | None) -> None:
+    if not condition:
+        return
+    bundle = condition.get("bundle")
+    if not isinstance(bundle, str) or not bundle.strip():
+        return
+    action["command"] = shell_command(
+        {"VISION_NAV_BUNDLE": bundle},
+        "./scripts/pi/validate_terrain_bundle.sh",
+    )
+    action["field_bundle"] = bundle
+    action["notes"] = " ".join(
+        [
+            str(action.get("notes") or ""),
+            f"Selected field-plan bundle: {bundle}.",
+        ]
+    ).strip()
+
+
 def strict_support_bundle_actions(field_next_condition: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     actions = [dict(action) for action in STRICT_SUPPORT_BUNDLE_ACTIONS]
     for action in actions:
@@ -1335,7 +1356,8 @@ def strict_support_bundle_actions(field_next_condition: dict[str, Any] | None = 
                 field_next_condition,
                 append_runtime_status_read=True,
             )
-            break
+        elif action.get("desktop_action") == "Mission Planner > GNSS-Denied Prep, Build Bundle, Upload Bundle":
+            enrich_action_with_field_bundle(action, field_next_condition)
     return actions
 
 

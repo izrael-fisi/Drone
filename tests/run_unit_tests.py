@@ -4348,6 +4348,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "status": "placeholder",
                             "expected": "degraded",
                             "case_name": "unit-blur",
+                            "bundle": str(root / "map_bundles/unit_bundle"),
                             "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
                             "metadata_update_command": "./scripts/pi/update_field_capture_metadata.sh --condition blur",
                             "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur",
@@ -4435,6 +4436,28 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             not in field_plan_bundle["field_collection_registration_commands"]
         ):
             raise AssertionError("autonomy readiness JSON missing field registration command bundle")
+        expected_bundle_validate_command = (
+            f"VISION_NAV_BUNDLE={shlex.quote(str(root / 'map_bundles/unit_bundle'))} \\\n"
+            "  ./scripts/pi/validate_terrain_bundle.sh"
+        )
+        missing_support_with_next_field = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            field_collection_plan_path=incomplete_field_collection_plan,
+        )
+        missing_support_check = next(
+            check
+            for check in missing_support_with_next_field["checks"]
+            if check.get("name") == "support_bundle_bench_readiness"
+        )
+        missing_support_bench_actions = missing_support_check["details"]["bench_evidence_actions"]
+        if not any(
+            action.get("command") == expected_bundle_validate_command
+            and action.get("field_bundle") == str(root / "map_bundles/unit_bundle")
+            for action in missing_support_bench_actions
+            if isinstance(action, dict)
+        ):
+            raise AssertionError("autonomy readiness missing support preview should use selected field bundle")
         field_plan_command_items = field_plan_bundle.get("command_items")
         if not isinstance(field_plan_command_items, list):
             raise AssertionError("autonomy readiness JSON missing structured field command items")
@@ -4624,6 +4647,34 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             runtime_actions[0]["desktop_action"],
             "Module Setup > Field Log Capture, then Runtime Status and Bench Report",
             "autonomy readiness runtime status desktop action",
+        )
+        missing_bundle_manifest = root / "support_manifest_without_bundle.json"
+        missing_bundle_data = json.loads(direct_report_support_manifest.read_text())
+        missing_bundle_data.pop("bundle", None)
+        missing_bundle_manifest.write_text(json.dumps(missing_bundle_data))
+        missing_bundle_with_next_field = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=missing_bundle_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            field_collection_plan_path=incomplete_field_collection_plan,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_ready_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
+        )
+        field_bundle_health_actions = [
+            action
+            for action in missing_bundle_with_next_field["next_actions"]
+            if action.get("check") == "support_bundle_bench_readiness.bundle_health"
+        ]
+        assert_equal(len(field_bundle_health_actions), 1, "autonomy readiness field bundle next action")
+        assert_equal(
+            field_bundle_health_actions[0]["command"],
+            expected_bundle_validate_command,
+            "autonomy readiness bundle action should validate selected field bundle",
         )
         missing_runtime_status_with_next_field = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
