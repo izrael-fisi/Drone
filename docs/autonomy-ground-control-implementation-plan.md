@@ -518,6 +518,9 @@ Status:
 - Done: downloaded autonomy-readiness report cards parse the referenced field
   collection plan when it is available locally, showing registered-vs-required
   counts and pending placeholder/missing collection conditions.
+- Done: downloaded autonomy-readiness report cards now surface
+  `field_collection_plan` as its own proof-status chip beside PX4, field
+  evidence, feature benchmark, threshold tuning, and ROS bag proof items.
 - Done: autonomy-readiness report cards fall back to the downloaded sibling
   `field_collection_plan.json` when a Pi-generated report still references the
   Pi-side absolute path.

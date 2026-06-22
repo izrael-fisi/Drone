@@ -1311,6 +1311,7 @@ function AutonomyReadinessReportList({
                 {[
                   ["support", report.summary.support_bundle_bench_readiness_status],
                   ["px4", report.summary.px4_receiver_proof_status],
+                  ["plan", report.summary.field_collection_plan_status],
                   ["field", report.summary.field_evidence_proof_status],
                   ["features", report.summary.feature_method_benchmark_status],
                   ["thresholds", report.summary.threshold_tuning_status],

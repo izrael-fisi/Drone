@@ -537,6 +537,7 @@ export interface AutonomyReadinessReportFile {
     passed_count?: number;
     support_bundle_bench_readiness_status?: "passed" | "failed" | "degraded" | string;
     px4_receiver_proof_status?: "passed" | "failed" | "degraded" | string;
+    field_collection_plan_status?: "passed" | "failed" | "degraded" | string;
     field_evidence_proof_status?: "passed" | "failed" | "degraded" | string;
     feature_method_benchmark_status?: "passed" | "failed" | "degraded" | string;
     threshold_tuning_status?: "passed" | "failed" | "degraded" | string;

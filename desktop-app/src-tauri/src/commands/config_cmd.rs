@@ -502,6 +502,7 @@ pub struct AutonomyReadinessSummary {
     pub passed_count: Option<u64>,
     pub support_bundle_bench_readiness_status: Option<String>,
     pub px4_receiver_proof_status: Option<String>,
+    pub field_collection_plan_status: Option<String>,
     pub field_evidence_proof_status: Option<String>,
     pub feature_method_benchmark_status: Option<String>,
     pub threshold_tuning_status: Option<String>,
@@ -2811,6 +2812,7 @@ fn autonomy_readiness_report_from_json(
                 .and_then(|value| value.as_u64()),
             support_bundle_bench_readiness_status: check_status("support_bundle_bench_readiness"),
             px4_receiver_proof_status: check_status("px4_receiver_proof"),
+            field_collection_plan_status: check_status("field_collection_plan"),
             field_evidence_proof_status: check_status("field_evidence_proof"),
             feature_method_benchmark_status: check_status("feature_method_benchmark"),
             threshold_tuning_status: check_status("threshold_tuning"),
@@ -4297,11 +4299,12 @@ mod tests {
                     "evidence_workflow_validation_report": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.validation.json",
                     "evidence_workflow_log_archive": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.logs.tar.gz"
                 },
-                "summary": {"failed": 2, "degraded": 1, "passed": 5},
+                "summary": {"failed": 4, "degraded": 1, "passed": 4},
                 "checks": [
                     {"name": "research_doc", "status": "passed", "message": "Research doc ready."},
                     {"name": "support_bundle_bench_readiness", "status": "failed", "message": "Support bundle missing."},
                     {"name": "px4_receiver_proof", "status": "failed", "message": "Receiver proof missing."},
+                    {"name": "field_collection_plan", "status": "failed", "message": "Field collection plan is incomplete."},
                     {"name": "field_evidence_proof", "status": "degraded", "message": "Needs more logs."},
                     {"name": "feature_method_benchmark", "status": "passed", "message": "Benchmark present."},
                     {"name": "threshold_tuning", "status": "passed", "message": "Threshold report present."},
@@ -4761,12 +4764,16 @@ mod tests {
             package_summary.skipped_artifacts[0].reason.as_deref(),
             Some("too_large")
         );
-        assert_eq!(reports[0].summary.failed_count, Some(2));
+        assert_eq!(reports[0].summary.failed_count, Some(4));
         assert_eq!(
             reports[0]
                 .summary
                 .support_bundle_bench_readiness_status
                 .as_deref(),
+            Some("failed")
+        );
+        assert_eq!(
+            reports[0].summary.field_collection_plan_status.as_deref(),
             Some("failed")
         );
         assert_eq!(
@@ -4784,7 +4791,7 @@ mod tests {
             reports[0].summary.rosbag2_cli_review_status.as_deref(),
             Some("failed")
         );
-        assert_eq!(reports[0].checks.len(), 8);
+        assert_eq!(reports[0].checks.len(), 9);
         assert_eq!(reports[0].next_actions.len(), 3);
         assert_eq!(
             reports[0].next_actions[0].desktop_action.as_deref(),
