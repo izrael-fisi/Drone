@@ -454,7 +454,11 @@ action hint so the operator can return to Mission Planner, build/upload the
 bundle, then rerun preflight. The same report includes ordered `next_actions`
 for bundle prep, capture, metadata completion, and registration, with blocked
 steps listing the prerequisite checks they are waiting on. It does not create
-or register field evidence.
+or register field evidence. When the default preflight report exists,
+`create_support_bundle.sh` copies it under `extras/field_capture_preflights/`,
+publishes the parseable report under `summaries/field_capture_preflights/`, and
+rolls up readiness flags, failed/degraded checks, and next-action counts in
+`support_manifest.json`.
 
 `runtime_status.json` is the quick operator snapshot. It names the active map
 bundle, output path, latest frame, estimator health, last match status/reason,
@@ -831,6 +835,9 @@ When the default
 `create_support_bundle.sh` also copies it and the sibling Markdown checklist
 under `extras/field_collection_plans/`, then publishes parsed JSON under
 `summaries/field_collection_plans/`.
+When `~/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json`
+exists, the same support bundle also preserves the selected condition preflight
+report plus its ordered next actions.
 
 To include PX4 SITL receiver evidence, save the PX4 console outputs from
 repeated `listener vehicle_visual_odometry` commands and `mavlink status`, then pass those files

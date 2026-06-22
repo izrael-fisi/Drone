@@ -2135,6 +2135,66 @@ RC8_OPTION,90
             )
         )
         field_collection_plan.with_suffix(".md").write_text("# Field Evidence Collection Plan\n")
+        field_capture_preflight = root / "field_capture_preflight.json"
+        field_capture_preflight.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_field_capture_preflight_v1",
+                    "status": "failed",
+                    "plan_path": str(field_collection_plan),
+                    "repo_root": str(Path.cwd()),
+                    "condition": "good_texture",
+                    "case_name": "unit-good_texture",
+                    "expected": "good_map",
+                    "bundle_path": str(root / "missing-mission-bundle"),
+                    "bundle_validation_command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                    "ready_for_capture": False,
+                    "ready_for_registration": False,
+                    "capture_output_dir": str(root / "field-captures" / "good_texture"),
+                    "source_log": str(root / "field-captures" / "good_texture" / "terrain_matches.jsonl"),
+                    "runtime_status_path": str(root / "field-captures" / "good_texture" / "runtime_status.json"),
+                    "summary": {"passed": 5, "degraded": 1, "failed": 1},
+                    "checks": [
+                        {
+                            "name": "bundle_path",
+                            "status": "failed",
+                            "message": "Mission bundle is missing.",
+                            "details": {
+                                "path": str(root / "missing-mission-bundle"),
+                                "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                                "validation_command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                            },
+                        },
+                        {
+                            "name": "capture_metadata",
+                            "status": "degraded",
+                            "message": "Capture metadata still needs operator-filled field values.",
+                            "details": {"issue_count": 2, "issues": ["operator is required", "lighting is required"]},
+                        },
+                    ],
+                    "next_actions": [
+                        {
+                            "id": "prepare_bundle",
+                            "status": "action_required",
+                            "title": "Build, upload, or validate the selected terrain bundle.",
+                            "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                            "command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                            "bundle_path": str(root / "missing-mission-bundle"),
+                        },
+                        {
+                            "id": "capture_field_terrain_log",
+                            "status": "blocked",
+                            "title": "Capture the terrain log and runtime status for this condition.",
+                            "desktop_action": "Module Setup > Field Log Capture",
+                            "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+                            "waits_on": ["bundle_path"],
+                            "source_log": str(root / "field-captures" / "good_texture" / "terrain_matches.jsonl"),
+                            "runtime_status_path": str(root / "field-captures" / "good_texture" / "runtime_status.json"),
+                        },
+                    ],
+                }
+            )
+        )
         field_capture_log = root / "field-captures" / "good_texture" / "terrain_matches.jsonl"
         field_capture_log.parent.mkdir(parents=True)
         field_capture_log.write_text(
@@ -2344,6 +2404,7 @@ RC8_OPTION,90
             feature_method_benchmark_paths=[str(feature_benchmark_dir)],
             field_evidence_report_paths=[str(field_evidence_report)],
             field_collection_plan_paths=[str(field_collection_plan)],
+            field_capture_preflight_paths=[str(field_capture_preflight)],
             threshold_tuning_report_paths=[str(threshold_tuning_report)],
             rosbag_export_validation_paths=[str(rosbag_export_validation)],
             rosbag2_cli_review_paths=[str(rosbag2_cli_review)],
@@ -2385,6 +2446,7 @@ RC8_OPTION,90
             "summaries/feature_method_benchmarks/unit-method-benchmark-01.json",
             "summaries/field_evidence/field_manifest-01.json",
             "summaries/field_collection_plans/field_manifest-01.json",
+            "summaries/field_capture_preflights/good_texture-01.json",
             "summaries/threshold_tuning/field_manifest-01.json",
             "summaries/rosbag_export_validations/vision_nav_rosbag_jsonl_v1-01.json",
             "summaries/rosbag2_cli_reviews/rosbag2-native-01.json",
@@ -2405,6 +2467,7 @@ RC8_OPTION,90
             "extras/ardupilot_params/ardupilot.params",
             "extras/feature_method_benchmarks/feature-method-bench/unit-method-benchmark.json",
             "extras/field_evidence/field_evidence_report.json",
+            "extras/field_capture_preflights/field_capture_preflight.json",
             "extras/threshold_tuning/threshold_tuning_report.json",
             "extras/rosbag_export_validations/rosbag-jsonl-validation.json",
             "extras/rosbag2_cli_reviews/rosbag2-cli-review.json",
@@ -2478,6 +2541,41 @@ RC8_OPTION,90
             raise AssertionError("Expected support field collection condition to preserve metadata update command text")
         if "register_field_replay_case.sh" not in field_collection_condition.get("register_command", ""):
             raise AssertionError("Expected support field collection condition to preserve registration command text")
+        assert_equal(
+            manifest["field_capture_preflights"]["status"],
+            "failed",
+            "support field capture preflight status",
+        )
+        assert_equal(
+            manifest["field_capture_preflights"]["report_count"],
+            1,
+            "support field capture preflight count",
+        )
+        assert_equal(
+            manifest["field_capture_preflights"]["failed_check_count"],
+            1,
+            "support field capture preflight failed check count",
+        )
+        assert_equal(
+            manifest["field_capture_preflights"]["degraded_check_count"],
+            1,
+            "support field capture preflight degraded check count",
+        )
+        assert_equal(
+            manifest["field_capture_preflights"]["blocked_action_count"],
+            1,
+            "support field capture preflight blocked action count",
+        )
+        assert_equal(
+            manifest["field_capture_preflights"]["reports"][0]["failed_checks"][0]["name"],
+            "bundle_path",
+            "support field capture preflight failed check",
+        )
+        assert_equal(
+            manifest["field_capture_preflights"]["reports"][0]["next_actions"][0]["id"],
+            "prepare_bundle",
+            "support field capture preflight next action",
+        )
         assert_equal(
             manifest["logs"]["runtime_statuses"][0]["schema_version"],
             "vision_nav_runtime_status_v1",

@@ -58,6 +58,14 @@ pub struct SupportBundleSummary {
     pub field_collection_plan_capture_output_dir_count: Option<u64>,
     pub field_collection_plan_runtime_status_path_count: Option<u64>,
     pub field_collection_plan_condition_source_log_count: Option<u64>,
+    pub field_capture_preflight_status: Option<String>,
+    pub field_capture_preflight_report_count: Option<u64>,
+    pub field_capture_preflight_ready_for_capture_count: Option<u64>,
+    pub field_capture_preflight_ready_for_registration_count: Option<u64>,
+    pub field_capture_preflight_failed_check_count: Option<u64>,
+    pub field_capture_preflight_degraded_check_count: Option<u64>,
+    pub field_capture_preflight_next_action_count: Option<u64>,
+    pub field_capture_preflight_blocked_action_count: Option<u64>,
     pub threshold_tuning_status: Option<String>,
     pub threshold_tuning_field_case_count: Option<u64>,
     pub threshold_tuning_capture_metadata_issue_count: Option<u64>,
@@ -348,6 +356,53 @@ pub struct SupportBundleFieldCollectionPlanReport {
     pub next_condition: Option<FieldCollectionPlanCondition>,
     pub summary: FieldCollectionPlanSummary,
     pub conditions: Vec<FieldCollectionPlanCondition>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleFieldCapturePreflightCheck {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub message: Option<String>,
+    pub path: Option<String>,
+    pub desktop_action: Option<String>,
+    pub validation_command: Option<String>,
+    pub missing: Option<serde_json::Value>,
+    pub issue_count: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleFieldCapturePreflightAction {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub title: Option<String>,
+    pub desktop_action: Option<String>,
+    pub command: Option<String>,
+    pub waits_on: Vec<String>,
+    pub bundle_path: Option<String>,
+    pub capture_output_dir: Option<String>,
+    pub source_log: Option<String>,
+    pub runtime_status_path: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleFieldCapturePreflightReport {
+    pub status: Option<String>,
+    pub plan_path: Option<String>,
+    pub repo_root: Option<String>,
+    pub condition: Option<String>,
+    pub case_name: Option<String>,
+    pub expected: Option<String>,
+    pub bundle_path: Option<String>,
+    pub bundle_validation_command: Option<String>,
+    pub ready_for_capture: Option<bool>,
+    pub ready_for_registration: Option<bool>,
+    pub capture_output_dir: Option<String>,
+    pub source_log: Option<String>,
+    pub runtime_status_path: Option<String>,
+    pub summary: Option<serde_json::Value>,
+    pub checks: Vec<SupportBundleFieldCapturePreflightCheck>,
+    pub next_actions: Vec<SupportBundleFieldCapturePreflightAction>,
 }
 
 #[derive(Serialize)]
@@ -906,6 +961,7 @@ pub struct SupportBundleDetails {
     pub feature_method_benchmark_reports: Vec<SupportBundleFeatureMethodBenchmarkReport>,
     pub field_evidence_reports: Vec<SupportBundleFieldEvidenceReport>,
     pub field_collection_plan_reports: Vec<SupportBundleFieldCollectionPlanReport>,
+    pub field_capture_preflight_reports: Vec<SupportBundleFieldCapturePreflightReport>,
     pub threshold_tuning_reports: Vec<SupportBundleThresholdTuningReport>,
     pub rosbag_export_validation_reports: Vec<SupportBundleRosbagExportValidationReport>,
     pub rosbag2_cli_review_reports: Vec<SupportBundleRosbag2CliReviewReport>,
@@ -1232,6 +1288,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut feature_method_benchmark_reports = Vec::new();
     let mut field_evidence_reports = Vec::new();
     let mut field_collection_plan_reports = Vec::new();
+    let mut field_capture_preflight_reports = Vec::new();
     let mut threshold_tuning_reports = Vec::new();
     let mut rosbag_export_validation_reports = Vec::new();
     let mut rosbag2_cli_review_reports = Vec::new();
@@ -1304,6 +1361,14 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
                     field_collection_plan_reports.push(report);
                 }
             }
+        } else if name.starts_with("summaries/field_capture_preflights/")
+            && name.ends_with(".json")
+        {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                if let Some(report) = field_capture_preflight_report_from_json(&value) {
+                    field_capture_preflight_reports.push(report);
+                }
+            }
         } else if name.starts_with("summaries/threshold_tuning/") && name.ends_with(".json") {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 threshold_tuning_reports.push(threshold_tuning_report_from_json(&value));
@@ -1354,6 +1419,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         feature_method_benchmark_reports,
         field_evidence_reports,
         field_collection_plan_reports,
+        field_capture_preflight_reports,
         threshold_tuning_reports,
         rosbag_export_validation_reports,
         rosbag2_cli_review_reports,
@@ -3984,6 +4050,98 @@ fn field_collection_plan_report_from_json(
     })
 }
 
+fn field_capture_preflight_check_from_json(
+    value: &serde_json::Value,
+) -> SupportBundleFieldCapturePreflightCheck {
+    SupportBundleFieldCapturePreflightCheck {
+        name: json_string(value.get("name")),
+        status: json_string(value.get("status")),
+        message: json_string(value.get("message")),
+        path: json_string(value.get("path"))
+            .or_else(|| json_string(value.pointer("/details/path"))),
+        desktop_action: json_string(value.get("desktop_action"))
+            .or_else(|| json_string(value.pointer("/details/desktop_action"))),
+        validation_command: json_string(value.get("validation_command"))
+            .or_else(|| json_string(value.pointer("/details/validation_command"))),
+        missing: value
+            .get("missing")
+            .cloned()
+            .or_else(|| value.pointer("/details/missing").cloned()),
+        issue_count: value
+            .get("issue_count")
+            .or_else(|| value.pointer("/details/issue_count"))
+            .and_then(|value| value.as_u64()),
+    }
+}
+
+fn field_capture_preflight_action_from_json(
+    value: &serde_json::Value,
+) -> SupportBundleFieldCapturePreflightAction {
+    SupportBundleFieldCapturePreflightAction {
+        id: json_string(value.get("id")),
+        status: json_string(value.get("status")),
+        title: json_string(value.get("title")),
+        desktop_action: json_string(value.get("desktop_action")),
+        command: json_string(value.get("command")),
+        waits_on: json_string_array(value.get("waits_on")),
+        bundle_path: json_string(value.get("bundle_path")),
+        capture_output_dir: json_string(value.get("capture_output_dir")),
+        source_log: json_string(value.get("source_log")),
+        runtime_status_path: json_string(value.get("runtime_status_path")),
+        notes: json_string(value.get("notes")),
+    }
+}
+
+fn field_capture_preflight_report_from_json(
+    value: &serde_json::Value,
+) -> Option<SupportBundleFieldCapturePreflightReport> {
+    if value.get("schema_version").and_then(|value| value.as_str())
+        != Some("vision_nav_field_capture_preflight_v1")
+    {
+        return None;
+    }
+    let checks = value
+        .get("checks")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(field_capture_preflight_check_from_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let next_actions = value
+        .get("next_actions")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(field_capture_preflight_action_from_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Some(SupportBundleFieldCapturePreflightReport {
+        status: json_string(value.get("status")),
+        plan_path: json_string(value.get("plan_path")),
+        repo_root: json_string(value.get("repo_root")),
+        condition: json_string(value.get("condition")),
+        case_name: json_string(value.get("case_name")),
+        expected: json_string(value.get("expected")),
+        bundle_path: json_string(value.get("bundle_path")),
+        bundle_validation_command: json_string(value.get("bundle_validation_command")),
+        ready_for_capture: value.get("ready_for_capture").and_then(|value| value.as_bool()),
+        ready_for_registration: value
+            .get("ready_for_registration")
+            .and_then(|value| value.as_bool()),
+        capture_output_dir: json_string(value.get("capture_output_dir")),
+        source_log: json_string(value.get("source_log")),
+        runtime_status_path: json_string(value.get("runtime_status_path")),
+        summary: value.get("summary").cloned(),
+        checks,
+        next_actions,
+    })
+}
+
 fn autonomy_evidence_blockers_from_value(
     value: Option<&serde_json::Value>,
 ) -> Vec<AutonomyReadinessEvidenceBlocker> {
@@ -4198,6 +4356,11 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
     {
         return Some("field collection plan".to_string());
     }
+    if lower_name.starts_with("summaries/field_capture_preflights/")
+        && lower_name.ends_with(".json")
+    {
+        return Some("field capture preflight".to_string());
+    }
     if lower_name.starts_with("summaries/threshold_tuning/") && lower_name.ends_with(".json") {
         return Some("threshold tuning report".to_string());
     }
@@ -4234,6 +4397,9 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
     {
         if lower_name.starts_with("extras/field_collection_plans/") {
             return Some("field collection artifact".to_string());
+        }
+        if lower_name.starts_with("extras/field_capture_preflights/") {
+            return Some("field capture preflight artifact".to_string());
         }
         if lower_name.starts_with("extras/rosbag2_cli_reviews/") {
             return Some("rosbag2 cli artifact".to_string());
@@ -4542,6 +4708,30 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         field_collection_plan_condition_source_log_count: manifest
             .pointer("/field_collection_plans/condition_source_log_count")
             .and_then(|value| value.as_u64()),
+        field_capture_preflight_status: json_string(
+            manifest.pointer("/field_capture_preflights/status"),
+        ),
+        field_capture_preflight_report_count: manifest
+            .pointer("/field_capture_preflights/report_count")
+            .and_then(|value| value.as_u64()),
+        field_capture_preflight_ready_for_capture_count: manifest
+            .pointer("/field_capture_preflights/ready_for_capture_count")
+            .and_then(|value| value.as_u64()),
+        field_capture_preflight_ready_for_registration_count: manifest
+            .pointer("/field_capture_preflights/ready_for_registration_count")
+            .and_then(|value| value.as_u64()),
+        field_capture_preflight_failed_check_count: manifest
+            .pointer("/field_capture_preflights/failed_check_count")
+            .and_then(|value| value.as_u64()),
+        field_capture_preflight_degraded_check_count: manifest
+            .pointer("/field_capture_preflights/degraded_check_count")
+            .and_then(|value| value.as_u64()),
+        field_capture_preflight_next_action_count: manifest
+            .pointer("/field_capture_preflights/next_action_count")
+            .and_then(|value| value.as_u64()),
+        field_capture_preflight_blocked_action_count: manifest
+            .pointer("/field_capture_preflights/blocked_action_count")
+            .and_then(|value| value.as_u64()),
         threshold_tuning_status: json_string(manifest.pointer("/threshold_tuning/status")),
         threshold_tuning_field_case_count: manifest
             .pointer("/threshold_tuning/field_case_count")
@@ -4611,6 +4801,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.feature_method_benchmark_status.is_none()
         && summary.field_evidence_status.is_none()
         && summary.field_collection_plan_status.is_none()
+        && summary.field_capture_preflight_status.is_none()
         && summary.threshold_tuning_status.is_none()
         && summary.rosbag_export_validation_status.is_none()
         && summary.rosbag2_cli_review_status.is_none()
@@ -4871,6 +5062,16 @@ mod tests {
                 "runtime_status_path_count": 8,
                 "condition_source_log_count": 8
             },
+            "field_capture_preflights": {
+                "status": "failed",
+                "report_count": 1,
+                "ready_for_capture_count": 0,
+                "ready_for_registration_count": 0,
+                "failed_check_count": 1,
+                "degraded_check_count": 1,
+                "next_action_count": 2,
+                "blocked_action_count": 1
+            },
             "threshold_tuning": {
                 "status": "passed",
                 "report_count": 1,
@@ -4981,6 +5182,23 @@ mod tests {
             summary.field_collection_plan_condition_source_log_count,
             Some(8)
         );
+        assert_eq!(
+            summary.field_capture_preflight_status.as_deref(),
+            Some("failed")
+        );
+        assert_eq!(summary.field_capture_preflight_report_count, Some(1));
+        assert_eq!(
+            summary.field_capture_preflight_ready_for_capture_count,
+            Some(0)
+        );
+        assert_eq!(
+            summary.field_capture_preflight_ready_for_registration_count,
+            Some(0)
+        );
+        assert_eq!(summary.field_capture_preflight_failed_check_count, Some(1));
+        assert_eq!(summary.field_capture_preflight_degraded_check_count, Some(1));
+        assert_eq!(summary.field_capture_preflight_next_action_count, Some(2));
+        assert_eq!(summary.field_capture_preflight_blocked_action_count, Some(1));
         assert_eq!(summary.threshold_tuning_status.as_deref(), Some("passed"));
         assert_eq!(summary.threshold_tuning_field_case_count, Some(8));
         assert_eq!(
@@ -7267,6 +7485,74 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write field collection plan");
+            zip.start_file(
+                "summaries/field_capture_preflights/good_texture-01.json",
+                options,
+            )
+            .expect("field capture preflight entry");
+            zip.write_all(
+                serde_json::json!({
+                    "schema_version": "vision_nav_field_capture_preflight_v1",
+                    "status": "failed",
+                    "plan_path": "field_collection_plan.json",
+                    "repo_root": "/home/user/Drone",
+                    "condition": "good_texture",
+                    "case_name": "unit-good",
+                    "expected": "good_map",
+                    "bundle_path": "/home/user/drone-data/map_bundles/mission_bundle",
+                    "bundle_validation_command": "VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh",
+                    "ready_for_capture": false,
+                    "ready_for_registration": false,
+                    "capture_output_dir": "field-captures/good_texture",
+                    "source_log": "field-captures/good_texture/terrain_matches.jsonl",
+                    "runtime_status_path": "field-captures/good_texture/runtime_status.json",
+                    "summary": {"passed": 5, "degraded": 1, "failed": 1},
+                    "checks": [
+                        {
+                            "name": "bundle_path",
+                            "status": "failed",
+                            "message": "Mission bundle is missing.",
+                            "details": {
+                                "path": "/home/user/drone-data/map_bundles/mission_bundle",
+                                "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                                "validation_command": "VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh"
+                            }
+                        },
+                        {
+                            "name": "capture_metadata",
+                            "status": "degraded",
+                            "message": "Capture metadata still needs operator-filled field values.",
+                            "details": {
+                                "issue_count": 2,
+                                "missing": ["operator", "lighting"]
+                            }
+                        }
+                    ],
+                    "next_actions": [
+                        {
+                            "id": "prepare_bundle",
+                            "status": "action_required",
+                            "title": "Build, upload, or validate the selected terrain bundle.",
+                            "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                            "command": "VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh",
+                            "bundle_path": "/home/user/drone-data/map_bundles/mission_bundle"
+                        },
+                        {
+                            "id": "capture_field_terrain_log",
+                            "status": "blocked",
+                            "title": "Capture the terrain log and runtime status for this condition.",
+                            "desktop_action": "Module Setup > Field Log Capture",
+                            "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+                            "waits_on": ["bundle_path"],
+                            "source_log": "field-captures/good_texture/terrain_matches.jsonl",
+                            "runtime_status_path": "field-captures/good_texture/runtime_status.json"
+                        }
+                    ]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write field capture preflight");
             zip.start_file("summaries/threshold_tuning/field_manifest-01.json", options)
                 .expect("threshold tuning entry");
             zip.write_all(
@@ -7411,6 +7697,13 @@ mod tests {
             zip.write_all(b"# Field Evidence Collection Plan\n")
                 .expect("write field collection markdown");
             zip.start_file(
+                "extras/field_capture_preflights/field_capture_preflight.json",
+                options,
+            )
+            .expect("field capture preflight artifact entry");
+            zip.write_all(br#"{"schema_version":"vision_nav_field_capture_preflight_v1"}"#)
+                .expect("write field capture preflight artifact");
+            zip.start_file(
                 "extras/rosbag2_cli_reviews/rosbag2-cli-review.json",
                 options,
             )
@@ -7428,7 +7721,7 @@ mod tests {
         }
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
-        assert_eq!(details.entry_count, 20);
+        assert_eq!(details.entry_count, 22);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(
@@ -7649,6 +7942,47 @@ mod tests {
         assert!(details.artifacts.iter().any(|artifact| {
             artifact.path == "extras/field_collection_plans/field_collection_plan.md"
                 && artifact.kind == "field collection artifact"
+        }));
+        assert_eq!(details.field_capture_preflight_reports.len(), 1);
+        assert_eq!(
+            details.field_capture_preflight_reports[0]
+                .status
+                .as_deref(),
+            Some("failed")
+        );
+        assert_eq!(
+            details.field_capture_preflight_reports[0]
+                .condition
+                .as_deref(),
+            Some("good_texture")
+        );
+        assert_eq!(
+            details.field_capture_preflight_reports[0].ready_for_capture,
+            Some(false)
+        );
+        assert_eq!(details.field_capture_preflight_reports[0].checks.len(), 2);
+        assert_eq!(
+            details.field_capture_preflight_reports[0].checks[0]
+                .validation_command
+                .as_deref(),
+            Some("VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh")
+        );
+        assert_eq!(
+            details.field_capture_preflight_reports[0].checks[1].issue_count,
+            Some(2)
+        );
+        assert_eq!(
+            details.field_capture_preflight_reports[0].next_actions[1]
+                .waits_on,
+            vec!["bundle_path".to_string()]
+        );
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "summaries/field_capture_preflights/good_texture-01.json"
+                && artifact.kind == "field capture preflight"
+        }));
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "extras/field_capture_preflights/field_capture_preflight.json"
+                && artifact.kind == "field capture preflight artifact"
         }));
         assert_eq!(details.threshold_tuning_reports.len(), 1);
         assert_eq!(

@@ -235,6 +235,7 @@ function supportBundleDiagnosticsSnapshot(bundle: SupportBundleFile, details: Su
     feature_method_benchmark_reports: details.feature_method_benchmark_reports.slice(0, 4),
     field_evidence_reports: details.field_evidence_reports.slice(0, 4),
     field_collection_plan_reports: details.field_collection_plan_reports.slice(0, 4),
+    field_capture_preflight_reports: details.field_capture_preflight_reports.slice(0, 4),
     threshold_tuning_reports: details.threshold_tuning_reports.slice(0, 4),
     rosbag2_cli_review_reports: details.rosbag2_cli_review_reports.slice(0, 4),
   };

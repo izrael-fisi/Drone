@@ -71,6 +71,12 @@ def parse_args() -> argparse.Namespace:
         help="Field collection plan JSON report. Can be repeated. Sibling Markdown checklists are copied when present.",
     )
     parser.add_argument(
+        "--field-capture-preflight",
+        action="append",
+        default=[],
+        help="Field capture preflight JSON report. Can be repeated.",
+    )
+    parser.add_argument(
         "--threshold-tuning-report",
         action="append",
         default=[],
@@ -1238,6 +1244,145 @@ def copy_field_collection_plans(paths: list[str], support_dir: Path) -> dict[str
     }
 
 
+def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    checks = []
+    failed_checks = []
+    degraded_checks = []
+    for check in report.get("checks") or []:
+        if not isinstance(check, dict):
+            continue
+        item = {
+            "name": check.get("name"),
+            "status": check.get("status"),
+            "message": check.get("message"),
+        }
+        details = check.get("details")
+        if isinstance(details, dict):
+            if details.get("path") is not None:
+                item["path"] = details.get("path")
+            if details.get("desktop_action") is not None:
+                item["desktop_action"] = details.get("desktop_action")
+            if details.get("validation_command") is not None:
+                item["validation_command"] = details.get("validation_command")
+            if details.get("missing") is not None:
+                item["missing"] = details.get("missing")
+            if details.get("issue_count") is not None:
+                item["issue_count"] = details.get("issue_count")
+        checks.append(item)
+        if item.get("status") == "failed":
+            failed_checks.append(item)
+        elif item.get("status") == "degraded":
+            degraded_checks.append(item)
+
+    next_actions = []
+    for action in report.get("next_actions") or []:
+        if not isinstance(action, dict):
+            continue
+        next_actions.append(
+            {
+                "id": action.get("id"),
+                "status": action.get("status"),
+                "title": action.get("title"),
+                "desktop_action": action.get("desktop_action"),
+                "command": action.get("command"),
+                "waits_on": action.get("waits_on") or [],
+                "bundle_path": action.get("bundle_path"),
+                "capture_output_dir": action.get("capture_output_dir"),
+                "source_log": action.get("source_log"),
+                "runtime_status_path": action.get("runtime_status_path"),
+                "notes": action.get("notes"),
+            }
+        )
+
+    return {
+        "path": str(report_path),
+        "status": report.get("status"),
+        "plan_path": report.get("plan_path"),
+        "repo_root": report.get("repo_root"),
+        "condition": report.get("condition"),
+        "case_name": report.get("case_name"),
+        "expected": report.get("expected"),
+        "bundle_path": report.get("bundle_path"),
+        "bundle_validation_command": report.get("bundle_validation_command"),
+        "ready_for_capture": report.get("ready_for_capture") is True,
+        "ready_for_registration": report.get("ready_for_registration") is True,
+        "capture_output_dir": report.get("capture_output_dir"),
+        "source_log": report.get("source_log"),
+        "runtime_status_path": report.get("runtime_status_path"),
+        "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},
+        "check_count": len(checks),
+        "failed_checks": failed_checks,
+        "degraded_checks": degraded_checks,
+        "checks": checks,
+        "next_action_count": len(next_actions),
+        "blocked_action_count": sum(1 for action in next_actions if action.get("status") == "blocked"),
+        "next_actions": next_actions,
+    }
+
+
+def copy_field_capture_preflights(paths: list[str], support_dir: Path) -> dict[str, Any]:
+    if not paths:
+        return {"status": "not_provided", "report_count": 0}
+
+    summary_dir = support_dir / "summaries" / "field_capture_preflights"
+    raw_dir = support_dir / "extras" / "field_capture_preflights"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"Field capture preflight report is missing: {source}"})
+            continue
+        if source.is_dir():
+            copied.append(copy_tree(source, raw_dir / safe_relpath(source)))
+            json_files = sorted(source.rglob("*.json"))
+        else:
+            copied.append(copy_file(source, raw_dir / source.name))
+            json_files = [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception as exc:
+                issues.append({"severity": "warning", "message": f"Could not parse field capture preflight {report_file}: {exc}"})
+                continue
+            if not isinstance(report, dict) or report.get("schema_version") != "vision_nav_field_capture_preflight_v1":
+                continue
+            report_summary = summarize_field_capture_preflight(report, report_path=report_file)
+            reports.append(report_summary)
+            output_name = f"{sanitize_filename(str(report_summary.get('condition') or report_file.stem))}-{len(reports):02d}.json"
+            (summary_dir / output_name).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+    statuses = {str(report.get("status") or "").lower() for report in reports}
+    if missing or "failed" in statuses:
+        status = "failed"
+    elif not reports:
+        status = "degraded" if issues else "not_provided"
+    elif statuses.intersection({"degraded", "warming_up"}):
+        status = "degraded"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "report_count": len(reports),
+        "reports": reports,
+        "ready_for_capture_count": sum(1 for report in reports if report.get("ready_for_capture") is True),
+        "ready_for_registration_count": sum(1 for report in reports if report.get("ready_for_registration") is True),
+        "failed_check_count": sum(len(report.get("failed_checks") or []) for report in reports),
+        "degraded_check_count": sum(len(report.get("degraded_checks") or []) for report in reports),
+        "next_action_count": sum(int(report.get("next_action_count") or 0) for report in reports),
+        "blocked_action_count": sum(int(report.get("blocked_action_count") or 0) for report in reports),
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
 def summarize_threshold_tuning_report(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     margins = {}
@@ -1645,6 +1790,7 @@ def create_support_bundle(
     feature_method_benchmark_paths: list[str] | None = None,
     field_evidence_report_paths: list[str] | None = None,
     field_collection_plan_paths: list[str] | None = None,
+    field_capture_preflight_paths: list[str] | None = None,
     threshold_tuning_report_paths: list[str] | None = None,
     rosbag_export_validation_paths: list[str] | None = None,
     rosbag2_cli_review_paths: list[str] | None = None,
@@ -1732,6 +1878,10 @@ def create_support_bundle(
         field_collection_plan_paths or [],
         support_dir,
     )
+    field_capture_preflights = copy_field_capture_preflights(
+        field_capture_preflight_paths or [],
+        support_dir,
+    )
     threshold_tuning = copy_threshold_tuning_reports(
         threshold_tuning_report_paths or [],
         support_dir,
@@ -1764,6 +1914,7 @@ def create_support_bundle(
         "feature_method_benchmarks": feature_method_benchmarks,
         "field_evidence": field_evidence,
         "field_collection_plans": field_collection_plans,
+        "field_capture_preflights": field_capture_preflights,
         "threshold_tuning": threshold_tuning,
         "rosbag_export_validations": rosbag_export_validations,
         "rosbag2_cli_reviews": rosbag2_cli_reviews,
@@ -1830,6 +1981,12 @@ def print_human(result: dict[str, Any]) -> None:
             "Field collection plans: "
             f"{field_collection_plans.get('status')} ({field_collection_plans.get('report_count')} plan(s))"
         )
+    field_capture_preflights = manifest.get("field_capture_preflights") or {}
+    if field_capture_preflights.get("status") not in {None, "not_provided"}:
+        print(
+            "Field capture preflights: "
+            f"{field_capture_preflights.get('status')} ({field_capture_preflights.get('report_count')} report(s))"
+        )
     threshold_tuning = manifest.get("threshold_tuning") or {}
     if threshold_tuning.get("status") not in {None, "not_provided"}:
         print(f"Threshold tuning: {threshold_tuning.get('status')} ({threshold_tuning.get('report_count')} report(s))")
@@ -1871,6 +2028,7 @@ def main() -> None:
         feature_method_benchmark_paths=args.feature_method_benchmark,
         field_evidence_report_paths=args.field_evidence_report,
         field_collection_plan_paths=args.field_collection_plan,
+        field_capture_preflight_paths=args.field_capture_preflight,
         threshold_tuning_report_paths=args.threshold_tuning_report,
         rosbag_export_validation_paths=args.rosbag_export_validation,
         rosbag2_cli_review_paths=args.rosbag2_cli_review,

@@ -892,6 +892,76 @@ function SupportBundleDetailPanel({
         </div>
       )}
 
+      {details.field_capture_preflight_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Field capture preflight</div>
+          {details.field_capture_preflight_reports.slice(0, 2).map((report, index) => {
+            const commandActions = report.next_actions.filter((action) => action.command);
+            return (
+              <div key={`${report.condition}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={statusClass(report.status)}>
+                    {statusIcon(report.status)}
+                    {formatLabel(report.status)}
+                  </span>
+                  <span className="font-mono text-slate-400 truncate">{formatLabel(report.condition)}</span>
+                  <span className={report.ready_for_capture ? "badge-green" : "badge-red"}>
+                    {statusIcon(report.ready_for_capture ? "passed" : "failed")}
+                    capture {report.ready_for_capture ? "ready" : "blocked"}
+                  </span>
+                  <span className={report.ready_for_registration ? "badge-green" : "badge-yellow"}>
+                    {statusIcon(report.ready_for_registration ? "passed" : "degraded")}
+                    register {report.ready_for_registration ? "ready" : "waiting"}
+                  </span>
+                  {commandActions.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(commandActions.map((action) => `# ${formatLabel(action.id)}\n${action.command}`).join("\n\n"))}
+                      className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                      title="Copy field preflight next-action commands"
+                    >
+                      <Clipboard size={9} />
+                      copy actions
+                    </button>
+                  )}
+                </div>
+                <div className="font-mono text-slate-500 truncate">
+                  bundle {formatLabel(report.bundle_path)} / log {formatLabel(report.source_log)}
+                </div>
+                {report.checks.filter((check) => check.status !== "passed").length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {report.checks.filter((check) => check.status !== "passed").slice(0, 6).map((check) => (
+                      <span key={`${report.condition}-${check.name}`} className={statusClass(check.status)} title={check.message}>
+                        {statusIcon(check.status)}
+                        {formatLabel(check.name)} {formatLabel(check.status)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {commandActions.length > 0 && (
+                  <div className="space-y-1 pt-0.5">
+                    {commandActions.slice(0, 4).map((action, actionIndex) => (
+                      <button
+                        key={`${report.condition}-${action.id}-${actionIndex}`}
+                        type="button"
+                        onClick={() => action.command && navigator.clipboard.writeText(action.command)}
+                        className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/50 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
+                        title={action.command}
+                      >
+                        <Clipboard size={9} className="shrink-0" />
+                        <span className="shrink-0 text-slate-500">{formatLabel(action.id)}</span>
+                        <span className={statusClass(action.status)}>{formatLabel(action.status)}</span>
+                        <span className="truncate whitespace-pre">{action.command}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {details.threshold_tuning_reports.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Threshold tuning</div>
@@ -1195,6 +1265,12 @@ export function SupportBundleList({
                     plan {formatLabel(bundle.summary.field_collection_plan_status)}
                   </span>
                 )}
+                {bundle.summary.field_capture_preflight_status && bundle.summary.field_capture_preflight_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.field_capture_preflight_status)}>
+                    {statusIcon(bundle.summary.field_capture_preflight_status)}
+                    preflight {formatLabel(bundle.summary.field_capture_preflight_status)}
+                  </span>
+                )}
                 {bundle.summary.threshold_tuning_status && bundle.summary.threshold_tuning_status !== "not_provided" && (
                   <span className={statusClass(bundle.summary.threshold_tuning_status)}>
                     {statusIcon(bundle.summary.threshold_tuning_status)}
@@ -1279,6 +1355,10 @@ export function SupportBundleList({
                   <span>plan metadata cmds {bundle.summary.field_collection_plan_pending_metadata_update_command_count ?? 0}</span>
                   <span>plan source logs {bundle.summary.field_collection_plan_condition_source_log_count ?? 0}</span>
                   <span>plan runtime paths {bundle.summary.field_collection_plan_runtime_status_path_count ?? 0}</span>
+                  <span>preflight {formatLabel(bundle.summary.field_capture_preflight_status)}</span>
+                  <span>preflight ready {bundle.summary.field_capture_preflight_ready_for_capture_count ?? 0}</span>
+                  <span>preflight failed checks {bundle.summary.field_capture_preflight_failed_check_count ?? 0}</span>
+                  <span>preflight blocked actions {bundle.summary.field_capture_preflight_blocked_action_count ?? 0}</span>
                   <span>thresholds {formatLabel(bundle.summary.threshold_tuning_status)}</span>
                   <span>threshold cases {bundle.summary.threshold_tuning_field_case_count ?? 0}</span>
                   <span>threshold metadata issues {bundle.summary.threshold_tuning_capture_metadata_issue_count ?? 0}</span>

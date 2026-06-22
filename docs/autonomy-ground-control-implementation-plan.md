@@ -628,6 +628,10 @@ Status:
   Markdown checklist under `extras/field_collection_plans/`, publish parsed
   plan JSON under `summaries/field_collection_plans/`, and preserve the
   intended field-coverage plan for support review.
+- Done: support bundles ingest field-capture preflight reports, copy the raw
+  JSON under `extras/field_capture_preflights/`, publish parseable reports under
+  `summaries/field_capture_preflights/`, and roll up readiness flags,
+  failed/degraded checks, and blocked next-action counts for support review.
 - Done: support bundles now auto-ingest existing runtime logs referenced by
   field collection plans, including sibling `runtime_status.json` snapshots, so
   per-condition field captures are included in bench evidence without requiring

@@ -184,6 +184,14 @@ export interface SupportBundleFile {
     field_collection_plan_capture_output_dir_count?: number;
     field_collection_plan_runtime_status_path_count?: number;
     field_collection_plan_condition_source_log_count?: number;
+    field_capture_preflight_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    field_capture_preflight_report_count?: number;
+    field_capture_preflight_ready_for_capture_count?: number;
+    field_capture_preflight_ready_for_registration_count?: number;
+    field_capture_preflight_failed_check_count?: number;
+    field_capture_preflight_degraded_check_count?: number;
+    field_capture_preflight_next_action_count?: number;
+    field_capture_preflight_blocked_action_count?: number;
     threshold_tuning_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     threshold_tuning_field_case_count?: number;
     threshold_tuning_capture_metadata_issue_count?: number;
@@ -378,6 +386,45 @@ export interface SupportBundleDetails {
         next_condition?: FieldCollectionPlanCondition;
         conditions: FieldCollectionPlanCondition[];
       }>;
+  field_capture_preflight_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    plan_path?: string;
+    repo_root?: string;
+    condition?: string;
+    case_name?: string;
+    expected?: string;
+    bundle_path?: string;
+    bundle_validation_command?: string;
+    ready_for_capture?: boolean;
+    ready_for_registration?: boolean;
+    capture_output_dir?: string;
+    source_log?: string;
+    runtime_status_path?: string;
+    summary?: unknown;
+    checks: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+      path?: string;
+      desktop_action?: string;
+      validation_command?: string;
+      missing?: unknown;
+      issue_count?: number;
+    }>;
+    next_actions: Array<{
+      id?: string;
+      status?: "ready" | "blocked" | "action_required" | string;
+      title?: string;
+      desktop_action?: string;
+      command?: string;
+      waits_on: string[];
+      bundle_path?: string;
+      capture_output_dir?: string;
+      source_log?: string;
+      runtime_status_path?: string;
+      notes?: string;
+    }>;
+  }>;
   threshold_tuning_reports: Array<{
     status?: "passed" | "failed" | "degraded" | string;
     method?: string;
