@@ -770,6 +770,10 @@ Status:
   its Markdown checklist after capture or registration, and the workflow
   validator treats that refresh as an auditable required step before feature
   benchmarking, support-bundle packaging, and final readiness audit.
+- Done: the Pi Evidence Workflow now treats an already-created field evidence
+  template and active manifest as a passed idempotent prerequisite, and can
+  seed a missing active manifest from an existing template instead of recording
+  a permanent skipped step.
 - Done: local and goal-status autonomy audits now regenerate workflow
   validation from the current `autonomy_evidence_workflow.json` when available,
   then surface non-passing workflow validation status, next required step,

@@ -182,6 +182,12 @@ cat >"$workflow_smoke_dir/px4-sitl-session/px4_sitl_evidence_session.json" <<EOF
   "rate_hz": 5.0
 }
 EOF
+PYTHONPATH=src python3 -m vision_nav.field_evidence_template \
+  --output "$workflow_smoke_dir/field_manifest.template.json" \
+  --site-name preflight-workflow \
+  --bundle preflight-bundle \
+  --seed-manifest "$workflow_smoke_dir/field_manifest.json" \
+  >"$workflow_smoke_dir/preseed_field_template.txt"
 VISION_NAV_PYTHON=python3 \
 VISION_NAV_EVIDENCE_WORKFLOW_DIR="$workflow_smoke_dir/workflow" \
 VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" \
@@ -228,6 +234,10 @@ report = json.loads(Path(sys.argv[1]).read_text())
 assert report["schema_version"] == "vision_nav_autonomy_evidence_workflow_v1"
 steps = {step["name"]: step for step in report["steps"]}
 assert "create_field_evidence_template" in steps
+assert steps["create_field_evidence_template"]["status"] == "passed"
+assert "idempotent prerequisite" in steps["create_field_evidence_template"]["notes"]
+assert "__VISION_NAV_FIELD_TEMPLATE__" in steps["create_field_evidence_template"]["markers"]
+assert "__VISION_NAV_FIELD_MANIFEST__" in steps["create_field_evidence_template"]["markers"]
 assert "create_field_collection_plan" in steps
 assert "capture_field_terrain_log" in steps
 assert steps["capture_field_terrain_log"]["status"] == "passed"

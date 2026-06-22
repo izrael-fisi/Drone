@@ -590,7 +590,41 @@ PY
 }
 
 if [[ -f "$field_template" && -f "$field_manifest" && "${VISION_NAV_EVIDENCE_WORKFLOW_REFRESH_TEMPLATE:-0}" != "1" ]]; then
-  skip_step "create_field_evidence_template" "Field template and active manifest already exist. Set VISION_NAV_EVIDENCE_WORKFLOW_REFRESH_TEMPLATE=1 and template force variables if you need to regenerate them."
+  pass_step "create_field_evidence_template" \
+    "Field template and active manifest already exist; treating this idempotent prerequisite as satisfied." \
+    "__VISION_NAV_FIELD_TEMPLATE__=$field_template" \
+    "__VISION_NAV_FIELD_MANIFEST__=$field_manifest"
+elif [[ -f "$field_template" && ! -f "$field_manifest" && "${VISION_NAV_EVIDENCE_WORKFLOW_REFRESH_TEMPLATE:-0}" != "1" ]]; then
+  seed_log_path="$log_dir/create_field_evidence_template.log"
+  set +e
+  PYTHONPATH="$repo_root/src" "$venv_python" - "$field_template" "$field_manifest" >"$seed_log_path" 2>&1 <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+template_path = Path(sys.argv[1]).expanduser()
+manifest_path = Path(sys.argv[2]).expanduser()
+template = json.loads(template_path.read_text(encoding="utf-8"))
+if not isinstance(template, dict) or not isinstance(template.get("cases"), list):
+    raise SystemExit(f"Field template is not a replay manifest template with cases: {template_path}")
+manifest_path.parent.mkdir(parents=True, exist_ok=True)
+manifest_path.write_text(json.dumps(template, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+print(f"Seeded active field manifest from existing template: {manifest_path}")
+print(f"__VISION_NAV_FIELD_TEMPLATE__={template_path}")
+print(f"__VISION_NAV_FIELD_MANIFEST__={manifest_path}")
+PY
+  seed_exit=$?
+  set -e
+  echo
+  echo "== create_field_evidence_template =="
+  cat "$seed_log_path"
+  if [[ "$seed_exit" -eq 0 ]]; then
+    record_step "create_field_evidence_template" "passed" "$seed_exit" "$seed_log_path" "Field template already existed; seeded the missing active manifest from it."
+  else
+    record_step "create_field_evidence_template" "failed" "$seed_exit" "$seed_log_path" "Existing field template could not seed the missing active manifest."
+  fi
 else
   run_step "create_field_evidence_template" ./scripts/pi/create_field_evidence_template.sh
 fi
