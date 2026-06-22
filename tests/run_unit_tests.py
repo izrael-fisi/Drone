@@ -3542,6 +3542,60 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 }
             )
         )
+        field_capture_preflight = root / "field_capture_preflight.json"
+        field_capture_preflight.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_field_capture_preflight_v1",
+                    "status": "failed",
+                    "plan_path": str(field_collection_plan),
+                    "repo_root": str(Path.cwd()),
+                    "condition": "good_texture",
+                    "case_name": "unit-good_texture",
+                    "expected": "good_map",
+                    "bundle_path": str(root / "missing-mission-bundle"),
+                    "bundle_validation_command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                    "ready_for_capture": False,
+                    "ready_for_registration": False,
+                    "capture_output_dir": str(root / "field-captures" / "good_texture"),
+                    "source_log": str(root / "field-captures" / "good_texture" / "terrain_matches.jsonl"),
+                    "runtime_status_path": str(root / "field-captures" / "good_texture" / "runtime_status.json"),
+                    "summary": {"passed": 5, "degraded": 0, "failed": 1},
+                    "checks": [
+                        {
+                            "name": "bundle_path",
+                            "status": "failed",
+                            "message": "Mission bundle is missing.",
+                            "details": {
+                                "path": str(root / "missing-mission-bundle"),
+                                "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                                "validation_command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                            },
+                        }
+                    ],
+                    "next_actions": [
+                        {
+                            "id": "prepare_bundle",
+                            "status": "action_required",
+                            "title": "Build, upload, or validate the selected terrain bundle.",
+                            "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                            "command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                            "bundle_path": str(root / "missing-mission-bundle"),
+                        },
+                        {
+                            "id": "capture_field_terrain_log",
+                            "status": "blocked",
+                            "title": "Capture the terrain log and runtime status for this condition.",
+                            "desktop_action": "Module Setup > Field Log Capture",
+                            "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+                            "waits_on": ["bundle_path"],
+                            "source_log": str(root / "field-captures" / "good_texture" / "terrain_matches.jsonl"),
+                            "runtime_status_path": str(root / "field-captures" / "good_texture" / "runtime_status.json"),
+                        },
+                    ],
+                }
+            )
+        )
         threshold_report = root / "threshold_tuning.json"
         threshold_report.write_text(
             json.dumps(
@@ -3792,6 +3846,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             research_doc_path=research_doc,
             implementation_plan_path=implementation_plan,
             px4_sitl_prereq_path=px4_prereq_report,
+            field_capture_preflight_path=field_capture_preflight,
         )
         missing_proof_phases = {phase["id"]: phase for phase in missing_proof_ready["proof_runbook"]["phases"]}
         assert_equal(
@@ -3804,8 +3859,27 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "failed",
             "autonomy readiness px4 prereq diagnostic status",
         )
+        assert_equal(
+            missing_proof_ready["inputs"]["field_capture_preflight"],
+            str(field_capture_preflight),
+            "autonomy readiness field capture preflight diagnostic input",
+        )
+        assert_equal(
+            missing_proof_ready["diagnostics"]["field_capture_preflight"]["status"],
+            "failed",
+            "autonomy readiness field capture preflight diagnostic status",
+        )
+        assert_equal(
+            missing_proof_ready["diagnostics"]["field_capture_preflight"]["failed_checks"][0]["name"],
+            "bundle_path",
+            "autonomy readiness field capture preflight failed check",
+        )
         if "px4_sitl_prereqs" in {item.get("name") for item in missing_proof_ready["evidence_manifest"]["proof_items"]}:
             raise AssertionError("PX4 prerequisite diagnostics must not become a goal proof item")
+        if "field_capture_preflight" in {
+            item.get("name") for item in missing_proof_ready["evidence_manifest"]["proof_items"]
+        }:
+            raise AssertionError("Field capture preflight diagnostics must not become a goal proof item")
         prereq_diagnostic_items = [
             item
             for item in missing_proof_ready["evidence_manifest"]["diagnostic_items"]
@@ -3816,6 +3890,22 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             prereq_diagnostic_items[0]["requires_external_proof"],
             False,
             "autonomy readiness px4 prereq diagnostic is not external proof",
+        )
+        preflight_diagnostic_items = [
+            item
+            for item in missing_proof_ready["evidence_manifest"]["diagnostic_items"]
+            if item.get("name") == "field_capture_preflight"
+        ]
+        assert_equal(len(preflight_diagnostic_items), 1, "autonomy readiness field capture preflight diagnostic item")
+        assert_equal(
+            preflight_diagnostic_items[0]["requires_external_proof"],
+            False,
+            "autonomy readiness field capture preflight diagnostic is not external proof",
+        )
+        assert_equal(
+            preflight_diagnostic_items[0]["ready_for_capture"],
+            False,
+            "autonomy readiness field capture preflight diagnostic capture readiness",
         )
         support_check = next(
             check
@@ -3904,6 +3994,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         missing_proof_command_bundle = missing_proof_ready["command_bundle"]
         missing_proof_next_commands = missing_proof_command_bundle["next_action_commands"]
         if (
+            f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh"
+            not in missing_proof_command_bundle["field_capture_preflight_next_action_commands"]
+        ):
+            raise AssertionError("autonomy readiness should expose field preflight next-action commands")
+        if (
             "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
             not in missing_proof_command_bundle["prerequisite_fix_commands"]
         ):
@@ -3919,6 +4014,13 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             if isinstance(item, dict)
         ):
             raise AssertionError("autonomy readiness missing structured PX4 capture command item")
+        if not any(
+            item.get("group") == "field_capture_preflight_next_action"
+            and item.get("desktop_action") == "Mission Planner > Build Bundle, Upload Bundle"
+            for item in missing_proof_command_items
+            if isinstance(item, dict)
+        ):
+            raise AssertionError("autonomy readiness missing structured field preflight command item")
         if (
             "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
             in missing_proof_command_bundle["next_action_commands"]

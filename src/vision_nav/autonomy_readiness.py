@@ -65,6 +65,7 @@ SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
 COMMAND_GROUP_DESKTOP_ACTIONS = {
     "guided_workflow": "Module Setup > Evidence Workflow",
     "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
+    "field_capture_preflight_next_action": "Module Setup > Field Capture Preflight",
     "field_collection_preflight": "Module Setup > Field Capture Preflight",
     "field_collection_capture": "Module Setup > Field Log Capture",
     "field_collection_metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
@@ -286,6 +287,10 @@ def parse_args() -> argparse.Namespace:
         help="Optional field collection plan JSON generated before real replay cases are complete.",
     )
     parser.add_argument(
+        "--field-capture-preflight",
+        help="Optional field capture preflight JSON generated before the next terrain-log capture.",
+    )
+    parser.add_argument(
         "--feature-method-benchmark-report",
         help="Optional feature-method benchmark report to evaluate directly.",
     )
@@ -328,6 +333,7 @@ def evaluate_autonomy_readiness(
     px4_sitl_prereq_path: str | Path | None = None,
     field_evidence_report_path: str | Path | None = None,
     field_collection_plan_path: str | Path | None = None,
+    field_capture_preflight_path: str | Path | None = None,
     feature_method_benchmark_report_path: str | Path | None = None,
     threshold_tuning_report_path: str | Path | None = None,
     rosbag_export_validation_path: str | Path | None = None,
@@ -386,6 +392,13 @@ def evaluate_autonomy_readiness(
         resolved_px4_sitl_prereq_path,
         explicit=px4_sitl_prereq_path is not None,
     )
+    resolved_field_capture_preflight_path = (
+        Path(field_capture_preflight_path).expanduser() if field_capture_preflight_path is not None else None
+    )
+    field_capture_preflight_diagnostic = summarize_field_capture_preflight_diagnostic(
+        resolved_field_capture_preflight_path,
+        explicit=field_capture_preflight_path is not None,
+    )
     inputs = {
         "research_doc": str(Path(research_doc_path).expanduser()),
         "implementation_plan": str(Path(implementation_plan_path).expanduser()),
@@ -398,6 +411,9 @@ def evaluate_autonomy_readiness(
         "field_evidence_report": str(Path(field_evidence_report_path).expanduser()) if field_evidence_report_path else None,
         "field_collection_plan": str(Path(field_collection_plan_path).expanduser()) if field_collection_plan_path else None,
         "field_collection_plan_markdown": str(field_collection_markdown_path) if field_collection_markdown_path else None,
+        "field_capture_preflight": (
+            str(resolved_field_capture_preflight_path) if resolved_field_capture_preflight_path is not None else None
+        ),
         "feature_method_benchmark_report": (
             str(Path(feature_method_benchmark_report_path).expanduser())
             if feature_method_benchmark_report_path
@@ -420,7 +436,7 @@ def evaluate_autonomy_readiness(
             str(Path(evidence_workflow_log_archive_path).expanduser()) if evidence_workflow_log_archive_path else None
         ),
     }
-    diagnostics = build_diagnostics(px4_sitl_prereq_diagnostic)
+    diagnostics = build_diagnostics(px4_sitl_prereq_diagnostic, field_capture_preflight_diagnostic)
     evidence_manifest = build_evidence_manifest(status, checks, inputs, next_actions, diagnostics=diagnostics)
     proof_runbook = build_proof_runbook(checks, next_actions, evidence_manifest)
     report = {
@@ -529,9 +545,14 @@ def build_command_bundle(
     )
     field_collection_registration_commands = field_collection_commands(field_collection_plan_path, "register_command")
     prerequisite_fix_commands = diagnostic_fix_commands(diagnostics)
+    field_capture_preflight_next_action_commands = diagnostic_next_action_commands(
+        diagnostics,
+        "field_capture_preflight",
+    )
     command_groups = {
         "guided_workflow": guided_workflow_commands,
         "prerequisite_fix": prerequisite_fix_commands,
+        "field_capture_preflight_next_action": field_capture_preflight_next_action_commands,
         "next_action": next_action_commands,
         "immediate_next_action": immediate_next_action_commands,
         "blocked_follow_up": blocked_follow_up_commands,
@@ -546,16 +567,18 @@ def build_command_bundle(
         "next_action_commands": next_action_commands,
         "immediate_next_action_commands": immediate_next_action_commands,
         "blocked_follow_up_commands": blocked_follow_up_commands,
+        "field_capture_preflight_next_action_commands": field_capture_preflight_next_action_commands,
         "field_collection_preflight_commands": field_collection_preflight_commands,
         "field_collection_capture_commands": field_collection_capture_commands,
         "field_collection_metadata_update_commands": field_collection_metadata_update_commands,
         "field_collection_registration_commands": field_collection_registration_commands,
-        "command_items": command_bundle_items(command_groups, next_actions, proof_runbook),
+        "command_items": command_bundle_items(command_groups, next_actions, proof_runbook, diagnostics),
         "command_count": len(
             unique_strings(
                 [
                     *guided_workflow_commands,
                     *prerequisite_fix_commands,
+                    *field_capture_preflight_next_action_commands,
                     *next_action_commands,
                     *field_collection_preflight_commands,
                     *field_collection_capture_commands,
@@ -571,8 +594,9 @@ def command_bundle_items(
     command_groups: dict[str, list[str]],
     next_actions: list[dict[str, Any]],
     proof_runbook: dict[str, Any] | None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
-    app_hints = command_app_hints(next_actions, proof_runbook)
+    app_hints = command_app_hints(next_actions, proof_runbook, diagnostics)
     items: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for group, commands in command_groups.items():
@@ -594,6 +618,7 @@ def command_bundle_items(
 def command_app_hints(
     next_actions: list[dict[str, Any]],
     proof_runbook: dict[str, Any] | None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     hints: dict[str, str] = {}
     for action in next_actions:
@@ -602,6 +627,12 @@ def command_app_hints(
     if isinstance(proof_runbook, dict):
         for phase in json_dict_list(proof_runbook.get("phases")):
             for action in json_dict_list(phase.get("actions")):
+                add_command_app_hint(hints, action.get("command"), action.get("desktop_action"))
+    if isinstance(diagnostics, dict):
+        for diagnostic in diagnostics.values():
+            if not isinstance(diagnostic, dict):
+                continue
+            for action in json_dict_list(diagnostic.get("next_actions")):
                 add_command_app_hint(hints, action.get("command"), action.get("desktop_action"))
     return hints
 
@@ -625,6 +656,21 @@ def diagnostic_fix_commands(diagnostics: dict[str, Any] | None) -> list[str]:
         for item in px4_prereqs.get("fix_commands") or []
         if isinstance(item, dict)
     )
+
+
+def diagnostic_next_action_commands(diagnostics: dict[str, Any] | None, name: str) -> list[str]:
+    if not isinstance(diagnostics, dict):
+        return []
+    diagnostic = diagnostics.get(name)
+    if not isinstance(diagnostic, dict):
+        return []
+    commands: list[Any] = []
+    for item in diagnostic.get("next_actions") or []:
+        if isinstance(item, dict):
+            commands.append(item.get("command"))
+        elif isinstance(item, str):
+            commands.append(item)
+    return unique_strings(commands)
 
 
 def proof_runbook_command_groups(
@@ -792,6 +838,32 @@ def evidence_diagnostic_items(diagnostics: dict[str, Any], inputs: dict[str, Any
                 "requires_external_proof": False,
             }
         )
+    field_preflight = diagnostics.get("field_capture_preflight") if isinstance(diagnostics, dict) else None
+    if isinstance(field_preflight, dict) and field_preflight.get("status") != "not_provided":
+        status = str(field_preflight.get("status") or "unknown")
+        if status == "passed":
+            message = "Field capture preflight is ready for capture and registration."
+        elif field_preflight.get("ready_for_capture"):
+            message = "Field capture preflight is ready to capture, but follow-up registration metadata is still diagnostic."
+        elif status == "failed":
+            message = "Field capture preflight is not ready; this is diagnostic only and does not satisfy field proof."
+        else:
+            message = "Field capture preflight report was recorded as a diagnostic artifact."
+        item = {
+            "name": "field_capture_preflight",
+            "status": status,
+            "message": message,
+            "source": str(field_preflight.get("path") or inputs.get("field_capture_preflight") or ""),
+            "requires_external_proof": False,
+            "condition": field_preflight.get("condition"),
+            "case_name": field_preflight.get("case_name"),
+            "ready_for_capture": field_preflight.get("ready_for_capture") is True,
+            "ready_for_registration": field_preflight.get("ready_for_registration") is True,
+            "failed_check_count": len(field_preflight.get("failed_checks") or []),
+            "degraded_check_count": len(field_preflight.get("degraded_checks") or []),
+            "blocked_action_count": int(field_preflight.get("blocked_action_count") or 0),
+        }
+        items.append(item)
     return items
 
 
@@ -1799,10 +1871,114 @@ def summarize_px4_sitl_prereq_diagnostic(path: Path | None, *, explicit: bool = 
     }
 
 
-def build_diagnostics(px4_sitl_prereq_diagnostic: dict[str, Any]) -> dict[str, Any]:
+def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit: bool = False) -> dict[str, Any]:
+    if path is None:
+        return {"status": "not_provided"}
+    if not path.exists():
+        if not explicit:
+            return {"status": "not_provided", "path": str(path)}
+        return {
+            "status": "failed",
+            "path": str(path),
+            "issues": [{"severity": "error", "message": "Field capture preflight report is missing."}],
+        }
+    try:
+        report = json.loads(path.read_text())
+        if not isinstance(report, dict):
+            raise ValueError("Field capture preflight report root must be an object")
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "path": str(path),
+            "issues": [{"severity": "error", "message": f"Field capture preflight report could not be parsed: {exc}"}],
+        }
+    if report.get("schema_version") != "vision_nav_field_capture_preflight_v1":
+        return {
+            "status": "failed",
+            "path": str(path),
+            "schema_version": report.get("schema_version"),
+            "issues": [{"severity": "error", "message": "Field capture preflight report schema is invalid."}],
+        }
+
+    checks = []
+    failed_checks = []
+    degraded_checks = []
+    for check in report.get("checks") or []:
+        if not isinstance(check, dict):
+            continue
+        item = {
+            "name": check.get("name"),
+            "status": check.get("status"),
+            "message": check.get("message"),
+        }
+        details = check.get("details")
+        if isinstance(details, dict):
+            for key in ("path", "desktop_action", "validation_command", "missing", "issue_count"):
+                if details.get(key) is not None:
+                    item[key] = details.get(key)
+        checks.append(item)
+        status = normalize_status(check.get("status"))
+        if status == "failed":
+            failed_checks.append(item)
+        elif status == "degraded":
+            degraded_checks.append(item)
+
+    next_actions = []
+    for action in report.get("next_actions") or []:
+        if not isinstance(action, dict):
+            continue
+        next_actions.append(
+            {
+                "id": action.get("id"),
+                "status": action.get("status"),
+                "title": action.get("title"),
+                "desktop_action": action.get("desktop_action"),
+                "command": action.get("command"),
+                "waits_on": action.get("waits_on") or [],
+                "bundle_path": action.get("bundle_path"),
+                "capture_output_dir": action.get("capture_output_dir"),
+                "source_log": action.get("source_log"),
+                "runtime_status_path": action.get("runtime_status_path"),
+                "notes": action.get("notes"),
+            }
+        )
+
+    return {
+        "status": normalize_status(report.get("status")) or "unknown",
+        "path": str(path),
+        "schema_version": report.get("schema_version"),
+        "plan_path": report.get("plan_path"),
+        "repo_root": report.get("repo_root"),
+        "condition": report.get("condition"),
+        "case_name": report.get("case_name"),
+        "expected": report.get("expected"),
+        "bundle_path": report.get("bundle_path"),
+        "bundle_validation_command": report.get("bundle_validation_command"),
+        "ready_for_capture": report.get("ready_for_capture") is True,
+        "ready_for_registration": report.get("ready_for_registration") is True,
+        "capture_output_dir": report.get("capture_output_dir"),
+        "source_log": report.get("source_log"),
+        "runtime_status_path": report.get("runtime_status_path"),
+        "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},
+        "checks": checks,
+        "failed_checks": failed_checks,
+        "degraded_checks": degraded_checks,
+        "next_actions": next_actions,
+        "next_action_count": len(next_actions),
+        "blocked_action_count": sum(1 for action in next_actions if action.get("status") == "blocked"),
+        "issues": [],
+    }
+
+
+def build_diagnostics(
+    px4_sitl_prereq_diagnostic: dict[str, Any],
+    field_capture_preflight_diagnostic: dict[str, Any],
+) -> dict[str, Any]:
     diagnostics: dict[str, Any] = {}
     if px4_sitl_prereq_diagnostic.get("status") != "not_provided":
         diagnostics["px4_sitl_prereqs"] = px4_sitl_prereq_diagnostic
+    if field_capture_preflight_diagnostic.get("status") != "not_provided":
+        diagnostics["field_capture_preflight"] = field_capture_preflight_diagnostic
     return diagnostics
 
 
@@ -2726,6 +2902,33 @@ def print_human(report: dict[str, Any]) -> None:
             for item in fix_commands:
                 label = item.get("label") or item.get("condition") or "command"
                 print(f"- {label}: {item.get('command')}")
+    field_preflight = diagnostics.get("field_capture_preflight") if isinstance(diagnostics, dict) else None
+    if isinstance(field_preflight, dict):
+        condition = field_preflight.get("condition") or "unknown"
+        print(
+            "Field capture preflight: "
+            f"{field_preflight.get('status', 'unknown')} for {condition}; "
+            f"capture ready={bool(field_preflight.get('ready_for_capture'))}, "
+            f"registration ready={bool(field_preflight.get('ready_for_registration'))}"
+        )
+        failed_checks = [
+            item
+            for item in field_preflight.get("failed_checks") or []
+            if isinstance(item, dict) and str(item.get("name") or "")
+        ]
+        if failed_checks:
+            print("Field capture preflight failed checks:")
+            for item in failed_checks:
+                print(f"- {item.get('name')}: {item.get('message')}")
+        next_actions = [
+            item
+            for item in field_preflight.get("next_actions") or []
+            if isinstance(item, dict) and str(item.get("command") or "")
+        ]
+        if next_actions:
+            print("Field capture preflight next actions:")
+            for item in next_actions:
+                print(f"- {item.get('title') or item.get('id')}: {item.get('command')}")
     if report.get("next_actions"):
         print("Next actions:")
         for action in report["next_actions"]:
@@ -2743,6 +2946,7 @@ def main() -> None:
         px4_sitl_prereq_path=args.px4_sitl_prereqs,
         field_evidence_report_path=args.field_evidence_report,
         field_collection_plan_path=args.field_collection_plan,
+        field_capture_preflight_path=args.field_capture_preflight,
         feature_method_benchmark_report_path=args.feature_method_benchmark_report,
         threshold_tuning_report_path=args.threshold_tuning_report,
         rosbag_export_validation_path=args.rosbag_export_validation,

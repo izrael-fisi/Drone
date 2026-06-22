@@ -14,6 +14,7 @@ local_feature_benchmark_dir="$local_output_root/feature-method-bench"
 support_bundle="${VISION_NAV_AUTONOMY_SUPPORT_BUNDLE:-}"
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$replay_dir/field_evidence_report.json}"
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$replay_dir/field_collection_plan.json}"
+field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-$replay_dir/field_capture_preflight.json}"
 feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$replay_dir/threshold_tuning_report.json}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$download_root/terrain-match/rosbag-jsonl-validation.json}"
@@ -310,6 +311,10 @@ if [[ -z "${VISION_NAV_FIELD_COLLECTION_PLAN:-}" && ! -f "$field_collection_plan
   field_collection_plan="$local_replay_dir/field_collection_plan.json"
 fi
 
+if [[ -z "${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-}" && ! -f "$field_capture_preflight" && -f "$local_replay_dir/field_capture_preflight.json" ]]; then
+  field_capture_preflight="$local_replay_dir/field_capture_preflight.json"
+fi
+
 if [[ -z "${VISION_NAV_THRESHOLD_TUNING_REPORT:-}" && ! -f "$threshold_tuning_report" && -f "$local_replay_dir/threshold_tuning_report.json" ]]; then
   threshold_tuning_report="$local_replay_dir/threshold_tuning_report.json"
 fi
@@ -382,6 +387,10 @@ if [[ -f "$field_collection_plan" ]]; then
   args+=(--field-collection-plan "$field_collection_plan")
 fi
 
+if [[ -f "$field_capture_preflight" ]]; then
+  args+=(--field-capture-preflight "$field_capture_preflight")
+fi
+
 if [[ -f "$feature_method_benchmark_report" ]]; then
   args+=(--feature-method-benchmark-report "$feature_method_benchmark_report")
 fi
@@ -434,6 +443,7 @@ Local autonomy readiness audit inputs:
   px4 prereq report:       $([[ -f "$px4_sitl_prereqs" ]] && printf '%s' "$px4_sitl_prereqs" || printf 'not found')
   field evidence report:   $([[ -f "$field_evidence_report" ]] && printf '%s' "$field_evidence_report" || printf 'not found')
   field collection plan:   $([[ -f "$field_collection_plan" ]] && printf '%s' "$field_collection_plan" || printf 'not found')
+  field capture preflight: $([[ -f "$field_capture_preflight" ]] && printf '%s' "$field_capture_preflight" || printf 'not found')
   feature benchmark report: $([[ -f "$feature_method_benchmark_report" ]] && printf '%s' "$feature_method_benchmark_report" || printf 'not found')
   threshold tuning report: $([[ -f "$threshold_tuning_report" ]] && printf '%s' "$threshold_tuning_report" || printf 'not found')
   rosbag validation report: $([[ -f "$rosbag_export_validation" ]] && printf '%s' "$rosbag_export_validation" || printf 'not found')
@@ -469,6 +479,10 @@ if [[ -f "$field_collection_plan" ]]; then
   if [[ -f "${field_collection_plan%.json}.md" ]]; then
     echo "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=${field_collection_plan%.json}.md"
   fi
+fi
+
+if [[ -f "$field_capture_preflight" ]]; then
+  echo "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__=$field_capture_preflight"
 fi
 
 if [[ -f "$feature_method_benchmark_report" ]]; then

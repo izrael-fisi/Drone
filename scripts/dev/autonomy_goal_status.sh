@@ -14,6 +14,7 @@ local_feature_benchmark_dir="$local_output_root/feature-method-bench"
 support_bundle="${VISION_NAV_AUTONOMY_SUPPORT_BUNDLE:-}"
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$replay_dir/field_evidence_report.json}"
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$replay_dir/field_collection_plan.json}"
+field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-$replay_dir/field_capture_preflight.json}"
 feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$replay_dir/threshold_tuning_report.json}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$download_root/terrain-match/rosbag-jsonl-validation.json}"
@@ -217,6 +218,10 @@ if [[ -z "${VISION_NAV_FIELD_COLLECTION_PLAN:-}" && ! -f "$field_collection_plan
   field_collection_plan="$local_replay_dir/field_collection_plan.json"
 fi
 
+if [[ -z "${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-}" && ! -f "$field_capture_preflight" && -f "$local_replay_dir/field_capture_preflight.json" ]]; then
+  field_capture_preflight="$local_replay_dir/field_capture_preflight.json"
+fi
+
 if [[ -z "${VISION_NAV_THRESHOLD_TUNING_REPORT:-}" && ! -f "$threshold_tuning_report" && -f "$local_replay_dir/threshold_tuning_report.json" ]]; then
   threshold_tuning_report="$local_replay_dir/threshold_tuning_report.json"
 fi
@@ -282,6 +287,10 @@ fi
 
 if [[ -f "$field_collection_plan" ]]; then
   args+=(--field-collection-plan "$field_collection_plan")
+fi
+
+if [[ -f "$field_capture_preflight" ]]; then
+  args+=(--field-capture-preflight "$field_capture_preflight")
 fi
 
 if [[ -f "$feature_method_benchmark_report" ]]; then
@@ -896,6 +905,69 @@ if field_conditions or next_field_condition:
             print(f"  - ... {len(remaining) - 12} more")
     if not next_field_condition or not next_field_condition.get("capture_command"):
         print("- create or refresh the Pi field collection plan to get condition-specific capture, metadata-update, and registration commands.")
+
+field_preflight = diagnostics.get("field_capture_preflight") if isinstance(diagnostics, dict) else None
+if isinstance(field_preflight, dict):
+    status = field_preflight.get("status") or "unknown"
+    should_print_preflight = (
+        status not in {"passed", "not_provided", None}
+        or field_preflight.get("failed_checks")
+        or field_preflight.get("degraded_checks")
+        or field_preflight.get("next_actions")
+    )
+    if should_print_preflight:
+        print()
+        print("Field capture preflight:")
+        condition = field_preflight.get("condition") or "unknown"
+        path = field_preflight.get("path") or inputs.get("field_capture_preflight") or "unknown"
+        print(
+            f"- {condition} [{status}]: {path} "
+            f"(capture ready: {'yes' if field_preflight.get('ready_for_capture') else 'no'}, "
+            f"registration ready: {'yes' if field_preflight.get('ready_for_registration') else 'no'})"
+        )
+        for label, key in (
+            ("bundle", "bundle_path"),
+            ("capture output", "capture_output_dir"),
+            ("terrain log", "source_log"),
+            ("runtime status", "runtime_status_path"),
+        ):
+            value = field_preflight.get(key)
+            if value:
+                print(f"  {label}: {value}")
+        failed_checks = [
+            item
+            for item in field_preflight.get("failed_checks") or []
+            if isinstance(item, dict)
+        ]
+        degraded_checks = [
+            item
+            for item in field_preflight.get("degraded_checks") or []
+            if isinstance(item, dict)
+        ]
+        for item in failed_checks[:6]:
+            print(f"  failed check: {item.get('name') or 'unknown'} - {item.get('message') or ''}")
+            command = item.get("validation_command")
+            if command:
+                print(f"    validation: {command}")
+        for item in degraded_checks[:4]:
+            print(f"  degraded check: {item.get('name') or 'unknown'} - {item.get('message') or ''}")
+        next_actions = [
+            item
+            for item in field_preflight.get("next_actions") or []
+            if isinstance(item, dict)
+        ]
+        if next_actions:
+            print("  next actions:")
+            for item in next_actions[:6]:
+                title = item.get("title") or item.get("id") or "preflight action"
+                item_status = item.get("status") or "unknown"
+                print(f"  - {title} [{item_status}]")
+                if item.get("desktop_action"):
+                    print(f"    app: {item.get('desktop_action')}")
+                if item.get("waits_on"):
+                    print(f"    waits on: {', '.join(str(value) for value in item.get('waits_on') or [])}")
+                if item.get("command"):
+                    print(f"    command: {item.get('command')}")
 
 px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
 if isinstance(px4_prereqs, dict):
