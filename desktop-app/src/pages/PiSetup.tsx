@@ -75,6 +75,7 @@ const SUPPORT_EVIDENCE_ENV =
 
 type WorkflowValidationSummary = NonNullable<AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"]>;
 type WorkflowValidationCheck = WorkflowValidationSummary["checks"][number];
+type EvidencePackageArtifact = NonNullable<AutonomyReadinessReportFile["evidence_package_summary"]>["missing_artifacts"][number];
 
 type AuthForm = "password" | "key";
 type StepStatus = "idle" | "running" | "passed" | "failed";
@@ -758,6 +759,67 @@ function formatReadinessLabel(value?: string | number | null) {
   return String(value).replace(/_/g, " ");
 }
 
+function evidenceArtifactLabel(artifact: EvidencePackageArtifact) {
+  return formatReadinessLabel((artifact.label ?? artifact.path ?? "artifact").replace(/^proof:/, "proof "));
+}
+
+function evidenceArtifactDetail(artifact: EvidencePackageArtifact) {
+  if (artifact.missing_conditions.length > 0) {
+    const missing = artifact.missing_conditions.slice(0, 3).map(formatReadinessLabel).join(", ");
+    const extra = artifact.missing_conditions.length > 3 ? ` +${artifact.missing_conditions.length - 3}` : "";
+    return `missing ${missing}${extra}`;
+  }
+  if (artifact.status) return formatReadinessLabel(artifact.status);
+  if (artifact.reason) return formatReadinessLabel(artifact.reason);
+  return "";
+}
+
+function evidenceArtifactTitle(artifact: EvidencePackageArtifact) {
+  return [
+    artifact.message,
+    artifact.reason && `reason: ${formatReadinessLabel(artifact.reason)}`,
+    artifact.status && `status: ${formatReadinessLabel(artifact.status)}`,
+    artifact.source && `source: ${formatReadinessLabel(artifact.source)}`,
+    artifact.path,
+    artifact.missing_conditions.length > 0
+      ? `missing: ${artifact.missing_conditions.map(formatReadinessLabel).join(", ")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function EvidencePackageArtifactPill({
+  artifact,
+  kind,
+  reportPath,
+  index,
+}: {
+  artifact: EvidencePackageArtifact;
+  kind: "included" | "missing" | "skipped";
+  reportPath: string;
+  index: number;
+}) {
+  const detail = evidenceArtifactDetail(artifact);
+  const style =
+    kind === "included"
+      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+      : kind === "missing"
+        ? "border-amber-500/20 bg-amber-500/10 text-amber-300"
+        : "border-slate-600/60 bg-slate-900/60 text-slate-400";
+
+  return (
+    <span
+      key={`${reportPath}-${kind}-artifact-${artifact.label ?? artifact.path ?? index}`}
+      className={cn("rounded border px-1.5 py-0.5 font-mono text-[10px]", style)}
+      title={evidenceArtifactTitle(artifact) || artifact.label || artifact.path || `${kind} artifact`}
+    >
+      {kind} {evidenceArtifactLabel(artifact)}
+      {detail && <span className="ml-1 opacity-80">{detail}</span>}
+    </span>
+  );
+}
+
 function validationCheckDetail(check: WorkflowValidationCheck) {
   if (check.missing_markers.length > 0) {
     const missing = check.missing_markers.slice(0, 3).map(formatReadinessLabel).join(", ");
@@ -1191,39 +1253,39 @@ function AutonomyReadinessReportList({
                       {report.evidence_package_summary.included_artifacts.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {report.evidence_package_summary.included_artifacts.slice(0, 4).map((artifact, index) => (
-                            <span
-                              key={`${report.path}-included-artifact-${artifact.label ?? index}`}
-                              className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300"
-                              title={artifact.path ?? artifact.label ?? "included artifact"}
-                            >
-                              included {formatReadinessLabel(artifact.label ?? artifact.path ?? "artifact")}
-                            </span>
+                            <EvidencePackageArtifactPill
+                              key={`${report.path}-included-artifact-${artifact.label ?? artifact.path ?? index}`}
+                              artifact={artifact}
+                              kind="included"
+                              reportPath={report.path}
+                              index={index}
+                            />
                           ))}
                         </div>
                       )}
                       {report.evidence_package_summary.missing_artifacts.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {report.evidence_package_summary.missing_artifacts.slice(0, 4).map((artifact, index) => (
-                            <span
-                              key={`${report.path}-missing-artifact-${artifact.label ?? index}`}
-                              className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-300"
-                              title={artifact.path ?? artifact.label ?? "missing artifact"}
-                            >
-                              missing {formatReadinessLabel(artifact.label ?? artifact.path ?? "artifact")}
-                            </span>
+                            <EvidencePackageArtifactPill
+                              key={`${report.path}-missing-artifact-${artifact.label ?? artifact.path ?? index}`}
+                              artifact={artifact}
+                              kind="missing"
+                              reportPath={report.path}
+                              index={index}
+                            />
                           ))}
                         </div>
                       )}
                       {report.evidence_package_summary.skipped_artifacts.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {report.evidence_package_summary.skipped_artifacts.slice(0, 4).map((artifact, index) => (
-                            <span
-                              key={`${report.path}-skipped-artifact-${artifact.label ?? index}`}
-                              className="rounded border border-slate-600/60 bg-slate-900/60 px-1.5 py-0.5 font-mono text-[10px] text-slate-400"
-                              title={[artifact.reason, artifact.path].filter(Boolean).join(" / ") || artifact.label || "skipped artifact"}
-                            >
-                              skipped {formatReadinessLabel(artifact.label ?? artifact.path ?? "artifact")}
-                            </span>
+                            <EvidencePackageArtifactPill
+                              key={`${report.path}-skipped-artifact-${artifact.label ?? artifact.path ?? index}`}
+                              artifact={artifact}
+                              kind="skipped"
+                              reportPath={report.path}
+                              index={index}
+                            />
                           ))}
                         </div>
                       )}

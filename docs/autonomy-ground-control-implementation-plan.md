@@ -693,6 +693,10 @@ Status:
   missing `proof:<check>` entries even when no artifact path exists yet, so an
   incomplete package cannot appear artifact-complete just because PX4, field,
   feature, threshold, or ROS proof has not been produced.
+- Done: Module Setup preserves and renders evidence-package missing proof-gate
+  metadata, including status, reason, message, source hints, and missing
+  condition keys, so the operator sees why each package proof placeholder is
+  missing without opening the ZIP manifest.
 - Done: the Pi and local autonomy-readiness wrappers emit
   `__VISION_NAV_PX4_SITL_REPORT__=...` when direct receiver proof is available,
   letting Module Setup download the receiver report beside the final audit.

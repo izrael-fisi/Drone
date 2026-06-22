@@ -1101,8 +1101,10 @@ included/missing/skipped artifact labels plus packaged proof pass counts and
 external-blocker counts. Missing package entries include failed required proof
 gates that do not have an artifact path yet, so an evidence ZIP cannot look
 complete just because the corresponding field, PX4, or ROS proof has not been
-created. When the downloaded JSON or evidence package includes a plan snapshot,
-the same card shows research marker/reference coverage and implementation
+created. The card keeps each missing proof gate's status, reason, message,
+source hint, and first missing condition keys when the package manifest provides
+them. When the downloaded JSON or evidence package includes a plan snapshot, the
+same card shows research marker/reference coverage and implementation
 track/task/done counts.
 The desktop support-bundle list can reveal
 downloaded ZIPs in the local file manager, copy their path, show compact

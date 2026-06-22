@@ -532,16 +532,28 @@ export interface AutonomyReadinessReportFile {
       label?: string;
       path?: string;
       reason?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+      source?: string;
+      missing_conditions: string[];
     }>;
     missing_artifacts: Array<{
       label?: string;
       path?: string;
       reason?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+      source?: string;
+      missing_conditions: string[];
     }>;
     skipped_artifacts: Array<{
       label?: string;
       path?: string;
       reason?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+      source?: string;
+      missing_conditions: string[];
     }>;
   };
   workflow_report_path?: string;

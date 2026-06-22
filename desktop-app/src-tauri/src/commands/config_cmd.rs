@@ -518,6 +518,10 @@ pub struct AutonomyEvidencePackageArtifactSummary {
     pub label: Option<String>,
     pub path: Option<String>,
     pub reason: Option<String>,
+    pub status: Option<String>,
+    pub message: Option<String>,
+    pub source: Option<String>,
+    pub missing_conditions: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -1974,6 +1978,10 @@ fn evidence_package_artifacts(
                         label: json_string(item.get("label")),
                         path: json_string(item.get("path")),
                         reason: json_string(item.get("reason")),
+                        status: json_string(item.get("status")),
+                        message: json_string(item.get("message")),
+                        source: json_string(item.get("source")),
+                        missing_conditions: json_string_array(item.get("missing_conditions")),
                     })
                 })
                 .collect()
@@ -4787,7 +4795,14 @@ mod tests {
                         {"label": "input:evidence_workflow_log_archive", "path": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.logs.tar.gz"}
                     ],
                     "missing": [
-                        {"label": "px4_receiver_proof"}
+                        {
+                            "label": "proof:field_evidence_proof",
+                            "reason": "proof_gate_not_passed",
+                            "status": "failed",
+                            "message": "Real field evidence is required for autonomy readiness.",
+                            "source": "support_bundle",
+                            "missing_conditions": ["good_texture", "wrong_map"]
+                        }
                     ],
                     "skipped": [
                         {"label": "large_support_bundle", "reason": "too_large"}
@@ -4956,7 +4971,27 @@ mod tests {
         );
         assert_eq!(
             package_summary.missing_artifacts[0].label.as_deref(),
-            Some("px4_receiver_proof")
+            Some("proof:field_evidence_proof")
+        );
+        assert_eq!(
+            package_summary.missing_artifacts[0].reason.as_deref(),
+            Some("proof_gate_not_passed")
+        );
+        assert_eq!(
+            package_summary.missing_artifacts[0].status.as_deref(),
+            Some("failed")
+        );
+        assert_eq!(
+            package_summary.missing_artifacts[0].message.as_deref(),
+            Some("Real field evidence is required for autonomy readiness.")
+        );
+        assert_eq!(
+            package_summary.missing_artifacts[0].source.as_deref(),
+            Some("support_bundle")
+        );
+        assert_eq!(
+            package_summary.missing_artifacts[0].missing_conditions,
+            vec!["good_texture".to_string(), "wrong_map".to_string()]
         );
         assert_eq!(
             package_summary.skipped_artifacts[0].label.as_deref(),
