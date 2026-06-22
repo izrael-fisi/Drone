@@ -51,6 +51,10 @@ pub struct SupportBundleSummary {
     pub field_collection_plan_registered_count: Option<u64>,
     pub field_collection_plan_required_count: Option<u64>,
     pub field_collection_plan_report_count: Option<u64>,
+    pub field_collection_plan_pending_capture_command_count: Option<u64>,
+    pub field_collection_plan_pending_registration_command_count: Option<u64>,
+    pub field_collection_plan_capture_output_dir_count: Option<u64>,
+    pub field_collection_plan_runtime_status_path_count: Option<u64>,
     pub threshold_tuning_status: Option<String>,
     pub threshold_tuning_field_case_count: Option<u64>,
     pub threshold_tuning_capture_metadata_issue_count: Option<u64>,
@@ -241,8 +245,14 @@ pub struct FieldCollectionPlanCondition {
     pub manifest_log_path: Option<String>,
     pub manifest_log_exists: Option<bool>,
     pub source_log: Option<String>,
+    pub legacy_source_log: Option<String>,
+    pub capture_output_dir: Option<String>,
+    pub runtime_status_path: Option<String>,
+    pub has_capture_command: Option<bool>,
+    pub has_register_command: Option<bool>,
     pub bundle: Option<String>,
     pub capture_metadata: Option<serde_json::Value>,
+    pub capture_command: Option<String>,
     pub register_command: Option<String>,
 }
 
@@ -259,6 +269,12 @@ pub struct FieldCollectionPlanFile {
     pub site_name: Option<String>,
     pub manifest_path: Option<String>,
     pub bundle: Option<String>,
+    pub capture_root: Option<String>,
+    pub pending_capture_command_count: Option<u64>,
+    pub pending_registration_command_count: Option<u64>,
+    pub capture_output_dir_count: Option<u64>,
+    pub runtime_status_path_count: Option<u64>,
+    pub condition_source_log_count: Option<u64>,
     pub summary: FieldCollectionPlanSummary,
     pub conditions: Vec<FieldCollectionPlanCondition>,
 }
@@ -270,6 +286,12 @@ pub struct SupportBundleFieldCollectionPlanReport {
     pub manifest_path: Option<String>,
     pub bundle: Option<String>,
     pub source_log: Option<String>,
+    pub capture_root: Option<String>,
+    pub pending_capture_command_count: Option<u64>,
+    pub pending_registration_command_count: Option<u64>,
+    pub capture_output_dir_count: Option<u64>,
+    pub runtime_status_path_count: Option<u64>,
+    pub condition_source_log_count: Option<u64>,
     pub summary: FieldCollectionPlanSummary,
     pub conditions: Vec<FieldCollectionPlanCondition>,
 }
@@ -3292,8 +3314,18 @@ fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCol
                         .get("manifest_log_exists")
                         .and_then(|value| value.as_bool()),
                     source_log: json_string(item.get("source_log")),
+                    legacy_source_log: json_string(item.get("legacy_source_log")),
+                    capture_output_dir: json_string(item.get("capture_output_dir")),
+                    runtime_status_path: json_string(item.get("runtime_status_path")),
+                    has_capture_command: item
+                        .get("has_capture_command")
+                        .and_then(|value| value.as_bool()),
+                    has_register_command: item
+                        .get("has_register_command")
+                        .and_then(|value| value.as_bool()),
                     bundle: json_string(item.get("bundle")),
                     capture_metadata: item.get("capture_metadata").cloned(),
+                    capture_command: json_string(item.get("capture_command")),
                     register_command: json_string(item.get("register_command")),
                 })
                 .collect::<Vec<_>>()
@@ -3311,6 +3343,22 @@ fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCol
         site_name: json_string(value.get("site_name")),
         manifest_path: json_string(value.get("manifest_path")),
         bundle: json_string(value.get("bundle")),
+        capture_root: json_string(value.get("capture_root")),
+        pending_capture_command_count: value
+            .get("pending_capture_command_count")
+            .and_then(|value| value.as_u64()),
+        pending_registration_command_count: value
+            .get("pending_registration_command_count")
+            .and_then(|value| value.as_u64()),
+        capture_output_dir_count: value
+            .get("capture_output_dir_count")
+            .and_then(|value| value.as_u64()),
+        runtime_status_path_count: value
+            .get("runtime_status_path_count")
+            .and_then(|value| value.as_u64()),
+        condition_source_log_count: value
+            .get("condition_source_log_count")
+            .and_then(|value| value.as_u64()),
         summary: FieldCollectionPlanSummary {
             required_count: value
                 .pointer("/summary/required_count")
@@ -3342,6 +3390,12 @@ fn field_collection_plan_report_from_json(
         manifest_path: plan.manifest_path,
         bundle: plan.bundle,
         source_log: json_string(value.get("source_log")),
+        capture_root: plan.capture_root,
+        pending_capture_command_count: plan.pending_capture_command_count,
+        pending_registration_command_count: plan.pending_registration_command_count,
+        capture_output_dir_count: plan.capture_output_dir_count,
+        runtime_status_path_count: plan.runtime_status_path_count,
+        condition_source_log_count: plan.condition_source_log_count,
         summary: plan.summary,
         conditions: plan.conditions,
     })
@@ -3805,6 +3859,18 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         field_collection_plan_report_count: manifest
             .pointer("/field_collection_plans/report_count")
             .and_then(|value| value.as_u64()),
+        field_collection_plan_pending_capture_command_count: manifest
+            .pointer("/field_collection_plans/pending_capture_command_count")
+            .and_then(|value| value.as_u64()),
+        field_collection_plan_pending_registration_command_count: manifest
+            .pointer("/field_collection_plans/pending_registration_command_count")
+            .and_then(|value| value.as_u64()),
+        field_collection_plan_capture_output_dir_count: manifest
+            .pointer("/field_collection_plans/capture_output_dir_count")
+            .and_then(|value| value.as_u64()),
+        field_collection_plan_runtime_status_path_count: manifest
+            .pointer("/field_collection_plans/runtime_status_path_count")
+            .and_then(|value| value.as_u64()),
         threshold_tuning_status: json_string(manifest.pointer("/threshold_tuning/status")),
         threshold_tuning_field_case_count: manifest
             .pointer("/threshold_tuning/field_case_count")
@@ -4068,7 +4134,11 @@ mod tests {
                 "status": "degraded",
                 "report_count": 1,
                 "registered_count": 3,
-                "required_count": 8
+                "required_count": 8,
+                "pending_capture_command_count": 5,
+                "pending_registration_command_count": 5,
+                "capture_output_dir_count": 8,
+                "runtime_status_path_count": 8
             },
             "threshold_tuning": {
                 "status": "passed",
@@ -4141,6 +4211,14 @@ mod tests {
         assert_eq!(summary.field_collection_plan_registered_count, Some(3));
         assert_eq!(summary.field_collection_plan_required_count, Some(8));
         assert_eq!(summary.field_collection_plan_report_count, Some(1));
+        assert_eq!(
+            summary.field_collection_plan_pending_capture_command_count,
+            Some(5)
+        );
+        assert_eq!(
+            summary.field_collection_plan_runtime_status_path_count,
+            Some(8)
+        );
         assert_eq!(summary.threshold_tuning_status.as_deref(), Some("passed"));
         assert_eq!(summary.threshold_tuning_field_case_count, Some(8));
         assert_eq!(
@@ -5677,6 +5755,12 @@ mod tests {
                     "manifest_path": "field_manifest.json",
                     "bundle": "mission-bundle",
                     "source_log": "terrain_matches.jsonl",
+                    "capture_root": "field-captures",
+                    "pending_capture_command_count": 1,
+                    "pending_registration_command_count": 1,
+                    "capture_output_dir_count": 2,
+                    "runtime_status_path_count": 2,
+                    "condition_source_log_count": 2,
                     "summary": {
                         "required_count": 3,
                         "registered_count": 1,
@@ -5685,8 +5769,8 @@ mod tests {
                         "missing_count": 0
                     },
                     "conditions": [
-                        {"condition": "good_texture", "label": "Good texture", "expected": "good_map", "status": "registered", "case_name": "unit-good", "manifest_log_exists": true},
-                        {"condition": "blur", "label": "Blur", "expected": "degraded", "status": "placeholder", "case_name": "unit-blur", "manifest_log_exists": false}
+                        {"condition": "good_texture", "label": "Good texture", "expected": "good_map", "status": "registered", "case_name": "unit-good", "manifest_log_exists": true, "source_log": "field-captures/good/terrain_matches.jsonl", "capture_output_dir": "field-captures/good", "runtime_status_path": "field-captures/good/runtime_status.json", "has_capture_command": true, "has_register_command": true},
+                        {"condition": "blur", "label": "Blur", "expected": "degraded", "status": "placeholder", "case_name": "unit-blur", "manifest_log_exists": false, "source_log": "field-captures/blur/terrain_matches.jsonl", "capture_output_dir": "field-captures/blur", "runtime_status_path": "field-captures/blur/runtime_status.json", "has_capture_command": true, "has_register_command": true}
                     ]
                 })
                 .to_string()
@@ -5958,7 +6042,31 @@ mod tests {
                 .registered_count,
             Some(1)
         );
+        assert_eq!(
+            details.field_collection_plan_reports[0].pending_capture_command_count,
+            Some(1)
+        );
+        assert_eq!(
+            details.field_collection_plan_reports[0].runtime_status_path_count,
+            Some(2)
+        );
         assert_eq!(details.field_collection_plan_reports[0].conditions.len(), 2);
+        assert_eq!(
+            details.field_collection_plan_reports[0].conditions[1]
+                .source_log
+                .as_deref(),
+            Some("field-captures/blur/terrain_matches.jsonl")
+        );
+        assert_eq!(
+            details.field_collection_plan_reports[0].conditions[1]
+                .runtime_status_path
+                .as_deref(),
+            Some("field-captures/blur/runtime_status.json")
+        );
+        assert_eq!(
+            details.field_collection_plan_reports[0].conditions[1].has_capture_command,
+            Some(true)
+        );
         assert!(details.artifacts.iter().any(|artifact| {
             artifact.path == "summaries/field_collection_plans/field_manifest-01.json"
                 && artifact.kind == "field collection plan"

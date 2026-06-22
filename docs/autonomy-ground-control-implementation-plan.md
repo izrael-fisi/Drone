@@ -501,6 +501,10 @@ Status:
   Markdown checklist under `extras/field_collection_plans/`, publish parsed
   plan JSON under `summaries/field_collection_plans/`, and preserve the
   intended field-coverage plan for support review.
+- Done: support-bundle field-collection summaries now preserve capture root,
+  per-condition source-log/capture-output/runtime-status paths, capture/register
+  command presence, and pending command counts so offline support review can
+  trace each required real-world condition to its intended log capture.
 - Done: downloaded support-bundle details show bundled field collection plan
   status, registered-vs-required counts, per-condition collection state, and
   extractable JSON/Markdown checklist artifacts.

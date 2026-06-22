@@ -1871,6 +1871,7 @@ RC8_OPTION,90
                     "site_name": "unit-field",
                     "bundle": str(bundle),
                     "source_log": str(log),
+                    "capture_root": str(root / "field-captures"),
                     "summary": {
                         "required_count": len(REQUIRED_FIELD_CONDITIONS),
                         "registered_count": len(REQUIRED_FIELD_CONDITIONS),
@@ -1886,6 +1887,11 @@ RC8_OPTION,90
                             "expected": "good_map",
                             "case_name": f"unit-{condition}",
                             "manifest_log_exists": True,
+                            "source_log": str(root / "field-captures" / condition / "terrain_matches.jsonl"),
+                            "capture_output_dir": str(root / "field-captures" / condition),
+                            "runtime_status_path": str(root / "field-captures" / condition / "runtime_status.json"),
+                            "capture_command": f"VISION_NAV_OUTPUT_DIR={root / 'field-captures' / condition} ./scripts/pi/run_terrain_nav_loop.sh",
+                            "register_command": f"VISION_NAV_FIELD_CONDITION={condition} ./scripts/pi/register_field_replay_case.sh",
                         }
                         for condition in REQUIRED_FIELD_CONDITIONS
                     ],
@@ -2056,6 +2062,21 @@ RC8_OPTION,90
             manifest["field_collection_plans"]["registered_count"],
             len(REQUIRED_FIELD_CONDITIONS),
             "support field collection plan registered count",
+        )
+        assert_equal(
+            manifest["field_collection_plans"]["capture_output_dir_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "support field collection capture output count",
+        )
+        assert_equal(
+            manifest["field_collection_plans"]["runtime_status_path_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "support field collection runtime status path count",
+        )
+        assert_equal(
+            manifest["field_collection_plans"]["reports"][0]["conditions"][0]["has_capture_command"],
+            True,
+            "support field collection condition capture command flag",
         )
         assert_equal(
             manifest["logs"]["runtime_statuses"][0]["schema_version"],
@@ -3631,6 +3652,16 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         assert_equal(plan["summary"]["required_count"], len(REQUIRED_FIELD_CONDITIONS), "field collection required count")
         assert_equal(plan["summary"]["placeholder_count"], len(REQUIRED_FIELD_CONDITIONS), "field collection placeholder count")
         assert_equal(plan["summary"]["registered_count"], 0, "field collection registered count")
+        assert_equal(
+            plan["pending_capture_command_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "field collection pending capture command count",
+        )
+        assert_equal(
+            plan["runtime_status_path_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "field collection runtime status path count",
+        )
         good_texture = next(item for item in plan["conditions"] if item["condition"] == "good_texture")
         assert_equal(good_texture["status"], "placeholder", "field collection placeholder status")
         assert_equal(

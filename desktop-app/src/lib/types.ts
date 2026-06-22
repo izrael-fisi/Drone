@@ -152,6 +152,10 @@ export interface SupportBundleFile {
     field_collection_plan_registered_count?: number;
     field_collection_plan_required_count?: number;
     field_collection_plan_report_count?: number;
+    field_collection_plan_pending_capture_command_count?: number;
+    field_collection_plan_pending_registration_command_count?: number;
+    field_collection_plan_capture_output_dir_count?: number;
+    field_collection_plan_runtime_status_path_count?: number;
     threshold_tuning_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     threshold_tuning_field_case_count?: number;
     threshold_tuning_capture_metadata_issue_count?: number;
@@ -319,6 +323,12 @@ export interface SupportBundleDetails {
     manifest_path?: string;
     bundle?: string;
     source_log?: string;
+    capture_root?: string;
+    pending_capture_command_count?: number;
+    pending_registration_command_count?: number;
+    capture_output_dir_count?: number;
+    runtime_status_path_count?: number;
+    condition_source_log_count?: number;
     summary: {
       required_count?: number;
       registered_count?: number;
@@ -334,6 +344,11 @@ export interface SupportBundleDetails {
       case_name?: string;
       manifest_log_path?: string;
       manifest_log_exists?: boolean;
+      source_log?: string;
+      capture_output_dir?: string;
+      runtime_status_path?: string;
+      has_capture_command?: boolean;
+      has_register_command?: boolean;
       register_command?: string;
     }>;
   }>;
@@ -748,6 +763,12 @@ export interface FieldCollectionPlanFile {
   site_name?: string;
   manifest_path?: string;
   bundle?: string;
+  capture_root?: string;
+  pending_capture_command_count?: number;
+  pending_registration_command_count?: number;
+  capture_output_dir_count?: number;
+  runtime_status_path_count?: number;
+  condition_source_log_count?: number;
   summary: {
     required_count?: number;
     registered_count?: number;

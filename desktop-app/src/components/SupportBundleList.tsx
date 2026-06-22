@@ -491,16 +491,33 @@ function SupportBundleDetailPanel({
                 </span>
                 <span className="font-mono text-slate-500">placeholder {report.summary.placeholder_count ?? 0}</span>
                 <span className="font-mono text-slate-500">missing {report.summary.missing_count ?? 0}</span>
+                <span className="font-mono text-slate-500">capture cmds {report.pending_capture_command_count ?? 0}</span>
+                <span className="font-mono text-slate-500">runtime paths {report.runtime_status_path_count ?? 0}</span>
               </div>
               <div className="font-mono text-slate-500 truncate">
                 manifest {formatLabel(report.manifest_path)} / log {formatLabel(report.source_log)}
               </div>
+              {report.capture_root && (
+                <div className="font-mono text-slate-500 truncate">
+                  capture root {formatLabel(report.capture_root)}
+                </div>
+              )}
               {report.conditions.length > 0 && (
                 <div className="flex flex-wrap gap-1 pt-0.5">
                   {report.conditions.slice(0, 8).map((condition) => (
-                    <span key={`${report.manifest_path}-${condition.condition}`} className={statusClass(condition.status)}>
+                    <span
+                      key={`${report.manifest_path}-${condition.condition}`}
+                      className={statusClass(condition.status)}
+                      title={[
+                        condition.source_log ? `log ${condition.source_log}` : "",
+                        condition.runtime_status_path ? `runtime ${condition.runtime_status_path}` : "",
+                        condition.capture_output_dir ? `capture ${condition.capture_output_dir}` : "",
+                      ].filter(Boolean).join(" / ") || undefined}
+                    >
                       {statusIcon(condition.status)}
                       {formatLabel(condition.condition)} {formatLabel(condition.status)}
+                      {condition.has_capture_command ? " cap" : ""}
+                      {condition.runtime_status_path ? " status" : ""}
                     </span>
                   ))}
                 </div>
@@ -880,6 +897,8 @@ export function SupportBundleList({
                     plan registered {bundle.summary.field_collection_plan_registered_count ?? 0}/
                     {bundle.summary.field_collection_plan_required_count ?? 0}
                   </span>
+                  <span>plan capture cmds {bundle.summary.field_collection_plan_pending_capture_command_count ?? 0}</span>
+                  <span>plan runtime paths {bundle.summary.field_collection_plan_runtime_status_path_count ?? 0}</span>
                   <span>thresholds {formatLabel(bundle.summary.threshold_tuning_status)}</span>
                   <span>threshold cases {bundle.summary.threshold_tuning_field_case_count ?? 0}</span>
                   <span>threshold metadata issues {bundle.summary.threshold_tuning_capture_metadata_issue_count ?? 0}</span>

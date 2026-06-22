@@ -554,8 +554,9 @@ handoff renderer and evidence ZIP packager use the same fallback, so support
 packages can still include the downloaded JSON/Markdown checklist.
 Downloaded support-bundle details also surface bundled field collection plans:
 the card shows plan pass/degraded state, registered-vs-required condition
-counts, per-condition placeholder/missing/registered status, and lets support
-extract the JSON/Markdown plan artifacts from the ZIP.
+counts, capture-command/runtime-status path coverage, per-condition
+placeholder/missing/registered status, and lets support extract the
+JSON/Markdown plan artifacts from the ZIP.
 Pending field-collection condition pills and command buttons in Module Setup
 copy individual or batched generated capture and registration commands when the
 plan includes them, which keeps real replay-case collection and registration

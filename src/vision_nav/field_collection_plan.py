@@ -91,6 +91,7 @@ def create_field_collection_plan(
         "placeholder_count": sum(1 for item in conditions if item["status"] == "placeholder"),
         "missing_count": sum(1 for item in conditions if item["status"] == "missing"),
     }
+    pending_conditions = [item for item in conditions if item["status"] != "registered"]
     all_registered = summary["registered_count"] == summary["required_count"]
     plan = {
         "schema_version": SCHEMA_VERSION,
@@ -102,6 +103,11 @@ def create_field_collection_plan(
         "bundle": bundle,
         "source_log": source_log,
         "capture_root": capture_root,
+        "pending_capture_command_count": sum(1 for item in pending_conditions if item.get("capture_command")),
+        "pending_registration_command_count": sum(1 for item in pending_conditions if item.get("register_command")),
+        "capture_output_dir_count": sum(1 for item in conditions if item.get("capture_output_dir")),
+        "runtime_status_path_count": sum(1 for item in conditions if item.get("runtime_status_path")),
+        "condition_source_log_count": sum(1 for item in conditions if item.get("source_log")),
         "summary": summary,
         "conditions": conditions,
         "next_steps": next_steps(summary),

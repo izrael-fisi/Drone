@@ -791,9 +791,16 @@ def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path
                 "status": item.get("status"),
                 "expected": item.get("expected"),
                 "case_name": item.get("case_name"),
+                "manifest_log_path": item.get("manifest_log_path"),
                 "manifest_log_exists": item.get("manifest_log_exists"),
+                "source_log": item.get("source_log"),
+                "capture_output_dir": item.get("capture_output_dir"),
+                "runtime_status_path": item.get("runtime_status_path"),
+                "has_capture_command": bool(item.get("capture_command")),
+                "has_register_command": bool(item.get("register_command")),
             }
         )
+    pending_conditions = [item for item in conditions if item.get("status") != "registered"]
     return {
         "path": str(report_path),
         "status": report.get("status"),
@@ -801,11 +808,17 @@ def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path
         "manifest_path": report.get("manifest_path"),
         "bundle": report.get("bundle"),
         "source_log": report.get("source_log"),
+        "capture_root": report.get("capture_root"),
         "required_count": summary.get("required_count"),
         "registered_count": summary.get("registered_count"),
         "registered_missing_log_count": summary.get("registered_missing_log_count"),
         "placeholder_count": summary.get("placeholder_count"),
         "missing_count": summary.get("missing_count"),
+        "pending_capture_command_count": sum(1 for item in pending_conditions if item.get("has_capture_command")),
+        "pending_registration_command_count": sum(1 for item in pending_conditions if item.get("has_register_command")),
+        "capture_output_dir_count": sum(1 for item in conditions if item.get("capture_output_dir")),
+        "runtime_status_path_count": sum(1 for item in conditions if item.get("runtime_status_path")),
+        "condition_source_log_count": sum(1 for item in conditions if item.get("source_log")),
         "conditions": conditions,
     }
 
@@ -866,6 +879,12 @@ def copy_field_collection_plans(paths: list[str], support_dir: Path) -> dict[str
         "reports": reports,
         "registered_count": max((int(report.get("registered_count") or 0) for report in reports), default=0),
         "required_count": max((int(report.get("required_count") or 0) for report in reports), default=0),
+        "pending_capture_command_count": sum(int(report.get("pending_capture_command_count") or 0) for report in reports),
+        "pending_registration_command_count": sum(
+            int(report.get("pending_registration_command_count") or 0) for report in reports
+        ),
+        "capture_output_dir_count": sum(int(report.get("capture_output_dir_count") or 0) for report in reports),
+        "runtime_status_path_count": sum(int(report.get("runtime_status_path_count") or 0) for report in reports),
         "copied": copied,
         "missing": missing,
         "issues": issues,
