@@ -281,6 +281,7 @@ def build_workflow_validation_summary(report: dict[str, Any], *, report_path: Pa
         "marker_count": validation.get("marker_count"),
         "issue_count": len(string_list(validation.get("issues"))),
         "issues": string_list(validation.get("issues"))[:MAX_MANIFEST_RUNBOOK_ACTIONS],
+        "next_required_step": compact_workflow_next_step(validation.get("next_required_step")),
         "checks_truncated": len(highlighted_checks) > MAX_MANIFEST_WORKFLOW_CHECKS,
         "checks": [
             compact_workflow_validation_check(check)
@@ -345,6 +346,20 @@ def compact_workflow_validation_check(check: dict[str, Any]) -> dict[str, Any]:
             for step in non_passed_steps[:MAX_MANIFEST_RUNBOOK_ACTIONS]
         ]
     return compact
+
+
+def compact_workflow_next_step(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    compact: dict[str, Any] = {}
+    for key in ("name", "status", "notes", "command", "desktop_action"):
+        item = value.get(key)
+        if isinstance(item, str) and item:
+            compact[key] = item
+    exit_code = value.get("exit_code")
+    if isinstance(exit_code, int):
+        compact["exit_code"] = exit_code
+    return compact or None
 
 
 def compact_runbook_phase(phase: dict[str, Any]) -> dict[str, Any]:

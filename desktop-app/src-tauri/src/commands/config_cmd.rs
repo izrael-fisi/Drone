@@ -659,6 +659,16 @@ pub struct AutonomyEvidenceWorkflowValidationStepResult {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyEvidenceWorkflowValidationNextStep {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub exit_code: Option<i64>,
+    pub notes: Option<String>,
+    pub command: Option<String>,
+    pub desktop_action: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyEvidenceWorkflowValidationSummary {
     pub status: Option<String>,
     pub workflow_status: Option<String>,
@@ -666,6 +676,7 @@ pub struct AutonomyEvidenceWorkflowValidationSummary {
     pub marker_count: Option<u64>,
     pub issue_count: u64,
     pub issues: Vec<String>,
+    pub next_required_step: Option<AutonomyEvidenceWorkflowValidationNextStep>,
     pub checks: Vec<AutonomyEvidenceWorkflowValidationCheck>,
     pub log_archive: Option<String>,
 }
@@ -3508,8 +3519,28 @@ fn workflow_validation_summary_from_json(
         marker_count: value.get("marker_count").and_then(|value| value.as_u64()),
         issue_count: issues.len() as u64,
         issues,
+        next_required_step: workflow_validation_next_step_from_json(
+            value.get("next_required_step"),
+        ),
         checks,
         log_archive: json_string(value.get("log_archive")),
+    })
+}
+
+fn workflow_validation_next_step_from_json(
+    value: Option<&serde_json::Value>,
+) -> Option<AutonomyEvidenceWorkflowValidationNextStep> {
+    let value = value?;
+    if !value.is_object() {
+        return None;
+    }
+    Some(AutonomyEvidenceWorkflowValidationNextStep {
+        name: json_string(value.get("name")),
+        status: json_string(value.get("status")),
+        exit_code: value.get("exit_code").and_then(|value| value.as_i64()),
+        notes: json_string(value.get("notes")),
+        command: json_string(value.get("command")),
+        desktop_action: json_string(value.get("desktop_action")),
     })
 }
 
@@ -4954,6 +4985,14 @@ mod tests {
                         "marker_count": 8,
                         "issue_count": 1,
                         "issues": ["Some required workflow steps did not pass."],
+                        "next_required_step": {
+                            "name": "register_field_replay_case",
+                            "status": "skipped",
+                            "exit_code": 0,
+                            "notes": "Waiting for field replay capture.",
+                            "command": "./scripts/pi/register_field_replay_case.sh",
+                            "desktop_action": "Module Setup > Field Evidence Case > Register"
+                        },
                         "checks": [
                             {"name": "schema", "status": "passed", "message": "Workflow JSON is valid."},
                             {
@@ -5184,6 +5223,13 @@ mod tests {
             Some("failed")
         );
         assert_eq!(package_validation.issue_count, 1);
+        assert_eq!(
+            package_validation
+                .next_required_step
+                .as_ref()
+                .and_then(|step| step.command.as_deref()),
+            Some("./scripts/pi/register_field_replay_case.sh")
+        );
         assert_eq!(package_validation.checks.len(), 3);
         assert_eq!(
             package_validation.checks[1].name.as_deref(),
@@ -5456,6 +5502,14 @@ mod tests {
                 "marker_count": 12,
                 "log_archive": "/tmp/autonomy_evidence_workflow.logs.tar.gz",
                 "issues": ["Workflow status is failed; the report is useful, but readiness proof is incomplete."],
+                "next_required_step": {
+                    "name": "register_field_replay_case",
+                    "status": "skipped",
+                    "exit_code": 0,
+                    "notes": "Set field case variables.",
+                    "command": "./scripts/pi/register_field_replay_case.sh",
+                    "desktop_action": "Module Setup > Field Evidence Case > Register"
+                },
                 "checks": [
                     {
                         "name": "required_steps",
@@ -5587,6 +5641,23 @@ mod tests {
         assert_eq!(validation.marker_count, Some(12));
         assert_eq!(validation.issue_count, 1);
         assert_eq!(validation.issues.len(), 1);
+        let next_step = validation
+            .next_required_step
+            .as_ref()
+            .expect("workflow validation next required step");
+        assert_eq!(
+            next_step.name.as_deref(),
+            Some("register_field_replay_case")
+        );
+        assert_eq!(next_step.status.as_deref(), Some("skipped"));
+        assert_eq!(
+            next_step.command.as_deref(),
+            Some("./scripts/pi/register_field_replay_case.sh")
+        );
+        assert_eq!(
+            next_step.desktop_action.as_deref(),
+            Some("Module Setup > Field Evidence Case > Register")
+        );
         assert_eq!(validation.checks.len(), 3);
         assert_eq!(
             validation.checks[1].name.as_deref(),

@@ -1031,7 +1031,8 @@ the `all` chip copies the full emitted artifact path bundle. After the desktop
 app downloads matching artifacts into the standard transfer folders, those
 chips prefer the local desktop path. When the validation JSON exists beside the
 workflow report, the Evidence Workflow Reports list also shows validation
-status, workflow status, issue count, and the first validation issue.
+status, workflow status, issue count, the next required workflow step with a
+copyable command hint, and the first validation issue.
 To validate a copied workflow report and its full log archive offline, run:
 
 ```bash

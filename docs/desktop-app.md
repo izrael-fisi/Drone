@@ -82,7 +82,9 @@ When autonomy evidence workflow reports are available, the setup report also
 includes the latest workflow status, pass/fail/skip summary, marker count,
 workflow-log archive path, validation report path, validation status, issue
 count, bounded validation issues, and validation-check details such as missing
-final-proof artifact markers.
+final-proof artifact markers. The validation summary also preserves the next
+required workflow step and command hint, so exported setup reports show where a
+partial evidence run should resume.
 The readiness wrappers also create
 `autonomy_readiness_report.evidence.zip`, a support-review package with the JSON
 report, Markdown handoff, package manifest, a plan source snapshot, a bounded
@@ -476,8 +478,9 @@ notes; the `all` chip copies the complete artifact path bundle. When the
 downloaded artifact exists in the standard transfer folders, those chips copy
 the local desktop path instead of only the Pi-side marker path. When the
 validation JSON exists beside the workflow report, the card summarizes
-validation status, workflow status, issue count, failed/degraded validation
-checks, missing final-proof markers, and the first validation issue.
+validation status, workflow status, issue count, the next required workflow
+step with a copyable command hint, failed/degraded validation checks, missing
+final-proof markers, and the first validation issue.
 For offline support review, run
 `vision-nav-validate-evidence-workflow --report <autonomy_evidence_workflow.json>`
 against a downloaded workflow report. The validator confirms the required

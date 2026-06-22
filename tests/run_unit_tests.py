@@ -2498,11 +2498,26 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         assert_equal(checks["required_step_results"], "degraded", "workflow validation required step results")
         assert_equal(checks["final_readiness_status"], "passed", "workflow validation final readiness status")
         assert_equal(validation["step_count"], len(REQUIRED_WORKFLOW_STEPS), "workflow validation step count")
+        assert_equal(
+            validation["next_required_step"]["name"],
+            "run_autonomy_readiness_audit",
+            "workflow validation top-level next required step",
+        )
+        assert_equal(
+            validation["next_required_step"]["command"],
+            "./scripts/pi/run_autonomy_readiness_audit.sh",
+            "workflow validation top-level next required command",
+        )
         detailed_checks = {check["name"]: check for check in validation["checks"]}
         assert_equal(
             detailed_checks["required_step_results"]["details"]["non_passed_steps"][0]["name"],
             "run_autonomy_readiness_audit",
             "workflow validation reports non-passed final audit step",
+        )
+        assert_equal(
+            detailed_checks["required_step_results"]["details"]["next_required_step"]["desktop_action"],
+            "Module Setup > Autonomy Readiness",
+            "workflow validation required-step detail next desktop action",
         )
         if "__VISION_NAV_PX4_SITL_PREREQS__" not in detailed_checks["important_markers"]["details"]["present_markers"]:
             raise AssertionError("workflow validation should list PX4 prereqs as an important diagnostic marker")
@@ -2531,6 +2546,16 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             missing_required_step_checks["required_step_results"]["details"]["missing_steps"],
             ["capture_field_terrain_log"],
             "workflow validation missing required step result detail",
+        )
+        assert_equal(
+            missing_required_step_validation["next_required_step"]["name"],
+            "capture_field_terrain_log",
+            "workflow validation missing step becomes next required step",
+        )
+        assert_equal(
+            missing_required_step_validation["next_required_step"]["status"],
+            "missing",
+            "workflow validation missing next required step status",
         )
 
         mismatched_readiness_report = json.loads(report_path.read_text())
@@ -3000,6 +3025,14 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                     "marker_count": 9,
                     "issue_count": 1,
                     "issues": ["unit validation issue"],
+                    "next_required_step": {
+                        "name": "register_field_replay_case",
+                        "status": "skipped",
+                        "exit_code": 0,
+                        "notes": "No field case variables supplied.",
+                        "command": "./scripts/pi/register_field_replay_case.sh",
+                        "desktop_action": "Module Setup > Field Evidence Case > Register",
+                    },
                     "checks": [
                         {
                             "name": "required_step_results",
@@ -4031,6 +4064,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 workflow_validation_summary["issue_count"],
                 1,
                 "autonomy evidence package workflow validation issue count",
+            )
+            assert_equal(
+                workflow_validation_summary["next_required_step"]["command"],
+                "./scripts/pi/register_field_replay_case.sh",
+                "autonomy evidence package workflow validation next command",
             )
             required_step_check = next(
                 item

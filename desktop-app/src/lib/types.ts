@@ -683,6 +683,15 @@ export interface AutonomyReadinessReportFile {
   proof_runbook?: AutonomyReadinessProofRunbook;
 }
 
+export interface AutonomyEvidenceWorkflowValidationNextStep {
+  name?: string;
+  status?: "passed" | "failed" | "degraded" | "skipped" | "missing" | string;
+  exit_code?: number;
+  notes?: string;
+  command?: string;
+  desktop_action?: string;
+}
+
 export interface AutonomyEvidenceWorkflowReportFile {
   name: string;
   path: string;
@@ -715,6 +724,7 @@ export interface AutonomyEvidenceWorkflowReportFile {
     marker_count?: number;
     issue_count: number;
     issues: string[];
+    next_required_step?: AutonomyEvidenceWorkflowValidationNextStep;
     checks: Array<{
       name?: string;
       status?: "passed" | "failed" | "degraded" | string;

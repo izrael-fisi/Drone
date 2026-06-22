@@ -23,6 +23,53 @@ REQUIRED_WORKFLOW_STEPS = [
     "run_autonomy_readiness_audit",
 ]
 
+WORKFLOW_STEP_GUIDANCE = {
+    "create_field_evidence_template": {
+        "command": "./scripts/pi/create_field_evidence_template.sh",
+        "desktop_action": "Module Setup > Field Evidence Template > Create",
+    },
+    "create_field_collection_plan": {
+        "command": "./scripts/pi/create_field_collection_plan.sh",
+        "desktop_action": "Module Setup > Field Collection Plan > Create Plan",
+    },
+    "capture_field_terrain_log": {
+        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+        "desktop_action": "Module Setup > Field Log Capture",
+    },
+    "register_field_replay_case": {
+        "command": "./scripts/pi/register_field_replay_case.sh",
+        "desktop_action": "Module Setup > Field Evidence Case > Register",
+    },
+    "run_feature_method_benchmark": {
+        "command": "./scripts/pi/run_feature_method_benchmark.sh",
+        "desktop_action": "Module Setup > Feature Benchmark",
+    },
+    "run_threshold_tuning_report": {
+        "command": "./scripts/pi/run_threshold_tuning_report.sh",
+        "desktop_action": "Module Setup > Threshold Tuning",
+    },
+    "validate_rosbag_export": {
+        "command": "./scripts/pi/run_rosbag_export_validation.sh",
+        "desktop_action": "Module Setup > ROS Bag Validation",
+    },
+    "check_native_rosbag2_review": {
+        "command": "./scripts/dev/run_rosbag2_cli_review.sh",
+        "desktop_action": "Module Setup > Native rosbag2 Review",
+    },
+    "check_px4_receiver_proof": {
+        "command": "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+        "desktop_action": "Module Setup > PX4 SITL Receiver Capture",
+    },
+    "create_support_bundle": {
+        "command": "./scripts/pi/create_support_bundle.sh",
+        "desktop_action": "Module Setup > Bench Report",
+    },
+    "run_autonomy_readiness_audit": {
+        "command": "./scripts/pi/run_autonomy_readiness_audit.sh",
+        "desktop_action": "Module Setup > Autonomy Readiness",
+    },
+}
+
 IMPORTANT_MARKERS = [
     "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__",
     "__VISION_NAV_SUPPORT_ZIP__",
@@ -128,6 +175,7 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
     else:
         checks.append(passed("step_statuses", "Workflow step statuses are parseable.", status_counts))
 
+    next_required_step = workflow_next_required_step(steps)
     step_result_check = validate_required_step_results(steps)
     checks.append(step_result_check)
 
@@ -223,6 +271,7 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
         "step_count": len(step_names),
         "marker_count": len(markers),
         "log_archive": archive_result.get("details", {}).get("path"),
+        "next_required_step": next_required_step,
         "checks": checks,
         "issues": issues,
     }
@@ -342,6 +391,7 @@ def validate_required_step_results(steps: list[Any]) -> dict[str, Any]:
         "missing_steps": missing_steps,
         "non_passed_steps": non_passed_steps,
         "non_passed_count": len(non_passed_steps),
+        "next_required_step": workflow_next_required_step(steps),
     }
     if missing_steps:
         return failed(
@@ -360,6 +410,40 @@ def validate_required_step_results(steps: list[Any]) -> dict[str, Any]:
         "Every required workflow step passed.",
         details,
     )
+
+
+def workflow_next_required_step(steps: list[Any]) -> dict[str, Any] | None:
+    by_name = {str(step.get("name")): step for step in steps if isinstance(step, dict) and step.get("name")}
+    for name in REQUIRED_WORKFLOW_STEPS:
+        step = by_name.get(name)
+        if step is None:
+            return workflow_step_summary(name, status="missing", notes="Required workflow step has not been recorded yet.")
+        status = str(step.get("status") or "unknown")
+        if status != "passed":
+            return workflow_step_summary(
+                name,
+                status=status,
+                exit_code=step.get("exit_code"),
+                notes=step.get("notes"),
+            )
+    return None
+
+
+def workflow_step_summary(name: str, *, status: str, exit_code: Any = None, notes: Any = None) -> dict[str, Any]:
+    guidance = WORKFLOW_STEP_GUIDANCE.get(name, {})
+    summary: dict[str, Any] = {
+        "name": name,
+        "status": status,
+    }
+    if isinstance(exit_code, int):
+        summary["exit_code"] = exit_code
+    if isinstance(notes, str) and notes.strip():
+        summary["notes"] = notes.strip()
+    if guidance.get("command"):
+        summary["command"] = guidance["command"]
+    if guidance.get("desktop_action"):
+        summary["desktop_action"] = guidance["desktop_action"]
+    return summary
 
 
 def marker_presence(
@@ -462,6 +546,16 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"Steps: {report.get('step_count')} markers={report.get('marker_count')}")
     if report.get("log_archive"):
         print(f"Log archive: {report.get('log_archive')}")
+    next_step = report.get("next_required_step") if isinstance(report.get("next_required_step"), dict) else None
+    if next_step:
+        print(
+            "Next required step: "
+            f"{next_step.get('name')} ({next_step.get('status')})"
+        )
+        if next_step.get("desktop_action"):
+            print(f"Desktop action: {next_step.get('desktop_action')}")
+        if next_step.get("command"):
+            print(f"Command: {next_step.get('command')}")
     issues = report.get("issues") if isinstance(report.get("issues"), list) else []
     if issues:
         print("Issues:")

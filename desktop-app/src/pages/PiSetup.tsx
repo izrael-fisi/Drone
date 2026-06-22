@@ -859,6 +859,7 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
     .filter((check) => check.status && check.status !== "passed")
     .slice(0, 3);
   const firstIssue = summary.issues[0];
+  const nextStep = summary.next_required_step;
 
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
@@ -869,6 +870,25 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
         <span className="font-mono text-slate-600">workflow {formatReadinessLabel(summary.workflow_status)}</span>
       )}
       <span className="font-mono text-slate-600">issues {summary.issue_count}</span>
+      {nextStep && (
+        <span
+          className="inline-flex max-w-full items-center gap-1 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-amber-200"
+          title={[nextStep.desktop_action, nextStep.command, nextStep.notes].filter(Boolean).join("\n") || undefined}
+        >
+          <span className={cn(readinessBadgeClass(nextStep.status), "text-[9px] px-1 py-0")}>next</span>
+          <span className="truncate font-mono">{formatReadinessLabel(nextStep.name)}</span>
+          {nextStep.command && (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(nextStep.command ?? "")}
+              className="inline-flex h-4 w-4 items-center justify-center rounded border border-amber-400/20 text-amber-200 hover:border-amber-300"
+              title="Copy next workflow command"
+            >
+              <Copy size={9} />
+            </button>
+          )}
+        </span>
+      )}
       {highlightedChecks.map((check) => {
         const detail = validationCheckDetail(check);
         const nonPassedStepTitle = check.non_passed_steps
@@ -4970,9 +4990,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               latestWorkflowReport.rosbag_validation_local_path ?? latestWorkflowReport.rosbag_validation_path ?? null,
             validation: latestWorkflowReport.workflow_validation_summary
               ? {
-                  status: latestWorkflowReport.workflow_validation_summary.status ?? null,
-                  workflow_status: latestWorkflowReport.workflow_validation_summary.workflow_status ?? null,
-                  issue_count: latestWorkflowReport.workflow_validation_summary.issue_count,
+                      status: latestWorkflowReport.workflow_validation_summary.status ?? null,
+                      workflow_status: latestWorkflowReport.workflow_validation_summary.workflow_status ?? null,
+                      next_required_step: latestWorkflowReport.workflow_validation_summary.next_required_step ?? null,
+                      issue_count: latestWorkflowReport.workflow_validation_summary.issue_count,
                   issues: latestWorkflowReport.workflow_validation_summary.issues.slice(0, 8),
                   checks: latestWorkflowReport.workflow_validation_summary.checks.slice(0, 8).map((check) => ({
                     name: check.name ?? null,

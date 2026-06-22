@@ -918,6 +918,10 @@ Status:
   details, including missing/present final-proof marker arrays and
   missing/non-passing required-step summaries, so exported setup reports keep
   the same support-review context as the workflow card.
+- Done: workflow validation reports, evidence-package summaries, Module Setup
+  workflow cards, and saved setup reports now preserve the next required
+  workflow step with command and desktop-action hints, so a partial external
+  evidence run can resume at the correct proof action.
 - Done: Module Setup renders the compact workflow-validation summary embedded in
   downloaded evidence-package manifests, so readiness report cards still surface
   failed workflow steps even when support is reviewing the ZIP summary.
