@@ -1017,6 +1017,10 @@ folder, downloads the workflow-log archive and validation JSON, and downloads
 any support bundle, field-evidence report, feature-method benchmark,
 threshold-tuning report, readiness report, handoff, evidence package,
 field-collection plan/checklist, or PX4 receiver marker emitted by the wrapper.
+If no explicit field case values are supplied, the Pi workflow auto-loads the
+field collection plan's next pending condition, captures into that condition's
+output folder, and waits to register the replay case until the matching capture
+metadata is complete.
 Downloaded field collection plans expose a `Load` action per pending condition,
 which pre-fills the Field Evidence Case form before registration so the plan
 condition, expected behavior, and capture metadata stay in sync.

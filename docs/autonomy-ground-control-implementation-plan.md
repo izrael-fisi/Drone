@@ -922,6 +922,10 @@ Status:
   workflow cards, and saved setup reports now preserve the next required
   workflow step with command and desktop-action hints, so a partial external
   evidence run can resume at the correct proof action.
+- Done: the Pi evidence workflow now auto-loads the field collection plan's next
+  pending condition when no explicit field case is supplied, redirects capture
+  to the condition-specific output folder, and skips registration until the
+  matching capture metadata is complete.
 - Done: Module Setup renders the compact workflow-validation summary embedded in
   downloaded evidence-package manifests, so readiness report cards still surface
   failed workflow steps even when support is reviewing the ZIP summary.

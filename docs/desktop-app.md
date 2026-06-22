@@ -380,6 +380,10 @@ letting the operator complete site-specific metadata before registering the log.
 The plan and readiness cards also promote the next pending condition with its
 capture/register command buttons, and the plan list can load that next condition
 directly into the Field Evidence Case form.
+When the all-in-one Evidence Workflow runs without an explicit field case, it
+also auto-loads the plan's next pending condition, captures into that
+condition-specific output folder, and uses the matching terrain log path for
+registration once metadata is complete.
 Each placeholder condition in the template and plan also carries a
 `capture_metadata` object plus a capture checklist. The metadata covers
 operator/date, location label, flight altitude, speed, lighting, weather,

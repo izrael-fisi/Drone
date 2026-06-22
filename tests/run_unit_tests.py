@@ -49,6 +49,7 @@ from vision_nav.field_capture_metadata import (
 from vision_nav.field_collection_plan import create_field_collection_plan, render_field_collection_markdown
 from vision_nav.field_evidence_template import create_field_evidence_template
 from vision_nav.field_evidence_gate import evaluate_field_evidence_gate
+from vision_nav.field_workflow_selection import select_next_field_condition, shell_assignments
 from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health_report
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
 from vision_nav.mavlink_bridge import MavlinkSendResult, MavlinkVisionBridge, parse_mavlink_endpoint, send_records_once
@@ -4614,6 +4615,27 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected generated registration command to use the condition capture log")
         if not (base / "field_collection_plan.md").exists():
             raise AssertionError("Expected Markdown field collection plan")
+        selection = select_next_field_condition(base / "field_collection_plan.json")
+        assert_equal(selection["status"], "selected", "field workflow selection status")
+        assert_equal(selection["condition"], "good_texture", "field workflow selection condition")
+        assert_equal(
+            selection["environment"]["VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR"],
+            "$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture",
+            "field workflow selection capture output env",
+        )
+        assert_equal(
+            selection["environment"]["VISION_NAV_FIELD_LOG"],
+            "$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture/terrain_matches.jsonl",
+            "field workflow selection log env",
+        )
+        assert_equal(
+            selection["capture_metadata_status"],
+            "failed",
+            "field workflow selection detects incomplete placeholder metadata",
+        )
+        selection_shell = shell_assignments(selection)
+        if "VISION_NAV_FIELD_AUTO_SELECTED=1" not in selection_shell:
+            raise AssertionError("Expected shell assignments to mark the selected field condition")
 
         log_dir = base / "captures"
         log_dir.mkdir()
@@ -4668,6 +4690,25 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             updated["next_condition"]["condition"],
             "low_texture",
             "field collection next condition advances after registration",
+        )
+        updated["next_condition"]["capture_metadata"] = field_capture_metadata_fixture(
+            "low_texture",
+            updated["next_condition"]["expected"],
+            bundle=updated["next_condition"]["bundle"],
+            site_name="Site A",
+        )
+        filled_plan = base / "field_collection_plan_filled.json"
+        filled_plan.write_text(json.dumps(updated))
+        filled_selection = select_next_field_condition(filled_plan)
+        assert_equal(
+            filled_selection["capture_metadata_status"],
+            "passed",
+            "field workflow selection accepts complete capture metadata",
+        )
+        assert_equal(
+            filled_selection["environment"]["VISION_NAV_FIELD_CONDITION"],
+            "low_texture",
+            "field workflow selection advances condition env",
         )
         updated_good_texture = next(item for item in updated["conditions"] if item["condition"] == "good_texture")
         assert_equal(updated_good_texture["status"], "registered", "field collection registered status")

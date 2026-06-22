@@ -13,6 +13,14 @@ field_template="${VISION_NAV_FIELD_TEMPLATE:-$HOME/DroneTransfer/outgoing/replay
 field_manifest="${VISION_NAV_FIELD_MANIFEST:-$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json}"
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$(dirname "$field_manifest")/field_collection_plan.json}"
 field_collection_plan_md="${VISION_NAV_FIELD_COLLECTION_PLAN_MD:-${field_collection_plan%.json}.md}"
+field_log_was_explicit=0
+field_capture_output_dir_was_explicit=0
+if [[ -n "${VISION_NAV_FIELD_LOG+x}" ]]; then
+  field_log_was_explicit=1
+fi
+if [[ -n "${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR+x}" ]]; then
+  field_capture_output_dir_was_explicit=1
+fi
 field_log="${VISION_NAV_FIELD_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}"
 field_capture_output_dir="${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR:-$(dirname "$field_log")}"
 field_capture_count="${VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT:-30}"
@@ -41,15 +49,16 @@ This wrapper attempts the ordered evidence collection path:
   1. create/seed the field evidence template
   2. create/update the field collection plan
   3. verify an existing terrain log or run a bounded terrain capture
-  4. optionally register a field replay case when VISION_NAV_FIELD_CASE_NAME,
-     VISION_NAV_FIELD_EXPECTED, and VISION_NAV_FIELD_CONDITION(S) are provided
-  5. run feature-method benchmark when a replay log exists
-  6. run threshold tuning when a field manifest exists
-  7. export and validate ROS bag JSONL replay artifacts when a replay log exists
-  8. check whether native rosbag2 CLI review proof is available
-  9. check whether PX4 ODOMETRY receiver proof is available
-  10. create a support bundle
-  11. run the strict autonomy-readiness audit and evidence package
+  4. load the next pending field collection condition when no explicit field
+     case is provided
+  5. register a field replay case only when capture metadata is complete
+  6. run feature-method benchmark when a replay log exists
+  7. run threshold tuning when a field manifest exists
+  8. export and validate ROS bag JSONL replay artifacts when a replay log exists
+  9. check whether native rosbag2 CLI review proof is available
+  10. check whether PX4 ODOMETRY receiver proof is available
+  11. create a support bundle
+  12. run the strict autonomy-readiness audit and evidence package
 
 Common optional overrides:
   VISION_NAV_EVIDENCE_WORKFLOW_REPORT     Default: $report
@@ -440,6 +449,113 @@ with steps_path.open("w", encoding="utf-8") as handle:
 PY
 }
 
+field_case_vars_present() {
+  [[ -n "${VISION_NAV_FIELD_CASE_NAME:-}" && -n "${VISION_NAV_FIELD_EXPECTED:-}" && -n "${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}" ]]
+}
+
+load_field_collection_condition() {
+  if field_case_vars_present; then
+    explicit_condition="${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}"
+    pass_step "select_field_collection_condition" \
+      "Using explicit field replay case environment from the operator." \
+      "__VISION_NAV_FIELD_SELECTED_CONDITION__=$explicit_condition" \
+      "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_CASE_NAME:-}" \
+      "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log"
+    return 0
+  fi
+
+  if [[ ! -f "$field_collection_plan" ]]; then
+    degraded_step "select_field_collection_condition" \
+      "Field collection plan is unavailable, so the workflow cannot auto-select the next pending condition: $field_collection_plan"
+    return 0
+  fi
+
+  set +e
+  selection_exports="$(PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.field_workflow_selection --plan "$field_collection_plan" --shell 2>&1)"
+  selection_exit=$?
+  set -e
+  if [[ "$selection_exit" -ne 0 ]]; then
+    fail_step "select_field_collection_condition" \
+      "Could not load the next field collection condition from $field_collection_plan." \
+      "$selection_exports"
+    return 0
+  fi
+
+  eval "$selection_exports"
+  if [[ "$field_log_was_explicit" == "1" ]]; then
+    export VISION_NAV_FIELD_LOG="$field_log"
+  else
+    field_log="${VISION_NAV_FIELD_LOG:-$field_log}"
+  fi
+  if [[ "$field_capture_output_dir_was_explicit" == "1" || "$field_log_was_explicit" == "1" ]]; then
+    export VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR="$field_capture_output_dir"
+  else
+    field_capture_output_dir="${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR:-$field_capture_output_dir}"
+  fi
+  bundle="${VISION_NAV_BUNDLE:-$bundle}"
+
+  if [[ "${VISION_NAV_FIELD_AUTO_SELECTION_STATUS:-}" == "no_pending_condition" ]]; then
+    pass_step "select_field_collection_condition" \
+      "Field collection plan has no pending condition to auto-load." \
+      "__VISION_NAV_FIELD_COLLECTION_PLAN__=$field_collection_plan"
+  elif [[ "${VISION_NAV_FIELD_AUTO_SELECTED:-0}" == "1" ]]; then
+    marker_lines=(
+      "__VISION_NAV_FIELD_COLLECTION_PLAN__=$field_collection_plan"
+      "__VISION_NAV_FIELD_SELECTED_CONDITION__=${VISION_NAV_FIELD_AUTO_SELECTED_CONDITION:-}"
+      "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_AUTO_SELECTED_CASE:-}"
+      "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log"
+    )
+    if [[ "${VISION_NAV_FIELD_CAPTURE_METADATA_READY:-failed}" == "passed" ]]; then
+      pass_step "select_field_collection_condition" \
+        "Loaded next field collection condition ${VISION_NAV_FIELD_AUTO_SELECTED_CONDITION:-unknown}; capture metadata is complete." \
+        "${marker_lines[@]}"
+    else
+      degraded_step "select_field_collection_condition" \
+        "Loaded next field collection condition ${VISION_NAV_FIELD_AUTO_SELECTED_CONDITION:-unknown}; capture metadata still needs completion before registration." \
+        "${marker_lines[@]}"
+    fi
+  else
+    degraded_step "select_field_collection_condition" \
+      "Field collection condition auto-selection did not choose a pending case. Status: ${VISION_NAV_FIELD_AUTO_SELECTION_STATUS:-unknown}"
+  fi
+}
+
+evaluate_field_capture_metadata() {
+  local conditions_raw="$1"
+  local expected="$2"
+  local metadata_json="$3"
+  PYTHONPATH="$repo_root/src" "$venv_python" - "$conditions_raw" "$expected" "$metadata_json" <<'PY'
+from __future__ import annotations
+
+import sys
+
+from vision_nav.field_capture_metadata import audit_capture_metadata, parse_capture_metadata_json
+from vision_nav.replay_case_registry import normalize_conditions
+
+
+def emit(status: str, message: str) -> None:
+    print(f"{status}|{message}")
+
+
+conditions_raw, expected, metadata_json = sys.argv[1:4]
+try:
+    metadata = parse_capture_metadata_json(metadata_json)
+except Exception as exc:
+    emit("degraded", f"Capture metadata JSON is not parseable: {exc}")
+    raise SystemExit(0)
+issues = audit_capture_metadata(
+    metadata,
+    conditions=normalize_conditions([conditions_raw]),
+    expected=expected or None,
+)
+if issues:
+    first = issues[0].get("message") or issues[0].get("field") or "metadata issue"
+    emit("degraded", f"Capture metadata is incomplete ({len(issues)} issue(s)); first issue: {first}")
+else:
+    emit("passed", "Capture metadata is complete for field replay registration.")
+PY
+}
+
 if [[ -f "$field_template" && -f "$field_manifest" && "${VISION_NAV_EVIDENCE_WORKFLOW_REFRESH_TEMPLATE:-0}" != "1" ]]; then
   skip_step "create_field_evidence_template" "Field template and active manifest already exist. Set VISION_NAV_EVIDENCE_WORKFLOW_REFRESH_TEMPLATE=1 and template force variables if you need to regenerate them."
 else
@@ -447,6 +563,7 @@ else
 fi
 
 run_step "create_field_collection_plan" ./scripts/pi/create_field_collection_plan.sh
+load_field_collection_condition
 
 runtime_status="$(dirname "$field_log")/runtime_status.json"
 if [[ -f "$field_log" ]]; then
@@ -513,7 +630,19 @@ fi
 if [[ "$field_log_ready" != "1" ]]; then
   skip_step "register_field_replay_case" "Terrain log was not validated in this workflow run; capture or provide a parseable log before registering field evidence."
 elif [[ -n "${VISION_NAV_FIELD_CASE_NAME:-}" && -n "${VISION_NAV_FIELD_EXPECTED:-}" && -n "${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}" ]]; then
-  VISION_NAV_FIELD_GATE_STRICT=0 run_step "register_field_replay_case" ./scripts/pi/register_field_replay_case.sh
+  selected_conditions="${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}"
+  metadata_eval="$(evaluate_field_capture_metadata "$selected_conditions" "${VISION_NAV_FIELD_EXPECTED:-}" "${VISION_NAV_FIELD_CAPTURE_METADATA:-}")"
+  metadata_status="${metadata_eval%%|*}"
+  metadata_message="${metadata_eval#*|}"
+  if [[ "$metadata_status" == "passed" ]]; then
+    VISION_NAV_FIELD_GATE_STRICT=0 run_step "register_field_replay_case" ./scripts/pi/register_field_replay_case.sh
+  else
+    skip_step "register_field_replay_case" \
+      "$metadata_message Complete the Field Evidence Case metadata in Module Setup, then rerun the workflow or registration step." \
+      "__VISION_NAV_FIELD_SELECTED_CONDITION__=$selected_conditions" \
+      "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_CASE_NAME:-}" \
+      "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log"
+  fi
 else
   skip_step "register_field_replay_case" "Set VISION_NAV_FIELD_CASE_NAME, VISION_NAV_FIELD_EXPECTED, and VISION_NAV_FIELD_CONDITION(S) after a real field log exists to register evidence."
 fi
