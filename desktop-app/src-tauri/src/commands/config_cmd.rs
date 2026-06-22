@@ -572,6 +572,7 @@ pub struct AutonomyReadinessReportFile {
 #[derive(Serialize)]
 pub struct AutonomyReadinessCommandBundle {
     pub next_action_commands: Vec<String>,
+    pub field_collection_capture_commands: Vec<String>,
     pub field_collection_registration_commands: Vec<String>,
     pub command_count: Option<u64>,
 }
@@ -2890,6 +2891,9 @@ fn autonomy_readiness_command_bundle_from_json(
     }
     Some(AutonomyReadinessCommandBundle {
         next_action_commands: json_string_array(bundle.get("next_action_commands")),
+        field_collection_capture_commands: json_string_array(
+            bundle.get("field_collection_capture_commands"),
+        ),
         field_collection_registration_commands: json_string_array(
             bundle.get("field_collection_registration_commands"),
         ),
@@ -4385,10 +4389,13 @@ mod tests {
                         "./scripts/pi/create_support_bundle.sh",
                         "./scripts/pi/run_threshold_tuning_report.sh"
                     ],
+                    "field_collection_capture_commands": [
+                        "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
+                    ],
                     "field_collection_registration_commands": [
                         "./scripts/pi/register_field_replay_case.sh --condition blur"
                     ],
-                    "command_count": 3
+                    "command_count": 4
                 },
                 "plan_snapshot": {
                     "schema_version": "vision_nav_autonomy_plan_snapshot_v1",
@@ -4849,10 +4856,14 @@ mod tests {
             "./scripts/pi/run_threshold_tuning_report.sh"
         );
         assert_eq!(
+            command_bundle.field_collection_capture_commands[0],
+            "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
+        );
+        assert_eq!(
             command_bundle.field_collection_registration_commands[0],
             "./scripts/pi/register_field_replay_case.sh --condition blur"
         );
-        assert_eq!(command_bundle.command_count, Some(3));
+        assert_eq!(command_bundle.command_count, Some(4));
         let field_collection_plan = reports[0]
             .field_collection_plan
             .as_ref()

@@ -607,6 +607,11 @@ Status:
   commands, and pending field replay registration commands for downstream
   support tooling, and Module Setup consumes that bundle for bulk command copy
   plus saved setup-report exports.
+- Done: the Tauri report parser now preserves
+  `field_collection_capture_commands` from downloaded autonomy-readiness
+  reports, so Module Setup bulk-copy and saved setup reports retain the exact
+  per-condition capture commands even when the sibling field collection plan is
+  unavailable.
 - Done: field-evidence readiness next actions now point to the current
   proof-collection flow: load a pending Field Collection Plan condition, run
   `Field Log Capture`, then register the captured replay case.
