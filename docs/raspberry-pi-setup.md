@@ -430,7 +430,10 @@ workflow validates existing `terrain_matches.jsonl` files before counting them
 as capture evidence: the file must be parseable JSONL, nonempty, and include
 accepted/rejected/degraded match statuses. A valid log without
 `runtime_status.json` is preserved as degraded evidence until the runtime
-snapshot is generated or downloaded.
+snapshot is generated or downloaded. If `runtime_status.json` exists but is
+malformed or lacks active-map, last-match, output, or log-path metadata, the
+workflow also degrades the capture step; the validated terrain log can still be
+used by replay/export follow-up steps.
 
 `runtime_status.json` is the quick operator snapshot. It names the active map
 bundle, output path, latest frame, estimator health, last match status/reason,

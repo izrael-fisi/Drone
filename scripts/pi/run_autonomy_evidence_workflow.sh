@@ -347,6 +347,51 @@ else:
 PY
 }
 
+evaluate_runtime_status() {
+  local status_path="$1"
+  PYTHONPATH="$repo_root/src" "$venv_python" - "$status_path" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+
+def emit(status: str, message: str) -> None:
+    print(f"{status}|{message}")
+
+
+path = Path(sys.argv[1]).expanduser()
+try:
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
+except Exception as exc:
+    emit("degraded", f"Runtime status snapshot is not parseable JSON: {exc}")
+    raise SystemExit(0)
+if not isinstance(snapshot, dict):
+    emit("degraded", "Runtime status snapshot root is not a JSON object.")
+    raise SystemExit(0)
+active_map = snapshot.get("active_map") if isinstance(snapshot.get("active_map"), dict) else {}
+last_match = snapshot.get("last_match") if isinstance(snapshot.get("last_match"), dict) else {}
+output = snapshot.get("output") if isinstance(snapshot.get("output"), dict) else {}
+active_map_id = active_map.get("bundle_id") or active_map.get("map_id")
+last_match_status = last_match.get("status")
+output_dir = output.get("output_dir") or snapshot.get("output_path")
+log_path = output.get("log_path") or snapshot.get("log_path")
+if not active_map_id:
+    emit("degraded", "Runtime status snapshot is missing active-map state.")
+elif not last_match_status:
+    emit("degraded", "Runtime status snapshot is missing last-match state.")
+elif not output_dir or not log_path:
+    emit("degraded", "Runtime status snapshot is missing output/log path metadata.")
+else:
+    emit(
+        "passed",
+        f"Runtime status snapshot is usable for active map {active_map_id} "
+        f"with last match status {last_match_status}.",
+    )
+PY
+}
+
 sync_readiness_step_status() {
   local readiness_report="$1"
   if [[ ! -f "$readiness_report" ]]; then
@@ -406,19 +451,23 @@ run_step "create_field_collection_plan" ./scripts/pi/create_field_collection_pla
 runtime_status="$(dirname "$field_log")/runtime_status.json"
 if [[ -f "$field_log" ]]; then
   marker_lines=("__VISION_NAV_TERRAIN_LOG__=$field_log")
+  runtime_status_eval="degraded|Runtime status snapshot is missing; fetch or generate runtime_status.json before final bench evidence."
   if [[ -f "$runtime_status" ]]; then
     marker_lines+=("__VISION_NAV_RUNTIME_STATUS__=$runtime_status")
+    runtime_status_eval="$(evaluate_runtime_status "$runtime_status")"
   fi
+  runtime_status_status="${runtime_status_eval%%|*}"
+  runtime_status_message="${runtime_status_eval#*|}"
   terrain_log_eval="$(evaluate_terrain_log "$field_log")"
   terrain_log_status="${terrain_log_eval%%|*}"
   terrain_log_message="${terrain_log_eval#*|}"
-  if [[ "$terrain_log_status" == "passed" && -f "$runtime_status" ]]; then
+  if [[ "$terrain_log_status" == "passed" && "$runtime_status_status" == "passed" ]]; then
     field_log_ready=1
-    pass_step "capture_field_terrain_log" "$terrain_log_message" "${marker_lines[@]}"
+    pass_step "capture_field_terrain_log" "$terrain_log_message $runtime_status_message" "${marker_lines[@]}"
   elif [[ "$terrain_log_status" == "passed" ]]; then
     field_log_ready=1
     degraded_step "capture_field_terrain_log" \
-      "$terrain_log_message Runtime status snapshot is missing; fetch or generate runtime_status.json before final bench evidence." \
+      "$terrain_log_message $runtime_status_message" \
       "${marker_lines[@]}"
   else
     fail_step "capture_field_terrain_log" "$terrain_log_message" "${marker_lines[@]}"
@@ -433,14 +482,28 @@ elif [[ -e "$bundle" ]]; then
   if [[ -f "$captured_field_log" ]]; then
     field_log="$captured_field_log"
     export VISION_NAV_FIELD_LOG="$field_log"
+    captured_runtime_status="$field_capture_output_dir/runtime_status.json"
+    captured_marker_lines=("__VISION_NAV_TERRAIN_LOG__=$field_log")
+    captured_runtime_status_eval="degraded|Runtime status snapshot is missing; fetch or generate runtime_status.json before final bench evidence."
+    if [[ -f "$captured_runtime_status" ]]; then
+      captured_marker_lines+=("__VISION_NAV_RUNTIME_STATUS__=$captured_runtime_status")
+      captured_runtime_status_eval="$(evaluate_runtime_status "$captured_runtime_status")"
+    fi
+    captured_runtime_status_status="${captured_runtime_status_eval%%|*}"
+    captured_runtime_status_message="${captured_runtime_status_eval#*|}"
     captured_log_eval="$(evaluate_terrain_log "$field_log")"
     captured_log_status="${captured_log_eval%%|*}"
     captured_log_message="${captured_log_eval#*|}"
-    if [[ "$captured_log_status" == "passed" ]]; then
+    if [[ "$captured_log_status" == "passed" && "$captured_runtime_status_status" == "passed" ]]; then
       field_log_ready=1
-      pass_step "validate_captured_field_terrain_log" "$captured_log_message" "__VISION_NAV_TERRAIN_LOG__=$field_log"
+      pass_step "validate_captured_field_terrain_log" "$captured_log_message $captured_runtime_status_message" "${captured_marker_lines[@]}"
+    elif [[ "$captured_log_status" == "passed" ]]; then
+      field_log_ready=1
+      degraded_step "validate_captured_field_terrain_log" \
+        "$captured_log_message $captured_runtime_status_message" \
+        "${captured_marker_lines[@]}"
     else
-      fail_step "validate_captured_field_terrain_log" "$captured_log_message" "__VISION_NAV_TERRAIN_LOG__=$field_log"
+      fail_step "validate_captured_field_terrain_log" "$captured_log_message" "${captured_marker_lines[@]}"
     fi
   fi
 else

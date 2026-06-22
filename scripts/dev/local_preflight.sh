@@ -43,6 +43,7 @@ field_register_output="$preflight_tmp_dir/field_register_preflight.txt"
 evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_preflight.txt"
 evidence_workflow_validation_output="$preflight_tmp_dir/evidence_workflow_validation_preflight.txt"
 invalid_evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_invalid_log.txt"
+bad_status_evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_bad_status.txt"
 support_autodetect_output="$preflight_tmp_dir/support_autodetect_px4_report.txt"
 rosbag_validation_output="$preflight_tmp_dir/rosbag_validation_preflight.txt"
 rosbag2_review_output="$preflight_tmp_dir/rosbag2_cli_review_dry_run.txt"
@@ -111,7 +112,7 @@ cat >"$workflow_smoke_dir/terrain_matches.jsonl" <<'EOF'
 {"sequence": 1, "result": {"status": "accepted", "timestamp_us": 1000000, "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0, "covariance": {"x_m2": 1.0, "y_m2": 1.0}}}}
 EOF
 cat >"$workflow_smoke_dir/runtime_status.json" <<'EOF'
-{"active_map":{"bundle_id":"preflight"},"last_match":{"status":"accepted"},"estimator":{"health":"healthy"},"external_position_health":{"status":"not_configured"}}
+{"schema_version":"vision_nav_runtime_status_v1","active_map":{"bundle_id":"preflight"},"output":{"output_dir":"preflight-output","log_path":"preflight-output/terrain_matches.jsonl"},"last_match":{"status":"accepted"},"estimator":{"health":"healthy"},"external_position_health":{"status":"not_configured"}}
 EOF
 mkdir -p "$workflow_smoke_dir/terrain-match"
 cat >"$workflow_smoke_dir/terrain-match/rosbag2-cli-review.json" <<EOF
@@ -219,6 +220,7 @@ assert "create_field_collection_plan" in steps
 assert "capture_field_terrain_log" in steps
 assert steps["capture_field_terrain_log"]["status"] == "passed"
 assert "parseable with" in steps["capture_field_terrain_log"]["notes"]
+assert "Runtime status snapshot is usable" in steps["capture_field_terrain_log"]["notes"]
 assert "validate_rosbag_export" in steps
 assert "check_native_rosbag2_review" in steps
 assert "check_px4_receiver_proof" in steps
@@ -321,6 +323,57 @@ assert steps["run_feature_method_benchmark"]["status"] == "skipped"
 assert "not validated" in steps["run_feature_method_benchmark"]["notes"]
 assert steps["validate_rosbag_export"]["status"] == "skipped"
 assert "not validated" in steps["validate_rosbag_export"]["notes"]
+assert report["status"] == "failed"
+PY
+bad_status_workflow_dir="$field_smoke_dir/workflow-bad-status"
+mkdir -p "$bad_status_workflow_dir"
+cat >"$bad_status_workflow_dir/terrain_matches.jsonl" <<'EOF'
+{"sequence": 1, "result": {"status": "accepted", "timestamp_us": 1000000, "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0, "covariance": {"x_m2": 1.0, "y_m2": 1.0}}}}
+EOF
+cat >"$bad_status_workflow_dir/runtime_status.json" <<'EOF'
+{"schema_version":"vision_nav_runtime_status_v1","active_map":{"bundle_id":"preflight"},"last_match":{"status":"accepted"}}
+EOF
+VISION_NAV_PYTHON=python3 \
+VISION_NAV_EVIDENCE_WORKFLOW_DIR="$bad_status_workflow_dir/workflow" \
+VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$bad_status_workflow_dir/workflow/autonomy_evidence_workflow.json" \
+VISION_NAV_FIELD_TEMPLATE="$bad_status_workflow_dir/field_manifest.template.json" \
+VISION_NAV_FIELD_MANIFEST="$bad_status_workflow_dir/field_manifest.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN="$bad_status_workflow_dir/replay-cases/field_collection_plan.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN_MD="$bad_status_workflow_dir/replay-cases/field_collection_plan.md" \
+VISION_NAV_FIELD_SITE_NAME=preflight-bad-status \
+VISION_NAV_FIELD_BUNDLE=preflight-bundle \
+VISION_NAV_BUNDLE="$bad_status_workflow_dir/missing-bundle" \
+VISION_NAV_FIELD_LOG="$bad_status_workflow_dir/terrain_matches.jsonl" \
+VISION_NAV_ROSBAG_EXPORT_DIR="$bad_status_workflow_dir/terrain-match/rosbag-jsonl" \
+VISION_NAV_ROSBAG_EXPORT_VALIDATION="$bad_status_workflow_dir/terrain-match/rosbag-jsonl-validation.json" \
+VISION_NAV_ROSBAG2_CLI_REVIEW="$bad_status_workflow_dir/terrain-match/rosbag2-cli-review.json" \
+VISION_NAV_FIELD_EVIDENCE_REPORT="$bad_status_workflow_dir/replay-cases/field_evidence_report.json" \
+VISION_NAV_FIELD_CASE_REPORT_DIR="$bad_status_workflow_dir/replay-cases/field_evidence_cases" \
+VISION_NAV_FEATURE_METHOD_BENCHMARK="$bad_status_workflow_dir/feature-method-bench" \
+VISION_NAV_THRESHOLD_TUNING_REPORT="$bad_status_workflow_dir/replay-cases/threshold_tuning_report.json" \
+VISION_NAV_THRESHOLD_CASE_REPORT_DIR="$bad_status_workflow_dir/replay-cases/threshold_tuning_cases" \
+VISION_NAV_SUPPORT_OUTPUT_DIR="$bad_status_workflow_dir/support-bundles" \
+VISION_NAV_AUTONOMY_READINESS_REPORT="$bad_status_workflow_dir/replay-cases/autonomy_readiness_report.json" \
+VISION_NAV_AUTONOMY_HANDOFF="$bad_status_workflow_dir/replay-cases/autonomy_readiness_report.md" \
+VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE="$bad_status_workflow_dir/replay-cases/autonomy_readiness_report.evidence.zip" \
+VISION_NAV_PX4_SITL_SESSION="$bad_status_workflow_dir/px4-sitl-session" \
+VISION_NAV_PX4_SITL_REPORT="$bad_status_workflow_dir/px4-sitl-session/receiver_evidence.json" \
+VISION_NAV_PX4_SITL_PREREQS="$bad_status_workflow_dir/px4-sitl-session/px4_sitl_capture_prereqs.json" \
+./scripts/pi/run_autonomy_evidence_workflow.sh >"$bad_status_evidence_workflow_output" 2>&1
+python3 - "$bad_status_workflow_dir/workflow/autonomy_evidence_workflow.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text())
+steps = {step["name"]: step for step in report["steps"]}
+assert steps["capture_field_terrain_log"]["status"] == "degraded"
+assert "missing output/log path metadata" in steps["capture_field_terrain_log"]["notes"]
+assert steps["validate_rosbag_export"]["status"] == "passed"
+assert "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__" in report["markers"]
+assert "__VISION_NAV_RUNTIME_STATUS__" in report["markers"]
 assert report["status"] == "failed"
 PY
 support_autodetect_home="$workflow_smoke_dir/support-autodetect-home"
