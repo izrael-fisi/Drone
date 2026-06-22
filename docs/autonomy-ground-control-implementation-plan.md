@@ -377,6 +377,10 @@ Status:
   selected mission bundle or copied mission plan, reporting missing or failed
   satellite-source, map reset, home reset, heading, and estimator-readiness
   fields before the operator creates a full support bundle.
+- Done: bench-readiness and autonomy-readiness GNSS-denied next actions now run
+  `check_gnss_denied_plan.sh` before `validate_terrain_bundle.sh`, so operator
+  handoffs diagnose mission-prep metadata directly instead of only revalidating
+  bundle structure.
 - In progress: Module Setup chains Wi-Fi SSH identity, repo sync/install,
   runtime verification, camera preview/health, time sync, MAVLink endpoint
   validation, optional Micro XRCE-DDS Agent readiness, calibration image

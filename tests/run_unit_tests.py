@@ -3114,8 +3114,14 @@ RC8_OPTION,90
         incomplete_gnss["bundle"]["mission_plan"]["gnss_denied"]["checks"][1]["status"] = "failed"
         gnss_failed = evaluate_bench_readiness(incomplete_gnss)
         gnss_failed_checks = {check["name"]: check["status"] for check in gnss_failed["checks"]}
+        gnss_failed_actions = {action["check"]: action for action in gnss_failed["next_actions"]}
         assert_equal(gnss_failed["status"], "failed", "bench readiness incomplete gnss denied plan")
         assert_equal(gnss_failed_checks["gnss_denied_plan"], "failed", "failed gnss denied check included")
+        assert_equal(
+            gnss_failed_actions["gnss_denied_plan"]["command"],
+            "./scripts/pi/check_gnss_denied_plan.sh && ./scripts/pi/validate_terrain_bundle.sh",
+            "bench readiness gnss denied plan next action command",
+        )
 
         missing_px4 = dict(manifest)
         missing_px4["px4_sitl_evidence"] = {"status": "not_provided"}
@@ -5815,6 +5821,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
             "autonomy readiness gnss denied desktop action",
         )
+        if "check_gnss_denied_plan.sh" not in gnss_actions[0].get("command", ""):
+            raise AssertionError("Expected autonomy readiness GNSS action to run the GNSS-denied plan checker")
         gnss_blockers = [
             blocker
             for blocker in incomplete_gnss_ready["evidence_manifest"]["external_blockers"]

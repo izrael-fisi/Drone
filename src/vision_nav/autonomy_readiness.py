@@ -11,10 +11,12 @@ import shlex
 from typing import Any
 
 from vision_nav.bench_readiness import (
+    GNSS_DENIED_BUNDLE_COMMAND,
     REQUIRED_PX4_RECEIVER_MESSAGE,
     degraded,
     evaluate_bench_readiness_file,
     failed,
+    field_bundle_action_command,
     load_support_manifest,
     normalize_status,
     passed,
@@ -109,7 +111,7 @@ STRICT_SUPPORT_BUNDLE_ACTIONS = [
     {
         "label": "Prepare the GNSS-denied mission bundle.",
         "desktop_action": "Mission Planner > GNSS-Denied Prep, Build Bundle, Upload Bundle",
-        "command": "./scripts/pi/validate_terrain_bundle.sh",
+        "command": GNSS_DENIED_BUNDLE_COMMAND,
         "notes": "The support bundle must include terrain bundle health plus GNSS-denied mission metadata.",
     },
     {
@@ -1342,7 +1344,7 @@ def next_actions_for_bench_subchecks(
         "gnss_denied_plan": {
             "title": "Complete GNSS-denied mission prep before rebuilding the bundle.",
             "desktop_action": "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
-            "command": "./scripts/pi/validate_terrain_bundle.sh",
+            "command": GNSS_DENIED_BUNDLE_COMMAND,
             "notes": "The support bundle must include a Mission Planner export with satellite source disabled, map reset, home reset, heading, and estimator readiness all marked complete.",
         },
         "runtime_logs": {
@@ -1537,10 +1539,7 @@ def enrich_action_with_field_bundle(action: dict[str, Any], condition: dict[str,
     bundle = condition.get("bundle")
     if not isinstance(bundle, str) or not bundle.strip():
         return
-    action["command"] = shell_command(
-        {"VISION_NAV_BUNDLE": bundle},
-        "./scripts/pi/validate_terrain_bundle.sh",
-    )
+    action["command"] = field_bundle_action_command(bundle, action)
     action["field_bundle"] = bundle
     action["notes"] = " ".join(
         [

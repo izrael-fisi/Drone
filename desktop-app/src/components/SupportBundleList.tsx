@@ -170,7 +170,7 @@ const BENCH_FOLLOW_UPS: Record<string, { title: string; desktopAction: string; c
   gnss_denied_plan: {
     title: "Complete GNSS-denied mission prep",
     desktopAction: "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
-    command: "./scripts/pi/validate_terrain_bundle.sh",
+    command: "./scripts/pi/check_gnss_denied_plan.sh && ./scripts/pi/validate_terrain_bundle.sh",
     notes: "Rebuild the bundle after satellite source, map reset, home reset, heading, and estimator checks are ready.",
   },
   runtime_logs: {

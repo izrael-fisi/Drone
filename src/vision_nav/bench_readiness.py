@@ -19,17 +19,20 @@ REQUIRED_GNSS_DENIED_CHECKS = {
     "estimator_health",
 }
 REQUIRED_PX4_RECEIVER_MESSAGE = "odometry"
+VALIDATE_TERRAIN_BUNDLE_COMMAND = "./scripts/pi/validate_terrain_bundle.sh"
+CHECK_GNSS_DENIED_PLAN_COMMAND = "./scripts/pi/check_gnss_denied_plan.sh"
+GNSS_DENIED_BUNDLE_COMMAND = f"{CHECK_GNSS_DENIED_PLAN_COMMAND} && {VALIDATE_TERRAIN_BUNDLE_COMMAND}"
 BENCH_NEXT_ACTIONS = {
     "bundle_health": {
         "title": "Rebuild or validate the terrain bundle.",
         "desktop_action": "Mission Planner > Build Bundle, then Module Setup > Bench Report",
-        "command": "./scripts/pi/validate_terrain_bundle.sh",
+        "command": VALIDATE_TERRAIN_BUNDLE_COMMAND,
         "notes": "The support bundle must include passing terrain bundle health before bench readiness can pass.",
     },
     "gnss_denied_plan": {
         "title": "Complete GNSS-denied mission prep before rebuilding the bundle.",
         "desktop_action": "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
-        "command": "./scripts/pi/validate_terrain_bundle.sh",
+        "command": GNSS_DENIED_BUNDLE_COMMAND,
         "notes": "Rebuild the bundle after satellite source, map reset, home reset, heading, and estimator checks are ready.",
     },
     "runtime_logs": {
@@ -572,9 +575,23 @@ def enrich_action_with_field_bundle(action: dict[str, Any], condition: dict[str,
     bundle = condition.get("bundle")
     if not isinstance(bundle, str) or not bundle.strip():
         return
-    action["command"] = shell_command({"VISION_NAV_BUNDLE": bundle}, "./scripts/pi/validate_terrain_bundle.sh")
+    action["command"] = field_bundle_action_command(bundle, action)
     action["field_bundle"] = bundle
     action["notes"] = " ".join([str(action.get("notes") or ""), f"Selected field-plan bundle: {bundle}."]).strip()
+
+
+def field_bundle_action_command(bundle: str, action: dict[str, Any]) -> str:
+    if action_targets_gnss_denied_plan(action):
+        quoted = shlex.quote(str(bundle))
+        return (
+            f"VISION_NAV_BUNDLE={quoted} {CHECK_GNSS_DENIED_PLAN_COMMAND} && "
+            f"VISION_NAV_BUNDLE={quoted} {VALIDATE_TERRAIN_BUNDLE_COMMAND}"
+        )
+    return shell_command({"VISION_NAV_BUNDLE": bundle}, VALIDATE_TERRAIN_BUNDLE_COMMAND)
+
+
+def action_targets_gnss_denied_plan(action: dict[str, Any]) -> bool:
+    return action.get("check") == "gnss_denied_plan" or action.get("bench_subcheck") == "gnss_denied_plan"
 
 
 def enrich_action_with_field_capture(
