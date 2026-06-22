@@ -320,6 +320,11 @@ Status:
   missing-bundle guidance without extra environment variables.
 - Done: downloaded support-bundle browsing shows parsed checksum status, map
   source provenance, georeference confidence, and replay-gate state.
+- Done: saved web-tile map sources from Esri, Mapbox, and Bing now carry or
+  infer `web_mercator_tiles`, `EPSG:3857`, and 0.85 georeference confidence
+  through desktop downloads, desktop bundle builds, Python map-source bundle
+  builds, and support-bundle health, so old saved maps no longer fail bundle
+  health only because CRS metadata was absent.
 - Done: `vision-nav-benchmark-retrieval` benchmarks both the lightweight
   grayscale global descriptor and optional precomputed neural retrieval
   descriptors on replay logs, reporting top-k recall, mean rank, and clean

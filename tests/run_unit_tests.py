@@ -1766,6 +1766,51 @@ def test_build_bundle_from_map_source_creates_valid_terrain_bundle() -> None:
         if "build_bundle_from_map_source.sh" not in command or "VISION_NAV_MAP_SOURCE=" not in command:
             raise AssertionError(f"Expected copyable map-source build command, got {command!r}")
 
+        web_map_source = root / "DroneVisionNav" / "maps" / "legacy-esri-field"
+        web_map_source.mkdir(parents=True)
+        shutil.copy2(map_source / "satellite.png", web_map_source / "satellite.png")
+        (web_map_source / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "origin_lat": 37.777431,
+                    "origin_lon": -122.41465,
+                    "gsd_m_per_px": 0.25,
+                    "width_px": 280,
+                    "height_px": 220,
+                    "zoom": 17,
+                    "source": "esri",
+                }
+            )
+        )
+        web_bundle = root / "drone-data" / "map_bundles" / "web_mission_bundle"
+        web_result = build_bundle_from_map_source(
+            web_map_source,
+            web_bundle,
+            repo=Path.cwd(),
+            feature_method="orb",
+            max_features=500,
+            write_checksums=True,
+        )
+        web_manifest = json.loads((web_bundle / "manifest.json").read_text())
+        assert_equal(
+            web_manifest["terrain_bundle"]["crs"],
+            "EPSG:3857",
+            "legacy web map source infers web mercator terrain CRS",
+        )
+        assert_equal(
+            web_manifest["orthophoto"]["georef_source"],
+            "web_mercator_tiles",
+            "legacy web map source infers web mercator georef source",
+        )
+        assert_equal(
+            web_result["geospatial_health"]["georef"]["crs"],
+            "EPSG:3857",
+            "legacy web map source health CRS",
+        )
+        web_health_issues = [issue["message"] for issue in web_result["geospatial_health"]["issues"]]
+        if any("CRS is missing" in message for message in web_health_issues):
+            raise AssertionError(f"Web tile CRS inference should avoid missing-CRS warning: {web_health_issues}")
+
 
 def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
     with tempfile.TemporaryDirectory() as tmp:

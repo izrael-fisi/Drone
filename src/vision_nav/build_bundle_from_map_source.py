@@ -11,6 +11,12 @@ from typing import Any
 from vision_nav.build_terrain_bundle import build_terrain_bundle
 
 
+WEB_MERCATOR_TILE_SOURCES = {"esri", "mapbox", "bing"}
+WEB_MERCATOR_TILE_CRS = "EPSG:3857"
+WEB_MERCATOR_TILE_GEOREF_SOURCE = "web_mercator_tiles"
+WEB_MERCATOR_TILE_GEOREF_CONFIDENCE = 0.85
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build a terrain mission bundle from a saved map source folder."
@@ -199,7 +205,20 @@ def load_region_metadata(region_dir: Path) -> dict[str, Any]:
         confidence = float(metadata["georef_confidence"])
         if not 0.0 <= confidence <= 1.0:
             raise ValueError(f"georef_confidence must be between 0 and 1: {confidence}")
+    apply_saved_map_georef_defaults(metadata)
     return metadata
+
+
+def apply_saved_map_georef_defaults(metadata: dict[str, Any]) -> None:
+    source = str(metadata.get("source") or "").strip().lower()
+    if source not in WEB_MERCATOR_TILE_SOURCES:
+        return
+    if not metadata.get("georef_source"):
+        metadata["georef_source"] = WEB_MERCATOR_TILE_GEOREF_SOURCE
+    if metadata.get("georef_confidence") is None:
+        metadata["georef_confidence"] = WEB_MERCATOR_TILE_GEOREF_CONFIDENCE
+    if not metadata.get("georef_crs"):
+        metadata["georef_crs"] = WEB_MERCATOR_TILE_CRS
 
 
 def validate_lat_lon_gsd(origin_lat: Any, origin_lon: Any, gsd_m_per_px: Any) -> None:

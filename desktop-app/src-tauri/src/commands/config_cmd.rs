@@ -4160,7 +4160,9 @@ fn support_bundle_diagnostic_from_json(
                     source: json_string(item.get("source")),
                     georef_source: json_string(item.get("georef_source")),
                     source_format: json_string(item.get("source_format")),
-                    requires_import: item.get("requires_import").and_then(|value| value.as_bool()),
+                    requires_import: item
+                        .get("requires_import")
+                        .and_then(|value| value.as_bool()),
                 })
                 .collect::<Vec<_>>()
         })

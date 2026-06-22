@@ -73,6 +73,20 @@ export interface TileEstimate {
   too_large: boolean;
 }
 
+export interface DownloadTilesResult {
+  mosaic_path: string;
+  metadata_path: string;
+  width_px: number;
+  height_px: number;
+  gsd_m_per_px: number;
+  origin_lat: number;
+  origin_lon: number;
+  tile_count: number;
+  georef_source: string;
+  georef_confidence: number;
+  georef_crs: string;
+}
+
 export interface DownloadProgress {
   current: number;
   total: number;

@@ -10,6 +10,9 @@ use tiff::tags::Tag;
 
 const EARTH_RADIUS_M: f64 = 6_378_137.0;
 const MANUAL_GEOREF_CONFIDENCE: f64 = 0.75;
+const WEB_TILE_GEOREF_CRS: &str = "EPSG:3857";
+const WEB_TILE_GEOREF_SOURCE: &str = "web_mercator_tiles";
+const WEB_TILE_GEOREF_CONFIDENCE: f64 = 0.85;
 
 #[derive(Deserialize)]
 pub struct BuildDroneBundleRequest {
@@ -78,6 +81,43 @@ struct RegionMetadata {
     source: Option<String>,
     #[serde(default)]
     original_file: Option<String>,
+}
+
+fn region_metadata_is_web_tile_mosaic(metadata: &RegionMetadata) -> bool {
+    matches!(
+        metadata.source.as_deref(),
+        Some("esri") | Some("mapbox") | Some("bing")
+    )
+}
+
+fn region_metadata_georef_source(metadata: &RegionMetadata) -> &str {
+    metadata.georef_source.as_deref().unwrap_or_else(|| {
+        if region_metadata_is_web_tile_mosaic(metadata) {
+            WEB_TILE_GEOREF_SOURCE
+        } else {
+            "manual"
+        }
+    })
+}
+
+fn region_metadata_georef_confidence(metadata: &RegionMetadata) -> f64 {
+    metadata.georef_confidence.unwrap_or_else(|| {
+        if region_metadata_is_web_tile_mosaic(metadata) {
+            WEB_TILE_GEOREF_CONFIDENCE
+        } else {
+            1.0
+        }
+    })
+}
+
+fn region_metadata_georef_crs(metadata: &RegionMetadata) -> Option<&str> {
+    metadata.georef_crs.as_deref().or_else(|| {
+        if region_metadata_is_web_tile_mosaic(metadata) {
+            Some(WEB_TILE_GEOREF_CRS)
+        } else {
+            None
+        }
+    })
 }
 
 #[derive(Serialize)]
@@ -835,7 +875,7 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
                 "east_m": 0.0,
                 "north_m": 0.0
             },
-            "crs": metadata.georef_crs.as_deref(),
+            "crs": region_metadata_georef_crs(&metadata),
             "gsd_m": metadata.gsd_m_per_px,
             "coordinate_frame": "local_enu",
             "vertical_source": "barometer_optional",
@@ -856,9 +896,9 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
             "origin_pixel_y": metadata.origin_pixel_y.unwrap_or(0.0),
             "gsd_m": metadata.gsd_m_per_px,
             "rotation_deg": metadata.rotation_deg.unwrap_or(0.0),
-            "georef_source": metadata.georef_source.as_deref().unwrap_or("manual"),
-            "georef_confidence": metadata.georef_confidence.unwrap_or(1.0),
-            "georef_crs": metadata.georef_crs.as_deref()
+            "georef_source": region_metadata_georef_source(&metadata),
+            "georef_confidence": region_metadata_georef_confidence(&metadata),
+            "georef_crs": region_metadata_georef_crs(&metadata)
         },
         "features": {
             "path": "features/map_features.npz",
@@ -877,9 +917,9 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
             "zoom": metadata.zoom,
             "source": metadata.source,
             "original_file": metadata.original_file,
-            "georef_source": metadata.georef_source.as_deref(),
-            "georef_confidence": metadata.georef_confidence,
-            "georef_crs": metadata.georef_crs.as_deref()
+            "georef_source": region_metadata_georef_source(&metadata),
+            "georef_confidence": region_metadata_georef_confidence(&metadata),
+            "georef_crs": region_metadata_georef_crs(&metadata)
         },
         "notes": [
             "Low-compute Pi runtime uses the classical feature index.",
@@ -1177,6 +1217,46 @@ mod tests {
 
         assert_close(lat, 0.0, 1e-6);
         assert_close(lon, 3.0, 1e-6);
+    }
+
+    #[test]
+    fn infers_web_tile_region_metadata_georef() {
+        let metadata = RegionMetadata {
+            origin_lat: 37.0,
+            origin_lon: -122.0,
+            gsd_m_per_px: 0.5,
+            width_px: 256,
+            height_px: 256,
+            origin_pixel_x: None,
+            origin_pixel_y: None,
+            rotation_deg: None,
+            georef_source: None,
+            georef_confidence: None,
+            georef_crs: None,
+            zoom: Some(17),
+            source: Some("esri".to_string()),
+            original_file: None,
+        };
+
+        assert_eq!(
+            region_metadata_georef_source(&metadata),
+            "web_mercator_tiles"
+        );
+        assert_eq!(region_metadata_georef_confidence(&metadata), 0.85);
+        assert_eq!(region_metadata_georef_crs(&metadata), Some("EPSG:3857"));
+
+        let explicit = RegionMetadata {
+            georef_source: Some("manual_override".to_string()),
+            georef_confidence: Some(0.72),
+            georef_crs: Some("LOCAL_ENU_WGS84".to_string()),
+            ..metadata
+        };
+        assert_eq!(region_metadata_georef_source(&explicit), "manual_override");
+        assert_eq!(region_metadata_georef_confidence(&explicit), 0.72);
+        assert_eq!(
+            region_metadata_georef_crs(&explicit),
+            Some("LOCAL_ENU_WGS84")
+        );
     }
 
     #[test]

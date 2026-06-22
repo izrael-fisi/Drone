@@ -5,6 +5,9 @@ use std::path::Path;
 use tauri::{AppHandle, Emitter};
 
 const MAX_TILES: u64 = 5_000;
+const WEB_TILE_GEOREF_CRS: &str = "EPSG:3857";
+const WEB_TILE_GEOREF_SOURCE: &str = "web_mercator_tiles";
+const WEB_TILE_GEOREF_CONFIDENCE: f64 = 0.85;
 
 #[derive(Serialize, Clone)]
 pub struct DownloadProgress {
@@ -25,6 +28,9 @@ pub struct DownloadResult {
     pub origin_lat: f64,
     pub origin_lon: f64,
     pub tile_count: u32,
+    pub georef_source: String,
+    pub georef_confidence: f64,
+    pub georef_crs: String,
 }
 
 #[derive(Serialize)]
@@ -261,7 +267,13 @@ async fn inner_download(
     let meta = serde_json::json!({
         "origin_lat": origin_lat,
         "origin_lon": origin_lon,
+        "origin_pixel_x": 0.0,
+        "origin_pixel_y": 0.0,
         "gsd_m_per_px": gsd,
+        "rotation_deg": 0.0,
+        "georef_source": WEB_TILE_GEOREF_SOURCE,
+        "georef_confidence": WEB_TILE_GEOREF_CONFIDENCE,
+        "georef_crs": WEB_TILE_GEOREF_CRS,
         "width_px": mosaic_w,
         "height_px": mosaic_h,
         "zoom": zoom,
@@ -279,5 +291,8 @@ async fn inner_download(
         origin_lat,
         origin_lon,
         tile_count: total,
+        georef_source: WEB_TILE_GEOREF_SOURCE.to_string(),
+        georef_confidence: WEB_TILE_GEOREF_CONFIDENCE,
+        georef_crs: WEB_TILE_GEOREF_CRS.to_string(),
     })
 }

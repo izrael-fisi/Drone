@@ -84,6 +84,11 @@ def diagnose_bundle_inputs(
 def compact_bundle_diagnostic(report: Any, *, max_items: int = 3) -> dict[str, Any] | None:
     if not isinstance(report, dict):
         return None
+    raw_bundle_candidates = [
+        item
+        for item in report.get("bundle_candidates") or []
+        if isinstance(item, dict)
+    ]
     bundle_candidates = [
         {
             "path": item.get("path"),
@@ -91,8 +96,7 @@ def compact_bundle_diagnostic(report: Any, *, max_items: int = 3) -> dict[str, A
             "tile_index_exists": item.get("tile_index_exists"),
             "field_proof_warning": item.get("field_proof_warning"),
         }
-        for item in report.get("bundle_candidates") or []
-        if isinstance(item, dict)
+        for item in compact_bundle_candidate_items(report, raw_bundle_candidates, max_items=max_items)
     ]
     map_sources = [
         {
@@ -125,12 +129,44 @@ def compact_bundle_diagnostic(report: Any, *, max_items: int = 3) -> dict[str, A
         "missing_required_files": report.get("missing_required_files") or [],
         "search_root_count": len(search_roots),
         "search_roots": compact_search_roots(search_roots, max_items=max_items),
-        "bundle_candidate_count": len(bundle_candidates),
+        "bundle_candidate_count": len(raw_bundle_candidates),
         "map_source_candidate_count": len(map_sources),
-        "bundle_candidates": bundle_candidates[:max_items],
+        "bundle_candidates": bundle_candidates,
         "map_source_candidates": map_sources[:max_items],
         "recommended_actions": actions[:max_items],
     }
+
+
+def compact_bundle_candidate_items(
+    report: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    *,
+    max_items: int,
+) -> list[dict[str, Any]]:
+    expected = report.get("bundle_path")
+    if not expected:
+        return candidates[:max_items]
+    expected_path = Path(str(expected)).expanduser()
+    try:
+        expected_parent = normalized_path_key(expected_path.parent)
+    except Exception:
+        expected_parent = str(expected_path.parent)
+
+    def priority(item: dict[str, Any]) -> tuple[int, int, int, str]:
+        candidate_path_value = str(item.get("path") or "")
+        candidate_path = Path(candidate_path_value).expanduser()
+        try:
+            candidate_parent = normalized_path_key(candidate_path.parent)
+        except Exception:
+            candidate_parent = str(candidate_path.parent)
+        return (
+            0 if item.get("is_expected_path") else 1,
+            0 if candidate_parent == expected_parent else 1,
+            1 if item.get("field_proof_warning") else 0,
+            candidate_path_value,
+        )
+
+    return sorted(candidates, key=priority)[:max_items]
 
 
 def compact_search_roots(search_roots: list[str], *, max_items: int) -> list[str]:

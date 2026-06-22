@@ -7,6 +7,7 @@ import type {
   Device,
   DownloadFileResult,
   DownloadProgress,
+  DownloadTilesResult,
   ExtractedSupportBundleArtifact,
   FieldCollectionPlanFile,
   FieldEvidenceReportFile,
@@ -41,7 +42,7 @@ export const cmd = {
   estimateTiles: (bbox: BBox, zoom: number) =>
     invoke<TileEstimate>("estimate_tiles", { bbox, zoom }),
   downloadTiles: (bbox: BBox, zoom: number, outputDir: string, source = "esri", apiKey?: string) =>
-    invoke("download_tiles", { bbox, zoom, outputDir, source, apiKey }),
+    invoke<DownloadTilesResult>("download_tiles", { bbox, zoom, outputDir, source, apiKey }),
   buildDroneBundle: (request: BuildDroneBundleRequest) =>
     invoke<BuildDroneBundleResult>("build_drone_bundle", { request }),
   importMapFile: (request: ImportMapFileRequest) =>

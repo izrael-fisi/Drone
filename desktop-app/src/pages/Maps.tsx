@@ -648,7 +648,7 @@ export function Maps() {
     setProgress(null);
     const unlisten = await listen<DownloadProgress>("tile-progress", (e) => setProgress(e.payload));
     try {
-      await cmd.downloadTiles(bbox, zoom, outputDir, source, apiKey || undefined);
+      const result = await cmd.downloadTiles(bbox, zoom, outputDir, source, apiKey || undefined);
       const centerLat = (bbox.lat_min + bbox.lat_max) / 2;
       const centerLon = (bbox.lon_min + bbox.lon_max) / 2;
       const locationLabel = await reverseGeocode(centerLat, centerLon);
@@ -660,8 +660,11 @@ export function Maps() {
         source,
         output_path: outputDir,
         last_downloaded: new Date().toISOString(),
-        tile_count: estimate?.tile_count,
-        gsd_m_per_px: estimate?.gsd_m_per_px,
+        tile_count: result.tile_count,
+        gsd_m_per_px: result.gsd_m_per_px,
+        georef_source: result.georef_source,
+        georef_confidence: result.georef_confidence,
+        georef_crs: result.georef_crs,
         file_size_mb: estimate?.estimated_mb,
         location_label: locationLabel,
       };
