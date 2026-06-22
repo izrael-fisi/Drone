@@ -86,6 +86,10 @@ Status:
 - Done: Module Setup lists downloaded PX4 SITL capture prerequisite JSON
   reports from the same folder, showing failed setup checks, copyable next
   actions, and copyable fix commands separately from receiver proof.
+- Done: PX4 prerequisite fix commands now propagate through autonomy-readiness
+  diagnostics, support-bundle summaries, evidence-package manifests, Markdown
+  handoffs, and `autonomy_goal_status.sh` output so setup blockers carry
+  runnable remediation commands instead of prose only.
 - Done: `vision-nav-check-px4-params` and `scripts/pi/check_px4_params.sh`
   evaluate exported PX4 parameter files for external-vision bench readiness
   without modifying the flight controller.

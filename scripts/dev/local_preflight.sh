@@ -405,7 +405,14 @@ cat >"$support_autodetect_home/px4-sitl-evidence/px4_sitl_capture_prereqs.json" 
     {"name": "tmux_installed", "status": "passed", "message": "tmux is installed."},
     {"name": "px4_autopilot_dir", "status": "failed", "message": "PX4-Autopilot directory not found."}
   ],
-  "next_actions": ["Set VISION_NAV_PX4_AUTOPILOT_DIR."]
+  "next_actions": ["Set VISION_NAV_PX4_AUTOPILOT_DIR."],
+  "fix_commands": [
+    {
+      "label": "Point the harness at an existing PX4 checkout",
+      "command": "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot",
+      "condition": "px4_autopilot_dir"
+    }
+  ]
 }
 EOF
 cat >"$support_autodetect_home/DroneTransfer/outgoing/replay-cases/field_manifest.json" <<'EOF'
@@ -480,6 +487,7 @@ assert manifest["px4_sitl_evidence"]["source"] == "px4_sitl_report"
 assert manifest["px4_sitl_evidence"]["source_report_path"].endswith("px4-sitl-evidence/receiver_evidence.json")
 assert manifest["px4_sitl_prereqs"]["status"] == "failed"
 assert manifest["px4_sitl_prereqs"]["source_path"].endswith("px4-sitl-evidence/px4_sitl_capture_prereqs.json")
+assert manifest["px4_sitl_prereqs"]["fix_commands"][0]["condition"] == "px4_autopilot_dir"
 assert manifest["px4_params"]["status"] in {"passed", "degraded"}
 assert manifest["px4_params"]["param_copy"]["source"].endswith("px4.params")
 assert manifest["ardupilot_params"]["status"] == "passed"
@@ -612,7 +620,14 @@ cat >"$local_audit_dir/px4-sitl-evidence/px4_sitl_capture_prereqs.json" <<'EOF'
     {"name": "tmux_installed", "status": "passed", "message": "tmux is installed."},
     {"name": "px4_autopilot_dir", "status": "failed", "message": "PX4-Autopilot directory not found."}
   ],
-  "next_actions": ["PX4-Autopilot directory not found."]
+  "next_actions": ["PX4-Autopilot directory not found."],
+  "fix_commands": [
+    {
+      "label": "Point the harness at an existing PX4 checkout",
+      "command": "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot",
+      "condition": "px4_autopilot_dir"
+    }
+  ]
 }
 EOF
 cat >"$local_audit_dir/replay-cases/field_collection_plan.json" <<'EOF'
@@ -651,6 +666,7 @@ grep -q "px4_sitl_prereqs" "$scanned_goal_status_output"
 grep -q "Diagnostics:" "$scanned_goal_status_output"
 grep -q "px4_autopilot_dir" "$scanned_goal_status_output"
 grep -q "PX4-Autopilot directory not found." "$scanned_goal_status_output"
+grep -q "fix command (Point the harness at an existing PX4 checkout)" "$scanned_goal_status_output"
 VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
@@ -675,6 +691,8 @@ grep -q "receiver_evidence.json" "$local_audit_dir/replay-cases/autonomy_readine
 grep -q "px4_sitl_capture_prereqs.json" "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 grep -q "PX4 Capture Prerequisites" "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 grep -q '"next_actions"' "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+grep -q '"fix_commands"' "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+grep -q "Prerequisite fix commands" "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 grep -q "Autonomy Readiness Handoff" "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 python3 - "$local_audit_dir/replay-cases/autonomy_readiness_report.evidence.zip" <<'PY'
 import sys, zipfile

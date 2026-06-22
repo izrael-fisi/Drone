@@ -1880,6 +1880,13 @@ instance #0:
                         },
                     ],
                     "next_actions": ["Set VISION_NAV_PX4_AUTOPILOT_DIR."],
+                    "fix_commands": [
+                        {
+                            "label": "Point the harness at an existing PX4 checkout",
+                            "command": "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot",
+                            "condition": "px4_autopilot_dir",
+                        }
+                    ],
                 }
             )
         )
@@ -2229,6 +2236,11 @@ RC8_OPTION,90
             manifest["px4_sitl_prereqs"]["failed_checks"][0]["name"],
             "px4_autopilot_dir",
             "support px4 prereq failed check",
+        )
+        assert_equal(
+            manifest["px4_sitl_prereqs"]["fix_commands"][0]["condition"],
+            "px4_autopilot_dir",
+            "support px4 prereq fix command",
         )
         direct_px4_report = root / "direct_receiver_evidence.json"
         direct_px4_report.write_text(
@@ -2921,6 +2933,13 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         },
                     ],
                     "next_actions": ["PX4-Autopilot directory not found."],
+                    "fix_commands": [
+                        {
+                            "label": "Point the harness at an existing PX4 checkout",
+                            "command": "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot",
+                            "condition": "px4_autopilot_dir",
+                        }
+                    ],
                 }
             )
         )
@@ -3195,6 +3214,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             ready["diagnostics"]["px4_sitl_prereqs"]["failed_checks"][0]["name"],
             "px4_autopilot_dir",
             "autonomy readiness px4 prereq failed check",
+        )
+        assert_equal(
+            ready["diagnostics"]["px4_sitl_prereqs"]["fix_commands"][0]["condition"],
+            "px4_autopilot_dir",
+            "autonomy readiness px4 prereq fix command",
         )
         assert_equal(
             ready["plan_snapshot"]["schema_version"],
@@ -4039,6 +4063,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 != "px4_autopilot_dir"
             ):
                 raise AssertionError("autonomy evidence package missing PX4 prereq diagnostic detail")
+            if (
+                package_manifest["diagnostic_summary"]["px4_sitl_prereqs"]["fix_commands"][0]["condition"]
+                != "px4_autopilot_dir"
+            ):
+                raise AssertionError("autonomy evidence package missing PX4 prereq fix command")
             if package_manifest["proof_runbook_summary"]["summary"]["action_required"] < 1:
                 raise AssertionError("autonomy evidence package proof runbook summary should show pending action")
             package_command_bundle = package_manifest.get("command_bundle")

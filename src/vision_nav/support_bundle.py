@@ -620,6 +620,17 @@ def summarize_px4_capture_prereqs(report: dict[str, Any], *, report_path: Path) 
         checks.append(item)
         if check.get("status") == "failed":
             failed_checks.append(item)
+    fix_commands = []
+    for command in report.get("fix_commands") or []:
+        if not isinstance(command, dict):
+            continue
+        item = {
+            "label": command.get("label"),
+            "command": command.get("command"),
+            "condition": command.get("condition"),
+        }
+        if item["command"]:
+            fix_commands.append(item)
     return {
         "path": str(report_path),
         "schema_version": report.get("schema_version"),
@@ -632,6 +643,7 @@ def summarize_px4_capture_prereqs(report: dict[str, Any], *, report_path: Path) 
         "checks": checks,
         "failed_checks": failed_checks,
         "next_actions": report.get("next_actions") or [],
+        "fix_commands": fix_commands,
     }
 
 

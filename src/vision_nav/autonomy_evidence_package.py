@@ -213,6 +213,17 @@ def compact_px4_prereq_diagnostic(item: dict[str, Any]) -> dict[str, Any]:
     next_actions = string_list(item.get("next_actions"))
     if next_actions:
         compact["next_actions"] = next_actions[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+    fix_commands = dict_items(item.get("fix_commands"))
+    if fix_commands:
+        compact["fix_commands"] = [
+            {
+                key: str(command.get(key))
+                for key in ("label", "command", "condition")
+                if command.get(key) is not None
+            }
+            for command in fix_commands[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+            if command.get("command")
+        ]
     return compact
 
 

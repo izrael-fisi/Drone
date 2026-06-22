@@ -366,6 +366,17 @@ def px4_prereq_diagnostic_lines(px4_prereqs: dict[str, Any]) -> list[str]:
         lines.extend(["", "Prerequisite follow-up:", ""])
         for action in next_actions:
             lines.append(f"- [ ] {action}")
+    fix_commands = [
+        item
+        for item in px4_prereqs.get("fix_commands") or []
+        if isinstance(item, dict) and str(item.get("command") or "")
+    ]
+    if fix_commands:
+        lines.extend(["", "Prerequisite fix commands:", ""])
+        for item in fix_commands:
+            label = format_cell(item.get("label") or item.get("condition") or "command")
+            command = str(item.get("command") or "")
+            lines.extend([f"- {label}", f"  ```bash", f"  {command}", "  ```"])
     return lines
 
 

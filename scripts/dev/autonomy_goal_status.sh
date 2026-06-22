@@ -374,6 +374,11 @@ if isinstance(px4_prereqs, dict):
         for item in px4_prereqs.get("next_actions") or []
         if str(item)
     ]
+    prereq_fix_commands = [
+        item
+        for item in px4_prereqs.get("fix_commands") or []
+        if isinstance(item, dict) and str(item.get("command") or "")
+    ]
     if failed_checks or issues or px4_prereqs.get("status") not in {"passed", "not_provided", None}:
         print()
         print("Diagnostics:")
@@ -391,6 +396,9 @@ if isinstance(px4_prereqs, dict):
             print(f"  issue [{severity}]: {message}")
         for action in next_prereq_actions[:4]:
             print(f"  next action: {action}")
+        for command in prereq_fix_commands[:6]:
+            label = command.get("label") or command.get("condition") or "fix command"
+            print(f"  fix command ({label}): {command.get('command')}")
 
 if guided_workflow_commands:
     print()

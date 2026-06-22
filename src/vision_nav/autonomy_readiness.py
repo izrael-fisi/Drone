@@ -1298,6 +1298,17 @@ def summarize_px4_sitl_prereq_diagnostic(path: Path | None, *, explicit: bool = 
         checks.append(item)
         if normalize_status(check.get("status")) == "failed":
             failed_checks.append(item)
+    fix_commands = []
+    for command in report.get("fix_commands") or []:
+        if not isinstance(command, dict):
+            continue
+        item = {
+            "label": command.get("label"),
+            "command": command.get("command"),
+            "condition": command.get("condition"),
+        }
+        if item["command"]:
+            fix_commands.append(item)
     return {
         "status": normalize_status(report.get("status")) or "unknown",
         "path": str(path),
@@ -1311,6 +1322,7 @@ def summarize_px4_sitl_prereq_diagnostic(path: Path | None, *, explicit: bool = 
         "checks": checks,
         "failed_checks": failed_checks,
         "next_actions": [str(action) for action in report.get("next_actions") or [] if str(action)],
+        "fix_commands": fix_commands,
         "issues": [],
     }
 
@@ -1999,6 +2011,19 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"Status: {report['status']}")
     for check in report["checks"]:
         print(f"- {check['name']}: {check['status']} - {check['message']}")
+    diagnostics = report.get("diagnostics") if isinstance(report.get("diagnostics"), dict) else {}
+    px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
+    if isinstance(px4_prereqs, dict):
+        fix_commands = [
+            item
+            for item in px4_prereqs.get("fix_commands") or []
+            if isinstance(item, dict) and str(item.get("command") or "")
+        ]
+        if fix_commands:
+            print("PX4 prerequisite fix commands:")
+            for item in fix_commands:
+                label = item.get("label") or item.get("condition") or "command"
+                print(f"- {label}: {item.get('command')}")
     if report.get("next_actions"):
         print("Next actions:")
         for action in report["next_actions"]:
