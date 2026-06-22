@@ -3488,6 +3488,100 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         if "Recommended bundle action: Build and upload the selected Mission Planner terrain bundle." not in preflight_blocked_text:
             raise AssertionError("workflow validation human output should include bundle recommendation")
 
+        ready_bundle_path = create_minimal_terrain_bundle(root / "ready-preflight-bundle")
+        ready_preflight_capture_output = root / "field-captures" / "ready_good_texture"
+        ready_preflight_capture_command = (
+            f"VISION_NAV_BUNDLE={ready_bundle_path} "
+            f"VISION_NAV_OUTPUT_DIR={ready_preflight_capture_output} "
+            "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
+        )
+        ready_preflight_report = root / "ready_workflow_field_capture_preflight.json"
+        ready_preflight_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_field_capture_preflight_v1",
+                    "status": "degraded",
+                    "bundle_path": str(ready_bundle_path),
+                    "ready_for_capture": True,
+                    "ready_for_registration": False,
+                    "capture_output_dir": str(ready_preflight_capture_output),
+                    "source_log": str(ready_preflight_capture_output / "terrain_matches.jsonl"),
+                    "runtime_status_path": str(ready_preflight_capture_output / "runtime_status.json"),
+                    "capture_command": ready_preflight_capture_command,
+                    "metadata_update_command": capture_metadata_command,
+                    "checks": [
+                        {"name": "bundle_path", "status": "passed", "message": "Mission terrain bundle exists and validates."},
+                        {
+                            "name": "capture_metadata",
+                            "status": "degraded",
+                            "message": "Capture metadata still needs operator-filled field values.",
+                        },
+                    ],
+                    "next_actions": [
+                        {
+                            "id": "capture_field_terrain_log",
+                            "status": "ready",
+                            "title": "Capture the terrain log and runtime status for this condition.",
+                            "desktop_action": "Module Setup > Field Log Capture",
+                            "command": ready_preflight_capture_command,
+                            "source_log": str(ready_preflight_capture_output / "terrain_matches.jsonl"),
+                            "runtime_status_path": str(ready_preflight_capture_output / "runtime_status.json"),
+                        }
+                    ],
+                }
+            )
+        )
+        stale_preflight_ready_report = json.loads(preflight_blocked_path.read_text())
+        stale_preflight_ready_report["markers"]["__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"] = str(ready_preflight_report)
+        stale_preflight_ready_report["markers"]["__VISION_NAV_FIELD_CAPTURE_PREFLIGHT_STATUS__"] = "failed"
+        stale_preflight_ready_report["markers"]["__VISION_NAV_FIELD_CAPTURE_READY__"] = "0"
+        stale_preflight_ready_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE_STATUS__"] = "missing"
+        stale_preflight_ready_path = root / "stale_preflight_ready_autonomy_evidence_workflow.json"
+        stale_preflight_ready_path.write_text(json.dumps(stale_preflight_ready_report))
+        stale_preflight_ready_validation = validate_workflow_report(stale_preflight_ready_path)
+        assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["name"],
+            "capture_field_terrain_log",
+            "workflow validation should advance to capture when the current preflight report is capture-ready",
+        )
+        assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["desktop_action"],
+            "Module Setup > Field Log Capture",
+            "workflow validation should use field-log capture when current preflight is ready",
+        )
+        assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["command"],
+            f"{ready_preflight_capture_command} && ./scripts/pi/read_runtime_status.sh",
+            "workflow validation should prefer the refreshed preflight capture command",
+        )
+        assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["bundle_path"],
+            str(ready_bundle_path),
+            "workflow validation should prefer the refreshed preflight bundle path",
+        )
+        assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["preflight_status"],
+            "degraded",
+            "workflow validation should prefer the refreshed preflight status",
+        )
+        assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["ready_for_capture"],
+            True,
+            "workflow validation should prefer refreshed preflight capture readiness",
+        )
+        assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["runtime_status_path"],
+            str(ready_preflight_capture_output / "runtime_status.json"),
+            "workflow validation should prefer refreshed runtime status path",
+        )
+        stale_preflight_ready_checks = {check["name"]: check for check in stale_preflight_ready_validation["checks"]}
+        non_passed_names = [
+            item["name"]
+            for item in stale_preflight_ready_checks["required_step_results"]["details"]["non_passed_steps"]
+        ]
+        if "preflight_field_capture" not in non_passed_names:
+            raise AssertionError("workflow validation must still preserve the stale non-passing preflight proof gap")
+
         capture_blocked_report = json.loads(report_path.read_text())
         capture_blocked_report["markers"].pop("__VISION_NAV_TERRAIN_LOG__", None)
         capture_blocked_report["markers"].pop("__VISION_NAV_RUNTIME_STATUS__", None)

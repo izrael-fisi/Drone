@@ -519,6 +519,8 @@ def workflow_next_required_step(steps: list[Any], *, markers: dict[str, Any] | N
             )
         status = str(step.get("status") or "unknown")
         if status != "passed":
+            if name == "preflight_field_capture" and current_preflight_ready_for_capture(markers):
+                continue
             if should_defer_selected_condition_step(name, status, markers):
                 deferred_selected_condition_step = step
                 continue
@@ -585,7 +587,24 @@ def apply_marker_guidance(summary: dict[str, Any], markers: dict[str, Any] | Non
     apply_preflight_marker_guidance(summary, markers)
     apply_registration_marker_guidance(summary, markers)
     apply_capture_marker_guidance(summary, markers)
+    apply_current_preflight_report_guidance(summary, markers)
     apply_preflight_bundle_diagnostic(summary, markers)
+
+
+def current_preflight_ready_for_capture(markers: dict[str, Any] | None) -> bool:
+    if not isinstance(markers, dict):
+        return False
+    report = current_preflight_report(markers)
+    if not report:
+        return False
+    return report.get("ready_for_capture") is True
+
+
+def current_preflight_report(markers: dict[str, Any]) -> dict[str, Any] | None:
+    preflight_report = marker_string(markers, FIELD_CAPTURE_PREFLIGHT_MARKER)
+    if not preflight_report:
+        return None
+    return read_field_capture_preflight_report(preflight_report)
 
 
 def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, Any]) -> None:
@@ -626,6 +645,47 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
         existing_notes = str(summary.get("notes") or "").strip()
         guidance = "Field capture preflight found the selected terrain bundle missing; build/upload it, validate it, then rerun preflight."
         summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
+
+
+def apply_current_preflight_report_guidance(summary: dict[str, Any], markers: dict[str, Any]) -> None:
+    if summary.get("name") not in {"preflight_field_capture", "capture_field_terrain_log"}:
+        return
+    report = current_preflight_report(markers)
+    if not report:
+        return
+    report_path = marker_string(markers, FIELD_CAPTURE_PREFLIGHT_MARKER)
+    if report_path:
+        summary["preflight_report"] = report_path
+    if isinstance(report.get("status"), str):
+        summary["preflight_status"] = report["status"]
+    if isinstance(report.get("ready_for_capture"), bool):
+        summary["ready_for_capture"] = report["ready_for_capture"]
+    if isinstance(report.get("ready_for_registration"), bool):
+        summary["ready_for_registration"] = report["ready_for_registration"]
+    if isinstance(report.get("bundle_path"), str) and report["bundle_path"].strip():
+        summary["bundle_path"] = report["bundle_path"].strip()
+    expected_log = report.get("terrain_log_path") or report.get("source_log")
+    if isinstance(expected_log, str) and expected_log.strip():
+        summary["expected_log"] = expected_log.strip()
+    output_dir = report.get("capture_output_dir")
+    if isinstance(output_dir, str) and output_dir.strip():
+        summary["output_dir"] = output_dir.strip()
+        summary["runtime_status_path"] = str(report.get("runtime_status_path") or runtime_status_path_for_output(output_dir))
+    elif isinstance(report.get("runtime_status_path"), str) and report["runtime_status_path"].strip():
+        summary["runtime_status_path"] = report["runtime_status_path"].strip()
+    capture_command = report.get("capture_command")
+    if isinstance(capture_command, str) and capture_command.strip():
+        command = command_with_runtime_status_read(capture_command)
+        if summary.get("name") == "capture_field_terrain_log" and report.get("ready_for_capture") is True:
+            summary["command"] = command
+            summary["desktop_action"] = "Module Setup > Field Log Capture"
+            summary.pop("capture_command_after_bundle", None)
+            summary["notes"] = "Current field capture preflight is ready; capture the terrain log and runtime status next."
+        else:
+            summary["capture_command_after_preflight"] = command
+    metadata_update_command = report.get("metadata_update_command")
+    if isinstance(metadata_update_command, str) and metadata_update_command.strip():
+        summary["metadata_update_command"] = metadata_update_command.strip()
 
 
 def apply_registration_marker_guidance(summary: dict[str, Any], markers: dict[str, Any]) -> None:

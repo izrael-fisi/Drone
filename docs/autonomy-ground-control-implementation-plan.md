@@ -1337,6 +1337,10 @@ Status:
   `capture_field_terrain_log` steps now tells operators to run the bounded
   terrain capture and `read_runtime_status.sh`, keeping missing-step reports
   aligned with the same two-artifact proof contract.
+- Done: workflow-validation next-step guidance now prefers a refreshed
+  capture-ready `field_capture_preflight.json` over stale workflow markers, so
+  old missing-bundle workflow runs still fail final proof but point operators at
+  field-log capture once the current preflight confirms the bundle is usable.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.
