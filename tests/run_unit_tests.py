@@ -2834,6 +2834,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         assert_equal(checks["required_step_results"], "degraded", "workflow validation required step results")
         assert_equal(checks["final_readiness_status"], "passed", "workflow validation final readiness status")
         assert_equal(validation["step_count"], len(REQUIRED_WORKFLOW_STEPS), "workflow validation step count")
+        assert_equal(validation["issue_count"], len(validation["issues"]), "workflow validation issue count")
         assert_equal(
             validation["next_required_step"]["name"],
             "run_autonomy_readiness_audit",

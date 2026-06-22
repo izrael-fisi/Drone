@@ -1063,6 +1063,9 @@ Status:
   The validator exits nonzero only for structurally failed report/archive
   validation, while degraded-but-usable workflows can still pass script checks
   when readiness proof is merely incomplete.
+- Done: workflow-validation JSON now includes an explicit `issue_count` field
+  at the source, and evidence-package summaries preserve it so app/support
+  surfaces do not have to infer the count from a truncated issue list.
 - Done: final autonomy-readiness audits now record discovered evidence-workflow
   JSON, workflow-validation JSON, and workflow-log archive paths as non-gating
   inputs. Handoffs show their artifact availability, and evidence ZIPs include

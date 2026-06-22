@@ -352,7 +352,7 @@ def build_workflow_validation_summary(report: dict[str, Any], *, report_path: Pa
         "workflow_status": validation.get("workflow_status"),
         "step_count": validation.get("step_count"),
         "marker_count": validation.get("marker_count"),
-        "issue_count": len(string_list(validation.get("issues"))),
+        "issue_count": validation.get("issue_count", len(string_list(validation.get("issues")))),
         "issues": string_list(validation.get("issues"))[:MAX_MANIFEST_RUNBOOK_ACTIONS],
         "next_required_step": compact_workflow_next_step(validation.get("next_required_step")),
         "checks_truncated": len(highlighted_checks) > MAX_MANIFEST_WORKFLOW_CHECKS,

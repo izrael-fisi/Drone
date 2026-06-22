@@ -282,6 +282,7 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
         "summary": report.get("summary") if isinstance(report.get("summary"), dict) else status_counts,
         "step_count": len(step_names),
         "marker_count": len(markers),
+        "issue_count": len(issues),
         "log_archive": archive_result.get("details", {}).get("path"),
         "next_required_step": next_required_step,
         "checks": checks,
