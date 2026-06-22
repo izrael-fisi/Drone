@@ -261,46 +261,47 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         lines.append("No next actions were recorded.")
     command_groups = command_bundle(report, field_plan)
     if command_groups:
+        app_hints = command_app_hints(report, field_plan)
         lines.extend(["", "## Command Bundle", ""])
         guided_workflow_commands = command_groups.get("guided_workflow") or []
         if guided_workflow_commands:
             lines.extend(["Guided workflow command:", "", "```bash"])
-            lines.extend(guided_workflow_commands)
+            lines.extend(annotated_command_lines(guided_workflow_commands, app_hints))
             lines.append("```")
         prerequisite_fix_commands = command_groups.get("prerequisite_fixes") or []
         if prerequisite_fix_commands:
             lines.extend(["", "Prerequisite fix commands:", "", "```bash"])
-            lines.extend(prerequisite_fix_commands)
+            lines.extend(annotated_command_lines(prerequisite_fix_commands, app_hints))
             lines.append("```")
         immediate_commands = command_groups.get("immediate_next_actions") or []
         blocked_commands = command_groups.get("blocked_follow_ups") or []
         next_action_commands = command_groups.get("next_actions") or []
         if immediate_commands:
             lines.extend(["", "Immediate next-action commands:", "", "```bash"])
-            lines.extend(immediate_commands)
+            lines.extend(annotated_command_lines(immediate_commands, app_hints))
             lines.append("```")
         elif next_action_commands:
             lines.extend(["", "Next-action commands:", "", "```bash"])
-            lines.extend(next_action_commands)
+            lines.extend(annotated_command_lines(next_action_commands, app_hints))
             lines.append("```")
         if blocked_commands:
             lines.extend(["", "Blocked follow-up commands:", "", "```bash"])
-            lines.extend(blocked_commands)
+            lines.extend(annotated_command_lines(blocked_commands, app_hints))
             lines.append("```")
         field_capture_commands = command_groups.get("field_collection_capture") or []
         if field_capture_commands:
             lines.extend(["", "Field collection capture commands:", "", "```bash"])
-            lines.extend(field_capture_commands)
+            lines.extend(annotated_command_lines(field_capture_commands, app_hints))
             lines.append("```")
         field_metadata_commands = command_groups.get("field_collection_metadata_update") or []
         if field_metadata_commands:
             lines.extend(["", "Field collection metadata update commands:", "", "```bash"])
-            lines.extend(field_metadata_commands)
+            lines.extend(annotated_command_lines(field_metadata_commands, app_hints))
             lines.append("```")
         field_commands = command_groups.get("field_collection") or []
         if field_commands:
             lines.extend(["", "Field collection registration commands:", "", "```bash"])
-            lines.extend(field_commands)
+            lines.extend(annotated_command_lines(field_commands, app_hints))
             lines.append("```")
     lines.append("")
     return "\n".join(lines)
@@ -614,6 +615,55 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
     if field_commands:
         result["field_collection"] = field_commands
     return result
+
+
+def annotated_command_lines(commands: list[str], app_hints: dict[str, str]) -> list[str]:
+    lines: list[str] = []
+    for command in commands:
+        app_hint = app_hints.get(command)
+        if app_hint:
+            lines.append(f"# app: {app_hint}")
+        lines.append(command)
+    return lines
+
+
+def command_app_hints(report: dict[str, Any], field_plan: dict[str, Any] | None) -> dict[str, str]:
+    hints: dict[str, str] = {}
+    actions = report.get("next_actions") if isinstance(report.get("next_actions"), list) else []
+    for action in dict_items(actions):
+        add_command_app_hint(hints, action.get("command"), action.get("desktop_action"))
+
+    proof_runbook = report.get("proof_runbook") if isinstance(report.get("proof_runbook"), dict) else {}
+    for phase in dict_items(proof_runbook.get("phases")):
+        for action in dict_items(phase.get("actions")):
+            add_command_app_hint(hints, action.get("command"), action.get("desktop_action"))
+
+    if field_plan is not None:
+        for condition in field_collection_pending_conditions(field_plan):
+            add_command_app_hint(
+                hints,
+                condition.get("capture_command"),
+                "Module Setup > Field Log Capture",
+            )
+            add_command_app_hint(
+                hints,
+                condition.get("metadata_update_command"),
+                "Module Setup > Field Evidence Case > Update Metadata",
+            )
+            add_command_app_hint(
+                hints,
+                condition.get("register_command"),
+                "Module Setup > Field Evidence Case > Register",
+            )
+    return hints
+
+
+def add_command_app_hint(hints: dict[str, str], command: Any, desktop_action: Any) -> None:
+    if not isinstance(command, str) or not command.strip():
+        return
+    if not isinstance(desktop_action, str) or not desktop_action.strip():
+        return
+    hints.setdefault(command, desktop_action)
 
 
 def proof_runbook_lines(runbook: dict[str, Any]) -> list[str]:

@@ -4222,6 +4222,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff threshold blocker")
         if "Module Setup > Threshold Tuning" not in handoff:
             raise AssertionError("autonomy handoff next action")
+        if "# app: Module Setup > Threshold Tuning" not in handoff:
+            raise AssertionError("autonomy handoff command bundle missing app hint")
         if "## Field Evidence Collection Checklist" not in handoff:
             raise AssertionError("autonomy handoff field checklist")
         if "- [ ] Good texture (`good_texture`)" not in handoff:
