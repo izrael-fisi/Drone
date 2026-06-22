@@ -184,6 +184,7 @@ function SupportBundleDetailPanel({
   const workflowProvenanceCheck = workflowValidation?.checks.find((check) => check.name === "workflow_provenance");
   const workflowNextStep = workflowValidation?.next_required_step;
   const workflowNextCommand = workflowNextStep?.command || workflowNextStep?.metadata_update_command;
+  const workflowMetadataUpdateCommand = workflowNextStep?.metadata_update_command;
   const workflowCaptureAfterBundleCommand = workflowNextStep?.capture_command_after_bundle;
   const workflowBlockingChecks = (workflowValidation?.checks ?? []).filter((check) => check.status && check.status !== "passed");
   const workflowMissingSteps = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_steps));
@@ -282,6 +283,7 @@ function SupportBundleDetailPanel({
                   {workflowNextStep.runtime_status_path && (
                     <span className="truncate">runtime {workflowNextStep.runtime_status_path}</span>
                   )}
+                  {workflowNextStep.metadata_update_command && <span className="truncate">metadata update ready</span>}
                 </div>
                 {workflowNextCommand && (
                   <button
@@ -293,6 +295,18 @@ function SupportBundleDetailPanel({
                     <Clipboard size={9} className="shrink-0" />
                     <span className="shrink-0 text-slate-500">copy next</span>
                     <span className="truncate whitespace-pre">{workflowNextCommand}</span>
+                  </button>
+                )}
+                {workflowMetadataUpdateCommand && workflowMetadataUpdateCommand !== workflowNextCommand && (
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(workflowMetadataUpdateCommand)}
+                    className="flex w-full min-w-0 items-center gap-1.5 rounded border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-left font-mono text-[10px] text-amber-100 hover:border-amber-400/50"
+                    title={workflowMetadataUpdateCommand}
+                  >
+                    <Clipboard size={9} className="shrink-0" />
+                    <span className="shrink-0 text-amber-200/80">copy metadata update</span>
+                    <span className="truncate whitespace-pre">{workflowMetadataUpdateCommand}</span>
                   </button>
                 )}
                 {workflowCaptureAfterBundleCommand && (

@@ -920,6 +920,16 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
               <Copy size={9} />
             </button>
           )}
+          {nextStep.metadata_update_command && nextStep.metadata_update_command !== nextStep.command && (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(nextStep.metadata_update_command ?? "")}
+              className="inline-flex h-4 w-4 items-center justify-center rounded border border-amber-400/20 text-amber-200 hover:border-amber-300"
+              title="Copy field metadata update command"
+            >
+              <Copy size={9} />
+            </button>
+          )}
         </span>
       )}
       {highlightedChecks.map((check) => {
