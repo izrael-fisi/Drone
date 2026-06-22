@@ -1096,10 +1096,11 @@ summary, so terminal logs show which final proof artifacts are still absent.
 Failed or degraded gates include `next_actions` entries with the matching
 Module Setup action or shell command to run next. Field-evidence and
 threshold-tuning next actions include the missing real-world condition keys.
-The Module Setup readiness card can copy all next-action shell commands at once
-or copy a single command from its row, and the JSON report includes the same
-machine-readable command bundle for support tooling. When proof is incomplete,
-that bundle also includes `guided_workflow_commands` with the ordered
+The Module Setup readiness card can copy immediately runnable next-action shell
+commands, blocked follow-up commands, or a single command from its row, and the
+JSON report includes the same machine-readable command bundle for support
+tooling. When proof is incomplete, that bundle also includes
+`guided_workflow_commands` with the ordered
 `./scripts/pi/run_autonomy_evidence_workflow.sh` path.
 The Markdown handoff turns those missing condition keys and failed/degraded
 bench subchecks into checkbox lists for field collection and support review. It
@@ -1114,7 +1115,8 @@ vs required field conditions and the pending placeholder/missing cases. It
 also includes an artifact-availability table when the referenced evidence
 paths are visible from the machine rendering the handoff. The handoff also
 includes a copy-friendly command bundle for the guided workflow command,
-next-action commands, and pending field replay capture/registration commands.
+immediate next-action commands, blocked follow-up commands, and pending field
+replay capture/registration commands.
 
 The desktop Module Setup `Bench Report` action runs the terrain bundle validator
 against the configured deployed bundle, creates this same support bundle, and

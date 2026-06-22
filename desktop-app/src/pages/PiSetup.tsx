@@ -1146,6 +1146,12 @@ function AutonomyReadinessReportList({
               ...uniqueActionCommands(report.next_actions),
               ...(report.command_bundle?.next_action_commands ?? []),
             ]);
+            const immediateNextActionCommands = uniqueCommands(
+              report.command_bundle?.immediate_next_action_commands ?? [],
+            );
+            const blockedFollowUpCommands = uniqueCommands(report.command_bundle?.blocked_follow_up_commands ?? []);
+            const primaryNextActionCommands =
+              immediateNextActionCommands.length > 0 ? immediateNextActionCommands : nextActionCommands;
             const guidedWorkflowCommands = uniqueCommands(report.command_bundle?.guided_workflow_commands ?? []);
             const readinessWorkflowArtifacts = [
               {
@@ -1571,7 +1577,12 @@ function AutonomyReadinessReportList({
                   {check.message && <span className="text-slate-400 truncate">{check.message}</span>}
                 </div>
               ))}
-              {(guidedWorkflowCommands.length > 0 || report.next_actions.length > 0 || nextActionCommands.length > 0) && (
+              {(
+                guidedWorkflowCommands.length > 0 ||
+                report.next_actions.length > 0 ||
+                nextActionCommands.length > 0 ||
+                blockedFollowUpCommands.length > 0
+              ) && (
                 <div className="space-y-1 border-t border-border pt-2">
                   {guidedWorkflowCommands.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-cyan-500/20 bg-cyan-500/5 px-2 py-1">
@@ -1592,15 +1603,30 @@ function AutonomyReadinessReportList({
                     <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
                       Next actions
                     </div>
-                    {nextActionCommands.length > 0 && (
+                    {primaryNextActionCommands.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => navigator.clipboard.writeText(nextActionCommands.join("\n"))}
+                        onClick={() => navigator.clipboard.writeText(primaryNextActionCommands.join("\n"))}
                         className="btn-secondary px-1.5 py-0.5 text-[10px]"
-                        title="Copy next-action commands"
+                        title={
+                          immediateNextActionCommands.length > 0
+                            ? "Copy immediately runnable next-action commands"
+                            : "Copy next-action commands"
+                        }
                       >
                         <Copy size={9} />
-                        commands
+                        {immediateNextActionCommands.length > 0 ? "immediate" : "commands"}
+                      </button>
+                    )}
+                    {blockedFollowUpCommands.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(blockedFollowUpCommands.join("\n"))}
+                        className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                        title="Copy commands that are blocked until upstream proof is captured"
+                      >
+                        <Copy size={9} />
+                        blocked
                       </button>
                     )}
                   </div>

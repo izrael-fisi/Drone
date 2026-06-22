@@ -2893,6 +2893,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             ["px4_receiver_proof", "support_bundle_bench_readiness"],
             "autonomy proof runbook bench action order",
         )
+        missing_proof_command_bundle = missing_proof_ready["command_bundle"]
+        if "./scripts/pi/run_threshold_tuning_report.sh" not in missing_proof_command_bundle["blocked_follow_up_commands"]:
+            raise AssertionError("autonomy readiness should mark threshold tuning as blocked follow-up")
+        if "./scripts/pi/run_rosbag_export_validation.sh" not in missing_proof_command_bundle["blocked_follow_up_commands"]:
+            raise AssertionError("autonomy readiness should mark ROS replay validation as blocked follow-up")
+        if (
+            "./scripts/pi/run_rosbag_export_validation.sh"
+            in missing_proof_command_bundle["immediate_next_action_commands"]
+        ):
+            raise AssertionError("autonomy readiness should not copy blocked ROS replay validation as immediate")
 
         ready = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
@@ -3326,7 +3336,6 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "action_required",
             "autonomy readiness ros2 replay waits on field dataset",
         )
-
         incomplete_field_collection_plan = root / "field_collection_plan_incomplete.json"
         incomplete_field_collection_plan.write_text(
             json.dumps(
@@ -3670,9 +3679,15 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy readiness JSON missing guided workflow command bundle")
         if "./scripts/pi/run_threshold_tuning_report.sh" not in command_bundle["next_action_commands"]:
             raise AssertionError("autonomy readiness JSON missing next-action command bundle")
+        if "./scripts/pi/run_threshold_tuning_report.sh" not in command_bundle["immediate_next_action_commands"]:
+            raise AssertionError("autonomy readiness JSON missing immediate threshold command bundle")
+        if "./scripts/pi/run_threshold_tuning_report.sh" in command_bundle["blocked_follow_up_commands"]:
+            raise AssertionError("autonomy readiness should not mark threshold command blocked once field proof exists")
         handoff = render_handoff_markdown(missing_threshold)
         if "Guided workflow command:" not in handoff:
             raise AssertionError("autonomy handoff missing guided workflow command section")
+        if "Immediate next-action commands:" not in handoff:
+            raise AssertionError("autonomy handoff missing immediate command section")
         if "./scripts/pi/run_autonomy_evidence_workflow.sh" not in handoff:
             raise AssertionError("autonomy handoff missing guided workflow command")
         if "Goal completion: waiting on proof" not in handoff:

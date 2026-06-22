@@ -601,6 +601,8 @@ export interface AutonomyReadinessReportFile {
   command_bundle?: {
     guided_workflow_commands?: string[];
     next_action_commands: string[];
+    immediate_next_action_commands?: string[];
+    blocked_follow_up_commands?: string[];
     field_collection_capture_commands?: string[];
     field_collection_registration_commands: string[];
     command_count?: number;

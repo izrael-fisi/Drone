@@ -234,10 +234,20 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
             lines.extend(["Guided workflow command:", "", "```bash"])
             lines.extend(guided_workflow_commands)
             lines.append("```")
+        immediate_commands = command_groups.get("immediate_next_actions") or []
+        blocked_commands = command_groups.get("blocked_follow_ups") or []
         next_action_commands = command_groups.get("next_actions") or []
-        if next_action_commands:
+        if immediate_commands:
+            lines.extend(["", "Immediate next-action commands:", "", "```bash"])
+            lines.extend(immediate_commands)
+            lines.append("```")
+        elif next_action_commands:
             lines.extend(["", "Next-action commands:", "", "```bash"])
             lines.extend(next_action_commands)
+            lines.append("```")
+        if blocked_commands:
+            lines.extend(["", "Blocked follow-up commands:", "", "```bash"])
+            lines.extend(blocked_commands)
             lines.append("```")
         field_capture_commands = command_groups.get("field_collection_capture") or []
         if field_capture_commands:
@@ -428,6 +438,8 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
     report_bundle = report.get("command_bundle") if isinstance(report.get("command_bundle"), dict) else {}
     actions = report.get("next_actions") if isinstance(report.get("next_actions"), list) else []
     guided_workflow_commands = json_string_list(report_bundle.get("guided_workflow_commands"))
+    immediate_next_action_commands = json_string_list(report_bundle.get("immediate_next_action_commands"))
+    blocked_follow_up_commands = json_string_list(report_bundle.get("blocked_follow_up_commands"))
     next_action_commands = unique_strings(
         [
             *json_string_list(report_bundle.get("next_action_commands")),
@@ -464,6 +476,10 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
     result: dict[str, list[str]] = {}
     if guided_workflow_commands:
         result["guided_workflow"] = guided_workflow_commands
+    if immediate_next_action_commands:
+        result["immediate_next_actions"] = immediate_next_action_commands
+    if blocked_follow_up_commands:
+        result["blocked_follow_ups"] = blocked_follow_up_commands
     if next_action_commands:
         result["next_actions"] = next_action_commands
     if field_capture_commands:

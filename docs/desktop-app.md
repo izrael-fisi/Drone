@@ -563,13 +563,14 @@ condition keys when available.
 The evidence-package command prints the same first missing package artifact
 labels to terminal logs, so CLI-only support reviews can identify absent proof
 gates without opening the ZIP manifest.
-Readiness report cards also provide a bulk command copy action for all
-machine-readable next-action shell commands, while preserving each row's
-individual command copy control. The underlying JSON report includes the same
-command bundle for downstream support tooling, and Module Setup reads that
-bundle directly so bulk copy still works when the referenced Pi-side field plan
-is only available as downloaded report metadata. Saved setup reports also
-include the latest readiness report's `command_bundle`.
+Readiness report cards also provide bulk command copy actions for immediately
+runnable next-action shell commands and blocked follow-up commands, while
+preserving each row's individual command copy control. The underlying JSON
+report includes the same split command bundle for downstream support tooling,
+and Module Setup reads that bundle directly so bulk copy still works when the
+referenced Pi-side field plan is only available as downloaded report metadata.
+Saved setup reports also include the latest readiness report's
+`command_bundle`.
 If the readiness report points to a local field collection plan, the same card
 shows the plan status, registered-vs-required count, pending condition count,
 and first pending collection conditions. For Pi-generated reports that still
@@ -587,8 +588,8 @@ copy individual or batched generated capture and registration commands when the
 plan includes them, which keeps real replay-case collection and registration
 out of manual retyping.
 The Markdown handoff mirrors that workflow with a copy-friendly command bundle
-for next-action commands and pending field replay capture/registration
-commands. It also
+for guided workflow, immediate next-action, blocked follow-up, and pending
+field replay capture/registration commands. It also
 summarizes the research/implementation source-doc snapshot that the final audit
 used, including required marker coverage and implementation track/task counts.
 It also renders the readiness report's proof runbook so support can see which

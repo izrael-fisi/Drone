@@ -254,6 +254,7 @@ def evaluate_autonomy_readiness(
         ),
     }
     evidence_manifest = build_evidence_manifest(status, checks, inputs, next_actions)
+    proof_runbook = build_proof_runbook(checks, next_actions, evidence_manifest)
     report = {
         "metadata": build_audit_metadata(),
         "status": status,
@@ -262,6 +263,7 @@ def evaluate_autonomy_readiness(
         "command_bundle": build_command_bundle(
             next_actions,
             field_collection_plan_path=field_collection_plan_path,
+            proof_runbook=proof_runbook,
         ),
         "summary": {
             "failed": sum(1 for check in checks if check["status"] == "failed"),
@@ -271,7 +273,7 @@ def evaluate_autonomy_readiness(
         "inputs": inputs,
         "plan_snapshot": plan_snapshot,
         "evidence_manifest": evidence_manifest,
-        "proof_runbook": build_proof_runbook(checks, next_actions, evidence_manifest),
+        "proof_runbook": proof_runbook,
     }
     if support_report.get("report") is not None:
         report["bench_readiness"] = support_report["report"]
@@ -329,6 +331,7 @@ def build_command_bundle(
     next_actions: list[dict[str, Any]],
     *,
     field_collection_plan_path: str | Path | None = None,
+    proof_runbook: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     guided_workflow_commands = ["./scripts/pi/run_autonomy_evidence_workflow.sh"] if next_actions else []
     next_action_commands = unique_strings(
@@ -336,20 +339,68 @@ def build_command_bundle(
         for action in next_actions
         if isinstance(action, dict)
     )
+    immediate_next_action_commands, blocked_follow_up_commands = proof_runbook_command_groups(
+        proof_runbook,
+        fallback_commands=next_action_commands,
+    )
     field_collection_capture_commands = field_collection_commands(field_collection_plan_path, "capture_command")
     field_collection_registration_commands = field_collection_commands(field_collection_plan_path, "register_command")
     return {
         "guided_workflow_commands": guided_workflow_commands,
         "next_action_commands": next_action_commands,
+        "immediate_next_action_commands": immediate_next_action_commands,
+        "blocked_follow_up_commands": blocked_follow_up_commands,
         "field_collection_capture_commands": field_collection_capture_commands,
         "field_collection_registration_commands": field_collection_registration_commands,
-        "command_count": (
-            len(guided_workflow_commands)
-            + len(next_action_commands)
-            + len(field_collection_capture_commands)
-            + len(field_collection_registration_commands)
+        "command_count": len(
+            unique_strings(
+                [
+                    *guided_workflow_commands,
+                    *next_action_commands,
+                    *field_collection_capture_commands,
+                    *field_collection_registration_commands,
+                ]
+            )
         ),
     }
+
+
+def proof_runbook_command_groups(
+    proof_runbook: dict[str, Any] | None,
+    *,
+    fallback_commands: list[str],
+) -> tuple[list[str], list[str]]:
+    if not isinstance(proof_runbook, dict):
+        return fallback_commands, []
+    phases = proof_runbook.get("phases")
+    if not isinstance(phases, list):
+        return fallback_commands, []
+    immediate_commands: list[str] = []
+    blocked_commands: list[str] = []
+    for phase in phases:
+        if not isinstance(phase, dict):
+            continue
+        phase_commands = json_string_list(phase.get("commands"))
+        phase_status = str(phase.get("status") or "")
+        if phase_status == "action_required":
+            immediate_commands.extend(phase_commands)
+        elif phase_status == "blocked" and phase.get("id") != "final_audit":
+            blocked_commands.extend(phase_commands)
+    immediate_next_action_commands = unique_strings(immediate_commands)
+    blocked_follow_up_commands = unique_strings(
+        command
+        for command in blocked_commands
+        if command not in immediate_next_action_commands
+    )
+    if not immediate_next_action_commands and fallback_commands:
+        immediate_next_action_commands = fallback_commands
+    return immediate_next_action_commands, blocked_follow_up_commands
+
+
+def json_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
 
 
 def field_collection_commands(path: str | Path | None, key: str) -> list[str]:
