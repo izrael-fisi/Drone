@@ -446,6 +446,10 @@ Status:
 - Done: `vision-nav-create-field-collection-plan` renders the active field
   manifest into a JSON/Markdown operator checklist with per-condition status and
   exact Pi registration commands for each required real-world case.
+- Done: field collection plans now generate condition-specific capture
+  directories, bounded `run_terrain_nav_loop.sh` commands, expected
+  `terrain_matches.jsonl` and `runtime_status.json` paths, and registration
+  commands that point at the matching condition log.
 - Done: field evidence templates and collection plans now include per-condition
   capture metadata scaffolds and checklists, and Pi registration preserves the
   filled metadata on real replay cases for later support review.
@@ -515,6 +519,9 @@ Status:
 - Done: pending field-collection conditions in Module Setup can copy individual
   or batched replay-case registration commands directly from readiness and
   collection-plan cards.
+- Done: Module Setup carries the loaded field collection plan's condition log
+  path into the Field Evidence Case form and registration command, reducing the
+  risk of accidentally registering a stale generic terrain log.
 - Done: `scripts/pi/register_field_replay_case.sh` registers Pi terrain
   runtime/replay logs into the outgoing field replay manifest, writes the
   combined field-evidence report, and leaves it at the default path that support

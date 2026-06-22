@@ -762,6 +762,10 @@ export interface FieldCollectionPlanFile {
     manifest_log_path?: string;
     manifest_log_exists?: boolean;
     source_log?: string;
+    legacy_source_log?: string;
+    capture_output_dir?: string;
+    runtime_status_path?: string;
+    capture_command?: string;
     bundle?: string;
     capture_metadata?: Record<string, unknown>;
     register_command?: string;

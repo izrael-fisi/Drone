@@ -48,7 +48,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-log",
         default="$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
-        help="Pi-side terrain runtime/replay log path to use in generated registration commands.",
+        help="Legacy Pi-side terrain runtime/replay log path. Kept for compatibility with older collection plans.",
+    )
+    parser.add_argument(
+        "--capture-root",
+        default="$HOME/DroneTransfer/outgoing/field-captures",
+        help="Pi-side directory where condition-specific terrain captures should be written.",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON only.")
     return parser.parse_args()
@@ -62,6 +67,7 @@ def create_field_collection_plan(
     site_name: str = "field-site",
     bundle: str = "TODO: mission_bundle path or map provenance",
     source_log: str = "$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
+    capture_root: str = "$HOME/DroneTransfer/outgoing/field-captures",
 ) -> dict[str, Any]:
     manifest = Path(manifest_path).expanduser()
     manifest_data = load_manifest_or_empty(manifest)
@@ -74,6 +80,7 @@ def create_field_collection_plan(
             site_name=site_name,
             bundle=bundle,
             source_log=source_log,
+            capture_root=capture_root,
         )
         for condition in REQUIRED_FIELD_CONDITIONS
     ]
@@ -94,6 +101,7 @@ def create_field_collection_plan(
         "site_name": site_name,
         "bundle": bundle,
         "source_log": source_log,
+        "capture_root": capture_root,
         "summary": summary,
         "conditions": conditions,
         "next_steps": next_steps(summary),
@@ -129,11 +137,15 @@ def condition_plan(
     site_name: str,
     bundle: str,
     source_log: str,
+    capture_root: str,
 ) -> dict[str, Any]:
     matching = [case for case in cases if condition in normalize_conditions([str(value) for value in case.get("conditions") or []])]
     selected = select_best_case(matching, manifest_path)
     site_slug = sanitize_filename(site_name)
     generated_case_name = sanitize_filename(f"{site_slug}-{condition}")
+    capture_output_dir = remote_path_join(capture_root, generated_case_name)
+    planned_source_log = remote_path_join(capture_output_dir, "terrain_matches.jsonl")
+    runtime_status_path = remote_path_join(capture_output_dir, "runtime_status.json")
     expected = expected_behavior_for_condition(condition)
     status = "missing"
     manifest_log_path: str | None = None
@@ -168,11 +180,16 @@ def condition_plan(
         "VISION_NAV_FIELD_CASE_NAME": case_name,
         "VISION_NAV_FIELD_EXPECTED": expected,
         "VISION_NAV_FIELD_CONDITION": condition,
-        "VISION_NAV_FIELD_LOG": source_log,
+        "VISION_NAV_FIELD_LOG": planned_source_log,
         "VISION_NAV_FIELD_BUNDLE": bundle,
         "VISION_NAV_FIELD_NOTES": notes,
         "VISION_NAV_FIELD_CAPTURE_METADATA": json.dumps(capture_metadata, sort_keys=True),
         "VISION_NAV_FIELD_REPLACE": "1",
+    }
+    capture_env = {
+        "VISION_NAV_BUNDLE": bundle,
+        "VISION_NAV_OUTPUT_DIR": capture_output_dir,
+        "VISION_NAV_COUNT": "30",
     }
     return {
         "condition": condition,
@@ -183,13 +200,17 @@ def condition_plan(
         "case_name": case_name,
         "manifest_log_path": manifest_log_path,
         "manifest_log_exists": log_exists,
-        "source_log": source_log,
+        "source_log": planned_source_log,
+        "legacy_source_log": source_log,
+        "capture_output_dir": capture_output_dir,
+        "runtime_status_path": runtime_status_path,
         "bundle": bundle,
         "capture_metadata": capture_metadata,
         "capture_checklist": capture_checklist,
+        "capture_env": capture_env,
+        "capture_command": shell_command(capture_env, "./scripts/pi/run_terrain_nav_loop.sh"),
         "register_env": register_env,
         "register_command": shell_command(register_env, "./scripts/pi/register_field_replay_case.sh"),
-        "capture_command": "./scripts/pi/run_terrain_nav_loop.sh",
     }
 
 
@@ -220,6 +241,16 @@ def shell_command(env: dict[str, str], command: str) -> str:
     return " \\\n  ".join(parts + [command])
 
 
+def remote_path_join(root: str, *parts: str) -> str:
+    normalized = str(root).rstrip("/")
+    suffix = "/".join(str(part).strip("/") for part in parts if str(part).strip("/"))
+    if not normalized:
+        return suffix
+    if not suffix:
+        return normalized
+    return f"{normalized}/{suffix}"
+
+
 def next_steps(summary: dict[str, int]) -> list[str]:
     if summary["registered_count"] == summary["required_count"]:
         return [
@@ -244,6 +275,7 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
         f"- Site: {plan.get('site_name')}",
         f"- Manifest: `{plan.get('manifest_path')}`",
         f"- Bundle: `{plan.get('bundle')}`",
+        f"- Capture root: `{plan.get('capture_root')}`",
         f"- Registered: {summary.get('registered_count', 0)}/{summary.get('required_count', 0)}",
         f"- Placeholder: {summary.get('placeholder_count', 0)}",
         f"- Missing: {summary.get('missing_count', 0)}",
@@ -264,6 +296,9 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 f"- Condition: `{item.get('condition')}`",
                 f"- Expected behavior: `{item.get('expected')}`",
                 f"- Current status: `{item.get('status')}`",
+                f"- Capture output: `{item.get('capture_output_dir')}`",
+                f"- Terrain log: `{item.get('source_log')}`",
+                f"- Runtime status: `{item.get('runtime_status_path')}`",
                 f"- Notes: {item.get('notes') or 'n/a'}",
                 "",
                 "Capture metadata to fill before registration:",
@@ -286,7 +321,13 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                "Capture or replay a representative log, then register it:",
+                "Capture or replay a representative log:",
+                "",
+                "```bash",
+                str(item.get("capture_command") or ""),
+                "```",
+                "",
+                "Register the captured evidence:",
                 "",
                 "```bash",
                 str(item.get("register_command") or ""),
@@ -326,6 +367,7 @@ def main() -> None:
         site_name=args.site_name,
         bundle=args.bundle,
         source_log=args.source_log,
+        capture_root=args.capture_root,
     )
     if args.json:
         print(json.dumps(plan, indent=2, sort_keys=True))

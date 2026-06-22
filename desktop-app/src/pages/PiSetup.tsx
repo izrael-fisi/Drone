@@ -117,6 +117,7 @@ interface FieldCaseForm {
   caseName: string;
   expected: FieldExpected;
   conditions: string;
+  fieldLog: string;
   siteName: string;
   operator: string;
   captureDateUtc: string;
@@ -487,6 +488,7 @@ function fieldCaseFromCollectionPlanCondition(
     caseName: usableFieldText(condition.case_name) ?? current.caseName,
     expected,
     conditions: conditionKey || current.conditions,
+    fieldLog: usableFieldText(condition.source_log) ?? current.fieldLog,
     siteName: keepOrUse(current.siteName, metadata?.site_name ?? plan.site_name),
     operator: keepOrUse(current.operator, metadata?.operator),
     captureDateUtc: keepOrUse(current.captureDateUtc, metadata?.capture_date_utc),
@@ -588,6 +590,7 @@ function fieldEvidenceCommand(remoteProject: string, remoteBundle: string, field
     `VISION_NAV_FIELD_CASE_NAME=${shellQuote(fieldCase.caseName)}`,
     `VISION_NAV_FIELD_EXPECTED=${shellQuote(fieldCase.expected)}`,
     `VISION_NAV_FIELD_CONDITIONS=${shellQuote(fieldCase.conditions)}`,
+    fieldCase.fieldLog ? `VISION_NAV_FIELD_LOG=${shellQuote(fieldCase.fieldLog)}` : "",
     `VISION_NAV_FIELD_BUNDLE=${shellQuote(remoteBundle)}`,
     `VISION_NAV_FIELD_CAPTURE_METADATA=${shellQuote(captureMetadata)}`,
     fieldCase.notes ? `VISION_NAV_FIELD_NOTES=${shellQuote(fieldCase.notes)}` : "",
@@ -666,6 +669,7 @@ function defaultFieldCaseForm(): FieldCaseForm {
     caseName: "field-good-texture",
     expected: "good_map",
     conditions: "good_texture",
+    fieldLog: "",
     siteName: "",
     operator: "",
     captureDateUtc: compactUtcNow(),
@@ -2830,7 +2834,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     setFieldCase((value) => fieldCaseFromCollectionPlanCondition(value, plan, condition));
     setResult("field-evidence", {
       status: "idle",
-      output: `$ Load Field Collection Condition\ncase: ${condition.case_name ?? "n/a"}\ncondition: ${condition.condition ?? "n/a"}\nexpected: ${condition.expected ?? "n/a"}\nplan: ${plan.path}\n\nReview capture metadata, fill any missing values, then register the field evidence case.`,
+      output: `$ Load Field Collection Condition\ncase: ${condition.case_name ?? "n/a"}\ncondition: ${condition.condition ?? "n/a"}\nexpected: ${condition.expected ?? "n/a"}\nlog: ${condition.source_log ?? "latest default"}\nplan: ${plan.path}\n\nReview capture metadata, fill any missing values, then register the field evidence case.`,
     });
   };
 
@@ -5249,6 +5253,15 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                       <option key={condition} value={condition} />
                     ))}
                   </datalist>
+                </div>
+                <div>
+                  <label className="label">Field log</label>
+                  <input
+                    className="input-field font-mono text-xs"
+                    value={fieldCase.fieldLog}
+                    placeholder="$HOME/DroneTransfer/outgoing/field-captures/.../terrain_matches.jsonl"
+                    onChange={(event) => setFieldCase((value) => ({ ...value, fieldLog: event.target.value }))}
+                  />
                 </div>
                 <div>
                   <label className="label">Notes</label>

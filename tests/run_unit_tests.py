@@ -3616,6 +3616,7 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             site_name="Site A",
             bundle="field-bundles/site-a/mission_bundle",
             source_log="$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
+            capture_root="$HOME/DroneTransfer/outgoing/field-captures",
         )
         assert_equal(plan["schema_version"], "vision_nav_field_collection_plan_v1", "field collection plan schema")
         assert_equal(plan["status"], "degraded", "field collection plan waits for field logs")
@@ -3624,6 +3625,25 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         assert_equal(plan["summary"]["registered_count"], 0, "field collection registered count")
         good_texture = next(item for item in plan["conditions"] if item["condition"] == "good_texture")
         assert_equal(good_texture["status"], "placeholder", "field collection placeholder status")
+        assert_equal(
+            good_texture["capture_output_dir"],
+            "$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture",
+            "field collection condition-specific capture output",
+        )
+        assert_equal(
+            good_texture["source_log"],
+            "$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture/terrain_matches.jsonl",
+            "field collection condition-specific source log",
+        )
+        assert_equal(
+            good_texture["runtime_status_path"],
+            "$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture/runtime_status.json",
+            "field collection condition-specific runtime status",
+        )
+        if "VISION_NAV_OUTPUT_DIR" not in good_texture["capture_command"]:
+            raise AssertionError("Expected generated capture command to include output directory")
+        if "VISION_NAV_COUNT=30" not in good_texture["capture_command"]:
+            raise AssertionError("Expected generated capture command to be bounded")
         capture_metadata = good_texture.get("capture_metadata") or {}
         assert_equal(
             capture_metadata.get("schema_version"),
@@ -3640,6 +3660,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected generated registration command to include case name")
         if "VISION_NAV_FIELD_CAPTURE_METADATA" not in good_texture["register_command"]:
             raise AssertionError("Expected generated registration command to include capture metadata")
+        if "field-captures/Site-A-good_texture/terrain_matches.jsonl" not in good_texture["register_command"]:
+            raise AssertionError("Expected generated registration command to use the condition capture log")
         if not (base / "field_collection_plan.md").exists():
             raise AssertionError("Expected Markdown field collection plan")
 
@@ -3703,6 +3725,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         markdown = render_field_collection_markdown(updated)
         if "- [x] Good texture" not in markdown:
             raise AssertionError("Expected registered condition to be checked in Markdown plan")
+        if "Capture output:" not in markdown or "run_terrain_nav_loop.sh" not in markdown:
+            raise AssertionError("Expected Markdown plan to include condition-specific capture instructions")
         if "Capture metadata to fill before registration" not in markdown:
             raise AssertionError("Expected Markdown plan to include capture metadata scaffold")
 

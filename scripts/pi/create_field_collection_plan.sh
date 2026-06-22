@@ -9,6 +9,7 @@ markdown_output="${VISION_NAV_FIELD_COLLECTION_PLAN_MD:-$HOME/DroneTransfer/outg
 site_name="${VISION_NAV_FIELD_SITE_NAME:-field-site}"
 bundle="${VISION_NAV_FIELD_BUNDLE:-${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}}"
 source_log="${VISION_NAV_FIELD_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}"
+capture_root="${VISION_NAV_FIELD_CAPTURE_ROOT:-$HOME/DroneTransfer/outgoing/field-captures}"
 
 usage() {
   cat >&2 <<EOF
@@ -22,6 +23,7 @@ Common optional overrides:
   VISION_NAV_FIELD_SITE_NAME             Default: $site_name
   VISION_NAV_FIELD_BUNDLE                Default: $bundle
   VISION_NAV_FIELD_LOG                   Default: $source_log
+  VISION_NAV_FIELD_CAPTURE_ROOT          Default: $capture_root
 EOF
 }
 
@@ -50,7 +52,8 @@ PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.field_collection_plan \
   --markdown-output "$markdown_output" \
   --site-name "$site_name" \
   --bundle "$bundle" \
-  --source-log "$source_log"
+  --source-log "$source_log" \
+  --capture-root "$capture_root"
 
 cat <<EOF
 
