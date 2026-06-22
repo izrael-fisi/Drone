@@ -951,18 +951,23 @@ function formatReportTime(ms?: number) {
 }
 
 function fieldCollectionCommands(
-  conditions: Array<{
-    capture_command?: string;
-    metadata_update_command?: string;
-    register_command?: string;
-    status?: string;
-  }>,
+  conditions: FieldCollectionPlanCondition[],
   key: "capture_command" | "metadata_update_command" | "register_command",
 ) {
   return uniqueCommands(
     conditions
-      .filter((condition) => condition.status !== "registered")
+      .filter(fieldCollectionNeedsAction)
       .map((condition) => condition[key]),
+  );
+}
+
+function fieldCollectionNeedsAction(condition: FieldCollectionPlanCondition) {
+  return (
+    condition.status !== "registered" ||
+    condition.manifest_log_exists === false ||
+    !condition.source_log ||
+    !condition.capture_output_dir ||
+    !condition.runtime_status_path
   );
 }
 
@@ -979,17 +984,56 @@ function commandGroupText(
   group: string,
   commands: string[],
 ) {
-  const appHints = new Map(
-    (commandBundle?.command_items ?? [])
-      .filter((item) => item.group === group && item.command && item.desktop_action)
-      .map((item) => [item.command as string, item.desktop_action as string]),
-  );
   return commands
     .flatMap((command) => {
-      const appHint = appHints.get(command);
+      const appHint = commandAppHint(commandBundle, group, command);
       return appHint ? [`# app: ${appHint}`, command] : [command];
     })
     .join("\n");
+}
+
+function commandAppHint(commandBundle: AutonomyCommandBundle | undefined, group: string, command: string) {
+  const explicitHint = (commandBundle?.command_items ?? []).find(
+    (item) => item.group === group && item.command === command && item.desktop_action,
+  )?.desktop_action;
+  if (explicitHint) return explicitHint;
+  return FIELD_COLLECTION_APP_HINTS[group];
+}
+
+const FIELD_COLLECTION_APP_HINTS: Record<string, string> = {
+  field_collection_capture: "Module Setup > Field Log Capture",
+  field_collection_metadata_update: "Module Setup > Field Evidence Case > Update Metadata",
+  field_collection_registration: "Module Setup > Field Evidence Case > Register",
+};
+
+function fieldCollectionWorkflowText(
+  conditions: FieldCollectionPlanCondition[],
+  commandBundle?: AutonomyCommandBundle,
+) {
+  return conditions
+    .filter(fieldCollectionNeedsAction)
+    .flatMap((condition, index) => {
+      const label = condition.label ?? formatReadinessLabel(condition.condition) ?? "Field condition";
+      const title = condition.condition ? `${label} (${condition.condition})` : label;
+      const lines = [`# ${index + 1}. ${title}`];
+      if (condition.status) lines.push(`# status: ${formatReadinessLabel(condition.status)}`);
+      if (condition.expected) lines.push(`# expected: ${formatReadinessLabel(condition.expected)}`);
+      if (condition.capture_output_dir) lines.push(`# capture output: ${condition.capture_output_dir}`);
+      if (condition.source_log) lines.push(`# terrain log: ${condition.source_log}`);
+      if (condition.runtime_status_path) lines.push(`# runtime status: ${condition.runtime_status_path}`);
+      for (const [group, command] of [
+        ["field_collection_capture", condition.capture_command],
+        ["field_collection_metadata_update", condition.metadata_update_command],
+        ["field_collection_registration", condition.register_command],
+      ] as const) {
+        if (!command) continue;
+        const appHint = commandAppHint(commandBundle, group, command);
+        if (appHint) lines.push(`# app: ${appHint}`);
+        lines.push(command);
+      }
+      return lines;
+    })
+    .join("\n\n");
 }
 
 function benchEvidenceOrderText(
@@ -1482,6 +1526,24 @@ function AutonomyReadinessReportList({
                         <span className="font-mono text-slate-500">
                           pending {report.field_collection_plan.pending_conditions.length}
                         </span>
+                        {report.field_collection_plan.pending_conditions.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigator.clipboard.writeText(
+                                fieldCollectionWorkflowText(
+                                  report.field_collection_plan?.pending_conditions ?? [],
+                                  commandBundle,
+                                ),
+                              )
+                            }
+                            className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                            title="Copy pending field conditions in capture, metadata, register order"
+                          >
+                            <Copy size={9} />
+                            workflow
+                          </button>
+                        )}
                         {fieldPlanCaptureCommands.length > 0 && (
                           <button
                             type="button"
@@ -2540,6 +2602,17 @@ function FieldCollectionPlanList({
                       </span>
                       {file.site_name && <span className="font-mono text-[10px] text-slate-500">{file.site_name}</span>}
                       {file.markdown_path && <span className="font-mono text-[10px] text-cyan-400">markdown</span>}
+                      {file.conditions.some(fieldCollectionNeedsAction) && (
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(fieldCollectionWorkflowText(file.conditions))}
+                          className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                          title="Copy remaining field conditions in capture, metadata, register order"
+                        >
+                          <Copy size={9} />
+                          workflow
+                        </button>
+                      )}
                       {captureCommands.length > 0 && (
                         <button
                           type="button"
@@ -2624,7 +2697,7 @@ function FieldCollectionPlanList({
                   {file.conditions.slice(0, 8).map((condition) => (
                     <div key={`${file.path}-${condition.condition}`} className="flex min-w-0 items-center gap-1">
                       <FieldCollectionConditionBadge condition={condition} idPrefix={file.path} />
-                      {condition.status !== "registered" && (
+                      {fieldCollectionNeedsAction(condition) && (
                         <button
                           type="button"
                           onClick={() => onLoadCondition(file, condition)}

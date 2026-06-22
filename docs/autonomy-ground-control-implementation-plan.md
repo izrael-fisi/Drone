@@ -762,6 +762,10 @@ Status:
 - Done: Module Setup's Autonomy Readiness report card can now bulk-copy the
   full bench evidence order with step numbers, Module Setup routes, dependency
   waits, notes, and shell commands, while preserving per-step copy buttons.
+- Done: Module Setup's Autonomy Readiness and Field Collection Plan cards can
+  now bulk-copy pending field evidence work as a per-condition workflow, keeping
+  capture, metadata update, and registration commands grouped in proof-safe
+  order with app-route comments and traceability paths.
 - Done: autonomy-readiness reports now include a strict
   `evidence_manifest` section with completion blockers, external proof
   blockers, missing field conditions, and failed/degraded bench subchecks so the
