@@ -1178,6 +1178,9 @@ Status:
 - Done: bundle-health and GNSS-denied bench evidence actions now validate the
   selected field-plan bundle with `VISION_NAV_BUNDLE=...`, keeping bundle prep
   aligned with the next required field capture.
+- Done: missing-bundle workflow-validation handoffs now run the selected terrain
+  capture and `read_runtime_status.sh` after bundle validation, matching the
+  required terrain-log plus runtime-status proof markers.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

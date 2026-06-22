@@ -872,7 +872,7 @@ cat >"$local_audit_dir/replay-cases/autonomy-evidence-workflow/autonomy_evidence
     "bundle_path": "/tmp/mission_bundle",
     "expected_log": "/tmp/field-captures/good_texture/terrain_matches.jsonl",
     "output_dir": "/tmp/field-captures/good_texture",
-    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
+    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh"
   },
   "checks": [
     {
@@ -949,7 +949,7 @@ grep -q "metadata update: VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/u
 grep -q "bundle: /tmp/mission_bundle" "$scanned_goal_status_output"
 grep -q "expected log: /tmp/field-captures/good_texture/terrain_matches.jsonl" "$scanned_goal_status_output"
 grep -q "output: /tmp/field-captures/good_texture" "$scanned_goal_status_output"
-grep -q "after bundle: VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" "$scanned_goal_status_output"
+grep -q "after bundle: VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh" "$scanned_goal_status_output"
 python3 - "$scanned_goal_status_output" <<'PY'
 from pathlib import Path
 import sys

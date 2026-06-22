@@ -2932,7 +2932,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             capture_blocked_validation["next_required_step"]["capture_command_after_bundle"],
-            capture_command,
+            f"{capture_command} && ./scripts/pi/read_runtime_status.sh",
             "workflow validation preserves capture command after missing-bundle fix",
         )
         capture_blocked_checks = {check["name"]: check for check in capture_blocked_validation["checks"]}
@@ -3526,7 +3526,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "bundle_path": str(root / "mission_bundle"),
                         "expected_log": str(root / "field-captures/good_texture/terrain_matches.jsonl"),
                         "output_dir": str(root / "field-captures/good_texture"),
-                        "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+                        "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
                     },
                     "checks": [
                         {
@@ -5038,7 +5038,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             )
             assert_equal(
                 workflow_validation_summary["next_required_step"]["capture_command_after_bundle"],
-                "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+                "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
                 "autonomy evidence package workflow validation capture-after-bundle command",
             )
             assert_equal(

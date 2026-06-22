@@ -610,7 +610,7 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
         summary["desktop_action"] = "Mission Planner > Build Bundle, Upload Bundle, then Module Setup > Field Log Capture"
         summary["command"] = bundle_validation_command(bundle_path)
         if capture_command:
-            summary["capture_command_after_bundle"] = capture_command
+            summary["capture_command_after_bundle"] = command_with_runtime_status_read(capture_command)
         existing_notes = str(summary.get("notes") or "").strip()
         guidance = "Terrain bundle is missing; build/upload the selected mission bundle and validate it before field-log capture."
         summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
@@ -627,6 +627,12 @@ def bundle_validation_command(bundle_path: str | None) -> str:
     if bundle_path:
         return f"VISION_NAV_BUNDLE={shlex.quote(bundle_path)} ./scripts/pi/validate_terrain_bundle.sh"
     return "./scripts/pi/validate_terrain_bundle.sh"
+
+
+def command_with_runtime_status_read(command: str) -> str:
+    if "read_runtime_status.sh" in command:
+        return command
+    return f"{command} && ./scripts/pi/read_runtime_status.sh"
 
 
 def marker_presence(
