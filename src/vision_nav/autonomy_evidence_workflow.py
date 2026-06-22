@@ -585,6 +585,7 @@ def apply_marker_guidance(summary: dict[str, Any], markers: dict[str, Any] | Non
     apply_preflight_marker_guidance(summary, markers)
     apply_registration_marker_guidance(summary, markers)
     apply_capture_marker_guidance(summary, markers)
+    apply_preflight_bundle_diagnostic(summary, markers)
 
 
 def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, Any]) -> None:
@@ -669,6 +670,65 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
         existing_notes = str(summary.get("notes") or "").strip()
         guidance = "Terrain bundle is missing; build/upload the selected mission bundle and validate it before field-log capture."
         summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
+
+
+def apply_preflight_bundle_diagnostic(summary: dict[str, Any], markers: dict[str, Any]) -> None:
+    if summary.get("name") not in {"preflight_field_capture", "capture_field_terrain_log"}:
+        return
+    preflight_report = marker_string(markers, FIELD_CAPTURE_PREFLIGHT_MARKER)
+    if not preflight_report:
+        return
+    report = read_field_capture_preflight_report(preflight_report)
+    if not report:
+        return
+    diagnostic = preflight_bundle_diagnostic(report)
+    if not diagnostic:
+        return
+    report_bundle = report.get("bundle_path")
+    summary_bundle = summary.get("bundle_path")
+    if (
+        isinstance(report_bundle, str)
+        and report_bundle.strip()
+        and isinstance(summary_bundle, str)
+        and summary_bundle.strip()
+        and report_bundle.strip() != summary_bundle.strip()
+    ):
+        return
+    summary["bundle_diagnostic"] = diagnostic
+
+
+def read_field_capture_preflight_report(path_text: str) -> dict[str, Any] | None:
+    path = Path(path_text).expanduser()
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(report, dict) or report.get("schema_version") != "vision_nav_field_capture_preflight_v1":
+        return None
+    return report
+
+
+def preflight_bundle_diagnostic(report: dict[str, Any]) -> dict[str, Any] | None:
+    for action in report.get("next_actions") or []:
+        if not isinstance(action, dict) or action.get("id") != "prepare_bundle":
+            continue
+        diagnostic = action.get("bundle_diagnostic")
+        if isinstance(diagnostic, dict):
+            return diagnostic
+    for check_item in report.get("checks") or []:
+        if not isinstance(check_item, dict) or check_item.get("name") != "bundle_path":
+            continue
+        details = check_item.get("details")
+        if not isinstance(details, dict):
+            continue
+        diagnostic = details.get("diagnostic") or details.get("bundle_diagnostic")
+        if isinstance(diagnostic, dict):
+            from vision_nav.bundle_diagnostics import compact_bundle_diagnostic
+
+            return compact_bundle_diagnostic(diagnostic)
+    return None
 
 
 def marker_string(markers: dict[str, Any], name: str) -> str | None:
@@ -861,6 +921,27 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
         lines.append(f"Ready for capture: {'yes' if next_step.get('ready_for_capture') else 'no'}")
     if isinstance(next_step.get("ready_for_registration"), bool):
         lines.append(f"Ready for registration: {'yes' if next_step.get('ready_for_registration') else 'no'}")
+    diagnostic = next_step.get("bundle_diagnostic")
+    if isinstance(diagnostic, dict):
+        missing = [str(item) for item in diagnostic.get("missing_required_files") or [] if str(item)]
+        if missing:
+            lines.append(f"Missing bundle files: {', '.join(missing[:8])}")
+        candidates = [
+            item
+            for item in diagnostic.get("bundle_candidates") or []
+            if isinstance(item, dict) and item.get("path")
+        ]
+        for candidate in candidates[:3]:
+            warning = " (example/synthetic only)" if candidate.get("field_proof_warning") else ""
+            lines.append(f"Detected bundle candidate: {candidate.get('path')}{warning}")
+        map_sources = [
+            item
+            for item in diagnostic.get("map_source_candidates") or []
+            if isinstance(item, dict) and item.get("path")
+        ]
+        for source in map_sources[:3]:
+            label = source.get("name") or "unnamed"
+            lines.append(f"Detected map source: {source.get('path')} [{label}]")
     return lines
 
 

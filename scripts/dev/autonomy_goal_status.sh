@@ -694,6 +694,31 @@ if workflow_validation:
                 print(f"  ready for capture: {'yes' if next_step.get('ready_for_capture') else 'no'}")
             if isinstance(next_step.get("ready_for_registration"), bool):
                 print(f"  ready for registration: {'yes' if next_step.get('ready_for_registration') else 'no'}")
+            diagnostic = next_step.get("bundle_diagnostic")
+            if isinstance(diagnostic, dict):
+                missing = diagnostic.get("missing_required_files") or []
+                if missing:
+                    print(f"  missing bundle files: {', '.join(str(value) for value in missing[:8])}")
+                candidates = [
+                    candidate
+                    for candidate in diagnostic.get("bundle_candidates") or []
+                    if isinstance(candidate, dict)
+                ]
+                if candidates:
+                    print("  detected bundle candidates:")
+                    for candidate in candidates[:3]:
+                        warning = " (example/synthetic only)" if candidate.get("field_proof_warning") else ""
+                        print(f"    - {candidate.get('path')}{warning}")
+                map_sources = [
+                    source
+                    for source in diagnostic.get("map_source_candidates") or []
+                    if isinstance(source, dict)
+                ]
+                if map_sources:
+                    print("  detected map sources:")
+                    for source in map_sources[:3]:
+                        label = source.get("name") or "unnamed"
+                        print(f"    - {source.get('path')} [{label}]")
             if next_step.get("capture_command_after_bundle"):
                 print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
             if next_step.get("capture_command_after_preflight"):

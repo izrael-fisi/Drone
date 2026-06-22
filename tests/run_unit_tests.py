@@ -3174,9 +3174,69 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             "VISION_NAV_FIELD_CONDITION=good_texture "
             "./scripts/pi/update_field_capture_metadata.sh"
         )
-        preflight_blocked_report["markers"]["__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"] = str(
-            root / "field_capture_preflight.json"
+        workflow_preflight_report = root / "workflow_field_capture_preflight.json"
+        workflow_preflight_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_field_capture_preflight_v1",
+                    "status": "failed",
+                    "bundle_path": str(missing_bundle_path),
+                    "checks": [
+                        {
+                            "name": "bundle_path",
+                            "status": "failed",
+                            "message": "Mission bundle is missing.",
+                            "details": {
+                                "diagnostic": {
+                                    "bundle_exists": False,
+                                    "missing_required_files": [
+                                        "manifest.json",
+                                        "ortho/map.png",
+                                        "features/map_features.npz",
+                                        "index/tiles.sqlite",
+                                    ],
+                                    "bundle_candidates": [
+                                        {
+                                            "path": str(root / "candidate_bundle"),
+                                            "bundle_id": "candidate",
+                                            "field_proof_warning": "Example or synthetic bundles are useful for tooling smoke tests but do not satisfy real field evidence.",
+                                        }
+                                    ],
+                                    "map_source_candidates": [
+                                        {
+                                            "path": str(root / "map_source"),
+                                            "name": "Field Area",
+                                            "source": "uploaded_geotiff",
+                                            "georef_source": "geotiff_embedded",
+                                        }
+                                    ],
+                                    "recommended_actions": [
+                                        {
+                                            "id": "build_or_upload_selected_bundle",
+                                            "status": "action_required",
+                                            "title": "Build and upload the selected Mission Planner terrain bundle.",
+                                            "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                                            "command": f"VISION_NAV_BUNDLE={shlex.quote(str(missing_bundle_path))} ./scripts/pi/validate_terrain_bundle.sh",
+                                        }
+                                    ],
+                                }
+                            },
+                        }
+                    ],
+                    "next_actions": [
+                        {
+                            "id": "prepare_bundle",
+                            "status": "action_required",
+                            "title": "Build, upload, or validate the selected terrain bundle.",
+                            "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                            "command": f"VISION_NAV_BUNDLE={shlex.quote(str(missing_bundle_path))} ./scripts/pi/validate_terrain_bundle.sh",
+                            "bundle_path": str(missing_bundle_path),
+                        }
+                    ],
+                }
+            )
         )
+        preflight_blocked_report["markers"]["__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"] = str(workflow_preflight_report)
         preflight_blocked_report["markers"]["__VISION_NAV_FIELD_CAPTURE_PREFLIGHT_STATUS__"] = "failed"
         preflight_blocked_report["markers"]["__VISION_NAV_FIELD_CAPTURE_READY__"] = "0"
         preflight_blocked_report["markers"]["__VISION_NAV_FIELD_REGISTRATION_READY__"] = "0"
@@ -3228,6 +3288,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             False,
             "workflow validation preserves preflight capture readiness",
         )
+        preflight_next_diagnostic = preflight_blocked_validation["next_required_step"].get("bundle_diagnostic") or {}
+        if "manifest.json" not in preflight_next_diagnostic.get("missing_required_files", []):
+            raise AssertionError("workflow validation preflight next step should include bundle diagnostics")
+        if not preflight_next_diagnostic.get("bundle_candidates"):
+            raise AssertionError("workflow validation preflight next step should include bundle candidates")
         preflight_blocked_output = io.StringIO()
         with contextlib.redirect_stdout(preflight_blocked_output):
             print_workflow_validation_human(preflight_blocked_validation)
@@ -3236,10 +3301,13 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation human output should include preflight report")
         if "After preflight: " not in preflight_blocked_text:
             raise AssertionError("workflow validation human output should include post-preflight capture command")
+        if "Missing bundle files: manifest.json" not in preflight_blocked_text:
+            raise AssertionError("workflow validation human output should include bundle diagnostics")
 
         capture_blocked_report = json.loads(report_path.read_text())
         capture_blocked_report["markers"].pop("__VISION_NAV_TERRAIN_LOG__", None)
         capture_blocked_report["markers"].pop("__VISION_NAV_RUNTIME_STATUS__", None)
+        capture_blocked_report["markers"]["__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"] = str(workflow_preflight_report)
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CONDITION__"] = "good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CASE__"] = "dronecompute-test-area-good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_EXPECTED_TERRAIN_LOG__"] = str(capture_output_dir / "terrain_matches.jsonl")
@@ -3291,6 +3359,9 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             capture_metadata_command,
             "workflow validation preserves metadata update command alongside capture guidance",
         )
+        capture_next_diagnostic = capture_blocked_validation["next_required_step"].get("bundle_diagnostic") or {}
+        if "manifest.json" not in capture_next_diagnostic.get("missing_required_files", []):
+            raise AssertionError("workflow validation capture next step should include bundle diagnostics")
         capture_blocked_checks = {check["name"]: check for check in capture_blocked_validation["checks"]}
         assert_equal(
             capture_blocked_checks["required_step_results"]["details"]["next_required_step"]["name"],
