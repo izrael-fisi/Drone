@@ -236,7 +236,7 @@ pub struct FieldCollectionPlanSummary {
     pub missing_count: Option<u64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct FieldCollectionPlanCondition {
     pub condition: Option<String>,
     pub label: Option<String>,
@@ -277,6 +277,7 @@ pub struct FieldCollectionPlanFile {
     pub capture_output_dir_count: Option<u64>,
     pub runtime_status_path_count: Option<u64>,
     pub condition_source_log_count: Option<u64>,
+    pub next_condition: Option<FieldCollectionPlanCondition>,
     pub summary: FieldCollectionPlanSummary,
     pub conditions: Vec<FieldCollectionPlanCondition>,
 }
@@ -294,6 +295,7 @@ pub struct SupportBundleFieldCollectionPlanReport {
     pub capture_output_dir_count: Option<u64>,
     pub runtime_status_path_count: Option<u64>,
     pub condition_source_log_count: Option<u64>,
+    pub next_condition: Option<FieldCollectionPlanCondition>,
     pub summary: FieldCollectionPlanSummary,
     pub conditions: Vec<FieldCollectionPlanCondition>,
 }
@@ -615,6 +617,7 @@ pub struct AutonomyReadinessFieldCollectionPlan {
     pub manifest_path: Option<String>,
     pub bundle: Option<String>,
     pub summary: FieldCollectionPlanSummary,
+    pub next_condition: Option<FieldCollectionPlanCondition>,
     pub pending_conditions: Vec<FieldCollectionPlanCondition>,
 }
 
@@ -2937,6 +2940,12 @@ fn autonomy_readiness_field_collection_plan_from_json(
     let text = std::fs::read_to_string(&path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
     let plan = field_collection_plan_from_json(&value)?;
+    let next_condition = plan.next_condition.clone().or_else(|| {
+        plan.conditions
+            .iter()
+            .find(|condition| condition.status.as_deref() != Some("registered"))
+            .cloned()
+    });
     let pending_conditions = plan
         .conditions
         .into_iter()
@@ -2949,6 +2958,7 @@ fn autonomy_readiness_field_collection_plan_from_json(
         manifest_path: plan.manifest_path,
         bundle: plan.bundle,
         summary: plan.summary,
+        next_condition,
         pending_conditions,
     })
 }
@@ -3516,35 +3526,19 @@ fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCol
             items
                 .iter()
                 .filter(|item| item.is_object())
-                .map(|item| FieldCollectionPlanCondition {
-                    condition: json_string(item.get("condition")),
-                    label: json_string(item.get("label")),
-                    expected: json_string(item.get("expected")),
-                    status: json_string(item.get("status")),
-                    notes: json_string(item.get("notes")),
-                    case_name: json_string(item.get("case_name")),
-                    manifest_log_path: json_string(item.get("manifest_log_path")),
-                    manifest_log_exists: item
-                        .get("manifest_log_exists")
-                        .and_then(|value| value.as_bool()),
-                    source_log: json_string(item.get("source_log")),
-                    legacy_source_log: json_string(item.get("legacy_source_log")),
-                    capture_output_dir: json_string(item.get("capture_output_dir")),
-                    runtime_status_path: json_string(item.get("runtime_status_path")),
-                    has_capture_command: item
-                        .get("has_capture_command")
-                        .and_then(|value| value.as_bool()),
-                    has_register_command: item
-                        .get("has_register_command")
-                        .and_then(|value| value.as_bool()),
-                    bundle: json_string(item.get("bundle")),
-                    capture_metadata: item.get("capture_metadata").cloned(),
-                    capture_command: json_string(item.get("capture_command")),
-                    register_command: json_string(item.get("register_command")),
-                })
+                .filter_map(field_collection_plan_condition_from_json)
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let next_condition = value
+        .get("next_condition")
+        .and_then(field_collection_plan_condition_from_json)
+        .or_else(|| {
+            conditions
+                .iter()
+                .find(|condition| condition.status.as_deref() != Some("registered"))
+                .cloned()
+        });
     Some(FieldCollectionPlanFile {
         name: String::new(),
         path: String::new(),
@@ -3573,6 +3567,7 @@ fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCol
         condition_source_log_count: value
             .get("condition_source_log_count")
             .and_then(|value| value.as_u64()),
+        next_condition,
         summary: FieldCollectionPlanSummary {
             required_count: value
                 .pointer("/summary/required_count")
@@ -3594,6 +3589,42 @@ fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCol
     })
 }
 
+fn field_collection_plan_condition_from_json(
+    item: &serde_json::Value,
+) -> Option<FieldCollectionPlanCondition> {
+    if !item.is_object() {
+        return None;
+    }
+    Some(FieldCollectionPlanCondition {
+        condition: json_string(item.get("condition")),
+        label: json_string(item.get("label")),
+        expected: json_string(item.get("expected")),
+        status: json_string(item.get("status")),
+        notes: json_string(item.get("notes")),
+        case_name: json_string(item.get("case_name")),
+        manifest_log_path: json_string(item.get("manifest_log_path")),
+        manifest_log_exists: item
+            .get("manifest_log_exists")
+            .and_then(|value| value.as_bool()),
+        source_log: json_string(item.get("source_log")),
+        legacy_source_log: json_string(item.get("legacy_source_log")),
+        capture_output_dir: json_string(item.get("capture_output_dir")),
+        runtime_status_path: json_string(item.get("runtime_status_path")),
+        has_capture_command: item
+            .get("has_capture_command")
+            .and_then(|value| value.as_bool())
+            .or_else(|| json_string(item.get("capture_command")).map(|value| !value.is_empty())),
+        has_register_command: item
+            .get("has_register_command")
+            .and_then(|value| value.as_bool())
+            .or_else(|| json_string(item.get("register_command")).map(|value| !value.is_empty())),
+        bundle: json_string(item.get("bundle")),
+        capture_metadata: item.get("capture_metadata").cloned(),
+        capture_command: json_string(item.get("capture_command")),
+        register_command: json_string(item.get("register_command")),
+    })
+}
+
 fn field_collection_plan_report_from_json(
     value: &serde_json::Value,
 ) -> Option<SupportBundleFieldCollectionPlanReport> {
@@ -3610,6 +3641,7 @@ fn field_collection_plan_report_from_json(
         capture_output_dir_count: plan.capture_output_dir_count,
         runtime_status_path_count: plan.runtime_status_path_count,
         condition_source_log_count: plan.condition_source_log_count,
+        next_condition: plan.next_condition,
         summary: plan.summary,
         conditions: plan.conditions,
     })
@@ -4498,16 +4530,27 @@ mod tests {
                 "site_name": "test-range",
                 "manifest_path": "field_manifest.json",
                 "bundle": "mission-bundle",
-                "summary": {
-                    "required_count": 3,
-                    "registered_count": 1,
-                    "registered_missing_log_count": 1,
-                    "placeholder_count": 1,
-                    "missing_count": 0
-                },
-                "conditions": [
-                    {"condition": "good_texture", "label": "Good texture", "expected": "good_map", "status": "registered", "case_name": "good-texture", "manifest_log_exists": true},
-                    {"condition": "blur", "label": "Blur", "expected": "degraded", "status": "placeholder", "case_name": "blur", "manifest_log_exists": false},
+                    "summary": {
+                        "required_count": 3,
+                        "registered_count": 1,
+                        "registered_missing_log_count": 1,
+                        "placeholder_count": 1,
+                        "missing_count": 0
+                    },
+                    "next_condition": {
+                        "condition": "blur",
+                        "label": "Blur",
+                        "expected": "degraded",
+                        "status": "placeholder",
+                        "case_name": "blur",
+                        "manifest_log_exists": false,
+                        "source_log": "field-captures/blur/terrain_matches.jsonl",
+                        "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
+                        "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur"
+                    },
+                    "conditions": [
+                        {"condition": "good_texture", "label": "Good texture", "expected": "good_map", "status": "registered", "case_name": "good-texture", "manifest_log_exists": true},
+                        {"condition": "blur", "label": "Blur", "expected": "degraded", "status": "placeholder", "case_name": "blur", "manifest_log_exists": false},
                     {"condition": "wrong_map", "label": "Wrong map", "expected": "wrong_map", "status": "registered_missing_log", "case_name": "wrong-map", "manifest_log_exists": false}
                 ]
             })
@@ -5295,6 +5338,15 @@ mod tests {
         );
         assert_eq!(field_collection_plan.summary.registered_count, Some(1));
         assert_eq!(field_collection_plan.summary.required_count, Some(3));
+        let next_condition = field_collection_plan
+            .next_condition
+            .as_ref()
+            .expect("next field collection condition");
+        assert_eq!(next_condition.condition.as_deref(), Some("blur"));
+        assert_eq!(
+            next_condition.capture_command.as_deref(),
+            Some("./scripts/pi/run_terrain_nav_loop.sh --condition blur")
+        );
         assert_eq!(field_collection_plan.pending_conditions.len(), 2);
         assert_eq!(
             field_collection_plan.pending_conditions[0]
@@ -5800,14 +5852,25 @@ mod tests {
                 "site_name": "site-a",
                 "manifest_path": "/home/user/DroneTransfer/outgoing/replay-cases/field_manifest.json",
                 "bundle": "/home/user/drone-data/map_bundles/mission_bundle",
-                "summary": {
-                    "required_count": 8,
-                    "registered_count": 1,
-                    "registered_missing_log_count": 1,
-                    "placeholder_count": 6,
-                    "missing_count": 0
-                },
-                "conditions": [
+                    "summary": {
+                        "required_count": 8,
+                        "registered_count": 1,
+                        "registered_missing_log_count": 1,
+                        "placeholder_count": 6,
+                        "missing_count": 0
+                    },
+                    "next_condition": {
+                        "condition": "low_texture",
+                        "label": "Low texture",
+                        "expected": "degraded",
+                        "status": "placeholder",
+                        "case_name": "site-a-low-texture",
+                        "manifest_log_exists": false,
+                        "source_log": "/home/user/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
+                        "capture_command": "VISION_NAV_OUTPUT_DIR=/tmp/field-captures/low_texture ./scripts/pi/run_terrain_nav_loop.sh",
+                        "register_command": "VISION_NAV_FIELD_CASE_NAME=site-a-low-texture ./scripts/pi/register_field_replay_case.sh"
+                    },
+                    "conditions": [
                     {
                         "condition": "good_texture",
                         "label": "Good texture, matching map",
@@ -5861,6 +5924,15 @@ mod tests {
         assert_eq!(plans[0].summary.required_count, Some(8));
         assert_eq!(plans[0].summary.registered_count, Some(1));
         assert_eq!(plans[0].summary.placeholder_count, Some(6));
+        let next_condition = plans[0]
+            .next_condition
+            .as_ref()
+            .expect("field collection next condition");
+        assert_eq!(next_condition.condition.as_deref(), Some("low_texture"));
+        assert_eq!(
+                next_condition.capture_command.as_deref(),
+                Some("VISION_NAV_OUTPUT_DIR=/tmp/field-captures/low_texture ./scripts/pi/run_terrain_nav_loop.sh")
+            );
         assert_eq!(plans[0].conditions.len(), 2);
         assert_eq!(
             plans[0].conditions[0].condition.as_deref(),
@@ -6332,14 +6404,27 @@ mod tests {
                     "capture_output_dir_count": 2,
                     "runtime_status_path_count": 2,
                     "condition_source_log_count": 2,
-                    "summary": {
-                        "required_count": 3,
-                        "registered_count": 1,
-                        "registered_missing_log_count": 1,
-                        "placeholder_count": 1,
-                        "missing_count": 0
-                    },
-                    "conditions": [
+                        "summary": {
+                            "required_count": 3,
+                            "registered_count": 1,
+                            "registered_missing_log_count": 1,
+                            "placeholder_count": 1,
+                            "missing_count": 0
+                        },
+                        "next_condition": {
+                            "condition": "blur",
+                            "label": "Blur",
+                            "expected": "degraded",
+                            "status": "placeholder",
+                            "case_name": "unit-blur",
+                            "manifest_log_exists": false,
+                            "source_log": "field-captures/blur/terrain_matches.jsonl",
+                            "capture_output_dir": "field-captures/blur",
+                            "runtime_status_path": "field-captures/blur/runtime_status.json",
+                            "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
+                            "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur"
+                        },
+                        "conditions": [
                         {"condition": "good_texture", "label": "Good texture", "expected": "good_map", "status": "registered", "case_name": "unit-good", "manifest_log_exists": true, "source_log": "field-captures/good/terrain_matches.jsonl", "capture_output_dir": "field-captures/good", "runtime_status_path": "field-captures/good/runtime_status.json", "has_capture_command": true, "has_register_command": true},
                         {"condition": "blur", "label": "Blur", "expected": "degraded", "status": "placeholder", "case_name": "unit-blur", "manifest_log_exists": false, "source_log": "field-captures/blur/terrain_matches.jsonl", "capture_output_dir": "field-captures/blur", "runtime_status_path": "field-captures/blur/runtime_status.json", "has_capture_command": true, "has_register_command": true}
                     ]
@@ -6640,6 +6725,15 @@ mod tests {
         assert_eq!(
             details.field_collection_plan_reports[0].runtime_status_path_count,
             Some(2)
+        );
+        let next_condition = details.field_collection_plan_reports[0]
+            .next_condition
+            .as_ref()
+            .expect("support field collection next condition");
+        assert_eq!(next_condition.condition.as_deref(), Some("blur"));
+        assert_eq!(
+            next_condition.register_command.as_deref(),
+            Some("./scripts/pi/register_field_replay_case.sh --condition blur")
         );
         assert_eq!(details.field_collection_plan_reports[0].conditions.len(), 2);
         assert_eq!(

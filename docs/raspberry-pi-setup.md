@@ -562,7 +562,10 @@ Markdown checklist at
 `~/DroneTransfer/outgoing/replay-cases/field_collection_plan.md`. The plan marks
 each required condition as placeholder, missing, registered-missing-log, or
 registered, and includes the exact `VISION_NAV_FIELD_*` registration command to
-run after each captured terrain log. The generated plan also prints a metadata
+run after each captured terrain log. It also promotes the next pending condition
+with its condition-specific capture and registration commands, so the operator
+has an immediate next field task without scanning the full checklist. The
+generated plan also prints a metadata
 JSON block and checklist for each condition; when copied into
 `VISION_NAV_FIELD_CAPTURE_METADATA`, that JSON is stored with the replay case
 for later support and readiness review. It also emits
@@ -1146,7 +1149,8 @@ It also includes a proof runbook that marks each source-plan, bench, field
 dataset, method/threshold, ROS replay, and final-audit phase as passed,
 action-required, or blocked by upstream proof.
 When a field collection plan is present, the handoff also summarizes registered
-vs required field conditions and the pending placeholder/missing cases. It
+vs required field conditions, the next pending condition, and the pending
+placeholder/missing cases. It
 also includes an artifact-availability table when the referenced evidence
 paths are visible from the machine rendering the handoff. The handoff also
 includes a copy-friendly command bundle for the guided workflow command,
@@ -1189,7 +1193,8 @@ Markdown handoff renderer and evidence ZIP packager use the same fallback, so
 support packages can still include the downloaded JSON/Markdown checklist. The
 pending field-collection condition pills and command buttons in Module Setup
 copy individual or batched generated replay-case capture and registration
-commands when the plan includes them. The
+commands when the plan includes them. The next pending condition is also shown
+separately in downloaded field-plan and autonomy-readiness cards. The
 autonomy-readiness list detects the sibling Markdown handoff and evidence ZIP
 package beside each JSON report and exposes copy/reveal controls for support
 review. When the evidence ZIP contains the expected package manifest, the list

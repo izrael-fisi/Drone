@@ -375,6 +375,9 @@ that fills the Field Evidence Case form with the plan case name, condition,
 expected behavior, notes, site, and any non-placeholder capture metadata. This
 keeps the generated checklist and the registration form aligned while still
 letting the operator complete site-specific metadata before registering the log.
+The plan and readiness cards also promote the next pending condition with its
+capture/register command buttons, and the plan list can load that next condition
+directly into the Field Evidence Case form.
 Each placeholder condition in the template and plan also carries a
 `capture_metadata` object plus a capture checklist. The metadata covers
 operator/date, location label, flight altitude, speed, lighting, weather,
@@ -616,7 +619,8 @@ JSON/Markdown plan artifacts from the ZIP.
 Pending field-collection condition pills and command buttons in Module Setup
 copy individual or batched generated capture and registration commands when the
 plan includes them, which keeps real replay-case collection and registration
-out of manual retyping.
+out of manual retyping. The first pending condition is shown separately as the
+next field-capture target in downloaded plan and readiness cards.
 The Markdown handoff mirrors that workflow with a copy-friendly command bundle
 for guided workflow, immediate next-action, blocked follow-up, and pending
 field replay capture/registration commands. It also

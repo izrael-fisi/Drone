@@ -3603,6 +3603,27 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "failed",
             "autonomy readiness incomplete field collection plan fail closed",
         )
+        field_plan_check = next(
+            check
+            for check in incomplete_field_plan_ready["checks"]
+            if check.get("name") == "field_collection_plan"
+        )
+        next_condition = field_plan_check["details"]["next_condition"]
+        assert_equal(
+            next_condition["condition"],
+            "blur",
+            "autonomy readiness incomplete field collection next condition",
+        )
+        assert_equal(
+            next_condition["capture_command"],
+            "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
+            "autonomy readiness incomplete field collection next capture command",
+        )
+        assert_equal(
+            next_condition["register_command"],
+            "./scripts/pi/register_field_replay_case.sh --condition blur",
+            "autonomy readiness incomplete field collection next register command",
+        )
         field_plan_actions = [
             action
             for action in incomplete_field_plan_ready["next_actions"]
@@ -4503,6 +4524,13 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "field collection pending capture command count",
         )
         assert_equal(
+            plan["next_condition"]["condition"],
+            "good_texture",
+            "field collection next condition starts with first required condition",
+        )
+        if "Site-A-good_texture" not in plan["next_condition"]["capture_command"]:
+            raise AssertionError("Expected next condition to preserve capture command")
+        assert_equal(
             plan["runtime_status_path_count"],
             len(REQUIRED_FIELD_CONDITIONS),
             "field collection runtime status path count",
@@ -4593,7 +4621,16 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             bundle="field-bundles/site-a/mission_bundle",
         )
         assert_equal(updated["summary"]["registered_count"], 1, "field collection updated registered count")
-        assert_equal(updated["summary"]["placeholder_count"], len(REQUIRED_FIELD_CONDITIONS) - 1, "field collection updated placeholder count")
+        assert_equal(
+            updated["summary"]["placeholder_count"],
+            len(REQUIRED_FIELD_CONDITIONS) - 1,
+            "field collection updated placeholder count",
+        )
+        assert_equal(
+            updated["next_condition"]["condition"],
+            "low_texture",
+            "field collection next condition advances after registration",
+        )
         updated_good_texture = next(item for item in updated["conditions"] if item["condition"] == "good_texture")
         assert_equal(updated_good_texture["status"], "registered", "field collection registered status")
         assert_equal(
@@ -4607,6 +4644,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "field collection registered capture metadata lighting",
         )
         markdown = render_field_collection_markdown(updated)
+        if "## Next Pending Condition" not in markdown or "`low_texture`" not in markdown:
+            raise AssertionError("Expected Markdown plan to highlight the next pending condition")
         if "- [x] Good texture" not in markdown:
             raise AssertionError("Expected registered condition to be checked in Markdown plan")
         if "Capture output:" not in markdown or "run_terrain_nav_loop.sh" not in markdown:

@@ -45,6 +45,7 @@ import type {
   AutonomyEvidenceWorkflowReportFile,
   AutonomyReadinessReportFile,
   Device,
+  FieldCollectionPlanCondition,
   FieldCollectionPlanFile,
   FieldEvidenceReportFile,
   FieldEvidenceTemplateFile,
@@ -1414,11 +1415,20 @@ function AutonomyReadinessReportList({
                           </button>
                         )}
                       </div>
-                      <div className="font-mono text-[10px] text-slate-600 truncate" title={report.field_collection_plan.path}>
-                        {formatReadinessLabel(report.field_collection_plan.site_name)} / {report.field_collection_plan.path}
-                      </div>
-                      {report.field_collection_plan.pending_conditions.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
+                          <div className="font-mono text-[10px] text-slate-600 truncate" title={report.field_collection_plan.path}>
+                            {formatReadinessLabel(report.field_collection_plan.site_name)} / {report.field_collection_plan.path}
+                          </div>
+                          {report.field_collection_plan.next_condition && (
+                            <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                              <span className="font-mono text-slate-500">next</span>
+                              <FieldCollectionConditionBadge
+                                condition={report.field_collection_plan.next_condition}
+                                idPrefix={`${report.path}-field-plan-next`}
+                              />
+                            </div>
+                          )}
+                          {report.field_collection_plan.pending_conditions.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
                           {report.field_collection_plan.pending_conditions.slice(0, 8).map((condition, index) => (
                             <FieldCollectionConditionBadge
                               key={`${report.path}-field-plan-${condition.condition ?? condition.label ?? index}`}
@@ -2233,7 +2243,7 @@ function FieldCollectionPlanList({
   plans: FieldCollectionPlanFile[];
   downloadDir: string;
   onRefresh: () => void;
-  onLoadCondition: (plan: FieldCollectionPlanFile, condition: FieldCollectionPlanFile["conditions"][number]) => void;
+  onLoadCondition: (plan: FieldCollectionPlanFile, condition: FieldCollectionPlanCondition) => void;
 }) {
   const [busyPath, setBusyPath] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -2329,6 +2339,20 @@ function FieldCollectionPlanList({
                       {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
                     </div>
                     <div className="mt-1 text-[10px] text-slate-500 truncate">{file.path}</div>
+                    {file.next_condition && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                        <span className="font-mono text-slate-500">next</span>
+                        <FieldCollectionConditionBadge condition={file.next_condition} idPrefix={`${file.path}-next`} />
+                        <button
+                          type="button"
+                          onClick={() => file.next_condition && onLoadCondition(file, file.next_condition)}
+                          className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                          title="Load the next pending condition into Field Evidence Case"
+                        >
+                          Load
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -5016,10 +5040,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   site_name: latestAutonomyReport.field_collection_plan.site_name ?? null,
                   manifest_path: latestAutonomyReport.field_collection_plan.manifest_path ?? null,
                   bundle: latestAutonomyReport.field_collection_plan.bundle ?? null,
-                  summary: latestAutonomyReport.field_collection_plan.summary,
-                  pending_condition_count: latestAutonomyReport.field_collection_plan.pending_conditions.length,
-                  pending_conditions: latestAutonomyReport.field_collection_plan.pending_conditions.slice(0, 8),
-                }
+                      summary: latestAutonomyReport.field_collection_plan.summary,
+                      next_condition: latestAutonomyReport.field_collection_plan.next_condition ?? null,
+                      pending_condition_count: latestAutonomyReport.field_collection_plan.pending_conditions.length,
+                      pending_conditions: latestAutonomyReport.field_collection_plan.pending_conditions.slice(0, 8),
+                    }
               : null,
           }
         : null,

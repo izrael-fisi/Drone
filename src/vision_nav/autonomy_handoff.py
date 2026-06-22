@@ -96,6 +96,23 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         )
         pending_conditions = field_collection_pending_conditions(field_plan)
         if pending_conditions:
+            next_condition = field_collection_next_condition(field_plan, fallback=pending_conditions[0])
+            if next_condition:
+                lines.extend(
+                    [
+                        "",
+                        "Next pending condition:",
+                        (
+                            f"- `{next_condition.get('condition')}` "
+                            f"({format_cell(next_condition.get('status'))}, "
+                            f"expected `{format_cell(next_condition.get('expected'))}`)"
+                        ),
+                    ]
+                )
+                if next_condition.get("capture_command"):
+                    lines.extend(["", "Capture command:", "", "```bash", str(next_condition["capture_command"]), "```"])
+                if next_condition.get("register_command"):
+                    lines.extend(["", "Register command:", "", "```bash", str(next_condition["register_command"]), "```"])
             lines.extend(["", "Pending collection items:", ""])
             lines.extend(
                 table(
@@ -421,6 +438,17 @@ def field_collection_pending_conditions(plan: dict[str, Any]) -> list[dict[str, 
             str(item.get("condition") or ""),
         ),
     )
+
+
+def field_collection_next_condition(
+    plan: dict[str, Any],
+    *,
+    fallback: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    next_condition = plan.get("next_condition")
+    if isinstance(next_condition, dict):
+        return next_condition
+    return fallback
 
 
 def missing_condition_checklist(report: dict[str, Any]) -> list[str]:

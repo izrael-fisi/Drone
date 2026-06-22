@@ -94,6 +94,27 @@ export interface DownloadFileResult {
   bytes_received: number;
 }
 
+export interface FieldCollectionPlanCondition {
+  condition?: string;
+  label?: string;
+  expected?: "good_map" | "degraded" | "wrong_map" | string;
+  status?: "registered" | "registered_missing_log" | "placeholder" | "missing" | string;
+  notes?: string;
+  case_name?: string;
+  manifest_log_path?: string;
+  manifest_log_exists?: boolean;
+  source_log?: string;
+  legacy_source_log?: string;
+  capture_output_dir?: string;
+  runtime_status_path?: string;
+  has_capture_command?: boolean;
+  has_register_command?: boolean;
+  capture_command?: string;
+  bundle?: string;
+  capture_metadata?: Record<string, unknown>;
+  register_command?: string;
+}
+
 export interface PiDiscoveryCandidate {
   host: string;
   port: number;
@@ -332,30 +353,17 @@ export interface SupportBundleDetails {
     pending_registration_command_count?: number;
     capture_output_dir_count?: number;
     runtime_status_path_count?: number;
-    condition_source_log_count?: number;
-    summary: {
-      required_count?: number;
-      registered_count?: number;
-      registered_missing_log_count?: number;
-      placeholder_count?: number;
-      missing_count?: number;
-    };
-    conditions: Array<{
-      condition?: string;
-      label?: string;
-      expected?: string;
-      status?: "registered" | "registered_missing_log" | "placeholder" | "missing" | string;
-      case_name?: string;
-      manifest_log_path?: string;
-      manifest_log_exists?: boolean;
-      source_log?: string;
-      capture_output_dir?: string;
-      runtime_status_path?: string;
-      has_capture_command?: boolean;
-      has_register_command?: boolean;
-      register_command?: string;
-    }>;
-  }>;
+        condition_source_log_count?: number;
+        summary: {
+          required_count?: number;
+          registered_count?: number;
+          registered_missing_log_count?: number;
+          placeholder_count?: number;
+          missing_count?: number;
+        };
+        next_condition?: FieldCollectionPlanCondition;
+        conditions: FieldCollectionPlanCondition[];
+      }>;
   threshold_tuning_reports: Array<{
     status?: "passed" | "failed" | "degraded" | string;
     method?: string;
@@ -656,32 +664,22 @@ export interface AutonomyReadinessReportFile {
       }>;
     }>;
   };
-  field_collection_plan?: {
-    path: string;
-    status?: "passed" | "failed" | "degraded" | string;
-    site_name?: string;
-    manifest_path?: string;
+      field_collection_plan?: {
+        path: string;
+        status?: "passed" | "failed" | "degraded" | string;
+        site_name?: string;
+        manifest_path?: string;
     bundle?: string;
     summary: {
       required_count?: number;
       registered_count?: number;
       registered_missing_log_count?: number;
-      placeholder_count?: number;
-      missing_count?: number;
-    };
-    pending_conditions: Array<{
-      condition?: string;
-      label?: string;
-      expected?: string;
-      status?: "registered" | "registered_missing_log" | "placeholder" | "missing" | string;
-      case_name?: string;
-      manifest_log_path?: string;
-      manifest_log_exists?: boolean;
-      source_log?: string;
-      capture_command?: string;
-      register_command?: string;
-    }>;
-  };
+          placeholder_count?: number;
+          missing_count?: number;
+        };
+        next_condition?: FieldCollectionPlanCondition;
+        pending_conditions: FieldCollectionPlanCondition[];
+      };
   proof_runbook?: AutonomyReadinessProofRunbook;
 }
 
@@ -835,32 +833,16 @@ export interface FieldCollectionPlanFile {
   capture_output_dir_count?: number;
   runtime_status_path_count?: number;
   condition_source_log_count?: number;
-  summary: {
-    required_count?: number;
-    registered_count?: number;
-    registered_missing_log_count?: number;
-    placeholder_count?: number;
-    missing_count?: number;
-  };
-  conditions: Array<{
-    condition?: string;
-    label?: string;
-    expected?: "good_map" | "degraded" | "wrong_map" | string;
-    status?: "registered" | "registered_missing_log" | "placeholder" | "missing" | string;
-    notes?: string;
-    case_name?: string;
-    manifest_log_path?: string;
-    manifest_log_exists?: boolean;
-    source_log?: string;
-    legacy_source_log?: string;
-    capture_output_dir?: string;
-    runtime_status_path?: string;
-    capture_command?: string;
-    bundle?: string;
-    capture_metadata?: Record<string, unknown>;
-    register_command?: string;
-  }>;
-}
+      summary: {
+        required_count?: number;
+        registered_count?: number;
+        registered_missing_log_count?: number;
+        placeholder_count?: number;
+        missing_count?: number;
+      };
+      next_condition?: FieldCollectionPlanCondition;
+      conditions: FieldCollectionPlanCondition[];
+    }
 
 export interface FeatureMethodBenchmarkReportFile {
   name: string;

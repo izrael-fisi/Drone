@@ -906,29 +906,43 @@ def copy_field_evidence_reports(paths: list[str], support_dir: Path) -> dict[str
     }
 
 
+def summarize_field_collection_condition(item: dict[str, Any], *, include_commands: bool = False) -> dict[str, Any]:
+    summary = {
+        "condition": item.get("condition"),
+        "label": item.get("label"),
+        "status": item.get("status"),
+        "expected": item.get("expected"),
+        "case_name": item.get("case_name"),
+        "manifest_log_path": item.get("manifest_log_path"),
+        "manifest_log_exists": item.get("manifest_log_exists"),
+        "source_log": item.get("source_log"),
+        "capture_output_dir": item.get("capture_output_dir"),
+        "runtime_status_path": item.get("runtime_status_path"),
+        "has_capture_command": bool(item.get("capture_command") or item.get("has_capture_command")),
+        "has_register_command": bool(item.get("register_command") or item.get("has_register_command")),
+    }
+    if include_commands:
+        if item.get("capture_command"):
+            summary["capture_command"] = item.get("capture_command")
+        if item.get("register_command"):
+            summary["register_command"] = item.get("register_command")
+    return summary
+
+
 def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     conditions = []
     for item in report.get("conditions") or []:
         if not isinstance(item, dict):
             continue
-        conditions.append(
-            {
-                "condition": item.get("condition"),
-                "label": item.get("label"),
-                "status": item.get("status"),
-                "expected": item.get("expected"),
-                "case_name": item.get("case_name"),
-                "manifest_log_path": item.get("manifest_log_path"),
-                "manifest_log_exists": item.get("manifest_log_exists"),
-                "source_log": item.get("source_log"),
-                "capture_output_dir": item.get("capture_output_dir"),
-                "runtime_status_path": item.get("runtime_status_path"),
-                "has_capture_command": bool(item.get("capture_command")),
-                "has_register_command": bool(item.get("register_command")),
-            }
-        )
+        conditions.append(summarize_field_collection_condition(item))
     pending_conditions = [item for item in conditions if item.get("status") != "registered"]
+    raw_next_condition = report.get("next_condition") if isinstance(report.get("next_condition"), dict) else None
+    next_condition = (
+        summarize_field_collection_condition(raw_next_condition, include_commands=True)
+        if raw_next_condition
+        else (pending_conditions[0] if pending_conditions else None)
+    )
     return {
         "path": str(report_path),
         "status": report.get("status"),
@@ -947,6 +961,7 @@ def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path
         "capture_output_dir_count": sum(1 for item in conditions if item.get("capture_output_dir")),
         "runtime_status_path_count": sum(1 for item in conditions if item.get("runtime_status_path")),
         "condition_source_log_count": sum(1 for item in conditions if item.get("source_log")),
+        "next_condition": next_condition,
         "conditions": conditions,
     }
 
@@ -1014,6 +1029,7 @@ def copy_field_collection_plans(paths: list[str], support_dir: Path) -> dict[str
         "capture_output_dir_count": sum(int(report.get("capture_output_dir_count") or 0) for report in reports),
         "runtime_status_path_count": sum(int(report.get("runtime_status_path_count") or 0) for report in reports),
         "condition_source_log_count": sum(int(report.get("condition_source_log_count") or 0) for report in reports),
+        "next_condition": next((report.get("next_condition") for report in reports if report.get("next_condition")), None),
         "copied": copied,
         "missing": missing,
         "issues": issues,

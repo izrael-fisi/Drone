@@ -93,6 +93,7 @@ def create_field_collection_plan(
     }
     pending_conditions = [item for item in conditions if item["status"] != "registered"]
     all_registered = summary["registered_count"] == summary["required_count"]
+    next_condition = pending_conditions[0] if pending_conditions else None
     plan = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -108,6 +109,7 @@ def create_field_collection_plan(
         "capture_output_dir_count": sum(1 for item in conditions if item.get("capture_output_dir")),
         "runtime_status_path_count": sum(1 for item in conditions if item.get("runtime_status_path")),
         "condition_source_log_count": sum(1 for item in conditions if item.get("source_log")),
+        "next_condition": next_condition,
         "summary": summary,
         "conditions": conditions,
         "next_steps": next_steps(summary),
@@ -290,6 +292,32 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
         "## Checklist",
         "",
     ]
+    next_condition = plan.get("next_condition") if isinstance(plan.get("next_condition"), dict) else None
+    if next_condition:
+        lines.extend(
+            [
+                "## Next Pending Condition",
+                "",
+                f"- Condition: `{next_condition.get('condition')}`",
+                f"- Expected behavior: `{next_condition.get('expected')}`",
+                f"- Current status: `{next_condition.get('status')}`",
+                f"- Capture output: `{next_condition.get('capture_output_dir')}`",
+                f"- Terrain log: `{next_condition.get('source_log')}`",
+                "",
+                "Capture:",
+                "",
+                "```bash",
+                str(next_condition.get("capture_command") or ""),
+                "```",
+                "",
+                "Register:",
+                "",
+                "```bash",
+                str(next_condition.get("register_command") or ""),
+                "```",
+                "",
+            ]
+        )
     for item in plan.get("conditions") or []:
         checked = "x" if item.get("status") == "registered" else " "
         lines.append(f"- [{checked}] {item.get('label')} (`{item.get('condition')}`) - {item.get('status')}")
@@ -362,6 +390,19 @@ def print_human(plan: dict[str, Any]) -> None:
     )
     for item in plan["conditions"]:
         print(f"- {item['condition']}: {item['status']} expected={item['expected']}")
+    next_condition = plan.get("next_condition") if isinstance(plan.get("next_condition"), dict) else None
+    if next_condition:
+        print(
+            "Next pending: "
+            f"{next_condition.get('condition')} "
+            f"({next_condition.get('status')}, expected={next_condition.get('expected')})"
+        )
+        if next_condition.get("capture_command"):
+            print("Next capture command:")
+            print(next_condition["capture_command"])
+        if next_condition.get("register_command"):
+            print("Next register command:")
+            print(next_condition["register_command"])
 
 
 def main() -> None:

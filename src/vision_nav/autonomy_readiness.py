@@ -1462,6 +1462,9 @@ def field_collection_plan_check_from_plan(plan: dict[str, Any], *, source: str) 
         "missing_conditions": missing_conditions,
         "missing_traceability": missing_traceability,
     }
+    next_condition = field_collection_next_condition(plan)
+    if next_condition:
+        details["next_condition"] = next_condition
     if missing_conditions:
         return failed("field_collection_plan", "Field collection plan is missing required registered conditions.", details)
     if missing_traceability:
@@ -1504,6 +1507,9 @@ def field_collection_plan_check_from_summary(summary: dict[str, Any]) -> dict[st
         "condition_source_log_count": condition_source_log_count,
         "missing_conditions": missing_conditions,
     }
+    next_condition = summary.get("next_condition")
+    if isinstance(next_condition, dict):
+        details["next_condition"] = next_condition
     if status == "not_provided" or status is None:
         return failed("field_collection_plan", "A completed field collection plan is required for autonomy readiness.", details)
     if missing_conditions or registered_count < required_count:
@@ -1517,6 +1523,35 @@ def field_collection_plan_check_from_summary(summary: dict[str, Any]) -> dict[st
     if status == "passed":
         return passed("field_collection_plan", "Field collection plan proof is present in the support bundle.", details)
     return failed("field_collection_plan", f"Field collection plan proof in the support bundle is {status}.", details)
+
+
+def field_collection_next_condition(plan: dict[str, Any]) -> dict[str, Any] | None:
+    raw_next = plan.get("next_condition")
+    if isinstance(raw_next, dict):
+        return compact_field_collection_condition(raw_next)
+    conditions = plan.get("conditions")
+    if not isinstance(conditions, list):
+        return None
+    for item in conditions:
+        if isinstance(item, dict) and item.get("status") != "registered":
+            return compact_field_collection_condition(item)
+    return None
+
+
+def compact_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "condition",
+        "label",
+        "expected",
+        "status",
+        "case_name",
+        "source_log",
+        "capture_output_dir",
+        "runtime_status_path",
+        "capture_command",
+        "register_command",
+    )
+    return {key: str(item[key]) for key in keys if item.get(key) is not None}
 
 
 def field_collection_missing_traceability(conditions: list[dict[str, Any]]) -> list[str]:

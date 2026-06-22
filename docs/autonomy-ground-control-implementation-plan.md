@@ -541,6 +541,10 @@ Status:
   per-condition source-log/capture-output/runtime-status paths, capture/register
   command presence, and pending command counts so offline support review can
   trace each required real-world condition to its intended log capture.
+- Done: field collection plans, support-bundle summaries, readiness reports, and
+  handoffs now promote the next pending field condition with its capture/register
+  commands, so operators can advance the eight-condition real-field dataset
+  without scanning the full checklist.
 - Done: support-bundle summary cards now surface field-plan source-log counts
   next to capture-output and runtime-status counts, matching the final
   autonomy-readiness traceability gate.
@@ -650,6 +654,9 @@ Status:
 - Done: field-evidence readiness next actions now point to the current
   proof-collection flow: load a pending Field Collection Plan condition, run
   `Field Log Capture`, then register the captured replay case.
+- Done: Module Setup renders the field plan's `next_condition` in downloaded
+  field-plan and autonomy-readiness cards, including direct capture/register copy
+  controls and a one-click `Load` action in the field-plan list.
 - Done: autonomy-readiness reports now preserve failed/degraded
   bench-readiness subchecks and expand them into specific next actions, so a
   missing `runtime_status.json` points to Module Setup > Runtime Status instead
