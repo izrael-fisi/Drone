@@ -2458,31 +2458,35 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             json.dumps(
                 {
                     "schema_version": "vision_nav_field_collection_plan_v1",
-                    "status": "degraded",
+                    "status": "passed",
                     "manifest_path": str(root / "field_manifest.json"),
                     "site_name": "unit-field",
+                    "capture_root": str(root / "field-captures"),
+                    "pending_capture_command_count": 0,
+                    "pending_registration_command_count": 0,
+                    "capture_output_dir_count": len(REQUIRED_FIELD_CONDITIONS),
+                    "runtime_status_path_count": len(REQUIRED_FIELD_CONDITIONS),
+                    "condition_source_log_count": len(REQUIRED_FIELD_CONDITIONS),
                     "summary": {
                         "required_count": len(REQUIRED_FIELD_CONDITIONS),
-                        "registered_count": 1,
+                        "registered_count": len(REQUIRED_FIELD_CONDITIONS),
                         "registered_missing_log_count": 0,
-                        "placeholder_count": len(REQUIRED_FIELD_CONDITIONS) - 1,
+                        "placeholder_count": 0,
                         "missing_count": 0,
                     },
                     "conditions": [
                         {
-                            "condition": "good_texture",
+                            "condition": condition,
                             "status": "registered",
-                            "expected": "good_map",
-                            "case_name": "unit-good-texture",
-                        },
-                        {
-                            "condition": "blur",
-                            "status": "placeholder",
-                            "expected": "degraded",
-                            "case_name": "unit-blur",
-                            "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
-                            "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur",
-                        },
+                            "expected": "wrong_map" if condition == "wrong_map" else "good_map",
+                            "case_name": f"unit-{condition}",
+                            "source_log": str(root / "field-captures" / condition / "terrain_matches.jsonl"),
+                            "capture_output_dir": str(root / "field-captures" / condition),
+                            "runtime_status_path": str(root / "field-captures" / condition / "runtime_status.json"),
+                            "capture_command": f"./scripts/pi/run_terrain_nav_loop.sh --condition {condition}",
+                            "register_command": f"./scripts/pi/register_field_replay_case.sh --condition {condition}",
+                        }
+                        for condition in REQUIRED_FIELD_CONDITIONS
                     ],
                 }
             )
@@ -2708,6 +2712,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "autonomy readiness direct px4 required message",
         )
         assert_equal(ready_checks["field_evidence_proof"], "passed", "autonomy readiness field evidence")
+        assert_equal(ready_checks["field_collection_plan"], "passed", "autonomy readiness field collection plan")
         assert_equal(ready_checks["feature_method_benchmark"], "passed", "autonomy readiness feature benchmark")
         assert_equal(ready_checks["threshold_tuning"], "passed", "autonomy readiness threshold tuning")
         assert_equal(ready_checks["rosbag_export_validation"], "passed", "autonomy readiness rosbag validation")
@@ -2808,6 +2813,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=direct_report_support_manifest,
             px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
             threshold_tuning_report_path=threshold_report,
         )
         missing_feature_checks = {check["name"]: check["status"] for check in missing_feature_direct["checks"]}
@@ -2851,6 +2857,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             implementation_plan_path=implementation_plan,
             support_bundle_path=direct_report_support_manifest,
             px4_sitl_report_path=px4_receiver_report,
+            field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
         )
@@ -2892,6 +2899,82 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "autonomy readiness field runbook method phase blocked",
         )
 
+        incomplete_field_collection_plan = root / "field_collection_plan_incomplete.json"
+        incomplete_field_collection_plan.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_field_collection_plan_v1",
+                    "status": "degraded",
+                    "manifest_path": str(root / "field_manifest.json"),
+                    "site_name": "unit-field",
+                    "summary": {
+                        "required_count": len(REQUIRED_FIELD_CONDITIONS),
+                        "registered_count": 1,
+                        "registered_missing_log_count": 0,
+                        "placeholder_count": len(REQUIRED_FIELD_CONDITIONS) - 1,
+                        "missing_count": 0,
+                    },
+                    "conditions": [
+                        {
+                            "condition": "good_texture",
+                            "status": "registered",
+                            "expected": "good_map",
+                            "case_name": "unit-good-texture",
+                            "source_log": str(root / "field-captures/good_texture/terrain_matches.jsonl"),
+                            "capture_output_dir": str(root / "field-captures/good_texture"),
+                            "runtime_status_path": str(root / "field-captures/good_texture/runtime_status.json"),
+                        },
+                        {
+                            "condition": "blur",
+                            "status": "placeholder",
+                            "expected": "degraded",
+                            "case_name": "unit-blur",
+                            "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
+                            "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur",
+                        },
+                    ],
+                }
+            )
+        )
+        incomplete_field_plan_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=direct_report_support_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            field_collection_plan_path=incomplete_field_collection_plan,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+        )
+        incomplete_field_plan_checks = {check["name"]: check["status"] for check in incomplete_field_plan_ready["checks"]}
+        assert_equal(
+            incomplete_field_plan_checks["field_collection_plan"],
+            "failed",
+            "autonomy readiness incomplete field collection plan fail closed",
+        )
+        field_plan_actions = [
+            action
+            for action in incomplete_field_plan_ready["next_actions"]
+            if action.get("check") == "field_collection_plan"
+        ]
+        assert_equal(len(field_plan_actions), 1, "autonomy readiness field collection plan next action")
+        assert_equal(
+            field_plan_actions[0]["desktop_action"],
+            "Module Setup > Field Collection Plan > capture, load, and register pending conditions",
+            "autonomy readiness field collection plan desktop action",
+        )
+        field_plan_bundle = incomplete_field_plan_ready["command_bundle"]
+        if (
+            "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
+            not in field_plan_bundle["field_collection_capture_commands"]
+        ):
+            raise AssertionError("autonomy readiness JSON missing field capture command bundle")
+        if (
+            "./scripts/pi/register_field_replay_case.sh --condition blur"
+            not in field_plan_bundle["field_collection_registration_commands"]
+        ):
+            raise AssertionError("autonomy readiness JSON missing field registration command bundle")
+
         missing_rosbag_manifest = root / "support_manifest_without_rosbag_validation.json"
         missing_rosbag_data = json.loads(direct_report_support_manifest.read_text())
         missing_rosbag_data.pop("rosbag_export_validations", None)
@@ -2902,6 +2985,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=missing_rosbag_manifest,
             px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
         )
@@ -2932,6 +3016,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=missing_rosbag_manifest,
             px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
             rosbag_export_validation_path=rosbag_validation_report,
@@ -2954,6 +3039,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=missing_rosbag2_manifest,
             px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
         )
@@ -2984,6 +3070,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=missing_rosbag2_manifest,
             px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
             rosbag2_cli_review_path=rosbag2_cli_review,
@@ -3006,6 +3093,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=missing_runtime_status_manifest,
             px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
         )
@@ -3055,6 +3143,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=incomplete_gnss_manifest,
             px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
         )
@@ -3103,6 +3192,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             implementation_plan_path=implementation_plan,
             support_bundle_path=bundled_threshold_manifest,
             field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
         )
         assert_equal(bundled_threshold_ready["status"], "passed", "autonomy readiness bundled threshold status")
 
@@ -3150,16 +3240,6 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         command_bundle = missing_threshold["command_bundle"]
         if "./scripts/pi/run_threshold_tuning_report.sh" not in command_bundle["next_action_commands"]:
             raise AssertionError("autonomy readiness JSON missing next-action command bundle")
-        if (
-            "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
-            not in command_bundle["field_collection_capture_commands"]
-        ):
-            raise AssertionError("autonomy readiness JSON missing field capture command bundle")
-        if (
-            "./scripts/pi/register_field_replay_case.sh --condition blur"
-            not in command_bundle["field_collection_registration_commands"]
-        ):
-            raise AssertionError("autonomy readiness JSON missing field registration command bundle")
         handoff = render_handoff_markdown(missing_threshold)
         if "Goal completion: waiting on proof" not in handoff:
             raise AssertionError("autonomy handoff waiting state")
@@ -3185,22 +3265,18 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff plan snapshot")
         if "implementation_plan" not in handoff:
             raise AssertionError("autonomy handoff missing implementation plan snapshot")
-        if "- Registered: 1/8" not in handoff:
+        if "- Registered: 8/8" not in handoff:
             raise AssertionError("autonomy handoff field collection plan summary")
         if "field_collection_plan.json" not in handoff:
             raise AssertionError("autonomy handoff field collection plan path")
         if "## Command Bundle" not in handoff:
             raise AssertionError("autonomy handoff command bundle")
-        if "Field collection capture commands:" not in handoff:
-            raise AssertionError("autonomy handoff field capture commands")
         if "## Proof Runbook" not in handoff:
             raise AssertionError("autonomy handoff proof runbook")
         if "Benchmark methods and tune replay thresholds" not in handoff:
             raise AssertionError("autonomy handoff proof runbook phase")
         if "./scripts/pi/run_threshold_tuning_report.sh" not in handoff:
             raise AssertionError("autonomy handoff next-action command bundle")
-        if "./scripts/pi/register_field_replay_case.sh --condition blur" not in handoff:
-            raise AssertionError("autonomy handoff field registration command bundle")
         missing_threshold_report = root / "autonomy_readiness_missing_threshold.json"
         missing_threshold_handoff = root / "autonomy_readiness_missing_threshold.md"
         missing_threshold_report.write_text(json.dumps(missing_threshold))

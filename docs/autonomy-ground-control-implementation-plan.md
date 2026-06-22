@@ -511,6 +511,10 @@ Status:
 - Done: autonomy readiness audits record field collection plan/checklist paths
   when present so `autonomy_readiness_report.evidence.zip` includes the
   operator plan beside the final handoff and machine-readable report.
+- Done: final autonomy readiness now requires a completed field collection
+  plan as its own proof item, with every required condition registered and
+  traceable to condition-specific source logs, capture output directories, and
+  runtime status files.
 - Done: downloaded autonomy-readiness report cards parse the referenced field
   collection plan when it is available locally, showing registered-vs-required
   counts and pending placeholder/missing collection conditions.

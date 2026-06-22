@@ -37,6 +37,7 @@ IMPLEMENTATION_PLAN_MARKERS = [
 EXTERNAL_PROOF_CHECKS = {
     "support_bundle_bench_readiness",
     "px4_receiver_proof",
+    "field_collection_plan",
     "field_evidence_proof",
     "feature_method_benchmark",
     "threshold_tuning",
@@ -62,7 +63,7 @@ PROOF_RUNBOOK_PHASES = [
     {
         "id": "field_dataset",
         "title": "Collect real field replay coverage",
-        "checks": ["field_evidence_proof"],
+        "checks": ["field_collection_plan", "field_evidence_proof"],
         "depends_on": [],
         "notes": "Start from the field evidence template and replace every required placeholder with a real terrain log.",
     },
@@ -88,6 +89,7 @@ PROOF_RUNBOOK_PHASES = [
             "implementation_plan",
             "support_bundle_bench_readiness",
             "px4_receiver_proof",
+            "field_collection_plan",
             "field_evidence_proof",
             "feature_method_benchmark",
             "threshold_tuning",
@@ -208,6 +210,7 @@ def evaluate_autonomy_readiness(
         ),
         support_report["check"],
         check_px4_receiver_proof(px4_sitl_session_path, px4_sitl_report_path, support_checks),
+        check_field_collection_plan(field_collection_plan_path, support_manifest=support_manifest),
         check_field_evidence_proof(field_evidence_report_path, support_checks),
         check_feature_method_proof(feature_method_benchmark_report_path, support_checks),
         check_threshold_tuning(threshold_tuning_report_path, support_manifest=support_manifest),
@@ -527,6 +530,7 @@ def evidence_source_for_check(name: str, details: dict[str, Any], inputs: dict[s
         "implementation_plan": "implementation_plan",
         "support_bundle_bench_readiness": "support_bundle",
         "px4_receiver_proof": "px4_sitl_report",
+        "field_collection_plan": "field_collection_plan",
         "field_evidence_proof": "field_evidence_report",
         "feature_method_benchmark": "feature_method_benchmark_report",
         "threshold_tuning": "threshold_tuning_report",
@@ -569,6 +573,12 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "desktop_action": "Module Setup > PX4 SITL Receiver Capture, then Local Readiness Re-Audit",
             "command": "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
             "notes": "The final report must show the MAVLink ODOMETRY path arriving as fresh vehicle_visual_odometry samples with covariance/variance fields.",
+        },
+        "field_collection_plan": {
+            "title": "Complete the field collection plan with traceable captures.",
+            "desktop_action": "Module Setup > Field Collection Plan > capture, load, and register pending conditions",
+            "command": "./scripts/pi/create_field_collection_plan.sh",
+            "notes": "The final plan must show every required condition registered with condition-specific terrain log, capture output, and runtime status paths.",
         },
         "field_evidence_proof": {
             "title": "Load field plan cases, capture logs, then register replay evidence.",
@@ -751,7 +761,7 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
 
 def next_action_missing_conditions(name: str, details: dict[str, Any]) -> list[str]:
     raw = details.get("missing_conditions")
-    if raw is None and name in {"field_evidence_proof", "threshold_tuning"}:
+    if raw is None and name in {"field_collection_plan", "field_evidence_proof", "threshold_tuning"}:
         raw = details.get("required_conditions") or REQUIRED_FIELD_CONDITIONS
     if not isinstance(raw, (list, tuple, set)):
         return []
@@ -1052,6 +1062,138 @@ def px4_receiver_details_from_support_check(support_check: dict[str, Any]) -> di
     details["source"] = "support_bundle"
     details["required_message"] = REQUIRED_PX4_RECEIVER_MESSAGE
     return details
+
+
+def check_field_collection_plan(
+    path: str | Path | None,
+    *,
+    support_manifest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if path is not None:
+        source = Path(path).expanduser()
+        try:
+            plan = json.loads(source.read_text())
+        except Exception as exc:
+            return failed("field_collection_plan", f"Could not read field collection plan: {exc}", {"path": str(source)})
+        return field_collection_plan_check_from_plan(plan, source=str(source))
+
+    field_plans = (support_manifest or {}).get("field_collection_plans") if support_manifest else None
+    if isinstance(field_plans, dict):
+        return field_collection_plan_check_from_summary(field_plans)
+    return failed(
+        "field_collection_plan",
+        "A completed field collection plan is required for autonomy readiness.",
+        {"required_conditions": REQUIRED_FIELD_CONDITIONS},
+    )
+
+
+def field_collection_plan_check_from_plan(plan: dict[str, Any], *, source: str) -> dict[str, Any]:
+    if plan.get("schema_version") != "vision_nav_field_collection_plan_v1":
+        return failed(
+            "field_collection_plan",
+            "Field collection plan has an unexpected schema.",
+            {"source": source, "schema_version": plan.get("schema_version")},
+        )
+    summary = plan.get("summary") if isinstance(plan.get("summary"), dict) else {}
+    conditions = [item for item in plan.get("conditions") or [] if isinstance(item, dict)]
+    registered_conditions = sorted(
+        {
+            str(item.get("condition"))
+            for item in conditions
+            if item.get("condition") and str(item.get("status") or "") == "registered"
+        }
+    )
+    missing_conditions = missing_required_conditions(registered_conditions)
+    missing_traceability = field_collection_missing_traceability(conditions)
+    details = {
+        "source": source,
+        "status": normalize_status(plan.get("status")),
+        "site_name": plan.get("site_name"),
+        "required_count": summary.get("required_count"),
+        "registered_count": summary.get("registered_count"),
+        "placeholder_count": summary.get("placeholder_count"),
+        "missing_count": summary.get("missing_count"),
+        "registered_missing_log_count": summary.get("registered_missing_log_count"),
+        "capture_output_dir_count": plan.get("capture_output_dir_count"),
+        "runtime_status_path_count": plan.get("runtime_status_path_count"),
+        "condition_source_log_count": plan.get("condition_source_log_count"),
+        "registered_conditions": registered_conditions,
+        "missing_conditions": missing_conditions,
+        "missing_traceability": missing_traceability,
+    }
+    if missing_conditions:
+        return failed("field_collection_plan", "Field collection plan is missing required registered conditions.", details)
+    if missing_traceability:
+        return failed("field_collection_plan", "Field collection plan is missing capture/log traceability.", details)
+    if normalize_status(plan.get("status")) == "passed":
+        return passed("field_collection_plan", "Field collection plan covers every required condition with traceable logs.", details)
+    return failed("field_collection_plan", f"Field collection plan is {plan.get('status') or 'missing'}.", details)
+
+
+def field_collection_plan_check_from_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    status = normalize_status(summary.get("status"))
+    reports = summary.get("reports") if isinstance(summary.get("reports"), list) else []
+    covered_conditions: list[str] = []
+    for report in reports:
+        if not isinstance(report, dict):
+            continue
+        conditions = report.get("conditions") if isinstance(report.get("conditions"), list) else []
+        covered_conditions.extend(
+            str(condition.get("condition"))
+            for condition in conditions
+            if isinstance(condition, dict)
+            and condition.get("condition")
+            and str(condition.get("status") or "") == "registered"
+        )
+    covered_conditions = sorted(set(covered_conditions))
+    missing_conditions = missing_required_conditions(covered_conditions)
+    required_count = int(summary.get("required_count") or len(REQUIRED_FIELD_CONDITIONS))
+    registered_count = int(summary.get("registered_count") or 0)
+    condition_source_log_count = int(summary.get("condition_source_log_count") or 0)
+    capture_output_dir_count = int(summary.get("capture_output_dir_count") or 0)
+    runtime_status_path_count = int(summary.get("runtime_status_path_count") or 0)
+    details = {
+        "source": "support_bundle",
+        "status": status,
+        "report_count": summary.get("report_count"),
+        "required_count": required_count,
+        "registered_count": registered_count,
+        "capture_output_dir_count": capture_output_dir_count,
+        "runtime_status_path_count": runtime_status_path_count,
+        "condition_source_log_count": condition_source_log_count,
+        "missing_conditions": missing_conditions,
+    }
+    if status == "not_provided" or status is None:
+        return failed("field_collection_plan", "A completed field collection plan is required for autonomy readiness.", details)
+    if missing_conditions or registered_count < required_count:
+        return failed("field_collection_plan", "Field collection plan is missing required registered conditions.", details)
+    if (
+        condition_source_log_count < required_count
+        or capture_output_dir_count < required_count
+        or runtime_status_path_count < required_count
+    ):
+        return failed("field_collection_plan", "Field collection plan is missing capture/log traceability.", details)
+    if status == "passed":
+        return passed("field_collection_plan", "Field collection plan proof is present in the support bundle.", details)
+    return failed("field_collection_plan", f"Field collection plan proof in the support bundle is {status}.", details)
+
+
+def field_collection_missing_traceability(conditions: list[dict[str, Any]]) -> list[str]:
+    missing: list[str] = []
+    for condition in REQUIRED_FIELD_CONDITIONS:
+        item = next(
+            (
+                entry
+                for entry in conditions
+                if str(entry.get("condition") or "") == condition and str(entry.get("status") or "") == "registered"
+            ),
+            None,
+        )
+        if item is None:
+            continue
+        if not item.get("source_log") or not item.get("capture_output_dir") or not item.get("runtime_status_path"):
+            missing.append(condition)
+    return missing
 
 
 def check_field_evidence_proof(path: str | Path | None, support_checks: dict[str, dict[str, Any]]) -> dict[str, Any]:
