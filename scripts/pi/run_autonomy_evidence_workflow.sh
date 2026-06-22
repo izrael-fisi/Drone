@@ -175,6 +175,36 @@ with Path(steps_path).open("a", encoding="utf-8") as handle:
 PY
 }
 
+drop_recorded_step() {
+  local name="$1"
+  if [[ -z "$steps_jsonl" || ! -f "$steps_jsonl" ]]; then
+    return 0
+  fi
+  PYTHONPATH="$repo_root/src" "$venv_python" - "$steps_jsonl" "$name" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+steps_path = Path(sys.argv[1])
+target = sys.argv[2]
+records = []
+for line in steps_path.read_text(encoding="utf-8", errors="replace").splitlines():
+    if not line.strip():
+        continue
+    try:
+        record = json.loads(line)
+    except Exception:
+        continue
+    if record.get("name") != target:
+        records.append(record)
+with steps_path.open("w", encoding="utf-8") as handle:
+    for record in records:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
+PY
+}
+
 write_report() {
   local final_status="$1"
   PYTHONPATH="$repo_root/src" "$venv_python" - "$steps_jsonl" "$report" "$final_status" "$repo_root" "$workflow_dir" <<'PY'
@@ -319,6 +349,12 @@ run_step() {
     record_step "$name" "failed" "$exit_code" "$log_path" "Review the step log and rerun after collecting the missing prerequisite."
   fi
   return 0
+}
+
+rerun_step() {
+  local name="$1"
+  drop_recorded_step "$name"
+  run_step "$@"
 }
 
 skip_step() {
@@ -520,6 +556,16 @@ with steps_path.open("w", encoding="utf-8") as handle:
     for step in steps:
         handle.write(json.dumps(step, sort_keys=True) + "\n")
 PY
+}
+
+workflow_status_from_steps() {
+  if grep -q '"status": "failed"' "$steps_jsonl"; then
+    printf 'failed'
+  elif grep -Eq '"status": "(degraded|skipped)"' "$steps_jsonl"; then
+    printf 'degraded'
+  else
+    printf 'passed'
+  fi
 }
 
 field_case_vars_present() {
@@ -1004,13 +1050,16 @@ run_step "create_support_bundle" ./scripts/pi/create_support_bundle.sh
 VISION_NAV_AUTONOMY_ALLOW_FAILED=1 run_step "run_autonomy_readiness_audit" ./scripts/pi/run_autonomy_readiness_audit.sh
 sync_readiness_step_status "$autonomy_readiness_report"
 
-final_status="passed"
-if grep -q '"status": "failed"' "$steps_jsonl"; then
-  final_status="failed"
-elif grep -Eq '"status": "(degraded|skipped)"' "$steps_jsonl"; then
-  final_status="degraded"
-fi
+final_status="$(workflow_status_from_steps)"
+write_report "$final_status"
+write_log_archive
+write_validation_report
 
+# The readiness audit consumes the workflow validation report, so rerun it once
+# after validation is current and replace the prior final-audit step record.
+VISION_NAV_AUTONOMY_ALLOW_FAILED=1 rerun_step "run_autonomy_readiness_audit" ./scripts/pi/run_autonomy_readiness_audit.sh
+sync_readiness_step_status "$autonomy_readiness_report"
+final_status="$(workflow_status_from_steps)"
 write_report "$final_status"
 write_log_archive
 write_validation_report

@@ -1141,6 +1141,10 @@ Status:
   be downloaded with the workflow report instead of relying only on bounded
   tails. The archive stores the step outputs under `logs/*.log` for support
   review.
+- Done: the evidence workflow reruns the final autonomy-readiness audit once
+  after writing the current workflow report, log archive, and validation JSON,
+  replacing the prior audit step record so final readiness consumes current
+  workflow validation instead of stale validation from a previous run.
 - Done: `vision-nav-validate-evidence-workflow` validates downloaded workflow
   reports offline, confirms required step records, verifies the log archive is
   readable, checks that every recorded step has a matching `logs/*.log` member,
