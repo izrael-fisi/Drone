@@ -50,6 +50,9 @@ Status:
   `px4_sitl_capture_prereqs.json` even when local prerequisites such as PX4 or
   `tmux` are missing, while still exiting nonzero so missing prerequisites
   cannot be mistaken for receiver proof.
+- Done: `scripts/dev/setup_px4_sitl_prereqs.sh` provides a dry-run-first setup
+  helper for PX4 receiver-capture prerequisites, can install `tmux` with
+  `--apply`, and only clones PX4 when `--clone-px4` is explicitly supplied.
 - Done: the PX4 SITL smoke script, automated capture harness, and session
   evaluator emit stable `__VISION_NAV_PX4_SITL_SESSION__` /
   `__VISION_NAV_PX4_SITL_PREREQS__` /

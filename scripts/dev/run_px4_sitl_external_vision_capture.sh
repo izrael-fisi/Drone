@@ -87,9 +87,23 @@ def q(value: str) -> str:
 
 
 fix_commands = []
+setup_helper = str(Path(repo_root) / "scripts/dev/setup_px4_sitl_prereqs.sh")
+if tmux_status == "failed" or px4_status == "failed":
+    fix_commands.append(
+        fix_command(
+            "Review PX4 SITL prerequisite setup helper",
+            q(setup_helper),
+            "px4_sitl_prereqs",
+        )
+    )
 if tmux_status == "failed":
     fix_commands.extend(
         [
+            fix_command(
+                "Install tmux with the setup helper",
+                " ".join([q(setup_helper), "--apply", "--px4-dir", q(px4_dir)]),
+                "tmux_installed",
+            ),
             fix_command("Install tmux with Homebrew", "brew install tmux", "tmux_installed"),
             fix_command(
                 "Install tmux on Ubuntu/Debian",
@@ -101,6 +115,11 @@ if tmux_status == "failed":
 if px4_status == "failed":
     fix_commands.extend(
         [
+            fix_command(
+                "Clone PX4-Autopilot with the setup helper",
+                " ".join([q(setup_helper), "--apply", "--clone-px4", "--px4-dir", q(px4_dir)]),
+                "px4_autopilot_dir",
+            ),
             fix_command(
                 "Clone PX4-Autopilot to the default path",
                 f"git clone https://github.com/PX4/PX4-Autopilot.git {q(str(Path.home() / 'PX4-Autopilot'))}",
@@ -227,6 +246,7 @@ Prepared a reusable evidence-session scaffold when possible:
   prerequisite report: $prereq_report
   capture instructions: $capture_dir/README.md
   expected receiver report: $receiver_report
+  setup helper: $repo_root/scripts/dev/setup_px4_sitl_prereqs.sh
 
 After fixing the prerequisite, rerun:
   VISION_NAV_SITL_SMOKE_DIR="$session_dir" $repo_root/scripts/dev/run_px4_sitl_external_vision_capture.sh

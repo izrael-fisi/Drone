@@ -842,7 +842,10 @@ so local readiness re-audits can find it. Use the session marker as
 log, manual capture README, and `px4_sitl_capture_prereqs.json` before exiting
 failed; rerun the same command after fixing the prerequisite. The wrapper also
 prints `__VISION_NAV_PX4_SITL_PREREQS__=...` so the prerequisite report can be
-copied into setup notes. Support bundles auto-detect the default
+copied into setup notes. The generated fix commands include
+`scripts/dev/setup_px4_sitl_prereqs.sh`, which is dry-run-first; use `--apply`
+to install local tools and add `--clone-px4` only if this workstation should
+create a PX4 checkout. Support bundles auto-detect the default
 `~/px4-sitl-evidence/px4_sitl_capture_prereqs.json` path and summarize it under
 `px4_sitl_prereqs`; this does not satisfy PX4 receiver proof until the actual
 receiver report exists. The session folder is copied under

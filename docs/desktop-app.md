@@ -439,7 +439,10 @@ instructions. The same folder includes
 `px4_sitl_capture_prereqs.json` and the
 `__VISION_NAV_PX4_SITL_PREREQS__=...` marker with the missing prerequisite
 checks. Module Setup lists those checks, copyable next actions, and copyable
-fix commands separately from receiver proof. Support bundles ingest that
+fix commands separately from receiver proof. Those fix commands now include the
+dry-run-first `scripts/dev/setup_px4_sitl_prereqs.sh` helper, which can install
+`tmux` with `--apply` and clone PX4 only when `--clone-px4` is also provided.
+Support bundles ingest that
 prerequisite report under `px4_sitl_prereqs` and show it as a separate
 `px4 prereqs` status, while PX4 receiver proof still requires
 `receiver_evidence.json`. Autonomy-readiness reports, evidence packages, and

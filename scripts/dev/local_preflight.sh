@@ -772,8 +772,14 @@ echo "[7/8] Preparing PX4 SITL evidence session dry-run"
 smoke_output="$preflight_tmp_dir/px4_sitl_smoke_dry_run.txt"
 capture_output="$preflight_tmp_dir/px4_sitl_capture_dry_run.txt"
 capture_prereq_output="$preflight_tmp_dir/px4_sitl_capture_missing_prereq.txt"
+px4_prereq_setup_output="$preflight_tmp_dir/px4_sitl_prereq_setup_dry_run.txt"
 session_missing_capture_output="$preflight_tmp_dir/px4_sitl_session_missing_capture.txt"
 smoke_dir="$(mktemp -d "$preflight_tmp_dir/sitl-smoke.XXXXXX")"
+VISION_NAV_PX4_AUTOPILOT_DIR="$preflight_tmp_dir/missing-px4-autopilot" \
+./scripts/dev/setup_px4_sitl_prereqs.sh --clone-px4 >"$px4_prereq_setup_output"
+grep -q "PX4 SITL prerequisite setup dry run" "$px4_prereq_setup_output"
+grep -q "git clone https://github.com/PX4/PX4-Autopilot.git" "$px4_prereq_setup_output"
+grep -q "Dry run only" "$px4_prereq_setup_output"
 VISION_NAV_SITL_DRY_RUN=1 \
 VISION_NAV_SITL_SMOKE_DIR="$smoke_dir" \
 ./scripts/dev/px4_sitl_external_vision_smoke.sh >"$smoke_output"
@@ -834,8 +840,11 @@ assert checks["px4_autopilot_dir"]["status"] == "failed"
 assert "__VISION_NAV_PX4_SITL_PREREQS__" in report["markers"]
 assert report["next_actions"]
 conditions = {command["condition"] for command in report["fix_commands"]}
+commands = [command["command"] for command in report["fix_commands"]]
+assert "px4_sitl_prereqs" in conditions
 assert "px4_autopilot_dir" in conditions
 assert "rerun_capture" in conditions
+assert any("setup_px4_sitl_prereqs.sh" in command for command in commands)
 PY
 if VISION_NAV_ALLOW_DEGRADED=1 ./scripts/dev/evaluate_px4_sitl_session.sh "$smoke_dir" >"$session_missing_capture_output"; then
   echo "Expected PX4 SITL session evaluation to fail before receiver captures exist." >&2
