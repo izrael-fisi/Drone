@@ -272,6 +272,40 @@ pass_step() {
   record_step "$name" "passed" 0 "$log_path" "$notes"
 }
 
+degraded_step() {
+  local name="$1"
+  local notes="$2"
+  local log_path="$log_dir/${name}.log"
+  shift 2 || true
+  {
+    printf '%s\n' "$notes"
+    for line in "$@"; do
+      printf '%s\n' "$line"
+    done
+  } >"$log_path"
+  echo
+  echo "== $name =="
+  cat "$log_path"
+  record_step "$name" "degraded" 0 "$log_path" "$notes"
+}
+
+fail_step() {
+  local name="$1"
+  local notes="$2"
+  local log_path="$log_dir/${name}.log"
+  shift 2 || true
+  {
+    printf '%s\n' "$notes"
+    for line in "$@"; do
+      printf '%s\n' "$line"
+    done
+  } >"$log_path"
+  echo
+  echo "== $name =="
+  cat "$log_path"
+  record_step "$name" "failed" 1 "$log_path" "$notes"
+}
+
 sync_readiness_step_status() {
   local readiness_report="$1"
   if [[ ! -f "$readiness_report" ]]; then
@@ -381,9 +415,67 @@ else
 fi
 
 if [[ -f "$rosbag2_cli_review" ]]; then
-  pass_step "check_native_rosbag2_review" \
-    "Native rosbag2 CLI review artifact is available for support-bundle and final-readiness evidence." \
-    "__VISION_NAV_ROSBAG2_CLI_REVIEW__=$rosbag2_cli_review"
+  rosbag2_review_eval="$(
+    PYTHONPATH="$repo_root/src" "$venv_python" - "$rosbag2_cli_review" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+
+def emit(status: str, message: str) -> None:
+    print(f"{status}|{message}")
+
+
+path = Path(sys.argv[1]).expanduser()
+try:
+    report = json.loads(path.read_text(encoding="utf-8"))
+except Exception as exc:
+    emit("failed", f"Could not parse native rosbag2 CLI review JSON: {exc}")
+    raise SystemExit(0)
+if not isinstance(report, dict):
+    emit("failed", "Native rosbag2 CLI review root is not a JSON object.")
+    raise SystemExit(0)
+if report.get("schema_version") != "vision_nav_rosbag2_cli_review_v1":
+    emit("failed", "Native rosbag2 CLI review schema is not recognized.")
+    raise SystemExit(0)
+
+status = str(report.get("status") or "").lower()
+validation_status = str(report.get("validation_status") or "").lower()
+validation_format = str(report.get("validation_format") or "")
+cli = report.get("ros2_cli") if isinstance(report.get("ros2_cli"), dict) else {}
+cli_status = str(cli.get("status") or "").lower()
+cli_exit_code = cli.get("exit_code")
+if (
+    status == "passed"
+    and validation_status == "passed"
+    and validation_format == "vision_nav_rosbag2_v1"
+    and cli_status == "passed"
+    and cli_exit_code == 0
+):
+    emit("passed", "Native rosbag2 CLI review passed and is usable for final-readiness evidence.")
+elif status == "degraded" or validation_status == "degraded" or cli_status in {"degraded", "skipped"}:
+    emit("degraded", "Native rosbag2 CLI review is degraded; preserve it for diagnostics, but rerun before final readiness.")
+else:
+    emit("failed", "Native rosbag2 CLI review did not pass; rerun the sourced workstation review before final readiness.")
+PY
+  )"
+  rosbag2_review_status="${rosbag2_review_eval%%|*}"
+  rosbag2_review_message="${rosbag2_review_eval#*|}"
+  if [[ "$rosbag2_review_status" == "passed" ]]; then
+    pass_step "check_native_rosbag2_review" \
+      "$rosbag2_review_message" \
+      "__VISION_NAV_ROSBAG2_CLI_REVIEW__=$rosbag2_cli_review"
+  elif [[ "$rosbag2_review_status" == "degraded" ]]; then
+    degraded_step "check_native_rosbag2_review" \
+      "$rosbag2_review_message" \
+      "__VISION_NAV_ROSBAG2_CLI_REVIEW__=$rosbag2_cli_review"
+  else
+    fail_step "check_native_rosbag2_review" \
+      "$rosbag2_review_message" \
+      "__VISION_NAV_ROSBAG2_CLI_REVIEW__=$rosbag2_cli_review"
+  fi
 else
   skip_step "check_native_rosbag2_review" \
     "Missing native rosbag2 CLI review artifact: $rosbag2_cli_review. Run Module Setup > Native rosbag2 Review on a sourced ROS 2 workstation, or run ./scripts/dev/run_rosbag2_cli_review.sh after syncing a field log."

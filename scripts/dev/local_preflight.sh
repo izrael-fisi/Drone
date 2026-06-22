@@ -116,7 +116,7 @@ mkdir -p "$workflow_smoke_dir/terrain-match"
 cat >"$workflow_smoke_dir/terrain-match/rosbag2-cli-review.json" <<EOF
 {
   "schema_version": "vision_nav_rosbag2_cli_review_v1",
-  "status": "passed",
+  "status": "degraded",
   "artifact_path": "$workflow_smoke_dir/terrain-match/rosbag2-native",
   "validation_status": "passed",
   "validation_format": "vision_nav_rosbag2_v1",
@@ -128,13 +128,18 @@ cat >"$workflow_smoke_dir/terrain-match/rosbag2-cli-review.json" <<EOF
     "topic_count": 2
   },
   "ros2_cli": {
-    "status": "passed",
+    "status": "skipped",
     "command": ["ros2", "bag", "info", "$workflow_smoke_dir/terrain-match/rosbag2-native"],
-    "stdout": "Files: rosbag2_0.db3\\n",
+    "stdout": "",
     "stderr": "",
-    "exit_code": 0
+    "exit_code": null
   },
-  "issues": []
+  "issues": [
+    {
+      "severity": "warning",
+      "message": "ROS 2 CLI review was skipped."
+    }
+  ]
 }
 EOF
 cat >"$workflow_smoke_dir/px4_sitl_capture_prereqs.json" <<'EOF'
@@ -215,6 +220,7 @@ assert "validate_rosbag_export" in steps
 assert "check_native_rosbag2_review" in steps
 assert "check_px4_receiver_proof" in steps
 assert "run_autonomy_readiness_audit" in steps
+assert steps["check_native_rosbag2_review"]["status"] == "degraded"
 assert steps["check_px4_receiver_proof"]["status"] == "skipped"
 assert steps["run_autonomy_readiness_audit"]["status"] == "failed"
 assert steps["run_autonomy_readiness_audit"]["readiness_report_status"] == "failed"

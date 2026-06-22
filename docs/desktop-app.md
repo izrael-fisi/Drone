@@ -431,7 +431,10 @@ final readiness audit. After that log is synced, the local-only `Native rosbag2
 Review` action runs `scripts/dev/run_rosbag2_cli_review.sh` from the desktop
 repo against the downloaded log and writes
 `~/DroneTransfer/from-pi/terrain-match/rosbag2-cli-review.json` for the next
-local readiness re-audit.
+local readiness re-audit. The evidence workflow treats that review as proof
+only when the review status, export validation, native format, and
+`ros2 bag info` result all pass; degraded or failed review JSON remains
+downloadable for diagnostics.
 
 For Pi-side support sessions where a single command is easier than clicking each
 step, `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the same ordered

@@ -974,14 +974,17 @@ registers a field case when `VISION_NAV_FIELD_CASE_NAME`,
 attempts feature benchmarking, threshold tuning, dependency-free ROS bag JSONL
 export validation, checks for a native `rosbag2` CLI review artifact, checks
 for PX4 ODOMETRY receiver proof, creates the support bundle, and runs the final
-autonomy-readiness audit. The native `rosbag2` review check passes when
-`VISION_NAV_ROSBAG2_CLI_REVIEW` points to an existing review JSON, or when the
-default `~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json`
-exists; otherwise it is recorded as a skipped workstation prerequisite with the
-review command in the step log. The PX4 proof check passes only when
-`VISION_NAV_PX4_SITL_REPORT` points to an evaluated receiver artifact. A
-`VISION_NAV_PX4_SITL_SESSION` path is preserved as diagnostic context, but the
-step remains skipped until `receiver_evidence.json` exists. It writes
+autonomy-readiness audit. The native `rosbag2` review check passes only when
+`VISION_NAV_ROSBAG2_CLI_REVIEW` or the default
+`~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json` points to a
+passed review JSON with passed export validation, native rosbag2 format, and a
+passed `ros2 bag info` result. Degraded or failed review JSON is preserved as
+diagnostic evidence; missing review JSON is recorded as a skipped workstation
+prerequisite with the review command in the step log. The PX4 proof check
+passes only when `VISION_NAV_PX4_SITL_REPORT` points to an evaluated receiver
+artifact. A `VISION_NAV_PX4_SITL_SESSION` path is preserved as diagnostic
+context, but the step remains skipped until `receiver_evidence.json` exists. It
+writes
 `~/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json`
 with per-step status, log paths, tail output, a compressed workflow-log archive,
 and any emitted `__VISION_NAV_*__` markers. The archive preserves the full step
