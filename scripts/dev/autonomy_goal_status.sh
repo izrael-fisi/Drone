@@ -305,17 +305,17 @@ if external_blockers:
         print(f"- ... {len(external_blockers) - 12} more")
 
 phase_commands = []
+blocked_phase_commands = []
 if phases:
     for phase in phases:
-        if phase.get("status") != "action_required":
-            continue
         phase_command_values = set()
+        phase_items = []
         for action in phase.get("actions") or []:
             command = action.get("command")
             if not command:
                 continue
             phase_command_values.add(command)
-            phase_commands.append(
+            phase_items.append(
                 {
                     "title": action.get("title") or phase.get("title") or phase.get("id") or "next action",
                     "command": command,
@@ -324,26 +324,60 @@ if phases:
         for command in phase.get("commands") or []:
             if command in phase_command_values:
                 continue
-            phase_commands.append(
+            phase_items.append(
                 {
                     "title": phase.get("title") or phase.get("id") or "next action",
                     "command": command,
                 }
             )
+        if phase.get("status") == "action_required":
+            phase_commands.extend(phase_items)
+        elif phase.get("status") == "blocked" and phase.get("id") != "final_audit":
+            dependencies = phase.get("dependency_status") or {}
+            waiting_on = [
+                f"{name}={value}"
+                for name, value in dependencies.items()
+                if value != "passed"
+            ]
+            for item in phase_items:
+                blocked_phase_commands.append(
+                    {
+                        **item,
+                        "waiting_on": ", ".join(waiting_on),
+                    }
+                )
 next_actions = phase_commands or (report.get("next_actions") or [])
+printed_commands = set()
 if next_actions:
     print()
     print("Next commands:")
-    seen = set()
     count = 0
     for action in next_actions:
         command = action.get("command")
-        if not command or command in seen:
+        if not command or command in printed_commands:
             continue
-        seen.add(command)
+        printed_commands.add(command)
         count += 1
         title = action.get("title") or action.get("check") or "next action"
         print(f"{count}. {title}")
+        print(f"   {command}")
+        if count >= 8:
+            break
+if blocked_phase_commands:
+    print()
+    print("Blocked follow-up commands:")
+    count = 0
+    for action in blocked_phase_commands:
+        command = action.get("command")
+        if not command or command in printed_commands:
+            continue
+        printed_commands.add(command)
+        count += 1
+        title = action.get("title") or "blocked follow-up"
+        print(f"{count}. {title}")
+        waiting_on = action.get("waiting_on")
+        if waiting_on:
+            print(f"   waiting on: {waiting_on}")
         print(f"   {command}")
         if count >= 8:
             break
@@ -352,7 +386,7 @@ PY
 if [[ "$audit_status" -ne 0 ]]; then
   if [[ "$quiet_exit" != "1" && "$quiet_exit" != "true" ]]; then
     echo
-    echo "Autonomy goal is not complete yet; run the commands above to collect the missing proof artifacts." >&2
+    echo "Autonomy goal is not complete yet; run the immediate next commands first, then the blocked follow-ups after their prerequisites clear." >&2
   fi
   exit "$audit_status"
 fi

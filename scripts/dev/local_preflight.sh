@@ -380,15 +380,21 @@ grep -q "ros2_replay \\[blocked\\]" "$goal_status_output"
 grep -q "waiting on: field_dataset=action_required" "$goal_status_output"
 grep -q "External proof blockers:" "$goal_status_output"
 grep -q "Next commands:" "$goal_status_output"
+grep -q "Blocked follow-up commands:" "$goal_status_output"
 grep -q "support_bundle_bench_readiness" "$goal_status_output"
+grep -q "./scripts/pi/run_rosbag_export_validation.sh" "$goal_status_output"
+grep -q "./scripts/dev/run_rosbag2_cli_review.sh" "$goal_status_output"
 python3 - "$goal_status_output" <<'PY'
 import sys
 text = open(sys.argv[1], encoding="utf-8").read()
 px4 = text.index("VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh")
 support = text.index("./scripts/pi/create_support_bundle.sh")
 assert px4 < support
-assert "./scripts/pi/run_rosbag_export_validation.sh" not in text
-assert "./scripts/dev/run_rosbag2_cli_review.sh" not in text
+next_commands = text.index("Next commands:")
+blocked_followups = text.index("Blocked follow-up commands:")
+assert "./scripts/pi/run_rosbag_export_validation.sh" not in text[next_commands:blocked_followups]
+assert "./scripts/pi/run_rosbag_export_validation.sh" in text[blocked_followups:]
+assert "./scripts/dev/run_rosbag2_cli_review.sh" in text[blocked_followups:]
 PY
 local_autonomy_output="$preflight_tmp_dir/local_autonomy_readiness_preflight.txt"
 local_audit_dir="$(mktemp -d "$preflight_tmp_dir/local-audit.XXXXXX")"

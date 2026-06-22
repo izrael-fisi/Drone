@@ -920,9 +920,11 @@ That local status helper summarizes proof-item counts, external blockers,
 proof-runbook phase counts, and next commands from
 `vision-nav-autonomy-readiness`. Its command list follows the proof runbook, so
 blocked method/threshold or final-audit work is shown as waiting on upstream
-phases instead of mixed into the runnable command list. ROS replay validation
-also waits until field terrain logs exist, and the bench phase asks for PX4
-receiver capture before support-bundle creation. It scans the
+phases instead of mixed into the runnable command list. It also prints a
+separate blocked follow-up command list for planned method/threshold and ROS
+replay work, with the upstream phase that must finish first. ROS replay
+validation also waits until field terrain logs exist, and the bench phase asks
+for PX4 receiver capture before support-bundle creation. It scans the
 conventional `~/DroneTransfer/from-pi/` evidence folders for downloaded support
 bundles, PX4 receiver reports, field plans/evidence, feature benchmarks,
 threshold reports, ROS bag validation reports, and native rosbag2 CLI reviews,

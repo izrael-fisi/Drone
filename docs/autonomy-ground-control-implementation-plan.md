@@ -743,6 +743,10 @@ Status:
 - Done: the proof runbook now keeps ROS replay validation blocked until the
   field dataset phase has real terrain logs, so goal-status next commands do
   not ask operators to generate rosbag proof before replay evidence exists.
+- Done: `scripts/dev/autonomy_goal_status.sh` now prints blocked follow-up
+  commands separately from immediate next commands, so method/threshold and ROS
+  replay actions remain visible without being presented as runnable before
+  their field-dataset prerequisite is satisfied.
 - Done: `scripts/mac/goal_status.sh` now embeds that autonomy proof summary
   before its transfer-folder and Pi connectivity checks so one operator command
   reports both missing proof gates and setup connectivity.
