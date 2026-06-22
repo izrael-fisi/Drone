@@ -122,6 +122,7 @@ FIELD_METADATA_UPDATE_COMMAND_MARKER = "__VISION_NAV_FIELD_METADATA_UPDATE_COMMA
 TERRAIN_BUNDLE_MARKER = "__VISION_NAV_TERRAIN_BUNDLE__"
 TERRAIN_BUNDLE_STATUS_MARKER = "__VISION_NAV_TERRAIN_BUNDLE_STATUS__"
 TERRAIN_CAPTURE_COMMAND_MARKER = "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"
+TERRAIN_PREFLIGHT_CAPTURE_COMMAND_MARKER = "__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__"
 TERRAIN_CAPTURE_OUTPUT_DIR_MARKER = "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"
 EXPECTED_TERRAIN_LOG_MARKER = "__VISION_NAV_EXPECTED_TERRAIN_LOG__"
 FIELD_CAPTURE_PREFLIGHT_MARKER = "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"
@@ -619,6 +620,7 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
     expected_log = marker_string(markers, EXPECTED_TERRAIN_LOG_MARKER)
     output_dir = marker_string(markers, TERRAIN_CAPTURE_OUTPUT_DIR_MARKER)
     capture_command = marker_string(markers, TERRAIN_CAPTURE_COMMAND_MARKER)
+    preflight_capture_command = marker_string(markers, TERRAIN_PREFLIGHT_CAPTURE_COMMAND_MARKER)
     metadata_update_command = marker_string(markers, FIELD_METADATA_UPDATE_COMMAND_MARKER)
     if preflight_report:
         summary["preflight_report"] = preflight_report
@@ -640,6 +642,8 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
             capture_command,
             runtime_status_root=output_dir,
         )
+    if preflight_capture_command:
+        summary["preflight_capture_command"] = preflight_capture_command
     if metadata_update_command:
         summary["metadata_update_command"] = metadata_update_command
     if bundle_status == "missing":
@@ -678,17 +682,31 @@ def apply_current_preflight_report_guidance(summary: dict[str, Any], markers: di
         summary["runtime_status_path"] = report["runtime_status_path"].strip()
     capture_command = report.get("capture_command")
     if isinstance(capture_command, str) and capture_command.strip():
-        command = command_with_runtime_status_read(
+        capture_command_with_status = command_with_runtime_status_read(
             capture_command,
             runtime_status_root=str(report.get("capture_output_dir") or "").strip() or None,
         )
+        preflight_capture_command = preflight_capture_command_from_report(
+            report,
+            capture_command_with_status=capture_command_with_status,
+        )
+        if preflight_capture_command:
+            summary["preflight_capture_command"] = preflight_capture_command
         if summary.get("name") == "capture_field_terrain_log" and report.get("ready_for_capture") is True:
-            summary["command"] = command
-            summary["desktop_action"] = "Module Setup > Field Log Capture"
+            summary["command"] = preflight_capture_command or capture_command_with_status
+            summary["desktop_action"] = (
+                "Module Setup > Field Capture Preflight, then Field Log Capture"
+                if preflight_capture_command
+                else "Module Setup > Field Log Capture"
+            )
             summary.pop("capture_command_after_bundle", None)
-            summary["notes"] = "Current field capture preflight is ready; capture the terrain log and runtime status next."
+            summary["notes"] = (
+                "Current field capture preflight is ready; rerun preflight and then capture the terrain log and runtime status."
+                if preflight_capture_command
+                else "Current field capture preflight is ready; capture the terrain log and runtime status next."
+            )
         else:
-            summary["capture_command_after_preflight"] = command
+            summary["capture_command_after_preflight"] = capture_command_with_status
     metadata_update_command = report.get("metadata_update_command")
     if isinstance(metadata_update_command, str) and metadata_update_command.strip():
         summary["metadata_update_command"] = metadata_update_command.strip()
@@ -712,6 +730,7 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
     if summary.get("name") != "capture_field_terrain_log":
         return
     capture_command = marker_string(markers, TERRAIN_CAPTURE_COMMAND_MARKER)
+    preflight_capture_command = marker_string(markers, TERRAIN_PREFLIGHT_CAPTURE_COMMAND_MARKER)
     bundle_path = marker_string(markers, TERRAIN_BUNDLE_MARKER)
     bundle_status = marker_string(markers, TERRAIN_BUNDLE_STATUS_MARKER)
     expected_log = marker_string(markers, EXPECTED_TERRAIN_LOG_MARKER)
@@ -719,6 +738,8 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
     metadata_update_command = marker_string(markers, FIELD_METADATA_UPDATE_COMMAND_MARKER)
     if capture_command:
         summary["command"] = capture_command
+    if preflight_capture_command:
+        summary["preflight_capture_command"] = preflight_capture_command
     if expected_log:
         summary["expected_log"] = expected_log
     if output_dir:
@@ -736,6 +757,8 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
                 capture_command,
                 runtime_status_root=output_dir,
             )
+        if preflight_capture_command:
+            summary["preflight_capture_command_after_bundle"] = preflight_capture_command
         existing_notes = str(summary.get("notes") or "").strip()
         guidance = "Terrain bundle is missing; build/upload the selected mission bundle and validate it before field-log capture."
         summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
@@ -818,6 +841,29 @@ def marker_string(markers: dict[str, Any], name: str) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def preflight_capture_command_from_report(
+    report: dict[str, Any],
+    *,
+    capture_command_with_status: str,
+) -> str | None:
+    explicit = report.get("preflight_capture_command")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    preflight_command = report.get("preflight_command")
+    if isinstance(preflight_command, str) and preflight_command.strip():
+        return command_sequence(preflight_command.strip(), capture_command_with_status)
+    if report.get("ready_for_capture") is True:
+        return command_sequence("./scripts/pi/preflight_field_capture.sh", capture_command_with_status)
+    return None
+
+
+def command_sequence(*commands: str | None) -> str | None:
+    parts = [command.strip() for command in commands if isinstance(command, str) and command.strip()]
+    if not parts:
+        return None
+    return " && ".join(parts)
 
 
 def bundle_validation_command(bundle_path: str | None) -> str:
@@ -1006,7 +1052,9 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
         ("Expected log", next_step.get("expected_log")),
         ("Output", next_step.get("output_dir")),
         ("Runtime status", next_step.get("runtime_status_path")),
+        ("Preflight + capture", next_step.get("preflight_capture_command")),
         ("After bundle", next_step.get("capture_command_after_bundle")),
+        ("Preflight + capture after bundle", next_step.get("preflight_capture_command_after_bundle")),
         ("After preflight", next_step.get("capture_command_after_preflight")),
         ("Metadata update", next_step.get("metadata_update_command")),
     ]

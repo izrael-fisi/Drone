@@ -515,6 +515,11 @@ Status:
   operators can run the capture only after the active bundle/output checks pass,
   while metadata update and field replay registration remain separate proof
   steps.
+- Done: evidence workflow reports now emit a
+  `__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__` marker, and workflow
+  validation/goal-status guidance prefers that preflight-plus-capture command
+  for the next field-log action even when older downloaded preflight reports
+  need the command rebuilt from their separate preflight and capture fields.
 
 Tasks:
 

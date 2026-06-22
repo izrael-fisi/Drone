@@ -3603,6 +3603,19 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             f"VISION_NAV_OUTPUT_DIR={ready_preflight_capture_output} "
             "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
         )
+        ready_preflight_command = (
+            f"VISION_NAV_FIELD_COLLECTION_PLAN={root / 'field_collection_plan.json'} "
+            "VISION_NAV_FIELD_CONDITION=good_texture "
+            "./scripts/pi/preflight_field_capture.sh"
+        )
+        ready_preflight_capture_with_status = (
+            f"{ready_preflight_capture_command} && "
+            f"VISION_NAV_RUNTIME_STATUS_ROOTS={ready_preflight_capture_output} "
+            "./scripts/pi/read_runtime_status.sh"
+        )
+        ready_preflight_then_capture_command = (
+            f"{ready_preflight_command} && {ready_preflight_capture_with_status}"
+        )
         ready_preflight_report = root / "ready_workflow_field_capture_preflight.json"
         ready_preflight_report.write_text(
             json.dumps(
@@ -3615,6 +3628,8 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                     "capture_output_dir": str(ready_preflight_capture_output),
                     "source_log": str(ready_preflight_capture_output / "terrain_matches.jsonl"),
                     "runtime_status_path": str(ready_preflight_capture_output / "runtime_status.json"),
+                    "preflight_command": ready_preflight_command,
+                    "preflight_capture_command": ready_preflight_then_capture_command,
                     "capture_command": ready_preflight_capture_command,
                     "metadata_update_command": capture_metadata_command,
                     "checks": [
@@ -3654,13 +3669,18 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             stale_preflight_ready_validation["next_required_step"]["desktop_action"],
-            "Module Setup > Field Log Capture",
-            "workflow validation should use field-log capture when current preflight is ready",
+            "Module Setup > Field Capture Preflight, then Field Log Capture",
+            "workflow validation should use preflight+capture when current preflight is ready",
         )
         assert_equal(
             stale_preflight_ready_validation["next_required_step"]["command"],
-            f"{ready_preflight_capture_command} && VISION_NAV_RUNTIME_STATUS_ROOTS={ready_preflight_capture_output} ./scripts/pi/read_runtime_status.sh",
+            ready_preflight_then_capture_command,
             "workflow validation should prefer the refreshed preflight capture command",
+        )
+        assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["preflight_capture_command"],
+            ready_preflight_then_capture_command,
+            "workflow validation should preserve the refreshed preflight+capture command",
         )
         assert_equal(
             stale_preflight_ready_validation["next_required_step"]["bundle_path"],

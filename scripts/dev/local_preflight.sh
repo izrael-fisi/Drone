@@ -397,6 +397,10 @@ assert "validate_captured_field_terrain_log" not in steps
 assert steps["select_field_collection_condition"]["status"] in {"passed", "degraded"}
 selected_capture_command = steps["select_field_collection_condition"]["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"]
 assert "read_runtime_status.sh" in selected_capture_command
+selected_preflight_capture_command = steps["select_field_collection_condition"]["markers"]["__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__"]
+assert "preflight_field_capture.sh" in selected_preflight_capture_command
+assert "VISION_NAV_OUTPUT_DIR" in selected_preflight_capture_command
+assert "read_runtime_status.sh" in selected_preflight_capture_command
 capture = steps["capture_field_terrain_log"]
 assert capture["status"] == "passed"
 assert "parseable with" in capture["notes"]
@@ -404,11 +408,10 @@ assert "Runtime status snapshot is usable" in capture["notes"]
 assert "__VISION_NAV_TERRAIN_LOG__" in capture["markers"]
 assert "__VISION_NAV_RUNTIME_STATUS__" in capture["markers"]
 assert "read_runtime_status.sh" in capture["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"]
+assert "preflight_field_capture.sh" in capture["markers"]["__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__"]
 assert Path(capture["markers"]["__VISION_NAV_TERRAIN_LOG__"]).exists()
 assert Path(capture["markers"]["__VISION_NAV_RUNTIME_STATUS__"]).exists()
-tail_text = "\n".join(capture["tail"])
-assert "__VISION_NAV_RUNTIME_STATUS_JSON__" in tail_text
-assert "Runtime status summary:" in tail_text
+assert "__VISION_NAV_RUNTIME_STATUS_JSON__" in capture["markers"]
 PY
 invalid_workflow_dir="$field_smoke_dir/workflow-invalid-log"
 mkdir -p "$invalid_workflow_dir"

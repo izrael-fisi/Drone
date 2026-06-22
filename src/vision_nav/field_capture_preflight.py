@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 from typing import Any
 
@@ -669,11 +670,22 @@ def print_human(report: dict[str, Any]) -> None:
     if report.get("capture_output_dir"):
         print(f"__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__={report['capture_output_dir']}")
     if report.get("capture_command"):
-        print(f"__VISION_NAV_TERRAIN_CAPTURE_COMMAND__={report['capture_command']}")
+        print(f"__VISION_NAV_TERRAIN_CAPTURE_COMMAND__={marker_shell_command(report['capture_command'])}")
     if report.get("preflight_capture_command"):
-        print(f"__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__={report['preflight_capture_command']}")
+        print(
+            "__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__="
+            f"{marker_shell_command(report['preflight_capture_command'])}"
+        )
     if report.get("metadata_update_command"):
-        print(f"__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__={report['metadata_update_command']}")
+        print(f"__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__={marker_shell_command(report['metadata_update_command'])}")
+
+
+def marker_shell_command(command: Any) -> str:
+    text = str(command)
+    text = text.replace("\\\n", " ")
+    text = " ".join(part.strip() for part in text.splitlines() if part.strip())
+    text = re.sub(r"\\\s+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def main() -> None:
