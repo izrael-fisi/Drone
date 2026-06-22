@@ -53,6 +53,8 @@ Status:
 - Done: `scripts/dev/setup_px4_sitl_prereqs.sh` provides a dry-run-first setup
   helper for PX4 receiver-capture prerequisites, can install `tmux` with
   `--apply`, and only clones PX4 when `--clone-px4` is explicitly supplied.
+- Done: Module Setup exposes a local-only `PX4 Prereq Setup` action that runs
+  that helper in dry-run mode before `PX4 SITL Receiver Capture`.
 - Done: the PX4 SITL smoke script, automated capture harness, and session
   evaluator emit stable `__VISION_NAV_PX4_SITL_SESSION__` /
   `__VISION_NAV_PX4_SITL_PREREQS__` /

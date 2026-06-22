@@ -1096,6 +1096,57 @@ pub async fn run_local_px4_sitl_receiver_capture(
     .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn run_local_px4_sitl_prereq_setup(
+    repo_dir: String,
+    download_root: Option<String>,
+) -> Result<LocalCommandResult, String> {
+    tokio::task::spawn_blocking(move || {
+        run_local_px4_sitl_prereq_setup_inner(&repo_dir, download_root.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+fn run_local_px4_sitl_prereq_setup_inner(
+    repo_dir: &str,
+    download_root: Option<&str>,
+) -> Result<LocalCommandResult> {
+    let repo = expand_local_path(repo_dir)?;
+    let script = repo.join("scripts/dev/setup_px4_sitl_prereqs.sh");
+    if !script.is_file() {
+        return Err(anyhow!(
+            "Missing local PX4 SITL prerequisite setup helper: {}",
+            script.display()
+        ));
+    }
+
+    let download_root = expand_local_path(download_root.unwrap_or("~/DroneTransfer/from-pi"))?;
+    let session_dir = download_root.join("px4-sitl-evidence");
+    std::fs::create_dir_all(&session_dir)
+        .with_context(|| format!("Cannot create {}", session_dir.display()))?;
+    let px4_dir = match std::env::var_os("VISION_NAV_PX4_AUTOPILOT_DIR") {
+        Some(value) => PathBuf::from(value),
+        None => expand_local_path("~/PX4-Autopilot")?,
+    };
+
+    let output = Command::new("bash")
+        .arg(&script)
+        .arg("--clone-px4")
+        .arg("--px4-dir")
+        .arg(&px4_dir)
+        .current_dir(&repo)
+        .env("VISION_NAV_SITL_SMOKE_DIR", &session_dir)
+        .output()
+        .with_context(|| format!("Failed to run {}", script.display()))?;
+    Ok(LocalCommandResult {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
+}
+
 fn run_local_px4_sitl_receiver_capture_inner(
     repo_dir: &str,
     download_root: Option<&str>,
@@ -4420,8 +4471,9 @@ mod tests {
         list_field_evidence_reports, list_field_evidence_templates, list_px4_prereq_reports,
         list_px4_receiver_reports, list_rosbag_export_validation_reports,
         list_threshold_tuning_reports, read_support_bundle_details,
-        run_local_autonomy_readiness_audit_inner, run_local_px4_sitl_receiver_capture_inner,
-        run_local_rosbag2_cli_review_inner, support_summary_from_manifest,
+        run_local_autonomy_readiness_audit_inner, run_local_px4_sitl_prereq_setup_inner,
+        run_local_px4_sitl_receiver_capture_inner, run_local_rosbag2_cli_review_inner,
+        support_summary_from_manifest,
     };
     use std::fs::{self, File};
     use std::io::Write;
@@ -4523,6 +4575,36 @@ mod tests {
         assert_eq!(result.exit_code, 6);
         assert!(result.stdout.contains("px4-sitl-evidence"));
         assert!(result.stdout.contains("__VISION_NAV_PX4_SITL_REPORT__="));
+        assert!(transfer_root.join("px4-sitl-evidence").is_dir());
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn runs_local_px4_sitl_prereq_setup_wrapper_as_dry_run() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let repo = std::env::temp_dir().join(format!("drone-local-px4-sitl-prereqs-{stamp}"));
+        let script_dir = repo.join("scripts/dev");
+        fs::create_dir_all(&script_dir).expect("create script dir");
+        fs::write(
+            script_dir.join("setup_px4_sitl_prereqs.sh"),
+            "#!/usr/bin/env bash\nprintf 'args=%s\\n' \"$*\"\nprintf 'session=%s\\n' \"$VISION_NAV_SITL_SMOKE_DIR\"\nexit 0\n",
+        )
+        .expect("write helper");
+        let transfer_root = repo.join("from-pi");
+
+        let result = run_local_px4_sitl_prereq_setup_inner(
+            repo.to_str().expect("repo path"),
+            Some(transfer_root.to_str().expect("transfer path")),
+        )
+        .expect("run helper");
+
+        assert_eq!(result.exit_code, 0);
+        assert!(result.stdout.contains("--clone-px4"));
+        assert!(result.stdout.contains("--px4-dir"));
+        assert!(result.stdout.contains("px4-sitl-evidence"));
         assert!(transfer_root.join("px4-sitl-evidence").is_dir());
         let _ = fs::remove_dir_all(&repo);
     }

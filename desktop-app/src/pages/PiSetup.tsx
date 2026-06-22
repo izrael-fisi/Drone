@@ -4525,6 +4525,25 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const runLocalPx4SitlPrereqSetup = async () => {
+    setRunningStep("local-px4-sitl-prereqs");
+    setError(null);
+    setResult("local-px4-sitl-prereqs", { status: "running", output: "$ PX4 SITL prerequisite setup\n" });
+    try {
+      const result = await cmd.runLocalPx4SitlPrereqSetup(repoPath, DESKTOP_TRANSFER_FROM_PI_DIR);
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      setResult("local-px4-sitl-prereqs", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ PX4 SITL prerequisite setup\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+    } catch (err) {
+      setResult("local-px4-sitl-prereqs", { status: "failed", output: `$ PX4 SITL prerequisite setup\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const runLocalPx4SitlReceiverCapture = async () => {
     setRunningStep("local-px4-sitl-receiver");
     setError(null);
@@ -4993,6 +5012,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/check_micro_xrce_dds_agent.sh`,
     },
     {
+      id: "local-px4-sitl-prereqs",
+      title: "PX4 Prereq Setup",
+      detail: "Dry-runs local tmux and PX4 checkout setup commands before receiver proof capture.",
+      localOnly: true,
+    },
+    {
       id: "local-px4-sitl-receiver",
       title: "PX4 SITL Receiver Capture",
       detail: "Runs local PX4 SITL and captures receiver proof for the external-vision ODOMETRY path.",
@@ -5106,6 +5131,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     if (step.id === "local-rosbag2-cli-review") {
       await runLocalRosbag2CliReview();
+      return;
+    }
+    if (step.id === "local-px4-sitl-prereqs") {
+      await runLocalPx4SitlPrereqSetup();
       return;
     }
     if (step.id === "local-px4-sitl-receiver") {

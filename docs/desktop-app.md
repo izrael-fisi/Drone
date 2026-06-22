@@ -442,6 +442,9 @@ checks. Module Setup lists those checks, copyable next actions, and copyable
 fix commands separately from receiver proof. Those fix commands now include the
 dry-run-first `scripts/dev/setup_px4_sitl_prereqs.sh` helper, which can install
 `tmux` with `--apply` and clone PX4 only when `--clone-px4` is also provided.
+The local-only `PX4 Prereq Setup` action runs that helper in dry-run mode from
+the app before receiver capture, so the operator can review the exact install
+and clone commands without modifying the workstation.
 Support bundles ingest that
 prerequisite report under `px4_sitl_prereqs` and show it as a separate
 `px4 prereqs` status, while PX4 receiver proof still requires

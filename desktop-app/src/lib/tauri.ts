@@ -153,6 +153,8 @@ export const cmd = {
   deleteSupportBundle: (path: string) => invoke<void>("delete_support_bundle", { path }),
   runLocalAutonomyReadinessAudit: (repoDir: string, downloadRoot?: string) =>
     invoke<CommandResult>("run_local_autonomy_readiness_audit", { repoDir, downloadRoot }),
+  runLocalPx4SitlPrereqSetup: (repoDir: string, downloadRoot?: string) =>
+    invoke<CommandResult>("run_local_px4_sitl_prereq_setup", { repoDir, downloadRoot }),
   runLocalPx4SitlReceiverCapture: (repoDir: string, downloadRoot?: string) =>
     invoke<CommandResult>("run_local_px4_sitl_receiver_capture", { repoDir, downloadRoot }),
   runLocalRosbag2CliReview: (repoDir: string, downloadRoot?: string) =>
