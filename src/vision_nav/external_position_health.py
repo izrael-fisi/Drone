@@ -13,6 +13,7 @@ class ExternalPositionHealthConfig:
     max_latency_ms: float = 500.0
     max_horizontal_variance_m2: float = 400.0
     max_vertical_variance_m2: float = 900.0
+    max_velocity_variance_m2ps2: float = 100.0
     max_yaw_variance_rad2: float = math.radians(60.0) ** 2
     window_s: float = 10.0
 
@@ -22,6 +23,7 @@ class ExternalPositionHealthConfig:
             "max_latency_ms": float(self.max_latency_ms),
             "max_horizontal_variance_m2": float(self.max_horizontal_variance_m2),
             "max_vertical_variance_m2": float(self.max_vertical_variance_m2),
+            "max_velocity_variance_m2ps2": float(self.max_velocity_variance_m2ps2),
             "max_yaw_variance_rad2": float(self.max_yaw_variance_rad2),
             "window_s": float(self.window_s),
         }
@@ -93,6 +95,7 @@ class ExternalPositionStreamHealth:
             self.sent_count += 1
             self.last_skip_reason = None
             self._sent_monotonic_s.append(now_monotonic_s)
+            self.last_warnings.extend(self._warnings_for_mavlink_send(result, mavlink_result, message_type))
         else:
             self.skipped_count += 1
             reason = str(mavlink_result.get("reason") or "not_sent")
@@ -172,6 +175,28 @@ class ExternalPositionStreamHealth:
             warnings.append("yaw_covariance_high")
         return warnings
 
+    def _warnings_for_mavlink_send(
+        self,
+        result: dict[str, Any],
+        mavlink_result: dict[str, Any],
+        message_type: str,
+    ) -> list[str]:
+        if str(message_type).lower() != "odometry":
+            return []
+        details = mavlink_result.get("details") if isinstance(mavlink_result.get("details"), dict) else {}
+        if details.get("has_velocity") is not True:
+            return []
+
+        warnings: list[str] = []
+        if details.get("has_velocity_covariance") is not True:
+            warnings.append("velocity_covariance_missing")
+            return warnings
+
+        velocity_variances = _local_enu_velocity_variances(result)
+        if velocity_variances and max(velocity_variances) > self.config.max_velocity_variance_m2ps2:
+            warnings.append("velocity_covariance_high")
+        return warnings
+
     def _latency_ms(self, result: dict[str, Any], now_time_us: int) -> float | None:
         timestamp_us = _optional_int(result.get("timestamp_us"))
         if timestamp_us is None:
@@ -209,3 +234,59 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _local_enu_velocity_variances(result: dict[str, Any]) -> list[float]:
+    variances: list[float] = []
+    measurement = result.get("measurement") if isinstance(result.get("measurement"), dict) else {}
+    position = result.get("estimated_position") if isinstance(result.get("estimated_position"), dict) else {}
+    for source in (measurement, position, result):
+        if not isinstance(source, dict):
+            continue
+        direct = source.get("velocity_covariance")
+        if isinstance(direct, dict):
+            variances.extend(_velocity_variances_from_covariance(direct))
+        for nested_key in ("velocity", "linear_velocity", "twist_linear"):
+            nested = source.get(nested_key)
+            if not isinstance(nested, dict):
+                continue
+            frame = _optional_str(nested.get("frame"))
+            if frame is not None and frame != "local_enu":
+                continue
+            covariance = nested.get("covariance")
+            if isinstance(covariance, dict):
+                variances.extend(_velocity_variances_from_covariance(covariance))
+    return variances
+
+
+def _velocity_variances_from_covariance(covariance: dict[str, Any]) -> list[float]:
+    frame = _optional_str(covariance.get("frame"))
+    if frame is not None and frame != "local_enu":
+        return []
+    keys = (
+        "x_m2",
+        "y_m2",
+        "z_m2",
+        "east_m2",
+        "north_m2",
+        "up_m2",
+        "vx_m2ps2",
+        "vy_m2ps2",
+        "vz_m2ps2",
+        "east_m2ps2",
+        "north_m2ps2",
+        "up_m2ps2",
+    )
+    values: list[float] = []
+    for key in keys:
+        value = _optional_float(covariance.get(key))
+        if value is not None and value >= 0.0:
+            values.append(value)
+    return values

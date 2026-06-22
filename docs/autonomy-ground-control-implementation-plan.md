@@ -87,6 +87,8 @@ Status:
 - Done: explicit local-ENU velocity covariance now maps into the MAVLink
   `ODOMETRY` velocity covariance array, and MAVLink send details record whether
   velocity and velocity covariance were present.
+- Done: `external_position_health` now degrades when an `ODOMETRY` send carries
+  velocity without covariance or with excessive velocity variance.
 - Done: PX4 SITL receiver evidence now computes observed receive rate from
   `vehicle_visual_odometry` listener timestamps, compares it with the smoke
   session `rate_hz`, and surfaces the rate in desktop receiver/support-bundle

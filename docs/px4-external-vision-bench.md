@@ -82,11 +82,14 @@ snapshot. It reports:
 - measured send rate over the recent window
 - measurement latency from `timestamp_us`
 - covariance and stale-timestamp warnings
+- velocity-covariance warnings when `ODOMETRY` includes velocity fields
 
 For `ODOMETRY`, the MAVLink send result also includes
-`mavlink.details.reset_counter`. The counter increments when the runtime sees an
-explicit estimator reset epoch change, a map change, or a backward timestamp.
-This lets bench logs show discontinuities before PX4 fusion tests.
+`mavlink.details.reset_counter`, `mavlink.details.has_velocity`, and
+`mavlink.details.has_velocity_covariance`. The counter increments when the
+runtime sees an explicit estimator reset epoch change, a map change, or a
+backward timestamp. This lets bench logs show discontinuities and whether the
+velocity-bearing `ODOMETRY` path carried covariance before PX4 fusion tests.
 
 The defaults are intentionally bench-friendly:
 

@@ -978,6 +978,56 @@ def test_external_position_stream_health() -> None:
     assert_equal(second["status"], "healthy", "external position health second status")
     assert_equal(second["send_rate_hz"], 1.0, "external position health rate")
 
+    velocity_health = ExternalPositionStreamHealth(
+        ExternalPositionHealthConfig(min_rate_hz=0.1, max_velocity_variance_m2ps2=0.5)
+    )
+    velocity_result = {
+        **result,
+        "measurement": {
+            **result["measurement"],
+            "velocity": {"frame": "local_enu", "x_mps": 1.0, "y_mps": 2.0},
+        },
+    }
+    missing_velocity_covariance = velocity_health.update(
+        result=velocity_result,
+        mavlink_result={
+            "sent": True,
+            "message": "ODOMETRY",
+            "details": {"has_velocity": True, "has_velocity_covariance": False},
+        },
+        message_type="odometry",
+        now_monotonic_s=20.0,
+        now_time_us=1_050_000,
+    ).to_dict()
+    if "velocity_covariance_missing" not in missing_velocity_covariance["last_warnings"]:
+        raise AssertionError("Expected external position health to warn when sent velocity lacks covariance")
+
+    high_velocity_covariance = velocity_health.update(
+        result={
+            **velocity_result,
+            "timestamp_us": 2_000_000,
+            "measurement": {
+                **velocity_result["measurement"],
+                "velocity": {
+                    "frame": "local_enu",
+                    "x_mps": 1.0,
+                    "y_mps": 2.0,
+                    "covariance": {"x_m2": 0.2, "y_m2": 0.8},
+                },
+            },
+        },
+        mavlink_result={
+            "sent": True,
+            "message": "ODOMETRY",
+            "details": {"has_velocity": True, "has_velocity_covariance": True},
+        },
+        message_type="odometry",
+        now_monotonic_s=21.0,
+        now_time_us=2_050_000,
+    ).to_dict()
+    if "velocity_covariance_high" not in high_velocity_covariance["last_warnings"]:
+        raise AssertionError("Expected external position health to warn on high velocity covariance")
+
 
 def test_ros2_odometry_and_diagnostics_adapters() -> None:
     odometry, reason = odometry_dict_from_match_result(

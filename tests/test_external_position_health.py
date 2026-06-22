@@ -64,6 +64,54 @@ def test_stream_health_reports_stale_high_covariance_and_skip_reasons():
     assert "send_skipped:not_connected" in snapshot["last_warnings"]
 
 
+def test_stream_health_warns_when_sent_velocity_lacks_covariance():
+    health = ExternalPositionStreamHealth(ExternalPositionHealthConfig(min_rate_hz=0.1))
+    result = accepted_result(timestamp_us=1_000_000)
+    result["measurement"]["velocity"] = {"frame": "local_enu", "x_mps": 1.0, "y_mps": 2.0}
+
+    snapshot = health.update(
+        result=result,
+        mavlink_result={
+            "sent": True,
+            "message": "ODOMETRY",
+            "details": {"has_velocity": True, "has_velocity_covariance": False},
+        },
+        message_type="odometry",
+        now_monotonic_s=10.0,
+        now_time_us=1_050_000,
+    ).to_dict()
+
+    assert snapshot["status"] == "degraded"
+    assert "velocity_covariance_missing" in snapshot["last_warnings"]
+
+
+def test_stream_health_warns_on_high_velocity_covariance():
+    health = ExternalPositionStreamHealth(ExternalPositionHealthConfig(max_velocity_variance_m2ps2=0.5))
+    result = accepted_result(timestamp_us=1_000_000)
+    result["measurement"]["velocity"] = {
+        "frame": "local_enu",
+        "x_mps": 1.0,
+        "y_mps": 2.0,
+        "covariance": {"x_m2": 0.2, "y_m2": 0.8},
+    }
+
+    snapshot = health.update(
+        result=result,
+        mavlink_result={
+            "sent": True,
+            "message": "ODOMETRY",
+            "details": {"has_velocity": True, "has_velocity_covariance": True},
+        },
+        message_type="odometry",
+        now_monotonic_s=10.0,
+        now_time_us=1_050_000,
+    ).to_dict()
+
+    assert snapshot["status"] == "degraded"
+    assert "velocity_covariance_high" in snapshot["last_warnings"]
+    assert snapshot["config"]["max_velocity_variance_m2ps2"] == 0.5
+
+
 def test_stream_health_reports_rejected_matches_without_sending():
     health = ExternalPositionStreamHealth()
     snapshot = health.update(
