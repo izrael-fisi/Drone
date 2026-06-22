@@ -239,8 +239,10 @@ assert "idempotent prerequisite" in steps["create_field_evidence_template"]["not
 assert "__VISION_NAV_FIELD_TEMPLATE__" in steps["create_field_evidence_template"]["markers"]
 assert "__VISION_NAV_FIELD_MANIFEST__" in steps["create_field_evidence_template"]["markers"]
 assert "create_field_collection_plan" in steps
+assert "select_field_collection_condition" in steps
 assert "capture_field_terrain_log" in steps
 assert "validate_captured_field_terrain_log" not in steps
+assert steps["select_field_collection_condition"]["status"] in {"passed", "degraded"}
 assert steps["capture_field_terrain_log"]["status"] == "passed"
 assert "parseable with" in steps["capture_field_terrain_log"]["notes"]
 assert "Runtime status snapshot is usable" in steps["capture_field_terrain_log"]["notes"]
@@ -275,6 +277,7 @@ with tarfile.open(log_archive, "r:gz") as archive:
     names = set(archive.getnames())
 assert "logs/create_field_evidence_template.log" in names
 assert "logs/create_field_collection_plan.log" in names
+assert "logs/select_field_collection_condition.log" in names
 assert "logs/capture_field_terrain_log.log" in names
 assert "logs/validate_rosbag_export.log" in names
 assert "logs/check_native_rosbag2_review.log" in names
@@ -385,7 +388,9 @@ from pathlib import Path
 
 report = json.loads(Path(sys.argv[1]).read_text())
 steps = {step["name"]: step for step in report["steps"]}
+assert "select_field_collection_condition" in steps
 assert "validate_captured_field_terrain_log" not in steps
+assert steps["select_field_collection_condition"]["status"] in {"passed", "degraded"}
 capture = steps["capture_field_terrain_log"]
 assert capture["status"] == "passed"
 assert "parseable with" in capture["notes"]

@@ -937,6 +937,10 @@ Status:
   prints its matching Module Setup app route from the structured command bundle,
   including the `Load Next Field Condition` preload step when the field plan is
   the active prerequisite.
+- Done: autonomy evidence workflow validation now treats
+  `select_field_collection_condition` as a required, logged proof step between
+  field-plan creation and terrain-log capture, matching the guided workflow and
+  Module Setup preload action.
 - Done: `scripts/dev/autonomy_goal_status.sh` now includes a field collection
   preview that translates missing required conditions into operator-readable
   labels, expected outcomes, and the next condition to capture before the

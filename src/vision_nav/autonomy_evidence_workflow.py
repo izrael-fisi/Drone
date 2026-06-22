@@ -13,6 +13,7 @@ SCHEMA_VERSION = "vision_nav_autonomy_evidence_workflow_v1"
 REQUIRED_WORKFLOW_STEPS = [
     "create_field_evidence_template",
     "create_field_collection_plan",
+    "select_field_collection_condition",
     "capture_field_terrain_log",
     "register_field_replay_case",
     "refresh_field_collection_plan",
@@ -33,6 +34,10 @@ WORKFLOW_STEP_GUIDANCE = {
     "create_field_collection_plan": {
         "command": "./scripts/pi/create_field_collection_plan.sh",
         "desktop_action": "Module Setup > Field Collection Plan > Create Plan",
+    },
+    "select_field_collection_condition": {
+        "command": "Load the next condition from field_collection_plan.json before capture/register.",
+        "desktop_action": "Module Setup > Load Next Field Condition",
     },
     "capture_field_terrain_log": {
         "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
