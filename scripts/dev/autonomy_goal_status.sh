@@ -353,6 +353,14 @@ def find_next_field_condition(report, missing_conditions):
     return None
 
 
+def check_details(report, name):
+    for item in report.get("checks") or []:
+        if isinstance(item, dict) and item.get("name") == name:
+            details = item.get("details")
+            return details if isinstance(details, dict) else {}
+    return {}
+
+
 def print_multiline_command(prefix, command):
     if not command:
         return
@@ -458,6 +466,25 @@ if external_blockers:
             print(f"  missing conditions: {visible}{extra}")
     if len(external_blockers) > 12:
         print(f"- ... {len(external_blockers) - 12} more")
+
+support_details = check_details(report, "support_bundle_bench_readiness")
+bench_inputs = [
+    str(value)
+    for value in support_details.get("expected_bench_inputs") or []
+    if str(value)
+]
+support_bundle_command = str(support_details.get("support_bundle_command") or "")
+if bench_inputs or support_bundle_command:
+    print()
+    print("Bench evidence preview:")
+    if bench_inputs:
+        print("- support bundle should include:")
+        for value in bench_inputs[:10]:
+            print(f"  - {value}")
+        if len(bench_inputs) > 10:
+            print(f"  - ... {len(bench_inputs) - 10} more")
+    if support_bundle_command:
+        print(f"- create or refresh support bundle after inputs exist: {support_bundle_command}")
 
 field_conditions = field_condition_names_from_report(report, external_blockers)
 next_field_condition = find_next_field_condition(report, field_conditions)

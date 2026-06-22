@@ -53,6 +53,16 @@ FIELD_COLLECTION_BOOTSTRAP_COMMAND = (
     "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh"
 )
 GUIDED_EVIDENCE_WORKFLOW_COMMAND = "./scripts/pi/run_autonomy_evidence_workflow.sh"
+SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
+STRICT_SUPPORT_BUNDLE_INPUTS = [
+    "terrain bundle health and GNSS-denied mission prep",
+    "runtime terrain log and runtime_status.json snapshot",
+    "PX4 ODOMETRY receiver evidence report",
+    "PX4 external-vision parameter check report",
+    "field evidence report covering all required real-world conditions",
+    "feature-method benchmark report from real field logs",
+    "optional ROS replay validation and native rosbag2 review artifacts when available",
+]
 
 PROOF_RUNBOOK_PHASES = [
     {
@@ -698,6 +708,11 @@ def evidence_manifest_item(
         subchecks = normalize_bench_subchecks(details.get("failed_or_degraded_checks"))
         if subchecks:
             item["bench_subchecks"] = subchecks
+        expected_inputs = details.get("expected_bench_inputs")
+        if isinstance(expected_inputs, list):
+            item["expected_bench_inputs"] = [str(value) for value in expected_inputs if str(value)]
+        if details.get("support_bundle_command"):
+            item["support_bundle_command"] = str(details["support_bundle_command"])
     return item
 
 
@@ -734,6 +749,10 @@ def blocker_summary(item: dict[str, Any]) -> dict[str, Any]:
         summary["missing_conditions"] = item["missing_conditions"]
     if item.get("bench_subchecks"):
         summary["bench_subchecks"] = item["bench_subchecks"]
+    if item.get("expected_bench_inputs"):
+        summary["expected_bench_inputs"] = item["expected_bench_inputs"]
+    if item.get("support_bundle_command"):
+        summary["support_bundle_command"] = item["support_bundle_command"]
     return summary
 
 
@@ -965,10 +984,15 @@ def evaluate_support_bundle(
     require_field_evidence: bool = True,
 ) -> dict[str, Any]:
     if path is None:
+        details = {
+            "expected_bench_inputs": STRICT_SUPPORT_BUNDLE_INPUTS,
+            "support_bundle_command": SUPPORT_BUNDLE_COMMAND,
+        }
         return {
             "check": failed(
                 "support_bundle_bench_readiness",
                 "Strict autonomy readiness requires a support bundle with bench evidence.",
+                details,
             ),
             "report": None,
             "manifest": None,

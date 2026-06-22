@@ -3135,6 +3135,26 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             False,
             "autonomy readiness px4 prereq diagnostic is not external proof",
         )
+        support_check = next(
+            check
+            for check in missing_proof_ready["checks"]
+            if check.get("name") == "support_bundle_bench_readiness"
+        )
+        expected_bench_inputs = support_check["details"]["expected_bench_inputs"]
+        if "runtime terrain log and runtime_status.json snapshot" not in expected_bench_inputs:
+            raise AssertionError("autonomy readiness missing support bundle should list runtime evidence input")
+        assert_equal(
+            support_check["details"]["support_bundle_command"],
+            "./scripts/pi/create_support_bundle.sh",
+            "autonomy readiness missing support bundle command",
+        )
+        support_blocker = next(
+            blocker
+            for blocker in missing_proof_ready["evidence_manifest"]["external_blockers"]
+            if blocker.get("name") == "support_bundle_bench_readiness"
+        )
+        if "PX4 ODOMETRY receiver evidence report" not in support_blocker.get("expected_bench_inputs", []):
+            raise AssertionError("autonomy readiness blocker missing support bundle expected inputs")
         bench_commands = missing_proof_phases["bench_foundation"]["commands"]
         px4_capture_command = "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh"
         support_bundle_command = "./scripts/pi/create_support_bundle.sh"

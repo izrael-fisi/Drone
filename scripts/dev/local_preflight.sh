@@ -558,6 +558,9 @@ grep -q "method_thresholds \\[blocked\\]" "$goal_status_output"
 grep -q "ros2_replay \\[blocked\\]" "$goal_status_output"
 grep -q "waiting on: field_dataset=action_required" "$goal_status_output"
 grep -q "External proof blockers:" "$goal_status_output"
+grep -q "Bench evidence preview:" "$goal_status_output"
+grep -q "runtime terrain log and runtime_status.json snapshot" "$goal_status_output"
+grep -q "PX4 ODOMETRY receiver evidence report" "$goal_status_output"
 grep -q "Field collection preview:" "$goal_status_output"
 grep -q "Good texture, matching map (good_texture), expected good_map" "$goal_status_output"
 grep -q "Wrong-map rejection (wrong_map), expected wrong_map" "$goal_status_output"
@@ -572,13 +575,13 @@ grep -q "./scripts/dev/run_rosbag2_cli_review.sh" "$goal_status_output"
 python3 - "$goal_status_output" <<'PY'
 import sys
 text = open(sys.argv[1], encoding="utf-8").read()
-px4 = text.index("VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh")
-support = text.index("./scripts/pi/create_support_bundle.sh")
-field_plan = text.index("./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh")
-workflow = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", text.index("Next commands:"))
+next_commands = text.index("Next commands:")
+px4 = text.index("VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh", next_commands)
+support = text.index("./scripts/pi/create_support_bundle.sh", next_commands)
+field_plan = text.index("./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh", next_commands)
+workflow = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", next_commands)
 assert px4 < support
 assert support < field_plan < workflow
-next_commands = text.index("Next commands:")
 blocked_followups = text.index("Blocked follow-up commands:")
 assert "./scripts/pi/run_rosbag_export_validation.sh" not in text[next_commands:blocked_followups]
 assert "./scripts/pi/run_rosbag_export_validation.sh" in text[blocked_followups:]
@@ -678,6 +681,8 @@ grep -q "Immediate prerequisite fixes:" "$scanned_goal_status_output"
 grep -q "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot" "$scanned_goal_status_output"
 grep -q "Field collection preview:" "$scanned_goal_status_output"
 grep -q "Good texture, matching map (good_texture), expected good_map" "$scanned_goal_status_output"
+grep -q "Bench evidence preview:" "$scanned_goal_status_output"
+grep -q "field evidence report covering all required real-world conditions" "$scanned_goal_status_output"
 grep -q "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh" "$scanned_goal_status_output"
 python3 - "$scanned_goal_status_output" <<'PY'
 from pathlib import Path

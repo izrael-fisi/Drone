@@ -815,6 +815,10 @@ Status:
   preview that translates missing required conditions into operator-readable
   labels, expected outcomes, and the next condition to capture before the
   guided workflow or generated collection plan is run.
+- Done: missing support-bundle readiness now records the strict bench and
+  support-review inputs the bundle is expected to contain, and
+  `scripts/dev/autonomy_goal_status.sh` renders those as a bench evidence
+  preview before the field-collection checklist.
 - Done: `scripts/dev/autonomy_goal_status.sh` now promotes prerequisite fix
   commands from `command_bundle.prerequisite_fix_commands` ahead of the guided
   workflow and proof-capture command list, so missing PX4/tmux setup is fixed
