@@ -8,6 +8,8 @@ from typing import Any
 
 from vision_nav.field_capture_metadata import audit_capture_metadata
 from vision_nav.field_collection_plan import (
+    command_sequence,
+    command_with_runtime_status_read,
     metadata_update_command_for_condition,
     metadata_update_command_is_detailed,
     preflight_command_for_condition,
@@ -74,6 +76,15 @@ def select_next_field_condition(plan_path: str | Path) -> dict[str, Any]:
     preflight_command = str(condition.get("preflight_command") or "").strip()
     if not preflight_command and condition_key:
         preflight_command = preflight_command_for_condition(plan_path=path, condition=condition_key)
+    capture_command = str(condition.get("capture_command") or "").strip()
+    if capture_command:
+        capture_command = command_with_runtime_status_read(
+            capture_command,
+            runtime_status_root=str(condition.get("capture_output_dir") or "").strip() or None,
+        )
+    preflight_capture_command = str(condition.get("preflight_capture_command") or "").strip()
+    if not preflight_capture_command:
+        preflight_capture_command = command_sequence(preflight_command, capture_command)
     return {
         "status": "selected",
         "plan_path": str(path),
@@ -84,7 +95,8 @@ def select_next_field_condition(plan_path: str | Path) -> dict[str, Any]:
         "source_log": condition.get("source_log"),
         "runtime_status_path": condition.get("runtime_status_path"),
         "preflight_command": preflight_command,
-        "capture_command": condition.get("capture_command"),
+        "preflight_capture_command": preflight_capture_command,
+        "capture_command": capture_command or condition.get("capture_command"),
         "register_command": condition.get("register_command"),
         "capture_metadata_status": "passed" if not metadata_issues else "failed",
         "capture_metadata_issue_count": len(metadata_issues),
@@ -148,6 +160,10 @@ def shell_assignments(selection: dict[str, Any]) -> str:
                 shell_assignment(
                     "VISION_NAV_FIELD_PREFLIGHT_COMMAND",
                     str(selection.get("preflight_command") or ""),
+                ),
+                shell_assignment(
+                    "VISION_NAV_FIELD_PREFLIGHT_CAPTURE_COMMAND",
+                    str(selection.get("preflight_capture_command") or ""),
                 ),
             ]
         )

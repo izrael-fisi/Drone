@@ -1096,7 +1096,12 @@ function formatReportTime(ms?: number) {
 
 function fieldCollectionCommands(
   conditions: FieldCollectionPlanCondition[],
-  key: "preflight_command" | "capture_command" | "metadata_update_command" | "register_command",
+  key:
+    | "preflight_command"
+    | "preflight_capture_command"
+    | "capture_command"
+    | "metadata_update_command"
+    | "register_command",
 ) {
   return uniqueCommands(
     conditions
@@ -1146,6 +1151,7 @@ function commandAppHint(commandBundle: AutonomyCommandBundle | undefined, group:
 
 const FIELD_COLLECTION_APP_HINTS: Record<string, string> = {
   field_collection_preflight: "Module Setup > Field Capture Preflight",
+  field_collection_preflight_capture: "Module Setup > Field Capture Preflight, then Field Log Capture",
   field_collection_capture: "Module Setup > Field Log Capture",
   field_collection_metadata_update: "Module Setup > Field Evidence Case > Update Metadata",
   field_collection_registration: "Module Setup > Field Evidence Case > Register",
@@ -1459,6 +1465,13 @@ function AutonomyReadinessReportList({
               ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "preflight_command"),
               ...(commandBundle?.field_collection_preflight_commands ?? []),
             ]);
+            const fieldPlanPreflightCaptureCommands = uniqueCommands([
+              ...fieldCollectionCommands(
+                report.field_collection_plan?.pending_conditions ?? [],
+                "preflight_capture_command",
+              ),
+              ...(commandBundle?.field_collection_preflight_capture_commands ?? []),
+            ]);
             const fieldPlanCaptureCommands = uniqueCommands([
               ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "capture_command"),
               ...(commandBundle?.field_collection_capture_commands ?? []),
@@ -1733,6 +1746,25 @@ function AutonomyReadinessReportList({
                           >
                             <Copy size={9} />
                             preflight
+                          </button>
+                        )}
+                        {fieldPlanPreflightCaptureCommands.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigator.clipboard.writeText(
+                                commandGroupText(
+                                  commandBundle,
+                                  "field_collection_preflight_capture",
+                                  fieldPlanPreflightCaptureCommands,
+                                ),
+                              )
+                            }
+                            className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                            title="Copy pending preflight plus capture commands"
+                          >
+                            <Copy size={9} />
+                            preflight + capture
                           </button>
                         )}
                         {fieldPlanCaptureCommands.length > 0 && (

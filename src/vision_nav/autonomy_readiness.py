@@ -69,6 +69,7 @@ COMMAND_GROUP_DESKTOP_ACTIONS = {
     "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
     "field_capture_preflight_next_action": "Module Setup > Field Capture Preflight",
     "field_collection_preflight": "Module Setup > Field Capture Preflight",
+    "field_collection_preflight_capture": "Module Setup > Field Capture Preflight, then Field Log Capture",
     "field_collection_capture": "Module Setup > Field Log Capture",
     "field_collection_metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
     "field_collection_registration": "Module Setup > Field Evidence Case > Register",
@@ -550,6 +551,10 @@ def build_command_bundle(
         ]
     )
     field_collection_preflight_commands = field_collection_commands(field_collection_plan_path, "preflight_command")
+    field_collection_preflight_capture_commands = field_collection_commands(
+        field_collection_plan_path,
+        "preflight_capture_command",
+    )
     field_collection_capture_commands = field_collection_commands(field_collection_plan_path, "capture_command")
     field_collection_metadata_update_commands = field_collection_commands(
         field_collection_plan_path,
@@ -569,6 +574,7 @@ def build_command_bundle(
         "immediate_next_action": immediate_next_action_commands,
         "blocked_follow_up": blocked_follow_up_commands,
         "field_collection_preflight": field_collection_preflight_commands,
+        "field_collection_preflight_capture": field_collection_preflight_capture_commands,
         "field_collection_capture": field_collection_capture_commands,
         "field_collection_metadata_update": field_collection_metadata_update_commands,
         "field_collection_registration": field_collection_registration_commands,
@@ -581,6 +587,7 @@ def build_command_bundle(
         "blocked_follow_up_commands": blocked_follow_up_commands,
         "field_capture_preflight_next_action_commands": field_capture_preflight_next_action_commands,
         "field_collection_preflight_commands": field_collection_preflight_commands,
+        "field_collection_preflight_capture_commands": field_collection_preflight_capture_commands,
         "field_collection_capture_commands": field_collection_capture_commands,
         "field_collection_metadata_update_commands": field_collection_metadata_update_commands,
         "field_collection_registration_commands": field_collection_registration_commands,
@@ -593,6 +600,7 @@ def build_command_bundle(
                     *field_capture_preflight_next_action_commands,
                     *next_action_commands,
                     *field_collection_preflight_commands,
+                    *field_collection_preflight_capture_commands,
                     *field_collection_capture_commands,
                     *field_collection_metadata_update_commands,
                     *field_collection_registration_commands,

@@ -123,9 +123,11 @@ export interface FieldCollectionPlanCondition {
   runtime_status_path?: string;
   has_capture_command?: boolean;
   has_preflight_command?: boolean;
+  has_preflight_capture_command?: boolean;
   has_metadata_update_command?: boolean;
   has_register_command?: boolean;
   preflight_command?: string;
+  preflight_capture_command?: string;
   capture_command?: string;
   metadata_update_command?: string;
   bundle?: string;
@@ -384,6 +386,7 @@ export interface SupportBundleDetails {
     source_log?: string;
     capture_root?: string;
     pending_preflight_command_count?: number;
+    pending_preflight_capture_command_count?: number;
     pending_capture_command_count?: number;
     pending_metadata_update_command_count?: number;
     pending_registration_command_count?: number;
@@ -414,6 +417,7 @@ export interface SupportBundleDetails {
     capture_output_dir?: string;
     source_log?: string;
     runtime_status_path?: string;
+    preflight_capture_command?: string;
     summary?: unknown;
     checks: Array<{
       name?: string;
@@ -467,6 +471,7 @@ export interface SupportBundleDetails {
       capture_output_dir?: string;
       source_log?: string;
       runtime_status_path?: string;
+      preflight_capture_command?: string;
       notes?: string;
       bundle_diagnostic?: {
         bundle_exists?: boolean;
@@ -710,6 +715,7 @@ export interface AutonomyReadinessReportFile {
       immediate_next_action_commands?: string[];
       blocked_follow_up_commands?: string[];
       field_collection_preflight_commands?: string[];
+      field_collection_preflight_capture_commands?: string[];
       field_collection_capture_commands?: string[];
       field_collection_metadata_update_commands?: string[];
       field_collection_registration_commands: string[];
@@ -799,6 +805,7 @@ export interface AutonomyReadinessReportFile {
     immediate_next_action_commands?: string[];
     blocked_follow_up_commands?: string[];
     field_collection_preflight_commands?: string[];
+    field_collection_preflight_capture_commands?: string[];
     field_collection_capture_commands?: string[];
     field_collection_metadata_update_commands?: string[];
     field_collection_registration_commands: string[];
@@ -824,6 +831,7 @@ export interface AutonomyReadinessReportFile {
         manifest_path?: string;
     bundle?: string;
         pending_preflight_command_count?: number;
+        pending_preflight_capture_command_count?: number;
         pending_capture_command_count?: number;
         pending_metadata_update_command_count?: number;
         pending_registration_command_count?: number;
@@ -1030,6 +1038,8 @@ export interface FieldCollectionPlanFile {
   manifest_path?: string;
   bundle?: string;
   capture_root?: string;
+  pending_preflight_command_count?: number;
+  pending_preflight_capture_command_count?: number;
   pending_capture_command_count?: number;
   pending_metadata_update_command_count?: number;
   pending_registration_command_count?: number;

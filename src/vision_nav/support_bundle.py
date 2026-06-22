@@ -1061,6 +1061,19 @@ def summarize_field_collection_condition(
             plan_path=plan_path,
             condition=str(condition),
         )
+    capture_command = item.get("capture_command")
+    capture_output_dir = item.get("capture_output_dir")
+    capture_with_status_command = (
+        command_with_runtime_status_read(
+            str(capture_command),
+            runtime_status_root=str(capture_output_dir or "").strip() or None,
+        )
+        if capture_command
+        else None
+    )
+    preflight_capture_command = item.get("preflight_capture_command")
+    if include_commands and not preflight_capture_command:
+        preflight_capture_command = command_sequence(preflight_command, capture_with_status_command)
     summary = {
         "condition": item.get("condition"),
         "label": item.get("label"),
@@ -1074,6 +1087,9 @@ def summarize_field_collection_condition(
         "runtime_status_path": item.get("runtime_status_path"),
         "has_preflight_command": bool(preflight_command or item.get("has_preflight_command")),
         "has_capture_command": bool(item.get("capture_command") or item.get("has_capture_command")),
+        "has_preflight_capture_command": bool(
+            preflight_capture_command or item.get("has_preflight_capture_command")
+        ),
         "has_metadata_update_command": bool(
             item.get("metadata_update_command") or item.get("has_metadata_update_command")
         ),
@@ -1082,11 +1098,10 @@ def summarize_field_collection_condition(
     if include_commands:
         if preflight_command:
             summary["preflight_command"] = preflight_command
-        if item.get("capture_command"):
-            summary["capture_command"] = command_with_runtime_status_read(
-                str(item.get("capture_command")),
-                runtime_status_root=str(item.get("capture_output_dir") or "").strip() or None,
-            )
+        if preflight_capture_command:
+            summary["preflight_capture_command"] = preflight_capture_command
+        if capture_with_status_command:
+            summary["capture_command"] = capture_with_status_command
         if item.get("metadata_update_command"):
             summary["metadata_update_command"] = item.get("metadata_update_command")
         if item.get("register_command"):
@@ -1106,6 +1121,10 @@ def command_with_runtime_status_read(command: str, runtime_status_root: str | No
             return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
         return command
     return f"{command} && {read_command}"
+
+
+def command_sequence(*commands: str | None) -> str:
+    return " && ".join(command.strip() for command in commands if isinstance(command, str) and command.strip())
 
 
 def shell_env_value(value: Any) -> str:
@@ -1144,6 +1163,9 @@ def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path
         "placeholder_count": summary.get("placeholder_count"),
         "missing_count": summary.get("missing_count"),
         "pending_preflight_command_count": sum(1 for item in pending_conditions if item.get("has_preflight_command")),
+        "pending_preflight_capture_command_count": sum(
+            1 for item in pending_conditions if item.get("has_preflight_capture_command")
+        ),
         "pending_capture_command_count": sum(1 for item in pending_conditions if item.get("has_capture_command")),
         "pending_metadata_update_command_count": sum(
             1 for item in pending_conditions if item.get("has_metadata_update_command")
@@ -1215,6 +1237,9 @@ def copy_field_collection_plans(paths: list[str], support_dir: Path) -> dict[str
         "required_count": max((int(report.get("required_count") or 0) for report in reports), default=0),
         "pending_preflight_command_count": sum(
             int(report.get("pending_preflight_command_count") or 0) for report in reports
+        ),
+        "pending_preflight_capture_command_count": sum(
+            int(report.get("pending_preflight_capture_command_count") or 0) for report in reports
         ),
         "pending_capture_command_count": sum(int(report.get("pending_capture_command_count") or 0) for report in reports),
         "pending_metadata_update_command_count": sum(
@@ -1294,6 +1319,7 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
                 "capture_output_dir": action.get("capture_output_dir"),
                 "source_log": action.get("source_log"),
                 "runtime_status_path": action.get("runtime_status_path"),
+                "preflight_capture_command": action.get("preflight_capture_command"),
                 "notes": action.get("notes"),
                 "bundle_diagnostic": action_bundle_diagnostic,
             }
@@ -1311,6 +1337,7 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
         "bundle_validation_command": report.get("bundle_validation_command"),
         "ready_for_capture": report.get("ready_for_capture") is True,
         "ready_for_registration": report.get("ready_for_registration") is True,
+        "preflight_capture_command": report.get("preflight_capture_command"),
         "capture_output_dir": report.get("capture_output_dir"),
         "source_log": report.get("source_log"),
         "runtime_status_path": report.get("runtime_status_path"),

@@ -509,6 +509,12 @@ Status:
   scope `read_runtime_status.sh` with `VISION_NAV_RUNTIME_STATUS_ROOTS` pointed
   at the same capture output directory, preventing stale `runtime_status.json`
   snapshots from a different run from being reported as proof.
+- Done: field collection plans, workflow selection, preflight reports,
+  support-bundle summaries, readiness command bundles, Markdown handoffs, and
+  Module Setup now preserve a combined preflight-plus-capture command so
+  operators can run the capture only after the active bundle/output checks pass,
+  while metadata update and field replay registration remain separate proof
+  steps.
 
 Tasks:
 

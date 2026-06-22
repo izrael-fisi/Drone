@@ -304,11 +304,15 @@ pub struct FieldCollectionPlanCondition {
     pub legacy_source_log: Option<String>,
     pub capture_output_dir: Option<String>,
     pub runtime_status_path: Option<String>,
+    pub has_preflight_command: Option<bool>,
     pub has_capture_command: Option<bool>,
+    pub has_preflight_capture_command: Option<bool>,
     pub has_metadata_update_command: Option<bool>,
     pub has_register_command: Option<bool>,
     pub bundle: Option<String>,
     pub capture_metadata: Option<serde_json::Value>,
+    pub preflight_command: Option<String>,
+    pub preflight_capture_command: Option<String>,
     pub capture_command: Option<String>,
     pub metadata_update_command: Option<String>,
     pub register_command: Option<String>,
@@ -328,6 +332,8 @@ pub struct FieldCollectionPlanFile {
     pub manifest_path: Option<String>,
     pub bundle: Option<String>,
     pub capture_root: Option<String>,
+    pub pending_preflight_command_count: Option<u64>,
+    pub pending_preflight_capture_command_count: Option<u64>,
     pub pending_capture_command_count: Option<u64>,
     pub pending_metadata_update_command_count: Option<u64>,
     pub pending_registration_command_count: Option<u64>,
@@ -347,6 +353,8 @@ pub struct SupportBundleFieldCollectionPlanReport {
     pub bundle: Option<String>,
     pub source_log: Option<String>,
     pub capture_root: Option<String>,
+    pub pending_preflight_command_count: Option<u64>,
+    pub pending_preflight_capture_command_count: Option<u64>,
     pub pending_capture_command_count: Option<u64>,
     pub pending_metadata_update_command_count: Option<u64>,
     pub pending_registration_command_count: Option<u64>,
@@ -425,6 +433,7 @@ pub struct SupportBundleFieldCapturePreflightAction {
     pub capture_output_dir: Option<String>,
     pub source_log: Option<String>,
     pub runtime_status_path: Option<String>,
+    pub preflight_capture_command: Option<String>,
     pub notes: Option<String>,
     pub bundle_diagnostic: Option<SupportBundleDiagnostic>,
 }
@@ -444,6 +453,7 @@ pub struct SupportBundleFieldCapturePreflightReport {
     pub capture_output_dir: Option<String>,
     pub source_log: Option<String>,
     pub runtime_status_path: Option<String>,
+    pub preflight_capture_command: Option<String>,
     pub summary: Option<serde_json::Value>,
     pub checks: Vec<SupportBundleFieldCapturePreflightCheck>,
     pub next_actions: Vec<SupportBundleFieldCapturePreflightAction>,
@@ -3976,6 +3986,12 @@ fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCol
         manifest_path: json_string(value.get("manifest_path")),
         bundle: json_string(value.get("bundle")),
         capture_root: json_string(value.get("capture_root")),
+        pending_preflight_command_count: value
+            .get("pending_preflight_command_count")
+            .and_then(|value| value.as_u64()),
+        pending_preflight_capture_command_count: value
+            .get("pending_preflight_capture_command_count")
+            .and_then(|value| value.as_u64()),
         pending_capture_command_count: value
             .get("pending_capture_command_count")
             .and_then(|value| value.as_u64()),
@@ -4023,7 +4039,11 @@ fn field_collection_plan_condition_from_json(
         return None;
     }
     let capture_command = json_string(item.get("capture_command"));
+    let preflight_command = json_string(item.get("preflight_command"));
     let capture_output_dir = json_string(item.get("capture_output_dir"));
+    let capture_command = capture_command_with_runtime_status(capture_command, capture_output_dir.as_deref());
+    let preflight_capture_command = json_string(item.get("preflight_capture_command"))
+        .or_else(|| command_sequence(preflight_command.clone(), capture_command.clone()));
     Some(FieldCollectionPlanCondition {
         condition: json_string(item.get("condition")),
         label: json_string(item.get("label")),
@@ -4039,10 +4059,18 @@ fn field_collection_plan_condition_from_json(
         legacy_source_log: json_string(item.get("legacy_source_log")),
         capture_output_dir: capture_output_dir.clone(),
         runtime_status_path: json_string(item.get("runtime_status_path")),
+        has_preflight_command: item
+            .get("has_preflight_command")
+            .and_then(|value| value.as_bool())
+            .or_else(|| preflight_command.as_ref().map(|value| !value.is_empty())),
         has_capture_command: item
             .get("has_capture_command")
             .and_then(|value| value.as_bool())
-            .or_else(|| json_string(item.get("capture_command")).map(|value| !value.is_empty())),
+            .or_else(|| capture_command.as_ref().map(|value| !value.is_empty())),
+        has_preflight_capture_command: item
+            .get("has_preflight_capture_command")
+            .and_then(|value| value.as_bool())
+            .or_else(|| preflight_capture_command.as_ref().map(|value| !value.is_empty())),
         has_metadata_update_command: item
             .get("has_metadata_update_command")
             .and_then(|value| value.as_bool())
@@ -4055,10 +4083,26 @@ fn field_collection_plan_condition_from_json(
             .or_else(|| json_string(item.get("register_command")).map(|value| !value.is_empty())),
         bundle: json_string(item.get("bundle")),
         capture_metadata: item.get("capture_metadata").cloned(),
-        capture_command: capture_command_with_runtime_status(capture_command, capture_output_dir.as_deref()),
+        preflight_command,
+        preflight_capture_command,
+        capture_command,
         metadata_update_command: json_string(item.get("metadata_update_command")),
         register_command: json_string(item.get("register_command")),
     })
+}
+
+fn command_sequence(first: Option<String>, second: Option<String>) -> Option<String> {
+    let parts: Vec<String> = [first, second]
+        .into_iter()
+        .flatten()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" && "))
+    }
 }
 
 fn capture_command_with_runtime_status(command: Option<String>, runtime_status_root: Option<&str>) -> Option<String> {
@@ -4109,6 +4153,8 @@ fn field_collection_plan_report_from_json(
         bundle: plan.bundle,
         source_log: json_string(value.get("source_log")),
         capture_root: plan.capture_root,
+        pending_preflight_command_count: plan.pending_preflight_command_count,
+        pending_preflight_capture_command_count: plan.pending_preflight_capture_command_count,
         pending_capture_command_count: plan.pending_capture_command_count,
         pending_metadata_update_command_count: plan.pending_metadata_update_command_count,
         pending_registration_command_count: plan.pending_registration_command_count,
@@ -4249,6 +4295,7 @@ fn field_capture_preflight_action_from_json(
         capture_output_dir: json_string(value.get("capture_output_dir")),
         source_log: json_string(value.get("source_log")),
         runtime_status_path: json_string(value.get("runtime_status_path")),
+        preflight_capture_command: json_string(value.get("preflight_capture_command")),
         notes: json_string(value.get("notes")),
         bundle_diagnostic: value
             .get("bundle_diagnostic")
@@ -4302,6 +4349,7 @@ fn field_capture_preflight_report_from_json(
         capture_output_dir: json_string(value.get("capture_output_dir")),
         source_log: json_string(value.get("source_log")),
         runtime_status_path: json_string(value.get("runtime_status_path")),
+        preflight_capture_command: json_string(value.get("preflight_capture_command")),
         summary: value.get("summary").cloned(),
         checks,
         next_actions,

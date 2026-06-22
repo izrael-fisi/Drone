@@ -131,6 +131,9 @@ def create_field_collection_plan(
         "capture_root": capture_root,
         "pending_capture_command_count": sum(1 for item in pending_conditions if item.get("capture_command")),
         "pending_preflight_command_count": sum(1 for item in pending_conditions if item.get("preflight_command")),
+        "pending_preflight_capture_command_count": sum(
+            1 for item in pending_conditions if item.get("preflight_capture_command")
+        ),
         "pending_metadata_update_command_count": sum(
             1 for item in pending_conditions if item.get("metadata_update_command")
         ),
@@ -243,6 +246,11 @@ def condition_plan(
         if collection_plan_path is not None
         else shell_command({"VISION_NAV_FIELD_CONDITION": condition}, "./scripts/pi/preflight_field_capture.sh")
     )
+    capture_with_status_command = command_with_runtime_status_read(
+        capture_command,
+        runtime_status_root=capture_output_dir,
+    )
+    preflight_capture_command = command_sequence(preflight_command, capture_with_status_command)
     return {
         "condition": condition,
         "label": label_for_condition(condition),
@@ -261,10 +269,8 @@ def condition_plan(
         "capture_checklist": capture_checklist,
         "capture_env": capture_env,
         "preflight_command": preflight_command,
-        "capture_command": command_with_runtime_status_read(
-            capture_command,
-            runtime_status_root=capture_output_dir,
-        ),
+        "preflight_capture_command": preflight_capture_command,
+        "capture_command": capture_with_status_command,
         "metadata_update_env": metadata_update_env,
         "metadata_update_command": metadata_update_command,
         "register_env": register_env,
@@ -387,6 +393,10 @@ def command_with_runtime_status_read(command: str, runtime_status_root: str | No
     return f"{command} && {read_command}"
 
 
+def command_sequence(*commands: str | None) -> str:
+    return " && ".join(command.strip() for command in commands if isinstance(command, str) and command.strip())
+
+
 def remote_path_join(root: str, *parts: str) -> str:
     normalized = str(root).rstrip("/")
     suffix = "/".join(str(part).strip("/") for part in parts if str(part).strip("/"))
@@ -449,6 +459,12 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 str(next_condition.get("preflight_command") or ""),
                 "```",
                 "",
+                "Preflight and capture:",
+                "",
+                "```bash",
+                str(next_condition.get("preflight_capture_command") or ""),
+                "```",
+                "",
                 "Capture:",
                 "",
                 "```bash",
@@ -490,6 +506,12 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 "",
                 "```bash",
                 str(item.get("preflight_command") or ""),
+                "```",
+                "",
+                "Preflight and capture:",
+                "",
+                "```bash",
+                str(item.get("preflight_capture_command") or ""),
                 "```",
                 "",
                 "Capture metadata to fill before registration:",
@@ -563,6 +585,9 @@ def print_human(plan: dict[str, Any]) -> None:
         if next_condition.get("preflight_command"):
             print("Next preflight command:")
             print(next_condition["preflight_command"])
+        if next_condition.get("preflight_capture_command"):
+            print("Next preflight + capture command:")
+            print(next_condition["preflight_capture_command"])
         if next_condition.get("capture_command"):
             print("Next capture command:")
             print(next_condition["capture_command"])

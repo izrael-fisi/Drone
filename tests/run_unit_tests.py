@@ -2835,6 +2835,11 @@ RC8_OPTION,90
             "support field collection condition capture command flag",
         )
         assert_equal(
+            manifest["field_collection_plans"]["reports"][0]["conditions"][0]["has_preflight_capture_command"],
+            True,
+            "support field collection condition preflight+capture command flag",
+        )
+        assert_equal(
             manifest["field_collection_plans"]["reports"][0]["conditions"][0]["has_metadata_update_command"],
             True,
             "support field collection condition metadata update command flag",
@@ -2849,6 +2854,10 @@ RC8_OPTION,90
             raise AssertionError("Expected support field collection condition to preserve capture command text")
         if "read_runtime_status.sh" not in field_collection_condition.get("capture_command", ""):
             raise AssertionError("Expected support field collection condition to normalize runtime status capture")
+        if "preflight_field_capture.sh" not in field_collection_condition.get("preflight_capture_command", ""):
+            raise AssertionError("Expected support field collection condition to preserve preflight+capture command text")
+        if "run_terrain_nav_loop.sh" not in field_collection_condition.get("preflight_capture_command", ""):
+            raise AssertionError("Expected support field collection preflight+capture command to include capture")
         if "update_field_capture_metadata.sh" not in field_collection_condition.get("metadata_update_command", ""):
             raise AssertionError("Expected support field collection condition to preserve metadata update command text")
         if "register_field_replay_case.sh" not in field_collection_condition.get("register_command", ""):
@@ -6594,6 +6603,11 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "field collection pending preflight command count",
         )
         assert_equal(
+            plan["pending_preflight_capture_command_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "field collection pending preflight+capture command count",
+        )
+        assert_equal(
             plan["pending_metadata_update_command_count"],
             len(REQUIRED_FIELD_CONDITIONS),
             "field collection pending metadata update command count",
@@ -6635,6 +6649,12 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected generated preflight command to include collection plan path")
         if "VISION_NAV_FIELD_CONDITION=good_texture" not in good_texture["preflight_command"]:
             raise AssertionError("Expected generated preflight command to target the condition")
+        if "preflight_field_capture.sh" not in good_texture["preflight_capture_command"]:
+            raise AssertionError("Expected preflight+capture command to run preflight first")
+        if "run_terrain_nav_loop.sh" not in good_texture["preflight_capture_command"]:
+            raise AssertionError("Expected preflight+capture command to run terrain capture")
+        if "VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture" not in good_texture["preflight_capture_command"]:
+            raise AssertionError("Expected preflight+capture command to read condition-specific runtime status")
         if "VISION_NAV_COUNT=30" not in good_texture["capture_command"]:
             raise AssertionError("Expected generated capture command to be bounded")
         if "read_runtime_status.sh" not in good_texture["capture_command"]:
@@ -6657,6 +6677,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         human_text = human_output.getvalue()
         if "Next preflight command:" not in human_text:
             raise AssertionError("Expected human field collection output to include preflight command")
+        if "Next preflight + capture command:" not in human_text:
+            raise AssertionError("Expected human field collection output to include preflight+capture command")
         if "Next metadata update command:" not in human_text:
             raise AssertionError("Expected human field collection output to include metadata update command")
         if "Next runtime status path:" not in human_text:
@@ -6696,6 +6718,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected Markdown plan to include the next metadata update command")
         if "Preflight:" not in markdown_text:
             raise AssertionError("Expected Markdown plan to include the next preflight command")
+        if "Preflight and capture:" not in markdown_text:
+            raise AssertionError("Expected Markdown plan to include the combined preflight+capture command")
         if "preflight_field_capture.sh" not in markdown_text:
             raise AssertionError("Expected Markdown plan to include the preflight helper")
         if "Runtime status:" not in markdown_text:
@@ -6726,6 +6750,10 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected selected field condition to include metadata update command")
         if "preflight_field_capture.sh" not in selection["preflight_command"]:
             raise AssertionError("Expected selected field condition to include preflight command")
+        if "preflight_field_capture.sh" not in selection["preflight_capture_command"]:
+            raise AssertionError("Expected selected field condition to include preflight+capture command")
+        if "run_terrain_nav_loop.sh" not in selection["preflight_capture_command"]:
+            raise AssertionError("Expected selected preflight+capture command to include terrain capture")
         if "VISION_NAV_FIELD_CONDITION=good_texture" not in selection["metadata_update_command"]:
             raise AssertionError("Expected metadata update command to target selected condition")
         if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in selection["metadata_update_command"]:
@@ -6737,6 +6765,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected shell assignments to export metadata update command")
         if "VISION_NAV_FIELD_PREFLIGHT_COMMAND" not in selection_shell:
             raise AssertionError("Expected shell assignments to export preflight command")
+        if "VISION_NAV_FIELD_PREFLIGHT_CAPTURE_COMMAND" not in selection_shell:
+            raise AssertionError("Expected shell assignments to export preflight+capture command")
 
         ready_bundle = create_minimal_terrain_bundle(base)
         ready_capture_root = base / "field-captures"
@@ -6972,6 +7002,10 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected workflow selection to enrich stale metadata update commands")
         if "VISION_NAV_FIELD_COLLECTION_PLAN" not in legacy_selection["preflight_command"]:
             raise AssertionError("Expected workflow selection to backfill stale preflight commands")
+        if "preflight_field_capture.sh" not in legacy_selection["preflight_capture_command"]:
+            raise AssertionError("Expected workflow selection to backfill stale preflight+capture commands")
+        if "read_runtime_status.sh" not in legacy_selection["preflight_capture_command"]:
+            raise AssertionError("Expected backfilled preflight+capture command to include runtime status")
         readiness_next = readiness_field_collection_next_condition(legacy_plan, plan_path=legacy_plan_path)
         if not readiness_next or "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in readiness_next["metadata_update_command"]:
             raise AssertionError("Expected readiness next condition to enrich stale metadata update commands")
@@ -7000,6 +7034,10 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         )
         if "read_runtime_status.sh" not in legacy_preflight["capture_command"]:
             raise AssertionError("Expected field preflight to append runtime status read to stale capture command")
+        if "preflight_field_capture.sh" not in legacy_preflight["preflight_capture_command"]:
+            raise AssertionError("Expected field preflight to backfill preflight+capture command")
+        if "read_runtime_status.sh" not in legacy_preflight["preflight_capture_command"]:
+            raise AssertionError("Expected field preflight preflight+capture command to read runtime status")
         if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in legacy_preflight["metadata_update_command"]:
             raise AssertionError("Expected field preflight to enrich stale metadata command")
 

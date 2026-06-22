@@ -9,6 +9,7 @@ from typing import Any
 
 from vision_nav.field_capture_metadata import audit_capture_metadata
 from vision_nav.field_collection_plan import (
+    command_sequence,
     command_with_runtime_status_read,
     metadata_update_command_for_condition,
     metadata_update_command_is_detailed,
@@ -113,6 +114,7 @@ def evaluate_field_capture_preflight(
         "ready_for_capture": ready_for_capture,
         "ready_for_registration": ready_for_registration,
         "preflight_command": selected.get("preflight_command") if selected else None,
+        "preflight_capture_command": selected.get("preflight_capture_command") if selected else None,
         "capture_command": selected.get("capture_command") if selected else None,
         "metadata_update_command": selected.get("metadata_update_command") if selected else None,
         "register_command": selected.get("register_command") if selected else None,
@@ -188,6 +190,7 @@ def build_next_actions(
                 source_log=str(condition.get("source_log") or ""),
                 runtime_status_path=str(condition.get("runtime_status_path") or ""),
                 capture_output_dir=str(condition.get("capture_output_dir") or ""),
+                preflight_capture_command=str(condition.get("preflight_capture_command") or ""),
             )
         )
 
@@ -299,6 +302,12 @@ def normalize_selected_condition(
         normalized["capture_command"] = command_with_runtime_status_read(
             capture_command,
             runtime_status_root=str(normalized.get("capture_output_dir") or "").strip() or None,
+        )
+    preflight_capture_command = str(normalized.get("preflight_capture_command") or "").strip()
+    if not preflight_capture_command:
+        normalized["preflight_capture_command"] = command_sequence(
+            str(normalized.get("preflight_command") or "").strip(),
+            str(normalized.get("capture_command") or "").strip(),
         )
     metadata_command = str(normalized.get("metadata_update_command") or "").strip()
     if condition_key and not metadata_update_command_is_detailed(metadata_command):
@@ -572,6 +581,9 @@ def print_human(report: dict[str, Any]) -> None:
     if report.get("capture_command"):
         print("Capture command:")
         print(report["capture_command"])
+    if report.get("preflight_capture_command"):
+        print("Preflight + capture command:")
+        print(report["preflight_capture_command"])
     if report.get("bundle_validation_command"):
         print("Bundle validation command:")
         print(report["bundle_validation_command"])
@@ -658,6 +670,8 @@ def print_human(report: dict[str, Any]) -> None:
         print(f"__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__={report['capture_output_dir']}")
     if report.get("capture_command"):
         print(f"__VISION_NAV_TERRAIN_CAPTURE_COMMAND__={report['capture_command']}")
+    if report.get("preflight_capture_command"):
+        print(f"__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__={report['preflight_capture_command']}")
     if report.get("metadata_update_command"):
         print(f"__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__={report['metadata_update_command']}")
 

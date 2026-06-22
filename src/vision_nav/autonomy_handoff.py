@@ -17,6 +17,7 @@ COMMAND_GROUP_DESKTOP_ACTIONS = {
     "guided_workflow": "Module Setup > Evidence Workflow",
     "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
     "field_collection_preflight": "Module Setup > Field Capture Preflight",
+    "field_collection_preflight_capture": "Module Setup > Field Capture Preflight, then Field Log Capture",
     "field_collection_capture": "Module Setup > Field Log Capture",
     "field_collection_metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
     "field_collection_registration": "Module Setup > Field Evidence Case > Register",
@@ -640,6 +641,9 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
         ]
     )
     field_preflight_commands = json_string_list(report_bundle.get("field_collection_preflight_commands"))
+    field_preflight_capture_commands = json_string_list(
+        report_bundle.get("field_collection_preflight_capture_commands")
+    )
     field_capture_commands = json_string_list(report_bundle.get("field_collection_capture_commands"))
     field_metadata_commands = json_string_list(report_bundle.get("field_collection_metadata_update_commands"))
     field_commands = json_string_list(report_bundle.get("field_collection_registration_commands"))
@@ -660,6 +664,16 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
                 *field_capture_commands,
                 *[
                     item.get("capture_command")
+                    for item in pending_conditions
+                    if isinstance(item, dict)
+                ],
+            ]
+        )
+        field_preflight_capture_commands = unique_strings(
+            [
+                *field_preflight_capture_commands,
+                *[
+                    item.get("preflight_capture_command")
                     for item in pending_conditions
                     if isinstance(item, dict)
                 ],
@@ -698,6 +712,8 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
         result["next_actions"] = next_action_commands
     if field_preflight_commands:
         result["field_collection_preflight"] = field_preflight_commands
+    if field_preflight_capture_commands:
+        result["field_collection_preflight_capture"] = field_preflight_capture_commands
     if field_capture_commands:
         result["field_collection_capture"] = field_capture_commands
     if field_metadata_commands:
