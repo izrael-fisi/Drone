@@ -4658,6 +4658,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         bench_actions = support_check["details"]["bench_evidence_actions"]
         bench_action_commands = [action.get("command") for action in bench_actions]
         bench_action_desktop_actions = [action.get("desktop_action") for action in bench_actions]
+        if "./scripts/pi/check_gnss_denied_plan.sh && ./scripts/pi/validate_terrain_bundle.sh" not in bench_action_commands:
+            raise AssertionError("autonomy readiness missing support bundle should expose GNSS-denied plan check action")
         if "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" not in bench_action_commands:
             raise AssertionError("autonomy readiness missing support bundle should expose runtime capture action")
         if "./scripts/dev/setup_px4_sitl_prereqs.sh" not in bench_action_commands:
@@ -5401,6 +5403,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             not in field_plan_bundle["field_collection_registration_commands"]
         ):
             raise AssertionError("autonomy readiness JSON missing field registration command bundle")
+        expected_gnss_bundle_command = (
+            f"VISION_NAV_BUNDLE={shlex.quote(str(root / 'map_bundles/unit_bundle'))} "
+            "./scripts/pi/check_gnss_denied_plan.sh && "
+            f"VISION_NAV_BUNDLE={shlex.quote(str(root / 'map_bundles/unit_bundle'))} "
+            "./scripts/pi/validate_terrain_bundle.sh"
+        )
         expected_bundle_validate_command = (
             f"VISION_NAV_BUNDLE={shlex.quote(str(root / 'map_bundles/unit_bundle'))} \\\n"
             "  ./scripts/pi/validate_terrain_bundle.sh"
@@ -5417,12 +5425,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         missing_support_bench_actions = missing_support_check["details"]["bench_evidence_actions"]
         if not any(
-            action.get("command") == expected_bundle_validate_command
+            action.get("command") == expected_gnss_bundle_command
             and action.get("field_bundle") == str(root / "map_bundles/unit_bundle")
             for action in missing_support_bench_actions
             if isinstance(action, dict)
         ):
-            raise AssertionError("autonomy readiness missing support preview should use selected field bundle")
+            raise AssertionError("autonomy readiness missing support preview should check GNSS prep on selected field bundle")
         field_plan_command_items = field_plan_bundle.get("command_items")
         if not isinstance(field_plan_command_items, list):
             raise AssertionError("autonomy readiness JSON missing structured field command items")

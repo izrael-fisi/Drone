@@ -591,7 +591,11 @@ def field_bundle_action_command(bundle: str, action: dict[str, Any]) -> str:
 
 
 def action_targets_gnss_denied_plan(action: dict[str, Any]) -> bool:
-    return action.get("check") == "gnss_denied_plan" or action.get("bench_subcheck") == "gnss_denied_plan"
+    return (
+        action.get("check") == "gnss_denied_plan"
+        or action.get("bench_subcheck") == "gnss_denied_plan"
+        or action.get("desktop_action") == "Mission Planner > GNSS-Denied Prep, Build Bundle, Upload Bundle"
+    )
 
 
 def enrich_action_with_field_capture(
