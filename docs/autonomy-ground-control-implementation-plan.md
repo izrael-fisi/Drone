@@ -413,6 +413,10 @@ Status:
   `scripts/pi/preflight_field_capture.sh`, so operators can check bundle,
   output-path, runtime-wrapper, metadata, and registration readiness before
   collecting the next real field log.
+- Done: field-capture preflight now normalizes older field collection plans
+  before evaluating them, backfilling the runtime-status read step, proof-grade
+  metadata prompts, and condition preflight command so stale plans surface true
+  blockers such as a missing bundle instead of stale command formatting.
 - Done: Module Setup, readiness report cards, support-bundle details, and
   handoff summaries preserve and copy field-capture preflight commands beside
   capture, metadata-update, and registration commands.

@@ -5819,11 +5819,17 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "VISION_NAV_FIELD_CONDITION=good_texture "
             "./scripts/pi/update_field_capture_metadata.sh"
         )
+        legacy_capture_command = str(legacy_plan["next_condition"]["capture_command"]).replace(
+            " && ./scripts/pi/read_runtime_status.sh",
+            "",
+        )
         legacy_plan["next_condition"]["metadata_update_command"] = legacy_command
+        legacy_plan["next_condition"]["capture_command"] = legacy_capture_command
         legacy_plan["next_condition"].pop("preflight_command", None)
         for item in legacy_plan["conditions"]:
             if item["condition"] == "good_texture":
                 item["metadata_update_command"] = legacy_command
+                item["capture_command"] = legacy_capture_command
                 item.pop("preflight_command", None)
         legacy_plan_path = base / "field_collection_plan_legacy_metadata.json"
         legacy_plan_path.write_text(json.dumps(legacy_plan))
@@ -5843,6 +5849,25 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected handoff next condition to enrich stale metadata update commands")
         if not handoff_next or "VISION_NAV_FIELD_COLLECTION_PLAN" not in handoff_next["preflight_command"]:
             raise AssertionError("Expected handoff next condition to backfill stale preflight commands")
+        legacy_preflight = evaluate_field_capture_preflight(
+            plan_path=legacy_plan_path,
+            repo_root=Path.cwd(),
+        )
+        legacy_preflight_checks = {item["name"]: item["status"] for item in legacy_preflight["checks"]}
+        assert_equal(
+            legacy_preflight_checks["capture_command"],
+            "passed",
+            "field preflight normalizes stale capture commands",
+        )
+        assert_equal(
+            legacy_preflight_checks["metadata_update_command"],
+            "passed",
+            "field preflight normalizes stale metadata commands",
+        )
+        if "read_runtime_status.sh" not in legacy_preflight["capture_command"]:
+            raise AssertionError("Expected field preflight to append runtime status read to stale capture command")
+        if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in legacy_preflight["metadata_update_command"]:
+            raise AssertionError("Expected field preflight to enrich stale metadata command")
 
         log_dir = base / "captures"
         log_dir.mkdir()

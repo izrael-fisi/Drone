@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from vision_nav.field_capture_metadata import audit_capture_metadata
-from vision_nav.field_collection_plan import metadata_update_command_is_detailed
+from vision_nav.field_collection_plan import (
+    command_with_runtime_status_read,
+    metadata_update_command_for_condition,
+    metadata_update_command_is_detailed,
+    preflight_command_for_condition,
+)
 
 
 SCHEMA_VERSION = "vision_nav_field_capture_preflight_v1"
@@ -65,6 +70,7 @@ def evaluate_field_capture_preflight(
             details = {"requested_condition": condition, "available_conditions": condition_keys(plan)}
             checks.append(failed("condition", "No pending field condition matched the requested selection.", details))
         else:
+            selected = normalize_selected_condition(selected, plan=plan, plan_path=plan_file)
             checks.append(
                 passed(
                     "condition",
@@ -103,6 +109,7 @@ def evaluate_field_capture_preflight(
         "expected": selected.get("expected") if selected else None,
         "ready_for_capture": ready_for_capture,
         "ready_for_registration": ready_for_registration,
+        "preflight_command": selected.get("preflight_command") if selected else None,
         "capture_command": selected.get("capture_command") if selected else None,
         "metadata_update_command": selected.get("metadata_update_command") if selected else None,
         "register_command": selected.get("register_command") if selected else None,
@@ -134,6 +141,35 @@ def select_condition(plan: dict[str, Any], condition: str | None) -> dict[str, A
         if isinstance(item, dict) and item.get("status") != "registered":
             return item
     return None
+
+
+def normalize_selected_condition(
+    condition: dict[str, Any],
+    *,
+    plan: dict[str, Any],
+    plan_path: str | Path,
+) -> dict[str, Any]:
+    normalized = dict(condition)
+    condition_key = str(normalized.get("condition") or "").strip()
+    if condition_key and not normalized.get("preflight_command"):
+        normalized["preflight_command"] = preflight_command_for_condition(
+            plan_path=plan_path,
+            condition=condition_key,
+        )
+    capture_command = str(normalized.get("capture_command") or "").strip()
+    if capture_command:
+        normalized["capture_command"] = command_with_runtime_status_read(capture_command)
+    metadata_command = str(normalized.get("metadata_update_command") or "").strip()
+    if condition_key and not metadata_update_command_is_detailed(metadata_command):
+        manifest_path = plan.get("manifest_path")
+        metadata = normalized.get("capture_metadata")
+        if manifest_path:
+            normalized["metadata_update_command"] = metadata_update_command_for_condition(
+                manifest_path=str(manifest_path),
+                condition=condition_key,
+                capture_metadata=metadata if isinstance(metadata, dict) else None,
+            )
+    return normalized
 
 
 def condition_keys(plan: dict[str, Any]) -> list[str]:
