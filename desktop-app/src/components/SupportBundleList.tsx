@@ -92,6 +92,20 @@ function nestedNumber(root: unknown, path: string[]) {
   return typeof current === "number" ? current : null;
 }
 
+function commandRecords(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const record = asRecord(item);
+    const command = typeof record?.command === "string" && record.command ? record.command : null;
+    if (!command) return [];
+    return [{
+      label: typeof record?.label === "string" ? record.label : undefined,
+      condition: typeof record?.condition === "string" ? record.condition : undefined,
+      command,
+    }];
+  });
+}
+
 function SupportBundleDetailPanel({
   details,
   onExtractArtifact,
@@ -107,6 +121,8 @@ function SupportBundleDetailPanel({
   const platform = nestedString(details.metadata, ["host", "platform"]);
   const healthStatus = nestedString(details.bundle_health, ["status"]);
   const checksumStatus = nestedString(details.bundle_health, ["checksums", "status"]);
+  const px4Prereqs = asRecord(details.manifest.px4_sitl_prereqs);
+  const px4PrereqFixCommands = commandRecords(px4Prereqs?.fix_commands);
 
   return (
     <div className="space-y-2 pt-1">
@@ -142,6 +158,38 @@ function SupportBundleDetailPanel({
                 <span>{formatLabel(check.name)}</span>
                 {check.message && <span className="truncate text-slate-400">{check.message}</span>}
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {px4PrereqFixCommands.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500">PX4 prerequisite fixes</div>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(px4PrereqFixCommands.map((item) => item.command).join("\n"))}
+              className="btn-secondary px-1.5 py-0.5 text-[10px]"
+              title="Copy all PX4 prerequisite fix commands"
+            >
+              <Clipboard size={9} />
+              copy all
+            </button>
+          </div>
+          <div className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-1">
+            {px4PrereqFixCommands.slice(0, 5).map((item, index) => (
+              <button
+                key={`${item.condition ?? item.label ?? "fix"}-${index}`}
+                type="button"
+                onClick={() => navigator.clipboard.writeText(item.command)}
+                className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/50 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
+                title={item.command}
+              >
+                <Clipboard size={9} className="shrink-0" />
+                <span className="shrink-0 text-slate-500">{formatLabel(item.label ?? item.condition ?? "fix")}</span>
+                <span className="truncate">{item.command}</span>
+              </button>
             ))}
           </div>
         </div>

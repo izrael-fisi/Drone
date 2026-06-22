@@ -447,7 +447,9 @@ handoffs preserve the same fix commands so the operator can continue from a
 downloaded report without reopening the raw prerequisite JSON. Downloaded
 autonomy-readiness cards expose those setup fixes as a separate
 `prereq fixes` command-copy group, distinct from proof-producing immediate and
-blocked follow-up commands.
+blocked follow-up commands. Downloaded support-bundle details also expose the
+same PX4 prerequisite fix commands when the bundle contains
+`px4_sitl_prereqs.fix_commands`.
 
 Module Setup can run `ROS Bag Validation` after a terrain runtime/replay log
 exists. The action runs `scripts/pi/run_rosbag_export_validation.sh` over SSH,

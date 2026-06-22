@@ -67,6 +67,9 @@ Status:
   SITL evidence session or `--px4-sitl-prereqs` /
   `VISION_NAV_PX4_SITL_PREREQS`, publish it under `px4_sitl_prereqs`, and show
   the desktop `px4 prereqs` status without satisfying the receiver-proof gate.
+- Done: support-bundle details in the desktop app surface PX4 prerequisite fix
+  commands from `px4_sitl_prereqs.fix_commands`, with copy-all and per-command
+  buttons for setup remediation.
 - Done: support bundles can also ingest an already evaluated
   `receiver_evidence.json` through `--px4-sitl-report` /
   `VISION_NAV_PX4_SITL_REPORT`, copy it under `extras/px4_sitl_evidence/`, and
