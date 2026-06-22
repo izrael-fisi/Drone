@@ -42,6 +42,10 @@ from vision_nav.external_position import (
 )
 from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
 from vision_nav.feature_method_benchmark import benchmark_feature_methods
+from vision_nav.field_capture_metadata import (
+    CAPTURE_CHECKLIST_SCHEMA_VERSION,
+    CAPTURE_METADATA_SCHEMA_VERSION,
+)
 from vision_nav.field_collection_plan import create_field_collection_plan, render_field_collection_markdown
 from vision_nav.field_evidence_template import create_field_evidence_template
 from vision_nav.field_evidence_gate import evaluate_field_evidence_gate
@@ -3457,6 +3461,25 @@ def test_field_evidence_template_matches_required_conditions() -> None:
         assert_equal(expected_by_condition["low_texture"], "degraded", "field template low texture expected")
         assert_equal({case["dataset_type"] for case in cases}, {"field"}, "field template dataset type")
         assert_equal({case["bundle"] for case in cases}, {"field-bundles/site-a/mission_bundle"}, "field template bundle")
+        for case in cases:
+            condition = case["conditions"][0]
+            capture_metadata = case.get("capture_metadata") or {}
+            assert_equal(
+                capture_metadata.get("schema_version"),
+                CAPTURE_METADATA_SCHEMA_VERSION,
+                "field template capture metadata schema",
+            )
+            assert_equal(capture_metadata.get("site_name"), "Site A", "field template capture metadata site")
+            assert_equal(capture_metadata.get("condition"), condition, "field template capture metadata condition")
+            capture_checklist = case.get("capture_checklist") or {}
+            assert_equal(
+                capture_checklist.get("schema_version"),
+                CAPTURE_CHECKLIST_SCHEMA_VERSION,
+                "field template capture checklist schema",
+            )
+            assert_equal(capture_checklist.get("condition"), condition, "field template capture checklist condition")
+            if not capture_checklist.get("items"):
+                raise AssertionError("Expected field template capture checklist items")
         schema_only = evaluate_replay_case_manifest(output, schema_only=True)
         assert_equal(schema_only["status"], "passed", "field template schema-only status")
         full = evaluate_replay_case_manifest(output)
@@ -3518,8 +3541,22 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         assert_equal(plan["summary"]["registered_count"], 0, "field collection registered count")
         good_texture = next(item for item in plan["conditions"] if item["condition"] == "good_texture")
         assert_equal(good_texture["status"], "placeholder", "field collection placeholder status")
+        capture_metadata = good_texture.get("capture_metadata") or {}
+        assert_equal(
+            capture_metadata.get("schema_version"),
+            CAPTURE_METADATA_SCHEMA_VERSION,
+            "field collection placeholder capture metadata schema",
+        )
+        assert_equal(capture_metadata.get("site_name"), "Site A", "field collection placeholder capture metadata site")
+        assert_equal(
+            capture_metadata.get("condition"),
+            "good_texture",
+            "field collection placeholder capture metadata condition",
+        )
         if "VISION_NAV_FIELD_CASE_NAME" not in good_texture["register_command"]:
             raise AssertionError("Expected generated registration command to include case name")
+        if "VISION_NAV_FIELD_CAPTURE_METADATA" not in good_texture["register_command"]:
+            raise AssertionError("Expected generated registration command to include capture metadata")
         if not (base / "field_collection_plan.md").exists():
             raise AssertionError("Expected Markdown field collection plan")
 
@@ -3551,6 +3588,11 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             log_path=log,
             bundle="field-bundles/site-a/mission_bundle",
             notes="Clear matching-map field log.",
+            capture_metadata={
+                "schema_version": CAPTURE_METADATA_SCHEMA_VERSION,
+                "operator": "unit-operator",
+                "lighting": "nominal",
+            },
             copy_log=True,
             replace=True,
         )
@@ -3565,9 +3607,21 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         assert_equal(updated["summary"]["placeholder_count"], len(REQUIRED_FIELD_CONDITIONS) - 1, "field collection updated placeholder count")
         updated_good_texture = next(item for item in updated["conditions"] if item["condition"] == "good_texture")
         assert_equal(updated_good_texture["status"], "registered", "field collection registered status")
+        assert_equal(
+            updated_good_texture["capture_metadata"]["operator"],
+            "unit-operator",
+            "field collection registered capture metadata operator",
+        )
+        assert_equal(
+            updated_good_texture["capture_metadata"]["lighting"],
+            "nominal",
+            "field collection registered capture metadata lighting",
+        )
         markdown = render_field_collection_markdown(updated)
         if "- [x] Good texture" not in markdown:
             raise AssertionError("Expected registered condition to be checked in Markdown plan")
+        if "Capture metadata to fill before registration" not in markdown:
+            raise AssertionError("Expected Markdown plan to include capture metadata scaffold")
 
 
 def test_replay_dataset_coverage_audit_requires_real_field_cases() -> None:
@@ -3767,6 +3821,11 @@ def test_replay_case_registry_registers_and_replaces_cases() -> None:
             log_path=log,
             bundle="field-bundle",
             notes="field capture",
+            capture_metadata={
+                "schema_version": CAPTURE_METADATA_SCHEMA_VERSION,
+                "operator": "registry-test",
+                "flight_altitude_agl_m": 35,
+            },
             copy_log=True,
         )
         assert_equal(result["status"], "registered", "replay case registry status")
@@ -3778,6 +3837,16 @@ def test_replay_case_registry_registers_and_replaces_cases() -> None:
         case = manifest_data["cases"][0]
         assert_equal(case["log"], "field/field-good-texture/terrain_matches.jsonl", "stored replay log path")
         assert_equal(case["conditions"], ["good_texture", "clear_texture"], "normalized replay case conditions")
+        assert_equal(
+            case["capture_metadata"]["operator"],
+            "registry-test",
+            "registered replay case capture metadata operator",
+        )
+        assert_equal(
+            case["capture_metadata"]["flight_altitude_agl_m"],
+            35,
+            "registered replay case capture metadata altitude",
+        )
 
         try:
             register_replay_case(

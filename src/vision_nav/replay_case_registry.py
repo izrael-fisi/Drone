@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
+from vision_nav.field_capture_metadata import parse_capture_metadata_json
 from vision_nav.replay_case_manifest import sanitize_filename
 from vision_nav.replay_case_schema import DATASET_TYPES, EXPECTED_BEHAVIORS
 
@@ -21,6 +22,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bundle", help="Bundle path or provenance label used for replay.")
     parser.add_argument("--log", required=True, help="Runtime/replay JSONL log to register.")
     parser.add_argument("--notes", help="Human-readable setup notes.")
+    parser.add_argument(
+        "--capture-metadata-json",
+        help="Optional JSON object with field capture metadata to store on this case.",
+    )
     parser.add_argument("--copy-log", action="store_true", help="Copy the log under the manifest directory.")
     parser.add_argument("--case-dir", help="Manifest-relative directory for copied log. Defaults to <dataset-type>/<case-name>.")
     parser.add_argument("--replace", action="store_true", help="Replace an existing case with the same case_name.")
@@ -38,6 +43,7 @@ def register_replay_case(
     log_path: str | Path,
     bundle: str | None = None,
     notes: str | None = None,
+    capture_metadata: dict[str, Any] | None = None,
     copy_log: bool = False,
     case_dir: str | None = None,
     replace: bool = False,
@@ -99,6 +105,8 @@ def register_replay_case(
         "notes": notes or "",
         "registered_at": datetime.now(timezone.utc).isoformat(),
     }
+    if capture_metadata:
+        case["capture_metadata"] = capture_metadata
     cases.append(case)
     cases.sort(key=lambda item: str(item.get("case_name") or ""))
     manifest["cases"] = cases
@@ -168,6 +176,7 @@ def main() -> None:
             log_path=args.log,
             bundle=args.bundle,
             notes=args.notes,
+            capture_metadata=parse_capture_metadata_json(args.capture_metadata_json),
             copy_log=args.copy_log,
             case_dir=args.case_dir,
             replace=args.replace,

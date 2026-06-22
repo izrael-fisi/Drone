@@ -358,6 +358,13 @@ checklist step, downloads the emitted plan artifacts, and records the emitted
 plan markers in the workflow report. Support bundles copy the JSON checklist
 and sibling Markdown file when present, and the final autonomy evidence package
 includes the plan/checklist paths recorded by the readiness audit.
+Each placeholder condition in the template and plan also carries a
+`capture_metadata` object plus a capture checklist. The metadata covers
+operator/date, location label, flight altitude, speed, lighting, weather,
+terrain texture, map-age or seasonal notes, camera focus/exposure notes,
+IMU/PX4 state, safety notes, and freeform notes. Generated registration
+commands pass the filled JSON through `VISION_NAV_FIELD_CAPTURE_METADATA`, so
+registered field replay cases keep that context for support review.
 
 Module Setup can also register the latest Pi terrain runtime log as a field
 evidence case after capture. The operator selects expected behavior, condition

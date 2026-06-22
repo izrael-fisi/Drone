@@ -446,6 +446,9 @@ Status:
 - Done: `vision-nav-create-field-collection-plan` renders the active field
   manifest into a JSON/Markdown operator checklist with per-condition status and
   exact Pi registration commands for each required real-world case.
+- Done: field evidence templates and collection plans now include per-condition
+  capture metadata scaffolds and checklists, and Pi registration preserves the
+  filled metadata on real replay cases for later support review.
 - Done: `scripts/pi/create_field_evidence_template.sh` wraps the template
   generator on the Pi, writes the starter manifest into the transfer folder,
   and emits a stable marker for desktop/support collection.

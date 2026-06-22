@@ -515,6 +515,7 @@ VISION_NAV_FIELD_CASE_NAME=field-good-texture \
 VISION_NAV_FIELD_EXPECTED=good_map \
 VISION_NAV_FIELD_CONDITION=good_texture \
 VISION_NAV_FIELD_NOTES="clear texture, matching map, nominal lighting" \
+VISION_NAV_FIELD_CAPTURE_METADATA='{"operator":"Izrael","flight_altitude_agl_m":35,"lighting":"nominal"}' \
 ./scripts/pi/register_field_replay_case.sh
 ```
 
@@ -527,6 +528,10 @@ starter manifest. It also prints `__VISION_NAV_FIELD_MANIFEST__=...` and seeds
 manifest does not already exist. Use it before the first field run, then
 register captured logs with `register_field_replay_case.sh`; matching template
 placeholders are replaced by condition tag as real logs are registered.
+Starter cases include a `capture_metadata` scaffold and `capture_checklist`
+object so the operator can record who captured the log, date/time, altitude,
+lighting, weather, map-season notes, camera focus/exposure notes, IMU/PX4 state,
+and safety notes before the case becomes field evidence.
 
 Generate a field-collection checklist from the active manifest before going
 outside:
@@ -541,7 +546,10 @@ Markdown checklist at
 `~/DroneTransfer/outgoing/replay-cases/field_collection_plan.md`. The plan marks
 each required condition as placeholder, missing, registered-missing-log, or
 registered, and includes the exact `VISION_NAV_FIELD_*` registration command to
-run after each captured terrain log. It also emits
+run after each captured terrain log. The generated plan also prints a metadata
+JSON block and checklist for each condition; when copied into
+`VISION_NAV_FIELD_CAPTURE_METADATA`, that JSON is stored with the replay case
+for later support and readiness review. It also emits
 `__VISION_NAV_FIELD_COLLECTION_PLAN__=...` and
 `__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=...` markers.
 From the desktop app, Module Setup exposes the same step as `Create Plan`,

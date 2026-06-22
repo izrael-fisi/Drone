@@ -7,6 +7,7 @@ from pathlib import Path
 import shlex
 from typing import Any
 
+from vision_nav.field_capture_metadata import capture_checklist_template, capture_metadata_template
 from vision_nav.field_conditions import (
     REQUIRED_FIELD_CONDITIONS,
     expected_behavior_for_condition,
@@ -151,6 +152,18 @@ def condition_plan(
             status = "registered"
         else:
             status = "registered_missing_log"
+    capture_metadata = selected.get("capture_metadata") if isinstance(selected, dict) else None
+    if not isinstance(capture_metadata, dict):
+        capture_metadata = capture_metadata_template(
+            site_name=site_name,
+            condition=condition,
+            expected=expected,
+            bundle=bundle,
+            notes=notes,
+        )
+    capture_checklist = selected.get("capture_checklist") if isinstance(selected, dict) else None
+    if not isinstance(capture_checklist, dict):
+        capture_checklist = capture_checklist_template(condition)
     register_env = {
         "VISION_NAV_FIELD_CASE_NAME": case_name,
         "VISION_NAV_FIELD_EXPECTED": expected,
@@ -158,6 +171,7 @@ def condition_plan(
         "VISION_NAV_FIELD_LOG": source_log,
         "VISION_NAV_FIELD_BUNDLE": bundle,
         "VISION_NAV_FIELD_NOTES": notes,
+        "VISION_NAV_FIELD_CAPTURE_METADATA": json.dumps(capture_metadata, sort_keys=True),
         "VISION_NAV_FIELD_REPLACE": "1",
     }
     return {
@@ -171,6 +185,8 @@ def condition_plan(
         "manifest_log_exists": log_exists,
         "source_log": source_log,
         "bundle": bundle,
+        "capture_metadata": capture_metadata,
+        "capture_checklist": capture_checklist,
         "register_env": register_env,
         "register_command": shell_command(register_env, "./scripts/pi/register_field_replay_case.sh"),
         "capture_command": "./scripts/pi/run_terrain_nav_loop.sh",
@@ -249,6 +265,26 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 f"- Expected behavior: `{item.get('expected')}`",
                 f"- Current status: `{item.get('status')}`",
                 f"- Notes: {item.get('notes') or 'n/a'}",
+                "",
+                "Capture metadata to fill before registration:",
+                "",
+                "```json",
+                json.dumps(item.get("capture_metadata") or {}, indent=2, sort_keys=True),
+                "```",
+                "",
+                "Checklist:",
+                "",
+            ]
+        )
+        checklist = item.get("capture_checklist") if isinstance(item.get("capture_checklist"), dict) else {}
+        for checklist_item in checklist.get("items") or []:
+            if not isinstance(checklist_item, dict):
+                continue
+            key = str(checklist_item.get("key") or "").replace("_", " ")
+            status = checklist_item.get("status") or "todo"
+            lines.append(f"- [ ] {key} (`{status}`)")
+        lines.extend(
+            [
                 "",
                 "Capture or replay a representative log, then register it:",
                 "",

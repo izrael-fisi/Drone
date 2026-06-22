@@ -12,6 +12,7 @@ conditions_raw="${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}"
 log_path="${VISION_NAV_FIELD_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}"
 bundle="${VISION_NAV_FIELD_BUNDLE:-${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}}"
 notes="${VISION_NAV_FIELD_NOTES:-}"
+capture_metadata="${VISION_NAV_FIELD_CAPTURE_METADATA:-}"
 copy_log="${VISION_NAV_FIELD_COPY_LOG:-1}"
 replace_case="${VISION_NAV_FIELD_REPLACE:-0}"
 strict_gate="${VISION_NAV_FIELD_GATE_STRICT:-0}"
@@ -35,6 +36,7 @@ Common optional overrides:
   VISION_NAV_FIELD_EVIDENCE_REPORT Default: $HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json
   VISION_NAV_FIELD_BUNDLE         Default: $bundle
   VISION_NAV_FIELD_NOTES          Human-readable setup notes.
+  VISION_NAV_FIELD_CAPTURE_METADATA Optional JSON object with capture metadata.
   VISION_NAV_FIELD_REPLACE=1      Replace an existing case with the same name.
   VISION_NAV_FIELD_GATE_STRICT=1  Exit nonzero when full field coverage is not passing yet.
 EOF
@@ -93,6 +95,9 @@ register_args=(
 
 if [[ -n "$notes" ]]; then
   register_args+=(--notes "$notes")
+fi
+if [[ -n "$capture_metadata" ]]; then
+  register_args+=(--capture-metadata-json "$capture_metadata")
 fi
 if [[ "$copy_log" == "1" || "$copy_log" == "true" ]]; then
   register_args+=(--copy-log)

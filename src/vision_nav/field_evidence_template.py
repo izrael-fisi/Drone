@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from vision_nav.field_capture_metadata import capture_checklist_template, capture_metadata_template
 from vision_nav.field_conditions import (
     REQUIRED_FIELD_CONDITIONS,
     expected_behavior_for_condition,
@@ -75,6 +76,14 @@ def build_field_evidence_manifest_template(
                 "notes": notes_for_condition(condition),
                 "template_label": label_for_condition(condition),
                 "template_status": "replace_log_path_and_notes_after_capture",
+                "capture_metadata": capture_metadata_template(
+                    site_name=site_name,
+                    condition=condition,
+                    expected=expected,
+                    bundle=bundle,
+                    notes=notes_for_condition(condition),
+                ),
+                "capture_checklist": capture_checklist_template(condition),
             }
         )
     return {

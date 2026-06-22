@@ -65,6 +65,14 @@
           },
           "registered_at": {
             "type": "string"
+          },
+          "capture_metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "capture_checklist": {
+            "type": "object",
+            "additionalProperties": true
           }
         }
       }

@@ -46,6 +46,14 @@ REPLAY_CASE_MANIFEST_SCHEMA: dict[str, Any] = {
                     "log": {"type": "string", "minLength": 1},
                     "notes": {"type": "string"},
                     "registered_at": {"type": "string"},
+                    "capture_metadata": {
+                        "type": "object",
+                        "additionalProperties": True,
+                    },
+                    "capture_checklist": {
+                        "type": "object",
+                        "additionalProperties": True,
+                    },
                 },
             },
         },
@@ -137,6 +145,10 @@ def evaluate_replay_case_schema(raw: Any, *, manifest_path: str | Path | None = 
         for field in ("bundle", "notes", "registered_at"):
             if field in case and not isinstance(case.get(field), str):
                 issues.append(schema_issue("error", f"{case_path}.{field}", f"{field} must be a string when present."))
+
+        for field in ("capture_metadata", "capture_checklist"):
+            if field in case and not isinstance(case.get(field), dict):
+                issues.append(schema_issue("error", f"{case_path}.{field}", f"{field} must be an object when present."))
 
         for field in RECOMMENDED_CASE_FIELDS:
             if not case.get(field):
