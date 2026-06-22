@@ -416,6 +416,20 @@ def print_multiline_command(prefix, command, desktop_action=None):
         print(f"  {line}")
 
 
+def short_hash(value):
+    value = str(value or "")
+    return value[:8] if value else "unknown"
+
+
+def marker_summary(value):
+    if not isinstance(value, dict):
+        return None
+    required = int(value.get("required_marker_count") or 0)
+    missing = len(value.get("missing_markers") or [])
+    present = max(required - missing, 0)
+    return f"{present}/{required}"
+
+
 def normalize_bench_subchecks(values):
     subchecks = []
     if not isinstance(values, list):
@@ -465,6 +479,7 @@ repo = metadata.get("repo") or {}
 inputs = report.get("inputs") or {}
 diagnostics = report.get("diagnostics") if isinstance(report.get("diagnostics"), dict) else {}
 command_bundle = report.get("command_bundle") if isinstance(report.get("command_bundle"), dict) else {}
+plan_snapshot = report.get("plan_snapshot") if isinstance(report.get("plan_snapshot"), dict) else {}
 guided_workflow_commands = [
     str(command)
     for command in command_bundle.get("guided_workflow_commands") or []
@@ -499,6 +514,44 @@ if runbook_summary:
         f"{runbook_summary.get('action_required', 0)} action-required, "
         f"{runbook_summary.get('blocked', 0)} blocked"
     )
+
+research_doc = plan_snapshot.get("research_doc") if isinstance(plan_snapshot.get("research_doc"), dict) else {}
+implementation_plan = (
+    plan_snapshot.get("implementation_plan")
+    if isinstance(plan_snapshot.get("implementation_plan"), dict)
+    else {}
+)
+if research_doc or implementation_plan:
+    print()
+    print("Plan snapshot:")
+    if research_doc:
+        print(
+            "- research: "
+            f"{research_doc.get('path') or 'unknown'} "
+            f"markers {marker_summary(research_doc) or 'unknown'} "
+            f"refs {int(research_doc.get('highest_value_reference_count') or 0)} "
+            f"fit {int(research_doc.get('fit_criteria_count') or 0)} "
+            f"sha {short_hash(research_doc.get('source_sha256'))}"
+        )
+        missing = research_doc.get("missing_markers") or []
+        if missing:
+            print(f"  missing markers: {', '.join(str(item) for item in missing)}")
+    if implementation_plan:
+        print(
+            "- implementation: "
+            f"{implementation_plan.get('path') or 'unknown'} "
+            f"markers {marker_summary(implementation_plan) or 'unknown'} "
+            f"tracks {int(implementation_plan.get('track_count') or 0)} "
+            f"done {int(implementation_plan.get('done_count') or 0)} "
+            f"in-progress {int(implementation_plan.get('in_progress_count') or 0)} "
+            f"tasks {int(implementation_plan.get('task_count') or 0)} "
+            f"next {int(implementation_plan.get('next_task_count') or 0)} "
+            f"checks {int(implementation_plan.get('acceptance_check_count') or 0)} "
+            f"sha {short_hash(implementation_plan.get('source_sha256'))}"
+        )
+        missing = implementation_plan.get("missing_markers") or []
+        if missing:
+            print(f"  missing markers: {', '.join(str(item) for item in missing)}")
 
 present_inputs = [
     (key, value)

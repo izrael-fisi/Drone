@@ -843,6 +843,10 @@ Status:
   folders, and prints a concise goal-status summary with consumed evidence
   inputs, proof-item counts, external blockers, proof-runbook phase counts, and
   runbook-ordered next commands without creating a new handoff package.
+- Done: `scripts/dev/autonomy_goal_status.sh` now prints the same research-doc
+  and implementation-plan snapshot used by the strict audit, including marker
+  coverage, research reference counts, implementation track/task/done counts,
+  remaining in-progress count, and source hashes before the evidence blockers.
 - Done: the proof runbook now orders the bench foundation phase so PX4 ODOMETRY
   receiver proof is captured before the support bundle is created, keeping the
   status helper and handoff commands aligned with the actual evidence workflow.
