@@ -12,6 +12,8 @@ field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$replay_dir/field_evi
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$replay_dir/field_collection_plan.json}"
 feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$replay_dir/threshold_tuning_report.json}"
+evidence_workflow_report="${VISION_NAV_EVIDENCE_WORKFLOW_REPORT:-}"
+evidence_workflow_validation_report="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 output_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$replay_dir/autonomy_readiness_report.json}"
@@ -63,6 +65,42 @@ first_existing_px4_report() {
   done
 }
 
+first_existing_workflow_report() {
+  local candidates=(
+    "$replay_dir/autonomy_evidence_workflow.json"
+    "$replay_dir/autonomy-evidence-workflow/autonomy_evidence_workflow.json"
+    "$download_root/replay-cases/autonomy_evidence_workflow.json"
+    "$download_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
+first_existing_workflow_validation_report() {
+  local candidates=()
+  if [[ -n "$evidence_workflow_report" ]]; then
+    candidates+=("${evidence_workflow_report%.json}.validation.json")
+  fi
+  candidates+=(
+    "$replay_dir/autonomy_evidence_workflow.validation.json"
+    "$replay_dir/autonomy-evidence-workflow/autonomy_evidence_workflow.validation.json"
+    "$download_root/replay-cases/autonomy_evidence_workflow.validation.json"
+    "$download_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.validation.json"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
 if [[ -z "$support_bundle" ]]; then
   support_bundle="$(latest_glob "$support_dir/*.zip")"
 fi
@@ -77,6 +115,14 @@ fi
 
 if [[ -z "$px4_sitl_report" ]]; then
   px4_sitl_report="$(first_existing_px4_report || true)"
+fi
+
+if [[ -z "$evidence_workflow_report" ]]; then
+  evidence_workflow_report="$(first_existing_workflow_report || true)"
+fi
+
+if [[ -z "$evidence_workflow_validation_report" ]]; then
+  evidence_workflow_validation_report="$(first_existing_workflow_validation_report || true)"
 fi
 
 mkdir -p "$(dirname "$output_report")"
@@ -114,6 +160,14 @@ if [[ -f "$threshold_tuning_report" ]]; then
   args+=(--threshold-tuning-report "$threshold_tuning_report")
 fi
 
+if [[ -f "$evidence_workflow_report" ]]; then
+  args+=(--evidence-workflow-report "$evidence_workflow_report")
+fi
+
+if [[ -f "$evidence_workflow_validation_report" ]]; then
+  args+=(--evidence-workflow-validation-report "$evidence_workflow_validation_report")
+fi
+
 set +e
 PYTHONPATH="$repo_root/src" "$python_bin" "${args[@]}"
 audit_status=$?
@@ -139,6 +193,8 @@ Local autonomy readiness audit inputs:
   field collection plan:   $([[ -f "$field_collection_plan" ]] && printf '%s' "$field_collection_plan" || printf 'not found')
   feature benchmark report: $([[ -f "$feature_method_benchmark_report" ]] && printf '%s' "$feature_method_benchmark_report" || printf 'not found')
   threshold tuning report: $([[ -f "$threshold_tuning_report" ]] && printf '%s' "$threshold_tuning_report" || printf 'not found')
+  evidence workflow report: $([[ -f "$evidence_workflow_report" ]] && printf '%s' "$evidence_workflow_report" || printf 'not found')
+  workflow validation:     $([[ -f "$evidence_workflow_validation_report" ]] && printf '%s' "$evidence_workflow_validation_report" || printf 'not found')
   output report:           $output_report
   output handoff:          $output_handoff
   evidence package:        $output_package
@@ -157,6 +213,14 @@ if [[ -f "$field_collection_plan" ]]; then
   if [[ -f "${field_collection_plan%.json}.md" ]]; then
     echo "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=${field_collection_plan%.json}.md"
   fi
+fi
+
+if [[ -f "$evidence_workflow_report" ]]; then
+  echo "__VISION_NAV_EVIDENCE_WORKFLOW_REPORT__=$evidence_workflow_report"
+fi
+
+if [[ -f "$evidence_workflow_validation_report" ]]; then
+  echo "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=$evidence_workflow_validation_report"
 fi
 
 if [[ "$audit_status" -ne 0 ]]; then

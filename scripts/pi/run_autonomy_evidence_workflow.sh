@@ -6,6 +6,8 @@ venv_python="${VISION_NAV_PYTHON:-$HOME/drone_vision_nav_venv/bin/python}"
 workflow_dir="${VISION_NAV_EVIDENCE_WORKFLOW_DIR:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow}"
 report="${VISION_NAV_EVIDENCE_WORKFLOW_REPORT:-$workflow_dir/autonomy_evidence_workflow.json}"
 log_dir="$workflow_dir/logs"
+log_archive="${VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE:-${report%.json}.logs.tar.gz}"
+validation_report="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-${report%.json}.validation.json}"
 allow_failed="${VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED:-1}"
 field_template="${VISION_NAV_FIELD_TEMPLATE:-$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.template.json}"
 field_manifest="${VISION_NAV_FIELD_MANIFEST:-$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json}"
@@ -34,6 +36,8 @@ This wrapper attempts the ordered evidence collection path:
 
 Common optional overrides:
   VISION_NAV_EVIDENCE_WORKFLOW_REPORT     Default: $report
+  VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE Default: $log_archive
+  VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION Default: $validation_report
   VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED=0  Exit nonzero when any required step fails
   VISION_NAV_FIELD_CASE_NAME / VISION_NAV_FIELD_EXPECTED / VISION_NAV_FIELD_CONDITION
   VISION_NAV_FIELD_COLLECTION_PLAN       Default: $field_collection_plan
@@ -143,6 +147,53 @@ path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="u
 PY
 }
 
+write_log_archive() {
+  PYTHONPATH="$repo_root/src" "$venv_python" - "$log_dir" "$log_archive" "$report" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+import tarfile
+from pathlib import Path
+
+log_dir = Path(sys.argv[1]).expanduser()
+archive_path = Path(sys.argv[2]).expanduser()
+report_path = Path(sys.argv[3]).expanduser()
+archive_path.parent.mkdir(parents=True, exist_ok=True)
+with tarfile.open(archive_path, "w:gz") as archive:
+    if log_dir.exists():
+        archive.add(log_dir, arcname="logs")
+if report_path.exists():
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    markers = report.setdefault("markers", {})
+    markers["__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__"] = str(archive_path)
+    report["log_archive"] = str(archive_path)
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
+write_validation_report() {
+  PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.autonomy_evidence_workflow \
+    --report "$report" \
+    --output "$validation_report"
+  PYTHONPATH="$repo_root/src" "$venv_python" - "$report" "$validation_report" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+report_path = Path(sys.argv[1]).expanduser()
+validation_path = Path(sys.argv[2]).expanduser()
+if report_path.exists():
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    markers = report.setdefault("markers", {})
+    markers["__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__"] = str(validation_path)
+    report["validation_report"] = str(validation_path)
+    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
 run_step() {
   local name="$1"
   shift
@@ -211,14 +262,20 @@ elif grep -q '"status": "skipped"' "$steps_jsonl"; then
 fi
 
 write_report "$final_status"
+write_log_archive
+write_validation_report
 
 cat <<EOF
 
 Autonomy evidence workflow output:
-  report: $report
-  logs:   $log_dir
+  report:      $report
+  logs:        $log_dir
+  log archive: $log_archive
+  validation:  $validation_report
 
 __VISION_NAV_EVIDENCE_WORKFLOW_REPORT__=$report
+__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=$log_archive
+__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=$validation_report
 EOF
 
 if [[ "$final_status" != "passed" && "$allow_failed" != "1" && "$allow_failed" != "true" ]]; then

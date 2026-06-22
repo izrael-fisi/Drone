@@ -1055,6 +1055,7 @@ def print_human(result: dict[str, Any]) -> None:
         print(f"Threshold tuning: {threshold_tuning.get('status')} ({threshold_tuning.get('report_count')} report(s))")
     readiness = manifest.get("bench_readiness") or {}
     print(f"Bench readiness: {readiness.get('status') or 'unknown'}")
+    print(f"__VISION_NAV_SUPPORT_ZIP__={result['zip_path']}")
 
 
 def main() -> None:

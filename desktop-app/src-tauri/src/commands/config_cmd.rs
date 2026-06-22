@@ -423,6 +423,17 @@ pub struct AutonomyEvidenceWorkflowSummary {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyEvidenceWorkflowValidationSummary {
+    pub status: Option<String>,
+    pub workflow_status: Option<String>,
+    pub step_count: Option<u64>,
+    pub marker_count: Option<u64>,
+    pub issue_count: u64,
+    pub issues: Vec<String>,
+    pub log_archive: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyEvidenceWorkflowReportFile {
     pub name: String,
     pub path: String,
@@ -434,11 +445,31 @@ pub struct AutonomyEvidenceWorkflowReportFile {
     pub summary: AutonomyEvidenceWorkflowSummary,
     pub steps: Vec<AutonomyEvidenceWorkflowStep>,
     pub marker_count: u64,
+    pub workflow_logs_path: Option<String>,
+    pub workflow_logs_local_path: Option<String>,
+    pub workflow_validation_path: Option<String>,
+    pub workflow_validation_local_path: Option<String>,
+    pub workflow_validation_summary: Option<AutonomyEvidenceWorkflowValidationSummary>,
+    pub support_bundle_path: Option<String>,
+    pub support_bundle_local_path: Option<String>,
+    pub field_evidence_report_path: Option<String>,
+    pub field_evidence_report_local_path: Option<String>,
+    pub feature_method_report_path: Option<String>,
+    pub feature_method_report_local_path: Option<String>,
+    pub threshold_report_path: Option<String>,
+    pub threshold_report_local_path: Option<String>,
     pub readiness_report_path: Option<String>,
+    pub readiness_report_local_path: Option<String>,
+    pub handoff_path: Option<String>,
+    pub handoff_local_path: Option<String>,
     pub evidence_package_path: Option<String>,
+    pub evidence_package_local_path: Option<String>,
     pub field_collection_plan_path: Option<String>,
+    pub field_collection_plan_local_path: Option<String>,
     pub field_collection_plan_markdown_path: Option<String>,
+    pub field_collection_plan_markdown_local_path: Option<String>,
     pub px4_receiver_report_path: Option<String>,
+    pub px4_receiver_report_local_path: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -962,10 +993,11 @@ pub fn list_autonomy_evidence_workflow_reports(
             Ok(value) => value,
             Err(_) => continue,
         };
-        let report = match autonomy_evidence_workflow_report_from_json(&value) {
+        let mut report = match autonomy_evidence_workflow_report_from_json(&value) {
             Some(value) => value,
             None => continue,
         };
+        populate_workflow_report_local_artifacts(&mut report, &p);
         let modified_unix_ms = metadata
             .modified()
             .ok()
@@ -2386,11 +2418,137 @@ fn autonomy_evidence_workflow_report_from_json(
         },
         steps,
         marker_count: markers.map(|items| items.len() as u64).unwrap_or(0),
+        workflow_logs_path: marker("__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__")
+            .or_else(|| json_string(value.get("log_archive"))),
+        workflow_logs_local_path: None,
+        workflow_validation_path: marker("__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__")
+            .or_else(|| json_string(value.get("validation_report"))),
+        workflow_validation_local_path: None,
+        workflow_validation_summary: None,
+        support_bundle_path: marker("__VISION_NAV_SUPPORT_ZIP__"),
+        support_bundle_local_path: None,
+        field_evidence_report_path: marker("__VISION_NAV_FIELD_EVIDENCE_REPORT__"),
+        field_evidence_report_local_path: None,
+        feature_method_report_path: marker("__VISION_NAV_FEATURE_METHOD_REPORT__"),
+        feature_method_report_local_path: None,
+        threshold_report_path: marker("__VISION_NAV_THRESHOLD_REPORT__"),
+        threshold_report_local_path: None,
         readiness_report_path: marker("__VISION_NAV_AUTONOMY_REPORT__"),
+        readiness_report_local_path: None,
+        handoff_path: marker("__VISION_NAV_AUTONOMY_HANDOFF__"),
+        handoff_local_path: None,
         evidence_package_path: marker("__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__"),
+        evidence_package_local_path: None,
         field_collection_plan_path: marker("__VISION_NAV_FIELD_COLLECTION_PLAN__"),
+        field_collection_plan_local_path: None,
         field_collection_plan_markdown_path: marker("__VISION_NAV_FIELD_COLLECTION_PLAN_MD__"),
+        field_collection_plan_markdown_local_path: None,
         px4_receiver_report_path: marker("__VISION_NAV_PX4_SITL_REPORT__"),
+        px4_receiver_report_local_path: None,
+    })
+}
+
+fn populate_workflow_report_local_artifacts(
+    report: &mut AutonomyEvidenceWorkflowReportFile,
+    report_path: &Path,
+) {
+    report.workflow_logs_local_path =
+        workflow_artifact_local_path(report_path, report.workflow_logs_path.as_deref(), None);
+    report.workflow_validation_local_path = workflow_artifact_local_path(
+        report_path,
+        report.workflow_validation_path.as_deref(),
+        None,
+    );
+    report.workflow_validation_summary = report
+        .workflow_validation_local_path
+        .as_deref()
+        .and_then(read_workflow_validation_summary);
+    report.support_bundle_local_path = workflow_artifact_local_path(
+        report_path,
+        report.support_bundle_path.as_deref(),
+        Some("support-bundles"),
+    );
+    report.field_evidence_report_local_path = workflow_artifact_local_path(
+        report_path,
+        report.field_evidence_report_path.as_deref(),
+        None,
+    );
+    report.feature_method_report_local_path = workflow_artifact_local_path(
+        report_path,
+        report.feature_method_report_path.as_deref(),
+        Some("feature-method-bench"),
+    );
+    report.threshold_report_local_path =
+        workflow_artifact_local_path(report_path, report.threshold_report_path.as_deref(), None);
+    report.readiness_report_local_path =
+        workflow_artifact_local_path(report_path, report.readiness_report_path.as_deref(), None);
+    report.handoff_local_path =
+        workflow_artifact_local_path(report_path, report.handoff_path.as_deref(), None);
+    report.evidence_package_local_path =
+        workflow_artifact_local_path(report_path, report.evidence_package_path.as_deref(), None);
+    report.field_collection_plan_local_path = workflow_artifact_local_path(
+        report_path,
+        report.field_collection_plan_path.as_deref(),
+        None,
+    );
+    report.field_collection_plan_markdown_local_path = workflow_artifact_local_path(
+        report_path,
+        report.field_collection_plan_markdown_path.as_deref(),
+        None,
+    );
+    report.px4_receiver_report_local_path = workflow_artifact_local_path(
+        report_path,
+        report.px4_receiver_report_path.as_deref(),
+        Some("px4-sitl-evidence"),
+    );
+}
+
+fn workflow_artifact_local_path(
+    report_path: &Path,
+    remote_path: Option<&str>,
+    sibling_dir: Option<&str>,
+) -> Option<String> {
+    let remote_path = remote_path.filter(|value| !value.is_empty())?;
+    let remote = Path::new(remote_path);
+    if remote.is_file() {
+        return Some(remote.to_string_lossy().into_owned());
+    }
+    let file_name = remote.file_name()?;
+    let report_dir = report_path.parent()?;
+    let artifact_dir = sibling_dir
+        .and_then(|dir| report_dir.parent().map(|parent| parent.join(dir)))
+        .unwrap_or_else(|| report_dir.to_path_buf());
+    let candidate = artifact_dir.join(file_name);
+    candidate
+        .is_file()
+        .then(|| candidate.to_string_lossy().into_owned())
+}
+
+fn read_workflow_validation_summary(
+    path: &str,
+) -> Option<AutonomyEvidenceWorkflowValidationSummary> {
+    let text = std::fs::read_to_string(Path::new(path)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    workflow_validation_summary_from_json(&value)
+}
+
+fn workflow_validation_summary_from_json(
+    value: &serde_json::Value,
+) -> Option<AutonomyEvidenceWorkflowValidationSummary> {
+    if value.get("schema_version").and_then(|value| value.as_str())
+        != Some("vision_nav_autonomy_evidence_workflow_validation_v1")
+    {
+        return None;
+    }
+    let issues = json_string_array(value.get("issues"));
+    Some(AutonomyEvidenceWorkflowValidationSummary {
+        status: json_string(value.get("status")),
+        workflow_status: json_string(value.get("workflow_status")),
+        step_count: value.get("step_count").and_then(|value| value.as_u64()),
+        marker_count: value.get("marker_count").and_then(|value| value.as_u64()),
+        issue_count: issues.len() as u64,
+        issues,
+        log_archive: json_string(value.get("log_archive")),
     })
 }
 
@@ -3413,8 +3571,12 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("time")
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("drone-autonomy-workflow-reports-{stamp}"));
+        let base = std::env::temp_dir().join(format!("drone-autonomy-workflow-reports-{stamp}"));
+        let dir = base.join("replay-cases");
         std::fs::create_dir_all(&dir).expect("create workflow report dir");
+        std::fs::create_dir_all(base.join("support-bundles")).expect("create support dir");
+        std::fs::create_dir_all(base.join("feature-method-bench")).expect("create feature dir");
+        std::fs::create_dir_all(base.join("px4-sitl-evidence")).expect("create px4 dir");
         std::fs::write(
             dir.join("autonomy_evidence_workflow.json"),
             serde_json::json!({
@@ -3422,6 +3584,8 @@ mod tests {
                 "status": "failed",
                 "generated_at": "2026-06-21T12:00:00Z",
                 "workflow_dir": "/home/user/Drone/.vision_nav/autonomy_evidence_workflow",
+                "log_archive": "/tmp/autonomy_evidence_workflow.logs.tar.gz",
+                "validation_report": "/tmp/autonomy_evidence_workflow.validation.json",
                 "summary": {"passed": 3, "failed": 1, "skipped": 2},
                 "steps": [
                     {
@@ -3444,7 +3608,14 @@ mod tests {
                     }
                 ],
                 "markers": {
+                    "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__": "/tmp/autonomy_evidence_workflow.logs.tar.gz",
+                    "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__": "/tmp/autonomy_evidence_workflow.validation.json",
+                    "__VISION_NAV_SUPPORT_ZIP__": "/tmp/support.zip",
+                    "__VISION_NAV_FIELD_EVIDENCE_REPORT__": "/tmp/field_evidence_report.json",
+                    "__VISION_NAV_FEATURE_METHOD_REPORT__": "/tmp/feature_method_benchmark.json",
+                    "__VISION_NAV_THRESHOLD_REPORT__": "/tmp/threshold_tuning_report.json",
                     "__VISION_NAV_AUTONOMY_REPORT__": "/tmp/autonomy_readiness_report.json",
+                    "__VISION_NAV_AUTONOMY_HANDOFF__": "/tmp/autonomy_readiness_report.md",
                     "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__": "/tmp/autonomy_readiness_report.evidence.zip",
                     "__VISION_NAV_PX4_SITL_REPORT__": "/tmp/receiver_evidence.json"
                 }
@@ -3457,9 +3628,47 @@ mod tests {
             serde_json::json!({"status": "failed", "checks": [], "summary": {}}).to_string(),
         )
         .expect("write unrelated report");
+        std::fs::write(dir.join("autonomy_evidence_workflow.logs.tar.gz"), "logs")
+            .expect("write local workflow logs artifact");
+        std::fs::write(
+            dir.join("autonomy_evidence_workflow.validation.json"),
+            serde_json::json!({
+                "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
+                "status": "degraded",
+                "workflow_status": "failed",
+                "step_count": 3,
+                "marker_count": 10,
+                "log_archive": "/tmp/autonomy_evidence_workflow.logs.tar.gz",
+                "issues": ["Workflow status is failed; the report is useful, but readiness proof is incomplete."]
+            })
+            .to_string(),
+        )
+        .expect("write local workflow validation artifact");
+        std::fs::write(base.join("support-bundles").join("support.zip"), "zip")
+            .expect("write local support artifact");
+        std::fs::write(dir.join("field_evidence_report.json"), "{}")
+            .expect("write local field artifact");
+        std::fs::write(
+            base.join("feature-method-bench")
+                .join("feature_method_benchmark.json"),
+            "{}",
+        )
+        .expect("write local feature artifact");
+        std::fs::write(dir.join("threshold_tuning_report.json"), "{}")
+            .expect("write local threshold artifact");
+        std::fs::write(dir.join("autonomy_readiness_report.md"), "# handoff")
+            .expect("write local handoff artifact");
+        std::fs::write(dir.join("autonomy_readiness_report.evidence.zip"), "zip")
+            .expect("write local evidence package artifact");
+        std::fs::write(
+            base.join("px4-sitl-evidence")
+                .join("receiver_evidence.json"),
+            "{}",
+        )
+        .expect("write local px4 artifact");
         let reports = list_autonomy_evidence_workflow_reports(dir.to_string_lossy().into_owned())
             .expect("list workflow reports");
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&base);
         assert_eq!(reports.len(), 1);
         assert_eq!(reports[0].name, "autonomy_evidence_workflow.json");
         assert_eq!(reports[0].status.as_deref(), Some("failed"));
@@ -3474,19 +3683,98 @@ mod tests {
         assert_eq!(reports[0].steps[0].name.as_deref(), Some("field_template"));
         assert_eq!(reports[0].steps[0].exit_code, Some(0));
         assert_eq!(reports[0].steps[1].status.as_deref(), Some("skipped"));
-        assert_eq!(reports[0].marker_count, 3);
+        assert_eq!(reports[0].marker_count, 10);
+        assert_eq!(
+            reports[0].workflow_logs_path.as_deref(),
+            Some("/tmp/autonomy_evidence_workflow.logs.tar.gz")
+        );
+        assert!(reports[0].workflow_logs_local_path.as_deref().is_some_and(
+            |path| path.ends_with("replay-cases/autonomy_evidence_workflow.logs.tar.gz")
+        ));
+        assert_eq!(
+            reports[0].workflow_validation_path.as_deref(),
+            Some("/tmp/autonomy_evidence_workflow.validation.json")
+        );
+        assert!(reports[0]
+            .workflow_validation_local_path
+            .as_deref()
+            .is_some_and(
+                |path| path.ends_with("replay-cases/autonomy_evidence_workflow.validation.json")
+            ));
+        let validation = reports[0]
+            .workflow_validation_summary
+            .as_ref()
+            .expect("workflow validation summary");
+        assert_eq!(validation.status.as_deref(), Some("degraded"));
+        assert_eq!(validation.workflow_status.as_deref(), Some("failed"));
+        assert_eq!(validation.step_count, Some(3));
+        assert_eq!(validation.marker_count, Some(10));
+        assert_eq!(validation.issue_count, 1);
+        assert_eq!(validation.issues.len(), 1);
+        assert_eq!(
+            reports[0].support_bundle_path.as_deref(),
+            Some("/tmp/support.zip")
+        );
+        assert!(reports[0]
+            .support_bundle_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("support-bundles/support.zip")));
+        assert_eq!(
+            reports[0].field_evidence_report_path.as_deref(),
+            Some("/tmp/field_evidence_report.json")
+        );
+        assert!(reports[0]
+            .field_evidence_report_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("replay-cases/field_evidence_report.json")));
+        assert_eq!(
+            reports[0].feature_method_report_path.as_deref(),
+            Some("/tmp/feature_method_benchmark.json")
+        );
+        assert!(reports[0]
+            .feature_method_report_local_path
+            .as_deref()
+            .is_some_and(
+                |path| path.ends_with("feature-method-bench/feature_method_benchmark.json")
+            ));
+        assert_eq!(
+            reports[0].threshold_report_path.as_deref(),
+            Some("/tmp/threshold_tuning_report.json")
+        );
+        assert!(reports[0]
+            .threshold_report_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("replay-cases/threshold_tuning_report.json")));
         assert_eq!(
             reports[0].readiness_report_path.as_deref(),
             Some("/tmp/autonomy_readiness_report.json")
         );
         assert_eq!(
+            reports[0].handoff_path.as_deref(),
+            Some("/tmp/autonomy_readiness_report.md")
+        );
+        assert!(reports[0]
+            .handoff_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("replay-cases/autonomy_readiness_report.md")));
+        assert_eq!(
             reports[0].evidence_package_path.as_deref(),
             Some("/tmp/autonomy_readiness_report.evidence.zip")
         );
+        assert!(reports[0]
+            .evidence_package_local_path
+            .as_deref()
+            .is_some_and(
+                |path| path.ends_with("replay-cases/autonomy_readiness_report.evidence.zip")
+            ));
         assert_eq!(
             reports[0].px4_receiver_report_path.as_deref(),
             Some("/tmp/receiver_evidence.json")
         );
+        assert!(reports[0]
+            .px4_receiver_report_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("px4-sitl-evidence/receiver_evidence.json")));
     }
 
     #[test]

@@ -104,7 +104,9 @@ VISION_NAV_AUTONOMY_HANDOFF="$workflow_smoke_dir/replay-cases/autonomy_readiness
 VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.evidence.zip" \
 ./scripts/pi/run_autonomy_evidence_workflow.sh >/tmp/vision_nav_evidence_workflow_preflight.txt 2>&1
 grep -q "__VISION_NAV_EVIDENCE_WORKFLOW_REPORT__=" /tmp/vision_nav_evidence_workflow_preflight.txt
+grep -q "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=" /tmp/vision_nav_evidence_workflow_preflight.txt
 test -f "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json"
+test -f "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.validation.json"
 test -f "$workflow_smoke_dir/replay-cases/field_collection_plan.json"
 test -f "$workflow_smoke_dir/replay-cases/field_collection_plan.md"
 python3 - "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" <<'PY'
@@ -112,6 +114,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tarfile
 from pathlib import Path
 
 report = json.loads(Path(sys.argv[1]).read_text())
@@ -120,9 +123,37 @@ steps = {step["name"]: step for step in report["steps"]}
 assert "create_field_evidence_template" in steps
 assert "create_field_collection_plan" in steps
 assert "run_autonomy_readiness_audit" in steps
+assert "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__" in report["markers"]
+assert "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__" in report["markers"]
+assert "__VISION_NAV_SUPPORT_ZIP__" in report["markers"]
 assert "__VISION_NAV_FIELD_COLLECTION_PLAN__" in report["markers"]
 assert "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__" in report["markers"]
 assert report["status"] in {"passed", "degraded", "failed"}
+log_archive = Path(report["markers"]["__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__"])
+assert log_archive.exists()
+with tarfile.open(log_archive, "r:gz") as archive:
+    names = set(archive.getnames())
+assert "logs/create_field_evidence_template.log" in names
+assert "logs/create_field_collection_plan.log" in names
+assert "logs/run_autonomy_readiness_audit.log" in names
+PY
+PYTHONPATH=src python3 -m vision_nav.autonomy_evidence_workflow \
+  --report "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" \
+  --output "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.validation.json" \
+  >/tmp/vision_nav_evidence_workflow_validation_preflight.txt
+grep -q "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=" /tmp/vision_nav_evidence_workflow_validation_preflight.txt
+python3 - "$workflow_smoke_dir/workflow/autonomy_evidence_workflow.validation.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+validation = json.loads(Path(sys.argv[1]).read_text())
+assert validation["schema_version"] == "vision_nav_autonomy_evidence_workflow_validation_v1"
+assert validation["status"] in {"passed", "degraded"}
+checks = {check["name"]: check["status"] for check in validation["checks"]}
+assert checks["log_archive"] == "passed"
 PY
 rm -rf "$field_smoke_dir"
 

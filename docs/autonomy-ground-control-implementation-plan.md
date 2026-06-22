@@ -353,6 +353,10 @@ Status:
 - Done: Module Setup saved reports now include a compact final
   autonomy-readiness snapshot with latest status, handoff path,
   goal-completion flag, external blockers, and next actions.
+- Done: Module Setup saved reports now include a compact autonomy evidence
+  workflow snapshot with the latest workflow status, artifact marker count,
+  workflow-log archive path, validation report path, validation status, and
+  bounded validation issues.
 - Done: `data/replay_cases/` defines the replay case registry shape for good
   texture, degraded, and wrong-map datasets, including
   `replay_case_manifest.schema.json` plus schema checks in the standalone
@@ -550,13 +554,38 @@ Status:
   feature-benchmark, threshold-tuning, support-bundle, and final-readiness
   sequence while writing a machine-readable per-step workflow report with logs
   and emitted artifact markers even when the final gates still fail.
+- Done: the evidence workflow writes a compressed workflow-log archive and
+  emits `__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=...`, so full per-step logs can
+  be downloaded with the workflow report instead of relying only on bounded
+  tails. The archive stores the step outputs under `logs/*.log` for support
+  review.
+- Done: `vision-nav-validate-evidence-workflow` validates downloaded workflow
+  reports offline, confirms required step records, verifies the log archive is
+  readable, and checks that every recorded step has a matching `logs/*.log`
+  member. The Pi evidence workflow now writes this validation JSON beside the
+  workflow report and emits `__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=...`.
+  The validator exits nonzero only for structurally failed report/archive
+  validation, while degraded-but-usable workflows can still pass script checks
+  when readiness proof is merely incomplete.
+- Done: final autonomy-readiness audits now record discovered evidence-workflow
+  and workflow-validation JSON paths as non-gating inputs. Handoffs show their
+  artifact availability, and evidence ZIPs include the small JSON reports when
+  they are present.
 - Done: Module Setup exposes that wrapper as `Evidence Workflow`, downloads the
-  workflow JSON, and collects any field-collection plan, final readiness,
-  handoff, evidence-package, or PX4 receiver markers emitted during the
-  sequence.
+  workflow JSON, workflow-log archive, validation JSON, and any support bundle,
+  field-evidence report, feature-method benchmark, threshold-tuning report,
+  field-collection plan, final readiness, handoff, evidence-package, or PX4
+  receiver markers emitted during the sequence.
 - Done: Module Setup lists downloaded autonomy evidence workflow JSON reports
   after app restart with pass/fail/skip counts, per-step status, and emitted
-  artifact markers.
+  artifact markers, including workflow logs, validation report, support bundle,
+  field-evidence, feature-method, threshold-tuning, final readiness, handoff,
+  evidence-package, field-plan, and PX4 receiver outputs. Each marker can be
+  copied individually or as one artifact-path bundle from the workflow report
+  card for support notes, preferring the downloaded local artifact path when
+  the app can resolve it. When the downloaded validation JSON is present, the
+  card also shows validation status, workflow status, issue count, and the first
+  validation issue.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

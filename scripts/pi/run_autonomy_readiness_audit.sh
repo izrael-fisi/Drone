@@ -10,6 +10,8 @@ field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/o
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.json}"
 feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
+evidence_workflow_report="${VISION_NAV_EVIDENCE_WORKFLOW_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json}"
+evidence_workflow_validation_report="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-${evidence_workflow_report%.json}.validation.json}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 output_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json}"
@@ -83,6 +85,14 @@ if [[ -f "$threshold_tuning_report" ]]; then
   args+=(--threshold-tuning-report "$threshold_tuning_report")
 fi
 
+if [[ -f "$evidence_workflow_report" ]]; then
+  args+=(--evidence-workflow-report "$evidence_workflow_report")
+fi
+
+if [[ -f "$evidence_workflow_validation_report" ]]; then
+  args+=(--evidence-workflow-validation-report "$evidence_workflow_validation_report")
+fi
+
 set +e
 PYTHONPATH="$repo_root/src" "$venv_python" "${args[@]}"
 audit_status=$?
@@ -108,6 +118,8 @@ Autonomy readiness audit outputs:
   field collection plan:     $([[ -f "$field_collection_plan" ]] && printf '%s' "$field_collection_plan" || printf 'not found')
   feature benchmark report:  $([[ -f "$feature_method_benchmark_report" ]] && printf '%s' "$feature_method_benchmark_report" || printf 'not found')
   threshold tuning report:   $([[ -f "$threshold_tuning_report" ]] && printf '%s' "$threshold_tuning_report" || printf 'not found')
+  evidence workflow report:  $([[ -f "$evidence_workflow_report" ]] && printf '%s' "$evidence_workflow_report" || printf 'not found')
+  workflow validation:       $([[ -f "$evidence_workflow_validation_report" ]] && printf '%s' "$evidence_workflow_validation_report" || printf 'not found')
   report:                    $output_report
   handoff:                   $output_handoff
   evidence package:          $output_package
@@ -126,6 +138,14 @@ if [[ -f "$field_collection_plan" ]]; then
   if [[ -f "${field_collection_plan%.json}.md" ]]; then
     echo "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=${field_collection_plan%.json}.md"
   fi
+fi
+
+if [[ -f "$evidence_workflow_report" ]]; then
+  echo "__VISION_NAV_EVIDENCE_WORKFLOW_REPORT__=$evidence_workflow_report"
+fi
+
+if [[ -f "$evidence_workflow_validation_report" ]]; then
+  echo "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=$evidence_workflow_validation_report"
 fi
 
 if [[ "$audit_status" -ne 0 ]]; then

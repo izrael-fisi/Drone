@@ -252,6 +252,22 @@ function parseAutonomyEvidenceWorkflowReport(output: string) {
     ?.replace("__VISION_NAV_EVIDENCE_WORKFLOW_REPORT__=", "");
 }
 
+function parseAutonomyEvidenceWorkflowLogs(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__="))
+    ?.replace("__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=", "");
+}
+
+function parseAutonomyEvidenceWorkflowValidation(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__="))
+    ?.replace("__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=", "");
+}
+
 function parseThresholdTuningReport(output: string) {
   return output
     .split(/\r?\n/)
@@ -538,6 +554,30 @@ function uniqueCommands(commands: Array<string | undefined>) {
 
 function uniqueActionCommands(actions: Array<{ command?: string }>) {
   return uniqueCommands(actions.map((action) => action.command));
+}
+
+function workflowMarkerArtifacts(report: AutonomyEvidenceWorkflowReportFile) {
+  return [
+    { label: "logs", path: report.workflow_logs_local_path ?? report.workflow_logs_path },
+    { label: "validation", path: report.workflow_validation_local_path ?? report.workflow_validation_path },
+    { label: "support", path: report.support_bundle_local_path ?? report.support_bundle_path },
+    { label: "field", path: report.field_evidence_report_local_path ?? report.field_evidence_report_path },
+    { label: "feature", path: report.feature_method_report_local_path ?? report.feature_method_report_path },
+    { label: "thresholds", path: report.threshold_report_local_path ?? report.threshold_report_path },
+    { label: "readiness", path: report.readiness_report_local_path ?? report.readiness_report_path },
+    { label: "handoff", path: report.handoff_local_path ?? report.handoff_path },
+    { label: "package", path: report.evidence_package_local_path ?? report.evidence_package_path },
+    { label: "plan", path: report.field_collection_plan_local_path ?? report.field_collection_plan_path },
+    {
+      label: "checklist",
+      path: report.field_collection_plan_markdown_local_path ?? report.field_collection_plan_markdown_path,
+    },
+    { label: "px4", path: report.px4_receiver_report_local_path ?? report.px4_receiver_report_path },
+  ].filter((artifact): artifact is { label: string; path: string } => Boolean(artifact.path));
+}
+
+function workflowMarkerArtifactText(artifacts: Array<{ label: string; path: string }>) {
+  return artifacts.map((artifact) => `${artifact.label}: ${artifact.path}`).join("\n");
 }
 
 function FieldCollectionConditionBadge({
@@ -1118,7 +1158,9 @@ function AutonomyEvidenceWorkflowReportList({
         </div>
       ) : (
         <div className="space-y-2">
-          {reports.slice(0, 4).map((report) => (
+          {reports.slice(0, 4).map((report) => {
+            const markerArtifacts = workflowMarkerArtifacts(report);
+            return (
             <div key={report.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -1143,6 +1185,26 @@ function AutonomyEvidenceWorkflowReportList({
                   {report.generated_at && (
                     <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
                       generated {report.generated_at}
+                    </div>
+                  )}
+                  {report.workflow_validation_summary && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                      <span className={cn(readinessBadgeClass(report.workflow_validation_summary.status), "text-[10px]")}>
+                        validation {formatReadinessLabel(report.workflow_validation_summary.status)}
+                      </span>
+                      {report.workflow_validation_summary.workflow_status && (
+                        <span className="font-mono text-slate-600">
+                          workflow {formatReadinessLabel(report.workflow_validation_summary.workflow_status)}
+                        </span>
+                      )}
+                      <span className="font-mono text-slate-600">
+                        issues {report.workflow_validation_summary.issue_count}
+                      </span>
+                      {report.workflow_validation_summary.issues[0] && (
+                        <span className="truncate text-slate-500" title={report.workflow_validation_summary.issues[0]}>
+                          {report.workflow_validation_summary.issues[0]}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1180,14 +1242,33 @@ function AutonomyEvidenceWorkflowReportList({
               </div>
               <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-slate-500">
                 <span>markers {report.marker_count}</span>
-                {report.readiness_report_path && <span>readiness report</span>}
-                {report.evidence_package_path && <span>evidence package</span>}
-                {report.field_collection_plan_path && <span>field plan</span>}
-                {report.field_collection_plan_markdown_path && <span>field checklist</span>}
-                {report.px4_receiver_report_path && <span>px4 receiver</span>}
+                {markerArtifacts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(workflowMarkerArtifactText(markerArtifacts))}
+                    className="inline-flex items-center gap-1 rounded border border-border bg-slate-950/30 px-1.5 py-0.5 text-[10px] text-slate-400 hover:border-cyan-500/50 hover:text-cyan-300"
+                    title="Copy all emitted artifact paths"
+                  >
+                    <Copy size={9} />
+                    all
+                  </button>
+                )}
+                {markerArtifacts.map((artifact) => (
+                  <button
+                    key={`${report.path}-${artifact.label}`}
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(artifact.path)}
+                    className="inline-flex items-center gap-1 rounded border border-border bg-slate-950/30 px-1.5 py-0.5 text-[10px] text-slate-400 hover:border-cyan-500/50 hover:text-cyan-300"
+                    title={`Copy emitted ${artifact.label} artifact path`}
+                  >
+                    <Copy size={9} />
+                    {artifact.label}
+                  </button>
+                ))}
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
     </div>
@@ -2508,11 +2589,17 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteWorkflow = parseAutonomyEvidenceWorkflowReport(output);
+      const remoteWorkflowLogs = parseAutonomyEvidenceWorkflowLogs(output);
+      const remoteWorkflowValidation = parseAutonomyEvidenceWorkflowValidation(output);
+      const remoteSupportZip = parseSupportBundleZip(output);
       const remoteReport = parseAutonomyReadinessReport(output);
       const remoteHandoff = parseAutonomyReadinessHandoff(output);
       const remoteEvidencePackage = parseAutonomyEvidencePackage(output);
+      const remoteFieldEvidenceReport = parseFieldEvidenceReport(output);
       const remoteFieldCollectionPlan = parseFieldCollectionPlan(output);
       const remoteFieldCollectionPlanMarkdown = parseFieldCollectionPlanMarkdown(output);
+      const remoteFeatureMethodReport = parseFeatureMethodReport(output);
+      const remoteThresholdReport = parseThresholdTuningReport(output);
       const remotePx4Report = parsePx4SitlReport(output);
       if (!remoteWorkflow) {
         setResult("autonomy-evidence-workflow", {
@@ -2538,6 +2625,96 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       setAutonomyWorkflowLocalPath(downloadedWorkflow.local_path);
       let downloadText = `\n\n$ download workflow report\nSaved to ${downloadedWorkflow.local_path}\n[${downloadedWorkflow.bytes_received} bytes]`;
 
+      if (remoteWorkflowLogs) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download workflow logs\nDownloading ${remoteWorkflowLogs}...`,
+        });
+        const downloadedWorkflowLogs = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteWorkflowLogs,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download workflow logs\nSaved to ${downloadedWorkflowLogs.local_path}\n[${downloadedWorkflowLogs.bytes_received} bytes]`;
+      }
+      if (remoteWorkflowValidation) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download workflow validation\nDownloading ${remoteWorkflowValidation}...`,
+        });
+        const downloadedWorkflowValidation = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteWorkflowValidation,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download workflow validation\nSaved to ${downloadedWorkflowValidation.local_path}\n[${downloadedWorkflowValidation.bytes_received} bytes]`;
+      }
+      if (remoteSupportZip) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download support bundle\nDownloading ${remoteSupportZip}...`,
+        });
+        const downloadedSupport = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteSupportZip,
+          SUPPORT_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download support bundle\nSaved to ${downloadedSupport.local_path}\n[${downloadedSupport.bytes_received} bytes]`;
+      }
+      if (remoteFieldEvidenceReport) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download field evidence report\nDownloading ${remoteFieldEvidenceReport}...`,
+        });
+        const downloadedFieldEvidence = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteFieldEvidenceReport,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download field evidence report\nSaved to ${downloadedFieldEvidence.local_path}\n[${downloadedFieldEvidence.bytes_received} bytes]`;
+      }
+      if (remoteFeatureMethodReport) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download feature benchmark\nDownloading ${remoteFeatureMethodReport}...`,
+        });
+        const downloadedFeatureBenchmark = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteFeatureMethodReport,
+          FEATURE_BENCH_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download feature benchmark\nSaved to ${downloadedFeatureBenchmark.local_path}\n[${downloadedFeatureBenchmark.bytes_received} bytes]`;
+      }
+      if (remoteThresholdReport) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download threshold report\nDownloading ${remoteThresholdReport}...`,
+        });
+        const downloadedThreshold = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteThresholdReport,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download threshold report\nSaved to ${downloadedThreshold.local_path}\n[${downloadedThreshold.bytes_received} bytes]`;
+      }
       if (remoteReport) {
         setResult("autonomy-evidence-workflow", {
           status: "running",
@@ -2639,6 +2816,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         exitCode: result.exit_code,
       });
       await refreshAutonomyWorkflowReports();
+      await refreshSupportBundles();
+      await refreshFieldEvidenceReports();
+      await refreshFeatureBenchmarkReports();
+      await refreshThresholdTuningReports();
       await refreshFieldCollectionPlans();
       await refreshAutonomyReports();
       await refreshPx4ReceiverReports();
@@ -3273,6 +3454,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       }),
     );
     const latestAutonomyReport = autonomyReports[0] ?? null;
+    const latestWorkflowReport = autonomyWorkflowReports[0] ?? null;
     const latestExternalBlockers = latestAutonomyReport?.evidence_manifest?.external_blockers ?? [];
     const report = {
       version: "0.1.0",
@@ -3331,6 +3513,30 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       extra_results: extraResults,
       downloaded_support_bundles: supportBundles.slice(0, 5),
       support_bundle_diagnostics: supportBundleDiagnostics,
+      autonomy_evidence_workflow_summary: latestWorkflowReport
+        ? {
+            name: latestWorkflowReport.name,
+            path: latestWorkflowReport.path,
+            size_bytes: latestWorkflowReport.size_bytes,
+            modified_unix_ms: latestWorkflowReport.modified_unix_ms ?? null,
+            generated_at: latestWorkflowReport.generated_at ?? null,
+            status: latestWorkflowReport.status ?? null,
+            summary: latestWorkflowReport.summary,
+            marker_count: latestWorkflowReport.marker_count,
+            workflow_logs_path: latestWorkflowReport.workflow_logs_local_path ?? latestWorkflowReport.workflow_logs_path ?? null,
+            workflow_validation_path:
+              latestWorkflowReport.workflow_validation_local_path ?? latestWorkflowReport.workflow_validation_path ?? null,
+            validation: latestWorkflowReport.workflow_validation_summary
+              ? {
+                  status: latestWorkflowReport.workflow_validation_summary.status ?? null,
+                  workflow_status: latestWorkflowReport.workflow_validation_summary.workflow_status ?? null,
+                  issue_count: latestWorkflowReport.workflow_validation_summary.issue_count,
+                  issues: latestWorkflowReport.workflow_validation_summary.issues.slice(0, 8),
+                  log_archive: latestWorkflowReport.workflow_validation_summary.log_archive ?? null,
+                }
+              : null,
+          }
+        : null,
       autonomy_readiness_summary: latestAutonomyReport
         ? {
             name: latestAutonomyReport.name,

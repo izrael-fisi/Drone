@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import math
 from pathlib import Path
 import shutil
 import sqlite3
 import struct
+import tarfile
 import tempfile
 import time
 import zipfile
@@ -15,6 +18,7 @@ import numpy as np
 from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
 from vision_nav.ardupilot_params import check_ardupilot_external_nav_params, params_from_text as ardupilot_params_from_text
 from vision_nav.autonomy_evidence_package import create_evidence_package
+from vision_nav.autonomy_evidence_workflow import REQUIRED_WORKFLOW_STEPS, validate_workflow_report, validation_exit_code
 from vision_nav.autonomy_handoff import render_handoff_markdown
 from vision_nav.autonomy_readiness import REQUIRED_FIELD_CONDITIONS, evaluate_autonomy_readiness
 from vision_nav.bench_readiness import evaluate_bench_readiness, evaluate_bench_readiness_file
@@ -56,7 +60,7 @@ from vision_nav.replay_case_schema import REPLAY_CASE_MANIFEST_SCHEMA, evaluate_
 from vision_nav.replay_dataset_audit import audit_replay_dataset_coverage
 from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
-from vision_nav.support_bundle import create_support_bundle, load_replay_cases
+from vision_nav.support_bundle import create_support_bundle, load_replay_cases, print_human
 from vision_nav.threshold_tuning import evaluate_threshold_tuning
 from vision_nav.terrain_estimator import TerrainEstimator
 from vision_nav.terrain_bundle import load_terrain_bundle
@@ -1753,6 +1757,12 @@ RC8_OPTION,90
         zip_path = Path(result["zip_path"])
         if not zip_path.exists():
             raise AssertionError("Expected support bundle zip to exist")
+        human_output = io.StringIO()
+        with contextlib.redirect_stdout(human_output):
+            print_human(result)
+        marker = f"__VISION_NAV_SUPPORT_ZIP__={zip_path}"
+        if marker not in human_output.getvalue():
+            raise AssertionError("Expected support bundle human output to include the stable ZIP marker")
         with zipfile.ZipFile(zip_path) as archive:
             names = set(archive.namelist())
         for expected in {
@@ -1895,6 +1905,66 @@ RC8_OPTION,90
             raise AssertionError("Field evidence should be optional unless required")
         field_required = evaluate_bench_readiness(missing_field_evidence, require_field_evidence=True)
         assert_equal(field_required["status"], "failed", "bench readiness required missing field evidence")
+
+
+def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        log_dir = root / "logs"
+        log_dir.mkdir()
+        for step_name in REQUIRED_WORKFLOW_STEPS:
+            (log_dir / f"{step_name}.log").write_text(f"{step_name}\n")
+        archive_path = root / "autonomy_evidence_workflow.logs.tar.gz"
+        with tarfile.open(archive_path, "w:gz") as archive:
+            archive.add(log_dir, arcname="logs")
+        report_path = root / "autonomy_evidence_workflow.json"
+        report_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_autonomy_evidence_workflow_v1",
+                    "generated_at": "2026-06-21T12:00:00Z",
+                    "status": "failed",
+                    "summary": {"passed": 4, "failed": 1, "skipped": 2},
+                    "workflow_dir": str(root),
+                    "steps": [
+                        {
+                            "name": step_name,
+                            "status": "passed" if step_name != "run_autonomy_readiness_audit" else "failed",
+                            "exit_code": 0 if step_name != "run_autonomy_readiness_audit" else 1,
+                            "log_path": str(log_dir / f"{step_name}.log"),
+                            "markers": {},
+                        }
+                        for step_name in REQUIRED_WORKFLOW_STEPS
+                    ],
+                    "markers": {
+                        "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__": str(archive_path),
+                        "__VISION_NAV_SUPPORT_ZIP__": str(root / "support.zip"),
+                        "__VISION_NAV_FIELD_COLLECTION_PLAN__": str(root / "field_collection_plan.json"),
+                        "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__": str(root / "field_collection_plan.md"),
+                        "__VISION_NAV_AUTONOMY_REPORT__": str(root / "autonomy_readiness_report.json"),
+                    },
+                }
+            )
+        )
+        validation = validate_workflow_report(report_path)
+        assert_equal(validation["status"], "degraded", "workflow validation preserves failed workflow status")
+        assert_equal(validation_exit_code(validation), 0, "workflow validation degraded exit code")
+        checks = {check["name"]: check["status"] for check in validation["checks"]}
+        assert_equal(checks["log_archive"], "passed", "workflow validation log archive")
+        assert_equal(validation["step_count"], len(REQUIRED_WORKFLOW_STEPS), "workflow validation step count")
+
+        broken_archive_path = root / "broken.logs.tar.gz"
+        with tarfile.open(broken_archive_path, "w:gz") as archive:
+            archive.add(log_dir / "create_field_evidence_template.log", arcname="logs/create_field_evidence_template.log")
+        broken_report = json.loads(report_path.read_text())
+        broken_report["markers"]["__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__"] = str(broken_archive_path)
+        broken_report_path = root / "broken_autonomy_evidence_workflow.json"
+        broken_report_path.write_text(json.dumps(broken_report))
+        broken_validation = validate_workflow_report(broken_report_path)
+        assert_equal(broken_validation["status"], "failed", "workflow validation broken archive status")
+        assert_equal(validation_exit_code(broken_validation), 1, "workflow validation failed exit code")
+        broken_checks = {check["name"]: check["status"] for check in broken_validation["checks"]}
+        assert_equal(broken_checks["log_archive"], "failed", "workflow validation broken archive check")
 
 
 def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
@@ -2063,6 +2133,34 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 }
             )
         )
+        workflow_report = root / "autonomy_evidence_workflow.json"
+        workflow_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_autonomy_evidence_workflow_v1",
+                    "status": "failed",
+                    "summary": {"passed": 2, "failed": 1, "skipped": 3},
+                    "markers": {
+                        "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__": str(
+                            root / "autonomy_evidence_workflow.validation.json"
+                        )
+                    },
+                    "steps": [],
+                }
+            )
+        )
+        workflow_validation_report = root / "autonomy_evidence_workflow.validation.json"
+        workflow_validation_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
+                    "status": "degraded",
+                    "report_path": str(workflow_report),
+                    "issue_count": 1,
+                    "issues": ["unit validation issue"],
+                }
+            )
+        )
 
         direct_report_support_manifest = root / "support_manifest_without_embedded_field_feature.json"
         direct_report_support_data = json.loads(support_manifest.read_text())
@@ -2080,12 +2178,24 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_report,
         )
         assert_equal(ready["status"], "passed", "autonomy readiness full proof status")
         assert_equal(
             ready["inputs"]["field_collection_plan_markdown"],
             str(field_collection_plan.with_suffix(".md")),
             "autonomy readiness field collection markdown input",
+        )
+        assert_equal(
+            ready["inputs"]["evidence_workflow_report"],
+            str(workflow_report),
+            "autonomy readiness workflow report input",
+        )
+        assert_equal(
+            ready["inputs"]["evidence_workflow_validation_report"],
+            str(workflow_validation_report),
+            "autonomy readiness workflow validation input",
         )
         ready_checks = {check["name"]: check["status"] for check in ready["checks"]}
         assert_equal(ready_checks["support_bundle_bench_readiness"], "passed", "autonomy readiness support bundle")
@@ -2248,6 +2358,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=support_manifest,
             field_evidence_report_path=field_report,
             field_collection_plan_path=field_collection_plan,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_report,
         )
         assert_equal(missing_threshold["status"], "failed", "autonomy readiness missing threshold report")
         missing_checks = {check["name"]: check["status"] for check in missing_threshold["checks"]}
@@ -2334,6 +2446,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package did not include field collection plan artifact")
             if not any(item["label"] == "input:field_collection_plan_markdown" for item in manifest["included"]):
                 raise AssertionError("autonomy evidence package did not include field collection checklist artifact")
+            if not any(item["label"] == "input:evidence_workflow_report" for item in manifest["included"]):
+                raise AssertionError("autonomy evidence package did not include workflow report artifact")
+            if not any(item["label"] == "input:evidence_workflow_validation_report" for item in manifest["included"]):
+                raise AssertionError("autonomy evidence package did not include workflow validation artifact")
 
         downloaded_report_data = json.loads(json.dumps(missing_threshold))
         downloaded_report_data["inputs"]["field_collection_plan"] = (
@@ -3427,6 +3543,7 @@ def main() -> None:
         test_terrain_profile_reports_agl_and_gsd_warnings,
         test_runtime_status_snapshot_reports_active_map_and_last_match,
         test_support_bundle_collects_manifest_health_logs_and_summary,
+        test_autonomy_evidence_workflow_validation_checks_log_archive,
         test_autonomy_readiness_requires_external_proof_artifacts,
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
         test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance,

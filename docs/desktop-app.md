@@ -76,6 +76,10 @@ compact final-audit snapshot with the latest status, handoff path, evidence
 package path, goal-completion flag, external blocker count, bounded blocker
 details, the first next actions, and the referenced field collection plan
 summary when it is available locally.
+When autonomy evidence workflow reports are available, the setup report also
+includes the latest workflow status, pass/fail/skip summary, marker count,
+workflow-log archive path, validation report path, validation status, issue
+count, and the first validation issues.
 The readiness wrappers also create
 `autonomy_readiness_report.evidence.zip`, a support-review package with the JSON
 report, Markdown handoff, package manifest, and any small referenced evidence
@@ -365,15 +369,35 @@ path: field template, field collection checklist, optional field-case
 registration, feature benchmark, threshold tuning, support bundle, and final
 readiness audit. It writes
 `autonomy_evidence_workflow.json` with per-step status, log paths, output tails,
-and emitted markers, while still failing honestly in the final readiness report
-until real PX4 and field evidence exist.
+an accompanying compressed workflow-log archive, and emitted markers, while
+still failing honestly in the final readiness report until real PX4 and field
+evidence exist. The archive preserves the full step outputs under `logs/*.log`
+for support review. The wrapper also writes a validation JSON beside the
+workflow report to prove the report/archive pair is internally consistent.
 The Module Setup `Evidence Workflow` action runs that wrapper over SSH, uses the
 current Field Evidence Case form values for optional case registration,
-downloads the workflow JSON, and also downloads any readiness report, handoff,
-evidence package, or PX4 receiver report marker emitted by the wrapper.
+downloads the workflow JSON, log archive, and validation JSON, and also
+downloads any support bundle, field-evidence report, feature-method benchmark,
+threshold-tuning report, readiness report, handoff, evidence package,
+field-collection plan/checklist, or PX4 receiver report marker emitted by the
+wrapper.
 Downloaded workflow reports are indexed after app restart in the Evidence
 Workflow Reports list with pass/fail/skip counts, per-step status, emitted
-artifact markers, and copy/reveal controls.
+artifact markers, and copy/reveal controls. Artifact marker chips copy the
+emitted logs, validation report, support, field, feature, threshold, readiness,
+handoff, package, field-plan, or PX4 path for support notes; the `all` chip
+copies the complete artifact path bundle. When the downloaded artifact exists
+in the standard transfer folders, those chips copy the local desktop path
+instead of only the Pi-side marker path. When the validation JSON exists beside
+the workflow report, the card summarizes validation status, workflow status,
+issue count, and the first validation issue.
+For offline support review, run
+`vision-nav-validate-evidence-workflow --report <autonomy_evidence_workflow.json>`
+against a downloaded workflow report. The validator confirms the required
+ordered steps are present and that the workflow-log archive contains a
+`logs/*.log` member for every recorded step. It exits nonzero only when the
+workflow report/archive pair is structurally failed; a `degraded` validation
+can still mean the artifact is usable but field or PX4 proof is incomplete.
 
 Module Setup can also run `Feature Benchmark` against the latest field replay
 log and active runtime bundle. The action runs
@@ -454,6 +478,10 @@ includes them, which keeps real replay-case registration out of manual
 retyping.
 The Markdown handoff mirrors that workflow with a copy-friendly command bundle
 for next-action commands and pending field replay registration commands.
+When downloaded evidence-workflow and workflow-validation JSON reports are
+available, the local/Pi readiness audit records them as non-gating inputs so
+the handoff can show availability and the evidence ZIP can carry them with the
+rest of the review package.
 
 ## MAVLink
 

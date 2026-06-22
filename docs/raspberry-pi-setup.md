@@ -820,25 +820,54 @@ registers a field case when `VISION_NAV_FIELD_CASE_NAME`,
 attempts feature benchmarking, threshold tuning, support-bundle creation, and
 the final autonomy-readiness audit. It writes
 `~/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json`
-with per-step status, log paths, tail output, and any emitted
-`__VISION_NAV_*__` markers. By default it exits successfully after writing the
-report even when evidence is still incomplete; set
+with per-step status, log paths, tail output, a compressed workflow-log archive,
+and any emitted `__VISION_NAV_*__` markers. The archive preserves the full step
+outputs under `logs/*.log`. The wrapper also writes
+`autonomy_evidence_workflow.validation.json` and emits
+`__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=...` after checking that the
+workflow report and log archive are internally consistent. By default it exits
+successfully after writing the report even when evidence is still incomplete; set
 `VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED=0` when you want a CI-style nonzero
 exit on missing proof.
 From the desktop app, Module Setup exposes the same sequence as `Evidence
 Workflow`. It uses the current Field Evidence Case form values for the optional
 registration step, downloads the workflow JSON to the replay-cases transfer
-folder, and downloads any readiness report, handoff, evidence package, or PX4
-receiver marker emitted by the wrapper.
+folder, downloads the workflow-log archive and validation JSON, and downloads
+any support bundle, field-evidence report, feature-method benchmark,
+threshold-tuning report, readiness report, handoff, evidence package,
+field-collection plan/checklist, or PX4 receiver marker emitted by the wrapper.
 The downloaded workflow JSON remains visible after app restart in Module Setup's
 Evidence Workflow Reports list, including per-step status and emitted artifact
-markers.
+markers. Each artifact marker chip copies the emitted Pi-side path for support
+notes or manual transfer checks, including the workflow validation report, and
+the `all` chip copies the full emitted artifact path bundle. After the desktop
+app downloads matching artifacts into the standard transfer folders, those
+chips prefer the local desktop path. When the validation JSON exists beside the
+workflow report, the Evidence Workflow Reports list also shows validation
+status, workflow status, issue count, and the first validation issue.
+To validate a copied workflow report and its full log archive offline, run:
+
+```bash
+vision-nav-validate-evidence-workflow \
+  --report ~/DroneTransfer/from-pi/replay-cases/autonomy_evidence_workflow.json \
+  --output ~/DroneTransfer/from-pi/replay-cases/autonomy_evidence_workflow.validation.json
+```
+
+The validator exits nonzero only when the workflow report/archive pair is
+structurally failed. A `degraded` validation can still be a usable support
+artifact when final readiness is waiting on real field logs or PX4 receiver
+proof.
 
 Then run:
 
 ```bash
 ./scripts/pi/run_autonomy_readiness_audit.sh
 ```
+
+If the evidence workflow report and validation JSON are present in the default
+workflow folder, the readiness audit records them as artifact inputs. They do
+not change the final pass/fail gates, but the generated handoff and evidence ZIP
+include those JSON reports for support review.
 
 The wrapper uses the latest Pi-side support bundle under
 `~/DroneTransfer/outgoing/support-bundles/` by default and writes

@@ -83,6 +83,14 @@ def parse_args() -> argparse.Namespace:
         "--threshold-tuning-report",
         help="JSON report proving replay thresholds were tuned against real field logs.",
     )
+    parser.add_argument(
+        "--evidence-workflow-report",
+        help="Optional autonomy evidence workflow report to reference in readiness handoff/packages.",
+    )
+    parser.add_argument(
+        "--evidence-workflow-validation-report",
+        help="Optional validation report for the autonomy evidence workflow report/log archive.",
+    )
     parser.add_argument("--output", help="Optional JSON report output path.")
     parser.add_argument("--json", action="store_true", help="Emit JSON only.")
     return parser.parse_args()
@@ -99,6 +107,8 @@ def evaluate_autonomy_readiness(
     field_collection_plan_path: str | Path | None = None,
     feature_method_benchmark_report_path: str | Path | None = None,
     threshold_tuning_report_path: str | Path | None = None,
+    evidence_workflow_report_path: str | Path | None = None,
+    evidence_workflow_validation_report_path: str | Path | None = None,
 ) -> dict[str, Any]:
     support_report = evaluate_support_bundle(
         support_bundle_path,
@@ -149,6 +159,14 @@ def evaluate_autonomy_readiness(
             else None
         ),
         "threshold_tuning_report": str(Path(threshold_tuning_report_path).expanduser()) if threshold_tuning_report_path else None,
+        "evidence_workflow_report": (
+            str(Path(evidence_workflow_report_path).expanduser()) if evidence_workflow_report_path else None
+        ),
+        "evidence_workflow_validation_report": (
+            str(Path(evidence_workflow_validation_report_path).expanduser())
+            if evidence_workflow_validation_report_path
+            else None
+        ),
     }
     report = {
         "status": status,
@@ -839,6 +857,8 @@ def main() -> None:
         field_collection_plan_path=args.field_collection_plan,
         feature_method_benchmark_report_path=args.feature_method_benchmark_report,
         threshold_tuning_report_path=args.threshold_tuning_report,
+        evidence_workflow_report_path=args.evidence_workflow_report,
+        evidence_workflow_validation_report_path=args.evidence_workflow_validation_report,
     )
     if args.output:
         destination = Path(args.output).expanduser()

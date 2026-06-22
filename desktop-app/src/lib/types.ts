@@ -496,11 +496,39 @@ export interface AutonomyEvidenceWorkflowReportFile {
     notes?: string;
   }>;
   marker_count: number;
+  workflow_logs_path?: string;
+  workflow_logs_local_path?: string;
+  workflow_validation_path?: string;
+  workflow_validation_local_path?: string;
+  workflow_validation_summary?: {
+    status?: "passed" | "failed" | "degraded" | string;
+    workflow_status?: "passed" | "failed" | "degraded" | string;
+    step_count?: number;
+    marker_count?: number;
+    issue_count: number;
+    issues: string[];
+    log_archive?: string;
+  };
+  support_bundle_path?: string;
+  support_bundle_local_path?: string;
+  field_evidence_report_path?: string;
+  field_evidence_report_local_path?: string;
+  feature_method_report_path?: string;
+  feature_method_report_local_path?: string;
+  threshold_report_path?: string;
+  threshold_report_local_path?: string;
   readiness_report_path?: string;
+  readiness_report_local_path?: string;
+  handoff_path?: string;
+  handoff_local_path?: string;
   evidence_package_path?: string;
+  evidence_package_local_path?: string;
   field_collection_plan_path?: string;
+  field_collection_plan_local_path?: string;
   field_collection_plan_markdown_path?: string;
+  field_collection_plan_markdown_local_path?: string;
   px4_receiver_report_path?: string;
+  px4_receiver_report_local_path?: string;
 }
 
 export interface Px4ReceiverReportFile {

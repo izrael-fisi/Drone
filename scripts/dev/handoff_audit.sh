@@ -149,6 +149,7 @@ entrypoints=(
   "vision-nav-replay-terrain-log"
   "vision-nav-summarize-match-log"
   "vision-nav-support-bundle"
+  "vision-nav-validate-evidence-workflow"
   "vision-nav-autonomy-evidence-package"
   "vision-nav-autonomy-handoff"
   "vision-nav-validate-bundle"
