@@ -154,6 +154,10 @@ export interface SupportBundleFile {
     threshold_tuning_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     threshold_tuning_field_case_count?: number;
     threshold_tuning_report_count?: number;
+    rosbag_export_validation_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    rosbag_export_validation_report_count?: number;
+    rosbag_export_validation_message_count?: number;
+    rosbag_export_validation_topic_count?: number;
     bench_readiness_status?: "passed" | "failed" | "degraded" | string;
     bench_readiness_failed_count?: number;
     bench_readiness_degraded_count?: number;
@@ -338,6 +342,16 @@ export interface SupportBundleDetails {
     field_case_count?: number;
     covered_conditions?: unknown;
     margins?: unknown;
+  }>;
+  rosbag_export_validation_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    format?: string;
+    artifact_path?: string;
+    metadata_path?: string;
+    message_count?: number;
+    topic_count?: number;
+    topics: string[];
+    issues: string[];
   }>;
   bench_readiness?: {
     status?: "passed" | "failed" | "degraded" | string;

@@ -73,6 +73,12 @@ def parse_args() -> argparse.Namespace:
         help="Threshold tuning JSON report. Can be repeated.",
     )
     parser.add_argument(
+        "--rosbag-export-validation",
+        action="append",
+        default=[],
+        help="ROS bag export validation JSON report or directory. Can be repeated.",
+    )
+    parser.add_argument(
         "--replay-case",
         action="append",
         default=[],
@@ -943,6 +949,95 @@ def copy_threshold_tuning_reports(paths: list[str], support_dir: Path) -> dict[s
     }
 
 
+def summarize_rosbag_export_validation(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    topics = []
+    for topic in report.get("topics") or []:
+        if not isinstance(topic, dict):
+            continue
+        topics.append(
+            {
+                "name": topic.get("name"),
+                "type": topic.get("type"),
+                "message_count": topic.get("message_count"),
+            }
+        )
+    issues = []
+    for issue in report.get("issues") or []:
+        if isinstance(issue, dict):
+            issues.append({"severity": issue.get("severity"), "message": issue.get("message")})
+    return {
+        "path": str(report_path),
+        "status": report.get("status"),
+        "format": report.get("format"),
+        "artifact_path": report.get("artifact_path"),
+        "metadata_path": report.get("metadata_path"),
+        "message_count": report.get("message_count"),
+        "topic_count": report.get("topic_count"),
+        "topics": topics,
+        "issues": issues,
+    }
+
+
+def copy_rosbag_export_validations(paths: list[str], support_dir: Path) -> dict[str, Any]:
+    if not paths:
+        return {"status": "not_provided", "report_count": 0}
+
+    summary_dir = support_dir / "summaries" / "rosbag_export_validations"
+    raw_dir = support_dir / "extras" / "rosbag_export_validations"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"ROS bag export validation path is missing: {source}"})
+            continue
+        if source.is_dir():
+            copied.append(copy_tree(source, raw_dir / safe_relpath(source)))
+            json_files = sorted(source.rglob("*.json"))
+        else:
+            copied.append(copy_file(source, raw_dir / source.name))
+            json_files = [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception as exc:
+                issues.append({"severity": "warning", "message": f"Could not parse ROS bag export validation report {report_file}: {exc}"})
+                continue
+            if not isinstance(report, dict) or report.get("schema_version") != "vision_nav_rosbag_export_validation_v1":
+                continue
+            report_summary = summarize_rosbag_export_validation(report, report_path=report_file)
+            reports.append(report_summary)
+            output_name = f"{sanitize_filename(str(report.get('format') or report_file.stem))}-{len(reports):02d}.json"
+            (summary_dir / output_name).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+    statuses = {str(report.get("status") or "").lower() for report in reports}
+    if missing or "failed" in statuses:
+        status = "failed"
+    elif not reports:
+        status = "degraded" if issues else "not_provided"
+    elif statuses.intersection({"degraded", "warning", "warnings"}):
+        status = "degraded"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "report_count": len(reports),
+        "reports": reports,
+        "formats": sorted({str(report.get("format")) for report in reports if report.get("format")}),
+        "message_count": sum(int(report.get("message_count") or 0) for report in reports),
+        "topic_count": sum(int(report.get("topic_count") or 0) for report in reports),
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
 def zip_directory(source_dir: Path, zip_path: Path) -> None:
     if zip_path.exists():
         zip_path.unlink()
@@ -974,6 +1069,7 @@ def create_support_bundle(
     field_evidence_report_paths: list[str] | None = None,
     field_collection_plan_paths: list[str] | None = None,
     threshold_tuning_report_paths: list[str] | None = None,
+    rosbag_export_validation_paths: list[str] | None = None,
     include_map_assets: bool = False,
     max_log_bytes: int = DEFAULT_MAX_LOG_BYTES,
 ) -> dict[str, Any]:
@@ -1039,6 +1135,10 @@ def create_support_bundle(
         threshold_tuning_report_paths or [],
         support_dir,
     )
+    rosbag_export_validations = copy_rosbag_export_validations(
+        rosbag_export_validation_paths or [],
+        support_dir,
+    )
     manifest = {
         "support_bundle_version": "0.1.0",
         "name": support_name,
@@ -1053,6 +1153,7 @@ def create_support_bundle(
         "field_evidence": field_evidence,
         "field_collection_plans": field_collection_plans,
         "threshold_tuning": threshold_tuning,
+        "rosbag_export_validations": rosbag_export_validations,
         "extras": extra_summary,
     }
     bench_readiness = evaluate_bench_readiness(manifest)
@@ -1115,6 +1216,9 @@ def print_human(result: dict[str, Any]) -> None:
     threshold_tuning = manifest.get("threshold_tuning") or {}
     if threshold_tuning.get("status") not in {None, "not_provided"}:
         print(f"Threshold tuning: {threshold_tuning.get('status')} ({threshold_tuning.get('report_count')} report(s))")
+    rosbag_validations = manifest.get("rosbag_export_validations") or {}
+    if rosbag_validations.get("status") not in {None, "not_provided"}:
+        print(f"ROS bag exports: {rosbag_validations.get('status')} ({rosbag_validations.get('report_count')} validation(s))")
     readiness = manifest.get("bench_readiness") or {}
     print(f"Bench readiness: {readiness.get('status') or 'unknown'}")
     print(f"__VISION_NAV_SUPPORT_ZIP__={result['zip_path']}")
@@ -1143,6 +1247,7 @@ def main() -> None:
         field_evidence_report_paths=args.field_evidence_report,
         field_collection_plan_paths=args.field_collection_plan,
         threshold_tuning_report_paths=args.threshold_tuning_report,
+        rosbag_export_validation_paths=args.rosbag_export_validation,
         include_map_assets=args.include_map_assets,
         max_log_bytes=args.max_log_bytes,
     )

@@ -53,6 +53,10 @@ pub struct SupportBundleSummary {
     pub threshold_tuning_status: Option<String>,
     pub threshold_tuning_field_case_count: Option<u64>,
     pub threshold_tuning_report_count: Option<u64>,
+    pub rosbag_export_validation_status: Option<String>,
+    pub rosbag_export_validation_report_count: Option<u64>,
+    pub rosbag_export_validation_message_count: Option<u64>,
+    pub rosbag_export_validation_topic_count: Option<u64>,
     pub bench_readiness_status: Option<String>,
     pub bench_readiness_failed_count: Option<u64>,
     pub bench_readiness_degraded_count: Option<u64>,
@@ -265,6 +269,18 @@ pub struct SupportBundleThresholdTuningReport {
     pub field_case_count: Option<u64>,
     pub covered_conditions: Option<serde_json::Value>,
     pub margins: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleRosbagExportValidationReport {
+    pub status: Option<String>,
+    pub format: Option<String>,
+    pub artifact_path: Option<String>,
+    pub metadata_path: Option<String>,
+    pub message_count: Option<u64>,
+    pub topic_count: Option<u64>,
+    pub topics: Vec<String>,
+    pub issues: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -618,6 +634,7 @@ pub struct SupportBundleDetails {
     pub field_evidence_reports: Vec<SupportBundleFieldEvidenceReport>,
     pub field_collection_plan_reports: Vec<SupportBundleFieldCollectionPlanReport>,
     pub threshold_tuning_reports: Vec<SupportBundleThresholdTuningReport>,
+    pub rosbag_export_validation_reports: Vec<SupportBundleRosbagExportValidationReport>,
     pub bench_readiness: Option<SupportBundleBenchReadinessReport>,
     pub artifacts: Vec<SupportBundleArtifactEntry>,
     pub entry_count: usize,
@@ -753,6 +770,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut field_evidence_reports = Vec::new();
     let mut field_collection_plan_reports = Vec::new();
     let mut threshold_tuning_reports = Vec::new();
+    let mut rosbag_export_validation_reports = Vec::new();
     let mut artifacts = Vec::new();
     let mut bench_readiness = manifest
         .get("bench_readiness")
@@ -822,6 +840,13 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 threshold_tuning_reports.push(threshold_tuning_report_from_json(&value));
             }
+        } else if name.starts_with("summaries/rosbag_export_validations/")
+            && name.ends_with(".json")
+        {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                rosbag_export_validation_reports
+                    .push(rosbag_export_validation_report_from_json(&value));
+            }
         } else if name == "summaries/bench_readiness.json" {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 bench_readiness = Some(bench_readiness_report_from_json(&value));
@@ -850,6 +875,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         field_evidence_reports,
         field_collection_plan_reports,
         threshold_tuning_reports,
+        rosbag_export_validation_reports,
         bench_readiness,
         artifacts,
         entry_count,
@@ -2271,6 +2297,52 @@ fn threshold_tuning_report_from_json(
     }
 }
 
+fn rosbag_export_validation_report_from_json(
+    value: &serde_json::Value,
+) -> SupportBundleRosbagExportValidationReport {
+    let topics = value
+        .get("topics")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let name = json_string(item.get("name"))?;
+                    let message_type =
+                        json_string(item.get("type")).unwrap_or_else(|| "unknown".to_string());
+                    let count = item
+                        .get("message_count")
+                        .and_then(|value| value.as_u64())
+                        .unwrap_or(0);
+                    Some(format!("{name} ({message_type}, {count})"))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let issues = value
+        .get("issues")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    json_string(item.get("message")).or_else(|| json_string(Some(item)))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    SupportBundleRosbagExportValidationReport {
+        status: json_string(value.get("status")),
+        format: json_string(value.get("format")),
+        artifact_path: json_string(value.get("artifact_path")),
+        metadata_path: json_string(value.get("metadata_path")),
+        message_count: value.get("message_count").and_then(|value| value.as_u64()),
+        topic_count: value.get("topic_count").and_then(|value| value.as_u64()),
+        topics,
+        issues,
+    }
+}
+
 fn bench_readiness_report_from_json(
     value: &serde_json::Value,
 ) -> SupportBundleBenchReadinessReport {
@@ -2976,6 +3048,11 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
     if lower_name.starts_with("summaries/threshold_tuning/") && lower_name.ends_with(".json") {
         return Some("threshold tuning report".to_string());
     }
+    if lower_name.starts_with("summaries/rosbag_export_validations/")
+        && lower_name.ends_with(".json")
+    {
+        return Some("rosbag export validation".to_string());
+    }
     if lower_name == "summaries/bench_readiness.json" {
         return Some("bench readiness report".to_string());
     }
@@ -3236,6 +3313,18 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         threshold_tuning_report_count: manifest
             .pointer("/threshold_tuning/report_count")
             .and_then(|value| value.as_u64()),
+        rosbag_export_validation_status: json_string(
+            manifest.pointer("/rosbag_export_validations/status"),
+        ),
+        rosbag_export_validation_report_count: manifest
+            .pointer("/rosbag_export_validations/report_count")
+            .and_then(|value| value.as_u64()),
+        rosbag_export_validation_message_count: manifest
+            .pointer("/rosbag_export_validations/message_count")
+            .and_then(|value| value.as_u64()),
+        rosbag_export_validation_topic_count: manifest
+            .pointer("/rosbag_export_validations/topic_count")
+            .and_then(|value| value.as_u64()),
         bench_readiness_status: json_string(manifest.pointer("/bench_readiness/status")),
         bench_readiness_failed_count: manifest
             .pointer("/bench_readiness/summary/failed")
@@ -3257,6 +3346,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.field_evidence_status.is_none()
         && summary.field_collection_plan_status.is_none()
         && summary.threshold_tuning_status.is_none()
+        && summary.rosbag_export_validation_status.is_none()
         && summary.bench_readiness_status.is_none()
     {
         return None;
@@ -3383,6 +3473,12 @@ mod tests {
                 "report_count": 1,
                 "field_case_count": 8
             },
+            "rosbag_export_validations": {
+                "status": "passed",
+                "report_count": 1,
+                "message_count": 4,
+                "topic_count": 3
+            },
             "bench_readiness": {
                 "status": "degraded",
                 "summary": {
@@ -3440,6 +3536,13 @@ mod tests {
         assert_eq!(summary.threshold_tuning_status.as_deref(), Some("passed"));
         assert_eq!(summary.threshold_tuning_field_case_count, Some(8));
         assert_eq!(summary.threshold_tuning_report_count, Some(1));
+        assert_eq!(
+            summary.rosbag_export_validation_status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(summary.rosbag_export_validation_report_count, Some(1));
+        assert_eq!(summary.rosbag_export_validation_message_count, Some(4));
+        assert_eq!(summary.rosbag_export_validation_topic_count, Some(3));
         assert_eq!(summary.bench_readiness_status.as_deref(), Some("degraded"));
         assert_eq!(summary.bench_readiness_failed_count, Some(0));
         assert_eq!(summary.bench_readiness_degraded_count, Some(1));

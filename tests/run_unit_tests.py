@@ -1813,6 +1813,31 @@ RC8_OPTION,90
                 }
             )
         )
+        rosbag_export_validation = root / "rosbag-jsonl-validation.json"
+        rosbag_export_validation.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_rosbag_export_validation_v1",
+                    "status": "passed",
+                    "artifact_path": str(root / "rosbag-jsonl"),
+                    "metadata_path": str(root / "rosbag-jsonl" / "metadata.json"),
+                    "format": "vision_nav_rosbag_jsonl_v1",
+                    "message_count": 4,
+                    "topic_count": 3,
+                    "topics": [
+                        {"name": "/vision_nav/odometry", "type": "nav_msgs/msg/Odometry", "message_count": 1},
+                        {"name": "/diagnostics", "type": "diagnostic_msgs/msg/DiagnosticArray", "message_count": 2},
+                        {
+                            "name": "/vision_nav/camera/image/compressed",
+                            "type": "sensor_msgs/msg/CompressedImage",
+                            "message_count": 1,
+                        },
+                    ],
+                    "details": {"line_count": 4},
+                    "issues": [],
+                }
+            )
+        )
 
         result = create_support_bundle(
             bundle=str(bundle),
@@ -1830,6 +1855,7 @@ RC8_OPTION,90
             field_evidence_report_paths=[str(field_evidence_report)],
             field_collection_plan_paths=[str(field_collection_plan)],
             threshold_tuning_report_paths=[str(threshold_tuning_report)],
+            rosbag_export_validation_paths=[str(rosbag_export_validation)],
             include_map_assets=True,
         )
         assert_equal(result["status"], "passed", "support bundle status")
@@ -1862,6 +1888,7 @@ RC8_OPTION,90
             "summaries/field_evidence/field_manifest-01.json",
             "summaries/field_collection_plans/field_manifest-01.json",
             "summaries/threshold_tuning/field_manifest-01.json",
+            "summaries/rosbag_export_validations/vision_nav_rosbag_jsonl_v1-01.json",
             "summaries/bench_readiness.json",
             "extras/field_collection_plans/field_collection_plan.json",
             "extras/field_collection_plans/field_collection_plan.md",
@@ -1873,6 +1900,7 @@ RC8_OPTION,90
             "extras/feature_method_benchmarks/feature-method-bench/unit-method-benchmark.json",
             "extras/field_evidence/field_evidence_report.json",
             "extras/threshold_tuning/threshold_tuning_report.json",
+            "extras/rosbag_export_validations/rosbag-jsonl-validation.json",
         }:
             if expected not in names:
                 raise AssertionError(f"Missing {expected} from support bundle zip")
@@ -1918,6 +1946,9 @@ RC8_OPTION,90
         assert_equal(manifest["field_evidence"]["field_case_count"], 8, "support field evidence case count")
         assert_equal(manifest["threshold_tuning"]["status"], "passed", "support threshold tuning status")
         assert_equal(manifest["threshold_tuning"]["field_case_count"], 8, "support threshold tuning field case count")
+        assert_equal(manifest["rosbag_export_validations"]["status"], "passed", "support rosbag validation status")
+        assert_equal(manifest["rosbag_export_validations"]["report_count"], 1, "support rosbag validation count")
+        assert_equal(manifest["rosbag_export_validations"]["message_count"], 4, "support rosbag validation messages")
         assert_equal(manifest["bench_readiness"]["status"], "degraded", "support bench readiness status")
         assert_equal(manifest["bench_readiness"]["summary"]["degraded"], 1, "support bench readiness degraded count")
         readiness = evaluate_bench_readiness_file(zip_path)
@@ -1928,6 +1959,7 @@ RC8_OPTION,90
         assert_equal(readiness_checks["gnss_denied_plan"], "passed", "bench readiness gnss denied plan")
         assert_equal(readiness_checks["runtime_status"], "passed", "bench readiness runtime status")
         assert_equal(readiness_checks["px4_sitl_evidence"], "passed", "bench readiness px4 evidence")
+        assert_equal(readiness_checks["rosbag_export_validations"], "passed", "bench readiness rosbag validation")
         assert_equal(
             readiness_check_details["px4_sitl_evidence"]["observed_rate_hz"],
             5.0,
@@ -1942,6 +1974,21 @@ RC8_OPTION,90
         assert_equal(readiness_checks["ardupilot_params"], "passed", "bench readiness ardupilot params")
         assert_equal(readiness_checks["feature_method_benchmarks"], "passed", "bench readiness feature benchmarks")
         assert_equal(readiness_checks["field_evidence"], "passed", "bench readiness field evidence")
+
+        failed_rosbag_validation = dict(manifest)
+        failed_rosbag_validation["rosbag_export_validations"] = {
+            "status": "failed",
+            "report_count": 1,
+            "reports": [{"status": "failed", "format": "vision_nav_rosbag_jsonl_v1"}],
+        }
+        rosbag_failed = evaluate_bench_readiness(failed_rosbag_validation)
+        rosbag_failed_checks = {check["name"]: check["status"] for check in rosbag_failed["checks"]}
+        assert_equal(rosbag_failed["status"], "failed", "bench readiness failed rosbag validation")
+        assert_equal(
+            rosbag_failed_checks["rosbag_export_validations"],
+            "failed",
+            "failed rosbag validation check included",
+        )
 
         incomplete_gnss = json.loads(json.dumps(manifest))
         incomplete_gnss["bundle"]["mission_plan"]["gnss_denied"]["status"] = "incomplete"
@@ -2166,6 +2213,26 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "field_case_count": 8,
                         "covered_conditions": REQUIRED_FIELD_CONDITIONS,
                     },
+                    "rosbag_export_validations": {
+                        "status": "passed",
+                        "report_count": 1,
+                        "formats": ["vision_nav_rosbag_jsonl_v1"],
+                        "message_count": 4,
+                        "topic_count": 3,
+                        "reports": [
+                            {
+                                "status": "passed",
+                                "format": "vision_nav_rosbag_jsonl_v1",
+                                "message_count": 4,
+                                "topic_count": 3,
+                                "topics": [
+                                    {"name": "/vision_nav/odometry", "message_count": 1},
+                                    {"name": "/diagnostics", "message_count": 2},
+                                    {"name": "/vision_nav/camera/image/compressed", "message_count": 1},
+                                ],
+                            }
+                        ],
+                    },
                 }
             )
         )
@@ -2259,6 +2326,38 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                     "status": "passed",
                     "method": "unit-field-grid-search",
                     "conditions": REQUIRED_FIELD_CONDITIONS,
+                }
+            )
+        )
+        rosbag_validation_report = root / "rosbag-jsonl-validation.json"
+        rosbag_validation_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_rosbag_export_validation_v1",
+                    "status": "passed",
+                    "artifact_path": str(root / "rosbag-jsonl"),
+                    "metadata_path": str(root / "rosbag-jsonl" / "metadata.json"),
+                    "format": "vision_nav_rosbag_jsonl_v1",
+                    "message_count": 4,
+                    "topic_count": 3,
+                    "topics": [
+                        {
+                            "name": "/vision_nav/odometry",
+                            "type": "nav_msgs/msg/Odometry",
+                            "message_count": 1,
+                        },
+                        {
+                            "name": "/diagnostics",
+                            "type": "diagnostic_msgs/msg/DiagnosticArray",
+                            "message_count": 2,
+                        },
+                        {
+                            "name": "/vision_nav/camera/image/compressed",
+                            "type": "sensor_msgs/msg/CompressedImage",
+                            "message_count": 1,
+                        },
+                    ],
+                    "issues": [],
                 }
             )
         )
@@ -2370,6 +2469,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(ready_checks["field_evidence_proof"], "passed", "autonomy readiness field evidence")
         assert_equal(ready_checks["feature_method_benchmark"], "passed", "autonomy readiness feature benchmark")
         assert_equal(ready_checks["threshold_tuning"], "passed", "autonomy readiness threshold tuning")
+        assert_equal(ready_checks["rosbag_export_validation"], "passed", "autonomy readiness rosbag validation")
         assert_equal(len(ready["next_actions"]), 0, "autonomy readiness passing report next actions")
         assert_equal(
             ready["evidence_manifest"]["ready_for_goal_completion"],
@@ -2446,6 +2546,53 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_field_actions[0]["desktop_action"],
             "Module Setup > Field Evidence Case > Create Template, then Register",
             "autonomy readiness support field evidence desktop action",
+        )
+
+        missing_rosbag_manifest = root / "support_manifest_without_rosbag_validation.json"
+        missing_rosbag_data = json.loads(direct_report_support_manifest.read_text())
+        missing_rosbag_data.pop("rosbag_export_validations", None)
+        missing_rosbag_manifest.write_text(json.dumps(missing_rosbag_data))
+        missing_rosbag_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=missing_rosbag_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+        )
+        assert_equal(missing_rosbag_ready["status"], "failed", "autonomy readiness missing rosbag validation")
+        missing_rosbag_checks = {check["name"]: check["status"] for check in missing_rosbag_ready["checks"]}
+        assert_equal(
+            missing_rosbag_checks["rosbag_export_validation"],
+            "failed",
+            "autonomy readiness rosbag validation fail closed",
+        )
+        rosbag_actions = [
+            action
+            for action in missing_rosbag_ready["next_actions"]
+            if action.get("check") == "rosbag_export_validation"
+        ]
+        assert_equal(len(rosbag_actions), 1, "autonomy readiness rosbag validation next action")
+        if "vision-nav-validate-rosbag-export" not in rosbag_actions[0]["command"]:
+            raise AssertionError("autonomy readiness rosbag action should validate ROS bag exports")
+
+        direct_rosbag_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=missing_rosbag_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+            rosbag_export_validation_path=rosbag_validation_report,
+        )
+        direct_rosbag_checks = {check["name"]: check["status"] for check in direct_rosbag_ready["checks"]}
+        assert_equal(direct_rosbag_ready["status"], "passed", "autonomy readiness direct rosbag validation")
+        assert_equal(
+            direct_rosbag_checks["rosbag_export_validation"],
+            "passed",
+            "autonomy readiness direct rosbag validation check",
         )
 
         missing_runtime_status_manifest = root / "support_manifest_without_runtime_status.json"

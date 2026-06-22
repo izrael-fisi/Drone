@@ -95,6 +95,9 @@ def evaluate_bench_readiness(
     field_evidence_check = check_field_evidence(manifest, require=require_field_evidence)
     if field_evidence_check is not None:
         checks.append(field_evidence_check)
+    rosbag_export_check = check_rosbag_export_validations(manifest)
+    if rosbag_export_check is not None:
+        checks.append(rosbag_export_check)
     status = readiness_status(checks)
     return {
         "status": status,
@@ -350,6 +353,30 @@ def check_field_evidence(manifest: dict[str, Any], *, require: bool) -> dict[str
     if status in WARNING:
         return degraded("field_evidence", "Field-evidence gate is degraded.", details)
     return failed("field_evidence", f"Field-evidence gate is {status}.", details)
+
+
+def check_rosbag_export_validations(manifest: dict[str, Any]) -> dict[str, Any] | None:
+    validations = manifest.get("rosbag_export_validations") or {}
+    status = normalize_status(validations.get("status"))
+    reports = validations.get("reports") if isinstance(validations.get("reports"), list) else []
+    details = {
+        "report_count": validations.get("report_count"),
+        "formats": validations.get("formats"),
+        "message_count": validations.get("message_count"),
+        "topic_count": validations.get("topic_count"),
+        "failed_formats": [
+            report.get("format")
+            for report in reports
+            if isinstance(report, dict) and normalize_status(report.get("status")) == "failed"
+        ][:5],
+    }
+    if status in MISSING:
+        return None
+    if status in PASSING:
+        return passed("rosbag_export_validations", "ROS bag export validation reports passed.", details)
+    if status in WARNING:
+        return degraded("rosbag_export_validations", "ROS bag export validation reports are degraded.", details)
+    return failed("rosbag_export_validations", f"ROS bag export validation reports are {status}.", details)
 
 
 def readiness_status(checks: list[dict[str, Any]]) -> str:

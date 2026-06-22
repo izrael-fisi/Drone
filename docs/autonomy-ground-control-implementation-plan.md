@@ -127,6 +127,10 @@ Status:
 - Done: `vision-nav-validate-rosbag-export` validates JSONL, MCAP, and native
   rosbag2 export metadata, sidecars, topic counts, message counts, and storage
   presence without requiring ROS 2.
+- Done: support bundles ingest ROS bag export validation reports under
+  `extras/rosbag_export_validations/`, publish parsed summaries under
+  `summaries/rosbag_export_validations/`, and surface their status in desktop
+  support-bundle diagnostics and bench-readiness checks when provided.
 - Done: `vision-nav-ros2-replay-log --export-mcap` writes an optional
   JSON-encoded MCAP archive with odometry, diagnostics, and bounded compressed
   camera-frame topics when the `mcap` Python package is installed.
@@ -147,6 +151,8 @@ Tasks:
 Acceptance checks:
 
 - ROS 2 topics can replay a saved frame log on the desktop.
+- ROS replay exports have a passed validation report with odometry and
+  diagnostics topics before they count toward final readiness.
 - PX4 SITL can receive external-position output through ROS 2 or direct MAVLink.
 - The direct Python `vision-nav-run-terrain-loop` command remains usable.
 
@@ -496,8 +502,9 @@ Status:
 - Done: `vision-nav-autonomy-readiness` provides a strict goal-level audit
   across this research document, the implementation plan, support-bundle bench
   readiness, PX4 receiver proof, real field evidence, feature-method benchmark
-  evidence, and threshold-tuning proof. It intentionally fails until the
-  external PX4 and field-log artifacts exist.
+  evidence, threshold-tuning proof, and ROS replay export validation proof. It
+  intentionally fails until the external PX4, field-log, and replay-validation
+  artifacts exist.
 - Done: autonomy-readiness reports include a `plan_snapshot` with source-doc
   marker coverage, research reference/near-term item counts, implementation
   track counts, status-line counts, task counts, and acceptance-check counts so
@@ -528,15 +535,18 @@ Status:
   final goal cannot be marked complete from partial evidence.
 - Done: Module Setup renders the readiness `evidence_manifest` as a compact
   goal-completion proof summary, including external blocker count and the first
-  missing PX4, field, feature-benchmark, threshold, or support-bundle evidence
-  items.
+  missing PX4, field, feature-benchmark, threshold, ROS replay validation, or
+  support-bundle evidence items.
 - Done: field-evidence and threshold-tuning next actions carry the missing
   required condition keys so operators can see which real-world cases still
   need to be collected.
 - Done: the final readiness audit accepts standalone PX4 receiver,
-  field-evidence, feature-method benchmark, and threshold-tuning JSON reports in
-  addition to support-bundle summaries, so downloaded evidence can be re-audited
-  without repackaging the support bundle.
+  field-evidence, feature-method benchmark, threshold-tuning, and ROS replay
+  export validation JSON reports in addition to support-bundle summaries, so
+  downloaded evidence can be re-audited without repackaging the support bundle.
+- Done: the Pi and local autonomy-readiness wrappers pass
+  `rosbag-jsonl-validation.json` to the final audit when it exists and emit
+  `__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=...` for support handoff notes.
 - Done: `scripts/pi/run_autonomy_readiness_audit.sh` runs the same final audit
   on the Pi against the latest support bundle and writes
   `autonomy_readiness_report.json` for transfer or support review.
@@ -656,8 +666,8 @@ Tasks:
    confidence, inliers, reprojection error, and external-position health.
 5. Run `vision-nav-autonomy-readiness` against the final support bundle, PX4
    receiver-evidence report, field evidence report, feature-method benchmark
-   report, and threshold-tuning report before calling the autonomy and
-   ground-control implementation goal complete.
+   report, threshold-tuning report, and ROS replay export validation report
+   before calling the autonomy and ground-control implementation goal complete.
 
 Acceptance checks:
 
@@ -666,8 +676,8 @@ Acceptance checks:
   threshold tuning is considered complete.
 - Support bundles are enough to reproduce a failed bench run offline.
 - The autonomy-readiness audit passes only when bench evidence, real field
-  evidence, feature-method benchmark evidence, and threshold tuning are all
-  present and passing.
+  evidence, feature-method benchmark evidence, threshold tuning, and ROS replay
+  export validation are all present and passing.
 
 ### Track 6: ArduPilot Adapter Path
 

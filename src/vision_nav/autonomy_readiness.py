@@ -39,6 +39,7 @@ EXTERNAL_PROOF_CHECKS = {
     "field_evidence_proof",
     "feature_method_benchmark",
     "threshold_tuning",
+    "rosbag_export_validation",
 }
 
 
@@ -85,6 +86,10 @@ def parse_args() -> argparse.Namespace:
         help="JSON report proving replay thresholds were tuned against real field logs.",
     )
     parser.add_argument(
+        "--rosbag-export-validation",
+        help="ROS bag export validation report proving replay artifacts are structurally usable.",
+    )
+    parser.add_argument(
         "--evidence-workflow-report",
         help="Optional autonomy evidence workflow report to reference in readiness handoff/packages.",
     )
@@ -112,6 +117,7 @@ def evaluate_autonomy_readiness(
     field_collection_plan_path: str | Path | None = None,
     feature_method_benchmark_report_path: str | Path | None = None,
     threshold_tuning_report_path: str | Path | None = None,
+    rosbag_export_validation_path: str | Path | None = None,
     evidence_workflow_report_path: str | Path | None = None,
     evidence_workflow_validation_report_path: str | Path | None = None,
     evidence_workflow_log_archive_path: str | Path | None = None,
@@ -142,6 +148,7 @@ def evaluate_autonomy_readiness(
         check_field_evidence_proof(field_evidence_report_path, support_checks),
         check_feature_method_proof(feature_method_benchmark_report_path, support_checks),
         check_threshold_tuning(threshold_tuning_report_path, support_manifest=support_manifest),
+        check_rosbag_export_validation(rosbag_export_validation_path, support_manifest=support_manifest),
     ]
     status = readiness_status(checks)
     next_actions = next_actions_for_checks(checks)
@@ -169,6 +176,9 @@ def evaluate_autonomy_readiness(
             else None
         ),
         "threshold_tuning_report": str(Path(threshold_tuning_report_path).expanduser()) if threshold_tuning_report_path else None,
+        "rosbag_export_validation": (
+            str(Path(rosbag_export_validation_path).expanduser()) if rosbag_export_validation_path else None
+        ),
         "evidence_workflow_report": (
             str(Path(evidence_workflow_report_path).expanduser()) if evidence_workflow_report_path else None
         ),
@@ -333,6 +343,7 @@ def evidence_source_for_check(name: str, details: dict[str, Any], inputs: dict[s
         "field_evidence_proof": "field_evidence_report",
         "feature_method_benchmark": "feature_method_benchmark_report",
         "threshold_tuning": "threshold_tuning_report",
+        "rosbag_export_validation": "rosbag_export_validation",
     }
     for key in ("source", "support_bundle_path", "report_path", "session_dir", "path"):
         value = details.get(key)
@@ -388,6 +399,12 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "desktop_action": "Module Setup > Threshold Tuning",
             "command": "./scripts/pi/run_threshold_tuning_report.sh",
             "notes": "Run after all required field conditions have passing replay evidence.",
+        },
+        "rosbag_export_validation": {
+            "title": "Export and validate the ROS replay artifact.",
+            "desktop_action": "Module Setup > Bench Report after ROS replay export",
+            "command": "vision-nav-ros2-replay-log --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl --include-frame-topic && vision-nav-validate-rosbag-export --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl --output ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json",
+            "notes": "The final readiness package must include a passed ROS replay export validation with odometry and diagnostics topics.",
         },
     }
     next_actions: list[dict[str, Any]] = []
@@ -501,6 +518,12 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
             "desktop_action": "Module Setup > Threshold Tuning",
             "command": "./scripts/pi/run_threshold_tuning_report.sh",
             "notes": "Threshold tuning should run after the full field-evidence manifest passes.",
+        },
+        "rosbag_export_validations": {
+            "title": "Export and validate the ROS replay artifact.",
+            "desktop_action": "Module Setup > Bench Report after ROS replay export",
+            "command": "vision-nav-ros2-replay-log --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl --include-frame-topic && vision-nav-validate-rosbag-export --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl --output ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json && ./scripts/pi/create_support_bundle.sh",
+            "notes": "Support bundles should include a passed ROS replay export validation summary.",
         },
         "ardupilot_params": {
             "title": "Review ArduPilot ExternalNav parameters.",
@@ -971,6 +994,133 @@ def threshold_tuning_check_from_report(report: dict[str, Any], *, source: str) -
     return failed("threshold_tuning", f"Threshold tuning report is {status or 'missing'}.", details)
 
 
+def check_rosbag_export_validation(
+    path: str | Path | None,
+    *,
+    support_manifest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if path is not None:
+        source = Path(path).expanduser()
+        try:
+            report = json.loads(source.read_text())
+        except Exception as exc:
+            return failed(
+                "rosbag_export_validation",
+                f"Could not read ROS bag export validation report: {exc}",
+                {"path": str(source)},
+            )
+        return rosbag_export_validation_check_from_report(report, source=str(source))
+
+    validations = (support_manifest or {}).get("rosbag_export_validations") if support_manifest else None
+    if isinstance(validations, dict):
+        return rosbag_export_validation_check_from_summary(validations)
+    return failed(
+        "rosbag_export_validation",
+        "ROS replay export validation report is required for final readiness.",
+        {"required_topics": ["/vision_nav/odometry", "/diagnostics"]},
+    )
+
+
+def rosbag_export_validation_check_from_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    reports = summary.get("reports") if isinstance(summary.get("reports"), list) else []
+    status = normalize_status(summary.get("status"))
+    topics = sorted(
+        {
+            topic
+            for report in reports
+            if isinstance(report, dict)
+            for topic in rosbag_report_topics(report)
+        }
+    )
+    missing_topics = missing_rosbag_topics(topics)
+    details = {
+        "source": "support_bundle",
+        "report_count": summary.get("report_count"),
+        "formats": summary.get("formats"),
+        "message_count": summary.get("message_count"),
+        "topic_count": summary.get("topic_count"),
+        "topics": topics,
+        "missing_topics": missing_topics,
+    }
+    if status == "not_provided" or status is None:
+        return failed(
+            "rosbag_export_validation",
+            "ROS replay export validation report is required for final readiness.",
+            details,
+        )
+    if status == "passed" and not missing_topics and int(summary.get("message_count") or 0) > 0:
+        return passed("rosbag_export_validation", "ROS replay export validation proof is present in the support bundle.", details)
+    if status == "passed":
+        return failed(
+            "rosbag_export_validation",
+            "ROS replay export validation proof is missing required topics or messages.",
+            details,
+        )
+    if status == "degraded":
+        return degraded(
+            "rosbag_export_validation",
+            "ROS replay export validation proof in the support bundle is degraded.",
+            details,
+        )
+    return failed(
+        "rosbag_export_validation",
+        f"ROS replay export validation proof in the support bundle is {status}.",
+        details,
+    )
+
+
+def rosbag_export_validation_check_from_report(report: dict[str, Any], *, source: str) -> dict[str, Any]:
+    status = normalize_status(report.get("status"))
+    topics = rosbag_report_topics(report)
+    missing_topics = missing_rosbag_topics(topics)
+    details = {
+        "source": source,
+        "format": report.get("format"),
+        "artifact_path": report.get("artifact_path"),
+        "metadata_path": report.get("metadata_path"),
+        "message_count": report.get("message_count"),
+        "topic_count": report.get("topic_count"),
+        "topics": topics,
+        "missing_topics": missing_topics,
+    }
+    if report.get("schema_version") != "vision_nav_rosbag_export_validation_v1":
+        return failed(
+            "rosbag_export_validation",
+            "ROS replay export validation report has an unexpected schema.",
+            details,
+        )
+    if status == "passed" and not missing_topics and int(report.get("message_count") or 0) > 0:
+        return passed("rosbag_export_validation", "ROS replay export validation passed.", details)
+    if status == "passed":
+        return failed(
+            "rosbag_export_validation",
+            "ROS replay export validation is missing required topics or messages.",
+            details,
+        )
+    if status == "degraded":
+        return degraded("rosbag_export_validation", "ROS replay export validation is degraded.", details)
+    return failed("rosbag_export_validation", f"ROS replay export validation is {status or 'missing'}.", details)
+
+
+def rosbag_report_topics(report: dict[str, Any]) -> list[str]:
+    raw_topics = report.get("topics")
+    if not isinstance(raw_topics, list):
+        return []
+    topics = []
+    for item in raw_topics:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if isinstance(name, str) and name:
+            topics.append(name)
+    return topics
+
+
+def missing_rosbag_topics(topics: list[str]) -> list[str]:
+    available = set(topics)
+    return [topic for topic in ["/vision_nav/odometry", "/diagnostics"] if topic not in available]
+
+
 def report_conditions(report: dict[str, Any]) -> set[str]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     raw = (
@@ -1016,6 +1166,7 @@ def main() -> None:
         field_collection_plan_path=args.field_collection_plan,
         feature_method_benchmark_report_path=args.feature_method_benchmark_report,
         threshold_tuning_report_path=args.threshold_tuning_report,
+        rosbag_export_validation_path=args.rosbag_export_validation,
         evidence_workflow_report_path=args.evidence_workflow_report,
         evidence_workflow_validation_report_path=args.evidence_workflow_validation_report,
         evidence_workflow_log_archive_path=args.evidence_workflow_log_archive,

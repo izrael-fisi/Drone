@@ -540,6 +540,42 @@ function SupportBundleDetailPanel({
         </div>
       )}
 
+      {details.rosbag_export_validation_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">ROS bag export validation</div>
+          {details.rosbag_export_validation_reports.slice(0, 2).map((report, index) => (
+            <div key={`${report.artifact_path}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(report.status)}>
+                  {statusIcon(report.status)}
+                  {formatLabel(report.status)}
+                </span>
+                <span className="font-mono text-slate-400 truncate">{formatLabel(report.format)}</span>
+                <span className="font-mono text-slate-500">{report.message_count ?? 0} msg</span>
+                <span className="font-mono text-slate-500">{report.topic_count ?? 0} topics</span>
+              </div>
+              <div className="font-mono text-slate-500 truncate">
+                {formatLabel(report.artifact_path)}
+              </div>
+              {report.topics.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {report.topics.slice(0, 4).map((topic) => (
+                    <span key={`${report.artifact_path}-${topic}`} className="rounded border border-border/60 bg-bg-base px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+                      {topic}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {report.issues.slice(0, 2).map((issue) => (
+                <div key={issue} className="text-amber-200/80 truncate">
+                  {issue}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
       {details.replay_reports.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Replay gates</div>
@@ -747,6 +783,12 @@ export function SupportBundleList({
                     thresholds {formatLabel(bundle.summary.threshold_tuning_status)}
                   </span>
                 )}
+                {bundle.summary.rosbag_export_validation_status && bundle.summary.rosbag_export_validation_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.rosbag_export_validation_status)}>
+                    {statusIcon(bundle.summary.rosbag_export_validation_status)}
+                    rosbag {formatLabel(bundle.summary.rosbag_export_validation_status)}
+                  </span>
+                )}
                 {bundle.summary.elevation_status && (
                   <span className={bundle.summary.vertical_sanity_ready ? "badge-green" : statusClass(bundle.summary.elevation_status)}>
                     {statusIcon(bundle.summary.vertical_sanity_ready ? "passed" : bundle.summary.elevation_status)}
@@ -803,6 +845,11 @@ export function SupportBundleList({
                   </span>
                   <span>thresholds {formatLabel(bundle.summary.threshold_tuning_status)}</span>
                   <span>threshold cases {bundle.summary.threshold_tuning_field_case_count ?? 0}</span>
+                  <span>rosbag {formatLabel(bundle.summary.rosbag_export_validation_status)}</span>
+                  <span>
+                    rosbag {bundle.summary.rosbag_export_validation_message_count ?? 0} msg /
+                    {" "}{bundle.summary.rosbag_export_validation_topic_count ?? 0} topics
+                  </span>
                   <span>ready {formatLabel(bundle.summary.bench_readiness_status)}</span>
                   <span>
                     gate {bundle.summary.bench_readiness_failed_count ?? 0} fail / {bundle.summary.bench_readiness_degraded_count ?? 0} degrade

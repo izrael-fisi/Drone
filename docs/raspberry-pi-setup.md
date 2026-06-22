@@ -638,7 +638,11 @@ vision-nav-validate-rosbag-export \
 ```
 
 The validator checks metadata, topic counts, JSONL payload shape, MCAP sidecars,
-and native rosbag2 storage files without requiring ROS 2 to be installed.
+and native rosbag2 storage files without requiring ROS 2 to be installed. The
+default support-bundle wrapper auto-includes
+`~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json` when it
+exists; set `VISION_NAV_ROSBAG_EXPORT_VALIDATION` or
+`VISION_NAV_MCAP_EXPORT_VALIDATION` to package another validation report.
 
 ## Create A Support Bundle
 
@@ -808,8 +812,8 @@ real bench evidence exists.
 
 For the full autonomy/ground-control implementation goal, use the stricter
 audit after the downloaded support bundle, field-evidence report, feature-method
-benchmark evidence, and threshold-tuning report exist. Generate the threshold
-report from the real field manifest with:
+benchmark evidence, threshold-tuning report, and ROS bag export validation
+report exist. Generate the threshold report from the real field manifest with:
 
 ```bash
 ./scripts/pi/run_threshold_tuning_report.sh
@@ -821,6 +825,10 @@ under `~/DroneTransfer/outgoing/replay-cases/`. Set
 intermediate report without treating the command as a passing validation step.
 Downloaded threshold reports are listed in Module Setup beside the PX4, field,
 feature, and final readiness evidence artifacts.
+If `~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json` exists,
+the final Pi-side readiness wrapper includes it automatically. Override the path
+with `VISION_NAV_ROSBAG_EXPORT_VALIDATION=/path/to/validation.json` when
+reviewing a different JSONL, MCAP, or native rosbag2 validation report.
 
 If you want one Pi-side command that attempts the ordered evidence workflow and
 preserves a step-by-step report even when prerequisites are still missing, run:
@@ -913,9 +921,10 @@ strict audit report locally:
 ```
 
 It uses the latest downloaded support bundle, downloaded field-evidence and
-feature-method benchmark reports, downloaded threshold-tuning reports, and a
-downloaded field collection plan/checklist, plus a local PX4 SITL evidence
-session or receiver report when present.
+feature-method benchmark reports, downloaded threshold-tuning reports,
+downloaded ROS bag export validation reports, and a downloaded field collection
+plan/checklist, plus a local PX4 SITL evidence session or receiver report when
+present.
 It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and
 `__VISION_NAV_AUTONOMY_HANDOFF__=...` plus
 `__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=...`, then writes

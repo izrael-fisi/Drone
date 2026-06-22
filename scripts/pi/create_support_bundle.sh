@@ -10,6 +10,7 @@ feature_method_benchmark="${VISION_NAV_FEATURE_METHOD_BENCHMARK:-$HOME/DroneTran
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json}"
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.json}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
+rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
 
 if [[ "$venv_python" == */* ]]; then
   if [[ ! -x "$venv_python" ]]; then
@@ -89,6 +90,14 @@ fi
 
 if [[ -n "$threshold_tuning_report" && -e "$threshold_tuning_report" ]]; then
   args+=(--threshold-tuning-report "$threshold_tuning_report")
+fi
+
+if [[ -n "$rosbag_export_validation" && -e "$rosbag_export_validation" ]]; then
+  args+=(--rosbag-export-validation "$rosbag_export_validation")
+fi
+
+if [[ -n "${VISION_NAV_MCAP_EXPORT_VALIDATION:-}" && -e "${VISION_NAV_MCAP_EXPORT_VALIDATION}" ]]; then
+  args+=(--rosbag-export-validation "$VISION_NAV_MCAP_EXPORT_VALIDATION")
 fi
 
 if [[ "${VISION_NAV_SUPPORT_INCLUDE_MAP_ASSETS:-0}" == "1" ]]; then

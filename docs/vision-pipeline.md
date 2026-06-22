@@ -296,7 +296,10 @@ basic Pi setup checks.
 On a sourced ROS 2 workstation, use `--export-rosbag2` instead when you need a
 native serialized rosbag2 directory for `ros2 bag info/play`. The validator
 checks metadata, topic/message counts, MCAP sidecars, and native rosbag2 storage
-files without requiring ROS 2 to be installed.
+files without requiring ROS 2 to be installed. When a validation report exists
+at the normal Pi transfer path, `scripts/pi/create_support_bundle.sh` packages
+it so desktop support-bundle diagnostics show the ROS replay artifact health
+beside PX4, replay-gate, field-evidence, and threshold evidence.
 
 Create a transfer-ready support bundle after a bench run:
 
@@ -434,7 +437,8 @@ include `threshold_tuning_report.json` automatically from the same
 `~/DroneTransfer/outgoing/replay-cases/` folder when it exists.
 
 After a support bundle, field-evidence report, feature-method benchmark report,
-and threshold-tuning report exist, run the goal-level readiness audit:
+threshold-tuning report, and ROS bag export validation report exist, run the
+goal-level readiness audit:
 
 ```bash
 ./scripts/dev/run_local_autonomy_readiness_audit.sh
@@ -446,17 +450,19 @@ The wrapper scans conventional downloaded artifact folders under
 `~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.md`, and prints
 `__VISION_NAV_AUTONOMY_REPORT__=...` plus
 `__VISION_NAV_AUTONOMY_HANDOFF__=...`. It passes standalone field, PX4 receiver,
-feature-method benchmark, and threshold-tuning reports directly when they were
-downloaded outside the support bundle. Use `vision-nav-autonomy-readiness`
-directly when custom artifact paths are needed, or
+feature-method benchmark, threshold-tuning, and ROS bag export validation
+reports directly when they were downloaded outside the support bundle. Use
+`vision-nav-autonomy-readiness` directly when custom artifact paths are needed,
+or
 `vision-nav-autonomy-handoff --report <report.json> --output <handoff.md>` to
 render a handoff from an existing report. The handoff and evidence ZIP package
 include bounded goal-proof summaries so support review can see both passing
 proof items and remaining completion blockers.
 
 This is intentionally stricter than the synthetic smoke tests. It fails until
-PX4 receiver proof, real field coverage, feature-method benchmark evidence, and
-field-tuned acceptance thresholds are all present.
+PX4 receiver proof, real field coverage, feature-method benchmark evidence,
+field-tuned acceptance thresholds, and ROS replay export validation are all
+present.
 
 For a dependency-free local registry smoke test:
 
