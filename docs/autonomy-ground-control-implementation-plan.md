@@ -420,6 +420,9 @@ Status:
 - Done: field-capture preflight now matches `run_terrain_nav_loop.sh` output
   directory behavior by allowing missing nested capture directories when a
   writable ancestor exists, while still blocking unwritable output paths.
+- Done: field-capture preflight reports the selected bundle path plus a
+  copyable `VISION_NAV_BUNDLE=... ./scripts/pi/validate_terrain_bundle.sh`
+  command and Mission Planner build/upload hint when that bundle is missing.
 - Done: Module Setup, readiness report cards, support-bundle details, and
   handoff summaries preserve and copy field-capture preflight commands beside
   capture, metadata-update, and registration commands.

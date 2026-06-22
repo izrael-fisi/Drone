@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shlex
 from typing import Any
 
 from vision_nav.field_capture_metadata import audit_capture_metadata
@@ -107,6 +108,8 @@ def evaluate_field_capture_preflight(
         "condition": selected.get("condition") if selected else condition,
         "case_name": selected.get("case_name") if selected else None,
         "expected": selected.get("expected") if selected else None,
+        "bundle_path": selected.get("bundle") if selected else None,
+        "bundle_validation_command": selected.get("bundle_validation_command") if selected else None,
         "ready_for_capture": ready_for_capture,
         "ready_for_registration": ready_for_registration,
         "preflight_command": selected.get("preflight_command") if selected else None,
@@ -156,6 +159,9 @@ def normalize_selected_condition(
             plan_path=plan_path,
             condition=condition_key,
         )
+    bundle_path = str(normalized.get("bundle") or "").strip()
+    if bundle_path:
+        normalized["bundle_validation_command"] = bundle_validation_command(bundle_path)
     capture_command = str(normalized.get("capture_command") or "").strip()
     if capture_command:
         normalized["capture_command"] = command_with_runtime_status_read(capture_command)
@@ -182,7 +188,7 @@ def condition_keys(plan: dict[str, Any]) -> list[str]:
 
 def condition_checks(condition: dict[str, Any], repo: Path) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
-    checks.append(path_exists_check("bundle_path", "Mission bundle exists.", "Mission bundle is missing.", condition.get("bundle")))
+    checks.append(bundle_path_check(condition.get("bundle"), condition.get("bundle_validation_command")))
     checks.append(capture_output_parent_check(condition.get("capture_output_dir")))
     checks.append(script_check(repo, "terrain_runtime_wrapper", "scripts/pi/run_terrain_nav_loop.sh"))
     checks.append(script_check(repo, "runtime_status_wrapper", "scripts/pi/read_runtime_status.sh"))
@@ -193,11 +199,22 @@ def condition_checks(condition: dict[str, Any], repo: Path) -> list[dict[str, An
     return checks
 
 
-def path_exists_check(name: str, passed_message: str, failed_message: str, value: Any) -> dict[str, Any]:
+def bundle_validation_command(bundle_path: str) -> str:
+    return f"VISION_NAV_BUNDLE={shlex.quote(bundle_path)} ./scripts/pi/validate_terrain_bundle.sh"
+
+
+def bundle_path_check(value: Any, validation_command: Any = None) -> dict[str, Any]:
     path = expanded_path(value)
+    command = str(validation_command or "").strip()
+    details = {
+        "path": str(path) if path else None,
+        "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+        "validation_command": command or None,
+        "notes": "Build/upload the selected terrain bundle or set VISION_NAV_BUNDLE to the bundle used for this field plan.",
+    }
     if path and path.exists():
-        return passed(name, passed_message, {"path": str(path)})
-    return failed(name, failed_message, {"path": str(path) if path else None})
+        return passed("bundle_path", "Mission bundle exists.", details)
+    return failed("bundle_path", "Mission bundle is missing.", details)
 
 
 def capture_output_parent_check(value: Any) -> dict[str, Any]:
@@ -347,6 +364,8 @@ def print_human(report: dict[str, Any]) -> None:
         print(f"Terrain log: {report['source_log']}")
     if report.get("runtime_status_path"):
         print(f"Runtime status: {report['runtime_status_path']}")
+    if report.get("bundle_path"):
+        print(f"Bundle: {report['bundle_path']}")
     for item in report.get("checks") or []:
         status = item.get("status")
         name = item.get("name")
@@ -355,6 +374,9 @@ def print_human(report: dict[str, Any]) -> None:
     if report.get("capture_command"):
         print("Capture command:")
         print(report["capture_command"])
+    if report.get("bundle_validation_command"):
+        print("Bundle validation command:")
+        print(report["bundle_validation_command"])
     if report.get("metadata_update_command"):
         print("Metadata update command:")
         print(report["metadata_update_command"])

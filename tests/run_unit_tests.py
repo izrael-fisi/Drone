@@ -5793,6 +5793,13 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         assert_equal(ready_preflight["status"], "degraded", "field preflight waits for log and metadata")
         assert_equal(ready_preflight["ready_for_capture"], True, "field preflight capture readiness")
         assert_equal(ready_preflight["ready_for_registration"], False, "field preflight registration readiness")
+        assert_equal(
+            ready_preflight["bundle_path"],
+            str(ready_bundle),
+            "field preflight reports selected bundle path",
+        )
+        if "validate_terrain_bundle.sh" not in ready_preflight["bundle_validation_command"]:
+            raise AssertionError("Expected preflight to include bundle validation command")
         if ready_preflight["condition"] != "good_texture":
             raise AssertionError("Expected preflight to select next field condition")
         if not any(check["name"] == "registration_inputs" and check["status"] == "degraded" for check in ready_preflight["checks"]):
@@ -5837,8 +5844,15 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         )
         assert_equal(missing_bundle_preflight["status"], "failed", "field preflight fails missing bundle")
         assert_equal(missing_bundle_preflight["ready_for_capture"], False, "field preflight blocks missing bundle capture")
-        if not any(check["name"] == "bundle_path" and check["status"] == "failed" for check in missing_bundle_preflight["checks"]):
+        missing_bundle_check = next(
+            check for check in missing_bundle_preflight["checks"] if check["name"] == "bundle_path"
+        )
+        if missing_bundle_check["status"] != "failed":
             raise AssertionError("Expected preflight to identify missing bundle")
+        if "validate_terrain_bundle.sh" not in (missing_bundle_check.get("details") or {}).get("validation_command", ""):
+            raise AssertionError("Expected missing bundle check to include validation command")
+        if (missing_bundle_check.get("details") or {}).get("desktop_action") != "Mission Planner > Build Bundle, Upload Bundle":
+            raise AssertionError("Expected missing bundle check to include desktop action hint")
 
         legacy_plan = json.loads(json.dumps(plan))
         legacy_command = (
