@@ -240,9 +240,12 @@ assert "__VISION_NAV_FIELD_TEMPLATE__" in steps["create_field_evidence_template"
 assert "__VISION_NAV_FIELD_MANIFEST__" in steps["create_field_evidence_template"]["markers"]
 assert "create_field_collection_plan" in steps
 assert "capture_field_terrain_log" in steps
+assert "validate_captured_field_terrain_log" not in steps
 assert steps["capture_field_terrain_log"]["status"] == "passed"
 assert "parseable with" in steps["capture_field_terrain_log"]["notes"]
 assert "Runtime status snapshot is usable" in steps["capture_field_terrain_log"]["notes"]
+assert "__VISION_NAV_TERRAIN_LOG__" in steps["capture_field_terrain_log"]["markers"]
+assert "__VISION_NAV_RUNTIME_STATUS__" in steps["capture_field_terrain_log"]["markers"]
 assert "validate_rosbag_export" in steps
 assert "check_native_rosbag2_review" in steps
 assert "check_px4_receiver_proof" in steps
@@ -298,6 +301,70 @@ details = {check["name"]: check.get("details") or {} for check in validation["ch
 assert checks["log_archive"] == "passed"
 assert checks["required_step_results"] == "degraded"
 assert details["required_step_results"]["non_passed_count"] > 0
+PY
+active_capture_workflow_dir="$field_smoke_dir/workflow-active-capture"
+mkdir -p "$active_capture_workflow_dir/bundle" "$active_capture_workflow_dir/px4-sitl-session"
+cat >"$active_capture_workflow_dir/run_terrain_stub.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+out_dir="${VISION_NAV_OUTPUT_DIR:?}"
+mkdir -p "$out_dir"
+cat >"$out_dir/terrain_matches.jsonl" <<'JSON'
+{"sequence": 1, "result": {"status": "accepted", "timestamp_us": 1000000, "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0, "covariance": {"x_m2": 1.0, "y_m2": 1.0}}}}
+JSON
+cat >"$out_dir/runtime_status.json" <<JSON
+{"schema_version":"vision_nav_runtime_status_v1","active_map":{"bundle_id":"active-preflight"},"output":{"output_dir":"$out_dir","log_path":"$out_dir/terrain_matches.jsonl"},"last_match":{"status":"accepted"},"estimator":{"health":"healthy"},"external_position_health":{"status":"not_configured"}}
+JSON
+echo "Stub terrain capture wrote $out_dir/terrain_matches.jsonl"
+EOF
+chmod +x "$active_capture_workflow_dir/run_terrain_stub.sh"
+VISION_NAV_PYTHON=python3 \
+VISION_NAV_EVIDENCE_WORKFLOW_DIR="$active_capture_workflow_dir/workflow" \
+VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$active_capture_workflow_dir/workflow/autonomy_evidence_workflow.json" \
+VISION_NAV_EVIDENCE_WORKFLOW_TERRAIN_CAPTURE_COMMAND="$active_capture_workflow_dir/run_terrain_stub.sh" \
+VISION_NAV_FIELD_TEMPLATE="$active_capture_workflow_dir/field_manifest.template.json" \
+VISION_NAV_FIELD_MANIFEST="$active_capture_workflow_dir/field_manifest.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN="$active_capture_workflow_dir/replay-cases/field_collection_plan.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN_MD="$active_capture_workflow_dir/replay-cases/field_collection_plan.md" \
+VISION_NAV_FIELD_SITE_NAME=preflight-active-capture \
+VISION_NAV_FIELD_BUNDLE="$active_capture_workflow_dir/bundle" \
+VISION_NAV_BUNDLE="$active_capture_workflow_dir/bundle" \
+VISION_NAV_FIELD_LOG="$active_capture_workflow_dir/capture-out/terrain_matches.jsonl" \
+VISION_NAV_ROSBAG_EXPORT_DIR="$active_capture_workflow_dir/terrain-match/rosbag-jsonl" \
+VISION_NAV_ROSBAG_EXPORT_VALIDATION="$active_capture_workflow_dir/terrain-match/rosbag-jsonl-validation.json" \
+VISION_NAV_ROSBAG2_CLI_REVIEW="$active_capture_workflow_dir/terrain-match/rosbag2-cli-review.json" \
+VISION_NAV_FIELD_EVIDENCE_REPORT="$active_capture_workflow_dir/replay-cases/field_evidence_report.json" \
+VISION_NAV_FIELD_CASE_REPORT_DIR="$active_capture_workflow_dir/replay-cases/field_evidence_cases" \
+VISION_NAV_FEATURE_METHOD_BENCHMARK="$active_capture_workflow_dir/feature-method-bench" \
+VISION_NAV_THRESHOLD_TUNING_REPORT="$active_capture_workflow_dir/replay-cases/threshold_tuning_report.json" \
+VISION_NAV_THRESHOLD_CASE_REPORT_DIR="$active_capture_workflow_dir/replay-cases/threshold_tuning_cases" \
+VISION_NAV_SUPPORT_OUTPUT_DIR="$active_capture_workflow_dir/support-bundles" \
+VISION_NAV_AUTONOMY_READINESS_REPORT="$active_capture_workflow_dir/replay-cases/autonomy_readiness_report.json" \
+VISION_NAV_AUTONOMY_HANDOFF="$active_capture_workflow_dir/replay-cases/autonomy_readiness_report.md" \
+VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE="$active_capture_workflow_dir/replay-cases/autonomy_readiness_report.evidence.zip" \
+VISION_NAV_PX4_SITL_SESSION="$active_capture_workflow_dir/px4-sitl-session" \
+VISION_NAV_PX4_SITL_REPORT="$active_capture_workflow_dir/missing-receiver_evidence.json" \
+VISION_NAV_PX4_SITL_PREREQS="$active_capture_workflow_dir/px4-sitl-session/px4_sitl_capture_prereqs.json" \
+./scripts/pi/run_autonomy_evidence_workflow.sh >"$active_capture_workflow_dir/output.txt" 2>&1
+python3 - "$active_capture_workflow_dir/workflow/autonomy_evidence_workflow.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text())
+steps = {step["name"]: step for step in report["steps"]}
+assert "validate_captured_field_terrain_log" not in steps
+capture = steps["capture_field_terrain_log"]
+assert capture["status"] == "passed"
+assert "parseable with" in capture["notes"]
+assert "Runtime status snapshot is usable" in capture["notes"]
+assert "__VISION_NAV_TERRAIN_LOG__" in capture["markers"]
+assert "__VISION_NAV_RUNTIME_STATUS__" in capture["markers"]
+assert Path(capture["markers"]["__VISION_NAV_TERRAIN_LOG__"]).exists()
+assert Path(capture["markers"]["__VISION_NAV_RUNTIME_STATUS__"]).exists()
+assert "Stub terrain capture wrote" in "\n".join(capture["tail"])
 PY
 invalid_workflow_dir="$field_smoke_dir/workflow-invalid-log"
 mkdir -p "$invalid_workflow_dir"

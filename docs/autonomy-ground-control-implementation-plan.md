@@ -1025,6 +1025,10 @@ Status:
   before treating the capture step as cleanly passed. Missing, malformed, or
   incomplete runtime snapshots degrade capture evidence, while a validated
   terrain log can still feed replay/export follow-up steps.
+- Done: active terrain capture now records command execution, terrain-log
+  validation, runtime-status validation, and artifact markers on the required
+  `capture_field_terrain_log` workflow step instead of a separate non-required
+  validation step.
 - Done: the evidence workflow writes a compressed workflow-log archive and
   emits `__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=...`, so full per-step logs can
   be downloaded with the workflow report instead of relying only on bounded

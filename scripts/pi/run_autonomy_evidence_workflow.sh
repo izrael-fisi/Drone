@@ -24,6 +24,7 @@ fi
 field_log="${VISION_NAV_FIELD_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}"
 field_capture_output_dir="${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR:-$(dirname "$field_log")}"
 field_capture_count="${VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT:-30}"
+terrain_capture_command="${VISION_NAV_EVIDENCE_WORKFLOW_TERRAIN_CAPTURE_COMMAND:-./scripts/pi/run_terrain_nav_loop.sh}"
 rosbag_export_dir="${VISION_NAV_ROSBAG_EXPORT_DIR:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
 rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json}"
@@ -101,6 +102,7 @@ Common optional overrides:
   VISION_NAV_FIELD_LOG                    Default: $field_log
   VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR     Default: $field_capture_output_dir
   VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT=30
+  VISION_NAV_EVIDENCE_WORKFLOW_TERRAIN_CAPTURE_COMMAND=$terrain_capture_command
   VISION_NAV_ROSBAG_EXPORT_DIR            Default: $rosbag_export_dir
   VISION_NAV_ROSBAG_EXPORT_VALIDATION     Default: $rosbag_export_validation
   VISION_NAV_ROSBAG2_CLI_REVIEW           Default: $rosbag2_cli_review
@@ -657,13 +659,39 @@ if [[ -f "$field_log" ]]; then
     fail_step "capture_field_terrain_log" "$terrain_log_message" "${marker_lines[@]}"
   fi
 elif [[ -e "$bundle" ]]; then
+  capture_log_path="$log_dir/capture_field_terrain_log.log"
+  echo
+  echo "== capture_field_terrain_log =="
+  echo "$ $terrain_capture_command"
+  set +e
   (
     export VISION_NAV_COUNT="$field_capture_count"
     export VISION_NAV_OUTPUT_DIR="$field_capture_output_dir"
-    run_step "capture_field_terrain_log" ./scripts/pi/run_terrain_nav_loop.sh
-  )
+    "$terrain_capture_command"
+  ) >"$capture_log_path" 2>&1
+  capture_exit=$?
+  set -e
+  cat "$capture_log_path"
   captured_field_log="$field_capture_output_dir/terrain_matches.jsonl"
-  if [[ -f "$captured_field_log" ]]; then
+  if [[ "$capture_exit" -ne 0 ]]; then
+    record_step \
+      "capture_field_terrain_log" \
+      "failed" \
+      "$capture_exit" \
+      "$capture_log_path" \
+      "Terrain runtime capture command failed; review the step log and rerun after fixing the runtime prerequisite."
+  elif [[ ! -f "$captured_field_log" ]]; then
+    {
+      echo
+      echo "Expected captured terrain log was not written: $captured_field_log"
+    } >>"$capture_log_path"
+    record_step \
+      "capture_field_terrain_log" \
+      "failed" \
+      1 \
+      "$capture_log_path" \
+      "Terrain runtime capture completed but did not write terrain_matches.jsonl."
+  else
     field_log="$captured_field_log"
     export VISION_NAV_FIELD_LOG="$field_log"
     captured_runtime_status="$field_capture_output_dir/runtime_status.json"
@@ -678,16 +706,38 @@ elif [[ -e "$bundle" ]]; then
     captured_log_eval="$(evaluate_terrain_log "$field_log")"
     captured_log_status="${captured_log_eval%%|*}"
     captured_log_message="${captured_log_eval#*|}"
+    {
+      echo
+      echo "Capture validation:"
+      echo "$captured_log_message"
+      echo "$captured_runtime_status_message"
+      for line in "${captured_marker_lines[@]}"; do
+        echo "$line"
+      done
+    } >>"$capture_log_path"
     if [[ "$captured_log_status" == "passed" && "$captured_runtime_status_status" == "passed" ]]; then
       field_log_ready=1
-      pass_step "validate_captured_field_terrain_log" "$captured_log_message $captured_runtime_status_message" "${captured_marker_lines[@]}"
+      record_step \
+        "capture_field_terrain_log" \
+        "passed" \
+        0 \
+        "$capture_log_path" \
+        "$captured_log_message $captured_runtime_status_message"
     elif [[ "$captured_log_status" == "passed" ]]; then
       field_log_ready=1
-      degraded_step "validate_captured_field_terrain_log" \
-        "$captured_log_message $captured_runtime_status_message" \
-        "${captured_marker_lines[@]}"
+      record_step \
+        "capture_field_terrain_log" \
+        "degraded" \
+        0 \
+        "$capture_log_path" \
+        "$captured_log_message $captured_runtime_status_message"
     else
-      fail_step "validate_captured_field_terrain_log" "$captured_log_message" "${captured_marker_lines[@]}"
+      record_step \
+        "capture_field_terrain_log" \
+        "failed" \
+        1 \
+        "$capture_log_path" \
+        "$captured_log_message"
     fi
   fi
 else
