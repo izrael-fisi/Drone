@@ -124,16 +124,51 @@ Then evaluate:
 \`\`\`
 EOF
 
-PYTHONPATH="$repo_root/src" "$python_bin" - "$session_manifest" "$log_path" "$capture_readme" "$listener_capture" "$mavlink_status_capture" "$receiver_report" "$endpoint" "$message_type" "$rate_hz" "$repeat_count" "$dry_run" <<'PY'
+PYTHONPATH="$repo_root/src" "$python_bin" - "$session_manifest" "$log_path" "$capture_readme" "$listener_capture" "$mavlink_status_capture" "$receiver_report" "$endpoint" "$message_type" "$rate_hz" "$repeat_count" "$dry_run" "$out_dir" <<'PY'
 from __future__ import annotations
 
 import json
 from pathlib import Path
+import shlex
 import sys
 from datetime import datetime, timezone
 
-manifest_path, log_path, readme_path, listener_path, mavlink_status_path, report_path, endpoint, message_type, rate_hz, repeat_count, dry_run = sys.argv[1:]
+manifest_path, log_path, readme_path, listener_path, mavlink_status_path, report_path, endpoint, message_type, rate_hz, repeat_count, dry_run, out_dir = sys.argv[1:]
+
+
+def shell_join(parts):
+    return " ".join(shlex.quote(str(part)) for part in parts)
+
+
+def env_command(assignments, command_parts):
+    prefix = " ".join(f"{name}={shlex.quote(str(value))}" for name, value in assignments)
+    command = shell_join(command_parts)
+    return f"{prefix} {command}" if prefix else command
+
+
+send_command = env_command(
+    [
+        ("VISION_NAV_SITL_SMOKE_DIR", out_dir),
+        ("VISION_NAV_SITL_MAVLINK_ENDPOINT", endpoint),
+        ("VISION_NAV_SITL_MAVLINK_MESSAGE", message_type),
+    ],
+    ["./scripts/dev/px4_sitl_external_vision_smoke.sh"],
+)
+evaluate_session_command = shell_join(["./scripts/dev/evaluate_px4_sitl_session.sh", out_dir])
+evaluate_raw_command = shell_join(
+    [
+        "./scripts/dev/evaluate_px4_sitl_receiver_evidence.sh",
+        listener_path,
+        mavlink_status_path,
+    ]
+)
+automated_capture_command = env_command(
+    [("VISION_NAV_SITL_SMOKE_DIR", out_dir)],
+    ["./scripts/dev/run_px4_sitl_external_vision_capture.sh"],
+)
+
 session = {
+    "schema_version": "vision_nav_px4_sitl_evidence_session_v1",
     "version": "0.1.0",
     "generated_at": datetime.now(timezone.utc).isoformat(),
     "endpoint": endpoint,
@@ -153,6 +188,23 @@ session = {
         str(Path(listener_path)),
         str(Path(mavlink_status_path)),
     ],
+    "operator_commands": {
+        "start_px4_sitl_example": "cd ~/PX4-Autopilot && make px4_sitl_default sihsim_quadx",
+        "send_synthetic_stream": send_command,
+        "px4_shell_capture": [
+            "listener vehicle_visual_odometry",
+            "listener vehicle_visual_odometry",
+            "mavlink status",
+        ],
+        "evaluate_session": evaluate_session_command,
+        "evaluate_raw_captures": evaluate_raw_command,
+        "automated_capture": automated_capture_command,
+    },
+    "markers": {
+        "__VISION_NAV_PX4_SITL_SESSION__": str(Path(out_dir)),
+        "__VISION_NAV_PX4_SITL_MANIFEST__": str(Path(manifest_path)),
+        "__VISION_NAV_PX4_SITL_REPORT__": str(Path(report_path)),
+    },
 }
 Path(manifest_path).write_text(json.dumps(session, indent=2, sort_keys=True) + "\n")
 PY

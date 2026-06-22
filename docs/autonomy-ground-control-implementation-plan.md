@@ -33,6 +33,10 @@ Status:
 - Done: the PX4 SITL smoke script writes an evidence-session folder with the
   synthetic sender log, session manifest, receiver-capture instructions, stable
   capture filenames, and a dry-run mode used by local preflight.
+- Done: the PX4 SITL evidence-session manifest now includes a stable schema
+  version, artifact markers, and copyable operator commands for sending the
+  synthetic stream, capturing PX4 shell output, evaluating the session, and
+  rerunning the automated capture harness.
 - Done: `vision-nav-evaluate-px4-sitl-session` and
   `scripts/dev/evaluate_px4_sitl_session.sh` evaluate an evidence-session
   folder directly, write `receiver_evidence.json`, and fail cleanly until the

@@ -971,6 +971,28 @@ grep -q "__VISION_NAV_PX4_SITL_REPORT__=" "$smoke_output"
 test -f "$smoke_dir/px4_sitl_evidence_session.json"
 test -f "$smoke_dir/receiver_capture/README.md"
 test -f "$smoke_dir/synthetic_external_vision.jsonl"
+python3 - "$smoke_dir/px4_sitl_evidence_session.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+session = json.loads(Path(sys.argv[1]).read_text())
+commands = session["operator_commands"]
+markers = session["markers"]
+assert session["schema_version"] == "vision_nav_px4_sitl_evidence_session_v1"
+assert "px4_sitl_external_vision_smoke.sh" in commands["send_synthetic_stream"]
+assert "evaluate_px4_sitl_session.sh" in commands["evaluate_session"]
+assert "evaluate_px4_sitl_receiver_evidence.sh" in commands["evaluate_raw_captures"]
+assert "run_px4_sitl_external_vision_capture.sh" in commands["automated_capture"]
+assert commands["px4_shell_capture"] == [
+    "listener vehicle_visual_odometry",
+    "listener vehicle_visual_odometry",
+    "mavlink status",
+]
+assert markers["__VISION_NAV_PX4_SITL_REPORT__"].endswith("receiver_evidence.json")
+PY
 capture_smoke_dir="$(mktemp -d "$preflight_tmp_dir/sitl-capture.XXXXXX")"
 VISION_NAV_SITL_CAPTURE_DRY_RUN=1 \
 VISION_NAV_SITL_SMOKE_DIR="$capture_smoke_dir" \
@@ -981,6 +1003,19 @@ grep -q "__VISION_NAV_PX4_SITL_REPORT__=" "$capture_output"
 test -f "$capture_smoke_dir/px4_sitl_evidence_session.json"
 test -f "$capture_smoke_dir/px4_sitl_capture_prereqs.json"
 test -f "$capture_smoke_dir/receiver_capture/README.md"
+python3 - "$capture_smoke_dir/px4_sitl_evidence_session.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+session = json.loads(Path(sys.argv[1]).read_text())
+commands = session["operator_commands"]
+assert session["schema_version"] == "vision_nav_px4_sitl_evidence_session_v1"
+assert "run_px4_sitl_external_vision_capture.sh" in commands["automated_capture"]
+assert "evaluate_px4_sitl_session.sh" in commands["evaluate_session"]
+PY
 python3 - "$capture_smoke_dir/px4_sitl_capture_prereqs.json" <<'PY'
 from __future__ import annotations
 

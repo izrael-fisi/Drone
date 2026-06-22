@@ -242,7 +242,9 @@ VISION_NAV_SITL_SMOKE_DIR="$PWD/px4-sitl-evidence" \
 The folder contains:
 
 - `synthetic_external_vision.jsonl`: sender-side synthetic match log
-- `px4_sitl_evidence_session.json`: endpoint/message/rate/session metadata
+- `px4_sitl_evidence_session.json`: endpoint/message/rate/session metadata,
+  artifact markers, and copyable operator commands for sending, capture, and
+  evaluation
 - `receiver_capture/README.md`: exact capture and evaluation commands
 - `receiver_capture/vehicle_visual_odometry.txt`: where to save listener output
 - `receiver_capture/mavlink_status.txt`: where to save MAVLink status output
