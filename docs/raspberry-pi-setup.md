@@ -671,6 +671,9 @@ vision-nav-review-rosbag2-cli \
 This command records both the strict validation result and `ros2 bag info`
 output. If the `ros2` CLI is not sourced, the report degrades by default; add
 `--require-ros2` when the workstation review must fail closed.
+The support-bundle wrapper auto-includes
+`~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json` when it
+exists, or set `VISION_NAV_ROSBAG2_CLI_REVIEW` to package a custom review path.
 
 ## Create A Support Bundle
 

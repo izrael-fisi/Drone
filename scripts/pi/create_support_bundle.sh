@@ -11,6 +11,7 @@ field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/o
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.json}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
+rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json}"
 
 if [[ "$venv_python" == */* ]]; then
   if [[ ! -x "$venv_python" ]]; then
@@ -98,6 +99,10 @@ fi
 
 if [[ -n "${VISION_NAV_MCAP_EXPORT_VALIDATION:-}" && -e "${VISION_NAV_MCAP_EXPORT_VALIDATION}" ]]; then
   args+=(--rosbag-export-validation "$VISION_NAV_MCAP_EXPORT_VALIDATION")
+fi
+
+if [[ -n "$rosbag2_cli_review" && -e "$rosbag2_cli_review" ]]; then
+  args+=(--rosbag2-cli-review "$rosbag2_cli_review")
 fi
 
 if [[ "${VISION_NAV_SUPPORT_INCLUDE_MAP_ASSETS:-0}" == "1" ]]; then

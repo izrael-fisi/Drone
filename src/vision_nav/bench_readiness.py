@@ -98,6 +98,9 @@ def evaluate_bench_readiness(
     rosbag_export_check = check_rosbag_export_validations(manifest)
     if rosbag_export_check is not None:
         checks.append(rosbag_export_check)
+    rosbag2_cli_check = check_rosbag2_cli_reviews(manifest)
+    if rosbag2_cli_check is not None:
+        checks.append(rosbag2_cli_check)
     status = readiness_status(checks)
     return {
         "status": status,
@@ -377,6 +380,32 @@ def check_rosbag_export_validations(manifest: dict[str, Any]) -> dict[str, Any] 
     if status in WARNING:
         return degraded("rosbag_export_validations", "ROS bag export validation reports are degraded.", details)
     return failed("rosbag_export_validations", f"ROS bag export validation reports are {status}.", details)
+
+
+def check_rosbag2_cli_reviews(manifest: dict[str, Any]) -> dict[str, Any] | None:
+    reviews = manifest.get("rosbag2_cli_reviews") or {}
+    status = normalize_status(reviews.get("status"))
+    reports = reviews.get("reports") if isinstance(reviews.get("reports"), list) else []
+    details = {
+        "report_count": reviews.get("report_count"),
+        "failed_bags": [
+            report.get("bag_dir") or report.get("artifact_path")
+            for report in reports
+            if isinstance(report, dict) and normalize_status(report.get("status")) == "failed"
+        ][:5],
+        "degraded_bags": [
+            report.get("bag_dir") or report.get("artifact_path")
+            for report in reports
+            if isinstance(report, dict) and normalize_status(report.get("status")) == "degraded"
+        ][:5],
+    }
+    if status in MISSING:
+        return None
+    if status in PASSING:
+        return passed("rosbag2_cli_reviews", "Native rosbag2 CLI review reports passed.", details)
+    if status in WARNING:
+        return degraded("rosbag2_cli_reviews", "Native rosbag2 CLI review reports are degraded.", details)
+    return failed("rosbag2_cli_reviews", f"Native rosbag2 CLI review reports are {status}.", details)
 
 
 def readiness_status(checks: list[dict[str, Any]]) -> str:

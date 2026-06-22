@@ -319,9 +319,10 @@ vision-nav-review-rosbag2-cli \
 That review wraps the strict validator and captures `ros2 bag info` output so
 support can confirm the bag is readable by standard ROS 2 tooling.
 When a validation report exists at the normal Pi transfer path,
-`scripts/pi/create_support_bundle.sh` packages it so desktop support-bundle
-diagnostics show the ROS replay artifact health beside PX4, replay-gate,
-field-evidence, and threshold evidence.
+`scripts/pi/create_support_bundle.sh` packages it, and it also packages
+`rosbag2-cli-review.json` when that native workstation review exists. Desktop
+support-bundle diagnostics then show the ROS replay artifact health beside PX4,
+replay-gate, field-evidence, and threshold evidence.
 
 Create a transfer-ready support bundle after a bench run:
 

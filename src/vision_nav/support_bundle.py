@@ -79,6 +79,12 @@ def parse_args() -> argparse.Namespace:
         help="ROS bag export validation JSON report or directory. Can be repeated.",
     )
     parser.add_argument(
+        "--rosbag2-cli-review",
+        action="append",
+        default=[],
+        help="Native rosbag2 CLI review JSON report or directory. Can be repeated.",
+    )
+    parser.add_argument(
         "--replay-case",
         action="append",
         default=[],
@@ -1038,6 +1044,82 @@ def copy_rosbag_export_validations(paths: list[str], support_dir: Path) -> dict[
     }
 
 
+def summarize_rosbag2_cli_review(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    cli = report.get("ros2_cli") if isinstance(report.get("ros2_cli"), dict) else {}
+    issues = []
+    for issue in report.get("issues") or []:
+        if isinstance(issue, dict):
+            issues.append({"severity": issue.get("severity"), "message": issue.get("message")})
+    return {
+        "path": str(report_path),
+        "status": report.get("status"),
+        "artifact_path": report.get("artifact_path"),
+        "bag_dir": report.get("bag_dir"),
+        "validation_status": report.get("validation_status"),
+        "validation_format": report.get("validation_format"),
+        "ros2_cli_status": cli.get("status"),
+        "ros2_cli_exit_code": cli.get("exit_code"),
+        "issues": issues,
+    }
+
+
+def copy_rosbag2_cli_reviews(paths: list[str], support_dir: Path) -> dict[str, Any]:
+    if not paths:
+        return {"status": "not_provided", "report_count": 0}
+
+    summary_dir = support_dir / "summaries" / "rosbag2_cli_reviews"
+    raw_dir = support_dir / "extras" / "rosbag2_cli_reviews"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"rosbag2 CLI review path is missing: {source}"})
+            continue
+        if source.is_dir():
+            copied.append(copy_tree(source, raw_dir / safe_relpath(source)))
+            json_files = sorted(source.rglob("*.json"))
+        else:
+            copied.append(copy_file(source, raw_dir / source.name))
+            json_files = [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception as exc:
+                issues.append({"severity": "warning", "message": f"Could not parse rosbag2 CLI review {report_file}: {exc}"})
+                continue
+            if not isinstance(report, dict) or report.get("schema_version") != "vision_nav_rosbag2_cli_review_v1":
+                continue
+            report_summary = summarize_rosbag2_cli_review(report, report_path=report_file)
+            reports.append(report_summary)
+            output_name = f"{sanitize_filename(Path(str(report.get('bag_dir') or report_file.stem)).stem)}-{len(reports):02d}.json"
+            (summary_dir / output_name).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+    statuses = {str(report.get("status") or "").lower() for report in reports}
+    if missing or "failed" in statuses:
+        status = "failed"
+    elif not reports:
+        status = "degraded" if issues else "not_provided"
+    elif statuses.intersection({"degraded", "skipped"}):
+        status = "degraded"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "report_count": len(reports),
+        "reports": reports,
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
 def zip_directory(source_dir: Path, zip_path: Path) -> None:
     if zip_path.exists():
         zip_path.unlink()
@@ -1070,6 +1152,7 @@ def create_support_bundle(
     field_collection_plan_paths: list[str] | None = None,
     threshold_tuning_report_paths: list[str] | None = None,
     rosbag_export_validation_paths: list[str] | None = None,
+    rosbag2_cli_review_paths: list[str] | None = None,
     include_map_assets: bool = False,
     max_log_bytes: int = DEFAULT_MAX_LOG_BYTES,
 ) -> dict[str, Any]:
@@ -1139,6 +1222,10 @@ def create_support_bundle(
         rosbag_export_validation_paths or [],
         support_dir,
     )
+    rosbag2_cli_reviews = copy_rosbag2_cli_reviews(
+        rosbag2_cli_review_paths or [],
+        support_dir,
+    )
     manifest = {
         "support_bundle_version": "0.1.0",
         "name": support_name,
@@ -1154,6 +1241,7 @@ def create_support_bundle(
         "field_collection_plans": field_collection_plans,
         "threshold_tuning": threshold_tuning,
         "rosbag_export_validations": rosbag_export_validations,
+        "rosbag2_cli_reviews": rosbag2_cli_reviews,
         "extras": extra_summary,
     }
     bench_readiness = evaluate_bench_readiness(manifest)
@@ -1219,6 +1307,9 @@ def print_human(result: dict[str, Any]) -> None:
     rosbag_validations = manifest.get("rosbag_export_validations") or {}
     if rosbag_validations.get("status") not in {None, "not_provided"}:
         print(f"ROS bag exports: {rosbag_validations.get('status')} ({rosbag_validations.get('report_count')} validation(s))")
+    rosbag2_reviews = manifest.get("rosbag2_cli_reviews") or {}
+    if rosbag2_reviews.get("status") not in {None, "not_provided"}:
+        print(f"rosbag2 CLI reviews: {rosbag2_reviews.get('status')} ({rosbag2_reviews.get('report_count')} review(s))")
     readiness = manifest.get("bench_readiness") or {}
     print(f"Bench readiness: {readiness.get('status') or 'unknown'}")
     print(f"__VISION_NAV_SUPPORT_ZIP__={result['zip_path']}")
@@ -1248,6 +1339,7 @@ def main() -> None:
         field_collection_plan_paths=args.field_collection_plan,
         threshold_tuning_report_paths=args.threshold_tuning_report,
         rosbag_export_validation_paths=args.rosbag_export_validation,
+        rosbag2_cli_review_paths=args.rosbag2_cli_review,
         include_map_assets=args.include_map_assets,
         max_log_bytes=args.max_log_bytes,
     )

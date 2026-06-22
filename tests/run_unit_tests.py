@@ -1900,6 +1900,38 @@ RC8_OPTION,90
                 }
             )
         )
+        rosbag2_cli_review = root / "rosbag2-cli-review.json"
+        rosbag2_cli_review.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_rosbag2_cli_review_v1",
+                    "status": "passed",
+                    "artifact_path": str(root / "rosbag2-native"),
+                    "bag_dir": str(root / "rosbag2-native"),
+                    "validation_status": "passed",
+                    "validation_format": "vision_nav_rosbag2_v1",
+                    "validation_report": {
+                        "schema_version": "vision_nav_rosbag_export_validation_v1",
+                        "status": "passed",
+                        "format": "vision_nav_rosbag2_v1",
+                        "message_count": 4,
+                        "topic_count": 3,
+                        "topics": [
+                            {"name": "/vision_nav/odometry", "type": "nav_msgs/msg/Odometry", "message_count": 1},
+                            {"name": "/diagnostics", "type": "diagnostic_msgs/msg/DiagnosticArray", "message_count": 2},
+                        ],
+                    },
+                    "ros2_cli": {
+                        "status": "passed",
+                        "command": ["ros2", "bag", "info", str(root / "rosbag2-native")],
+                        "stdout": "Files: rosbag2_0.db3\n",
+                        "stderr": "",
+                        "exit_code": 0,
+                    },
+                    "issues": [],
+                }
+            )
+        )
 
         result = create_support_bundle(
             bundle=str(bundle),
@@ -1918,6 +1950,7 @@ RC8_OPTION,90
             field_collection_plan_paths=[str(field_collection_plan)],
             threshold_tuning_report_paths=[str(threshold_tuning_report)],
             rosbag_export_validation_paths=[str(rosbag_export_validation)],
+            rosbag2_cli_review_paths=[str(rosbag2_cli_review)],
             include_map_assets=True,
         )
         assert_equal(result["status"], "passed", "support bundle status")
@@ -1951,6 +1984,7 @@ RC8_OPTION,90
             "summaries/field_collection_plans/field_manifest-01.json",
             "summaries/threshold_tuning/field_manifest-01.json",
             "summaries/rosbag_export_validations/vision_nav_rosbag_jsonl_v1-01.json",
+            "summaries/rosbag2_cli_reviews/rosbag2-native-01.json",
             "summaries/bench_readiness.json",
             "extras/field_collection_plans/field_collection_plan.json",
             "extras/field_collection_plans/field_collection_plan.md",
@@ -1963,6 +1997,7 @@ RC8_OPTION,90
             "extras/field_evidence/field_evidence_report.json",
             "extras/threshold_tuning/threshold_tuning_report.json",
             "extras/rosbag_export_validations/rosbag-jsonl-validation.json",
+            "extras/rosbag2_cli_reviews/rosbag2-cli-review.json",
         }:
             if expected not in names:
                 raise AssertionError(f"Missing {expected} from support bundle zip")
@@ -2011,6 +2046,8 @@ RC8_OPTION,90
         assert_equal(manifest["rosbag_export_validations"]["status"], "passed", "support rosbag validation status")
         assert_equal(manifest["rosbag_export_validations"]["report_count"], 1, "support rosbag validation count")
         assert_equal(manifest["rosbag_export_validations"]["message_count"], 4, "support rosbag validation messages")
+        assert_equal(manifest["rosbag2_cli_reviews"]["status"], "passed", "support rosbag2 cli review status")
+        assert_equal(manifest["rosbag2_cli_reviews"]["report_count"], 1, "support rosbag2 cli review count")
         assert_equal(manifest["bench_readiness"]["status"], "degraded", "support bench readiness status")
         assert_equal(manifest["bench_readiness"]["summary"]["degraded"], 1, "support bench readiness degraded count")
         readiness = evaluate_bench_readiness_file(zip_path)
@@ -2022,6 +2059,7 @@ RC8_OPTION,90
         assert_equal(readiness_checks["runtime_status"], "passed", "bench readiness runtime status")
         assert_equal(readiness_checks["px4_sitl_evidence"], "passed", "bench readiness px4 evidence")
         assert_equal(readiness_checks["rosbag_export_validations"], "passed", "bench readiness rosbag validation")
+        assert_equal(readiness_checks["rosbag2_cli_reviews"], "passed", "bench readiness rosbag2 cli review")
         assert_equal(
             readiness_check_details["px4_sitl_evidence"]["observed_rate_hz"],
             5.0,
