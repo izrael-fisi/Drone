@@ -1154,6 +1154,10 @@ Status:
   blockers into missing required workflow steps, non-passing workflow step
   records, missing final-proof markers, and failed/degraded validation checks,
   so support review can identify the next proof gap without opening raw JSON.
+- Done: workflow validation now treats an already-loaded field collection
+  condition as satisfied for next-action guidance, so a degraded selected
+  condition no longer masks the actionable field-log capture or registration
+  step that operators need to run next.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

@@ -491,6 +491,7 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
 
 def workflow_next_required_step(steps: list[Any], *, markers: dict[str, Any] | None = None) -> dict[str, Any] | None:
     by_name = {str(step.get("name")): step for step in steps if isinstance(step, dict) and step.get("name")}
+    deferred_selected_condition_step: dict[str, Any] | None = None
     for name in REQUIRED_WORKFLOW_STEPS:
         step = by_name.get(name)
         if step is None:
@@ -502,6 +503,9 @@ def workflow_next_required_step(steps: list[Any], *, markers: dict[str, Any] | N
             )
         status = str(step.get("status") or "unknown")
         if status != "passed":
+            if should_defer_selected_condition_step(name, status, markers):
+                deferred_selected_condition_step = step
+                continue
             return workflow_step_summary(
                 name,
                 status=status,
@@ -509,7 +513,29 @@ def workflow_next_required_step(steps: list[Any], *, markers: dict[str, Any] | N
                 notes=step.get("notes"),
                 markers=markers,
             )
+    if deferred_selected_condition_step is not None:
+        return workflow_step_summary(
+            "select_field_collection_condition",
+            status=str(deferred_selected_condition_step.get("status") or "unknown"),
+            exit_code=deferred_selected_condition_step.get("exit_code"),
+            notes=deferred_selected_condition_step.get("notes"),
+            markers=markers,
+        )
     return None
+
+
+def should_defer_selected_condition_step(
+    name: str,
+    status: str,
+    markers: dict[str, Any] | None,
+) -> bool:
+    if name != "select_field_collection_condition" or status not in {"degraded", "skipped"}:
+        return False
+    if not isinstance(markers, dict):
+        return False
+    selected_condition = markers.get("__VISION_NAV_FIELD_SELECTED_CONDITION__")
+    selected_case = markers.get("__VISION_NAV_FIELD_SELECTED_CASE__")
+    return any(isinstance(value, str) and value.strip() for value in (selected_condition, selected_case))
 
 
 def workflow_step_summary(

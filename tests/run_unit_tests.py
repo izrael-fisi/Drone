@@ -2884,6 +2884,41 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         if "rerun the evidence workflow" not in old_format_checks["workflow_provenance"]["message"]:
             raise AssertionError("workflow provenance diagnostic should tell operators to rerun the workflow")
 
+        capture_blocked_report = json.loads(report_path.read_text())
+        capture_blocked_report["markers"].pop("__VISION_NAV_TERRAIN_LOG__", None)
+        capture_blocked_report["markers"].pop("__VISION_NAV_RUNTIME_STATUS__", None)
+        capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CONDITION__"] = "good_texture"
+        capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CASE__"] = "dronecompute-test-area-good_texture"
+        for step in capture_blocked_report["steps"]:
+            if step.get("name") == "select_field_collection_condition":
+                step["status"] = "degraded"
+                step["notes"] = "Loaded next field collection condition good_texture; capture metadata still needs completion before registration."
+            elif step.get("name") == "capture_field_terrain_log":
+                step["status"] = "skipped"
+                step["notes"] = "Missing terrain replay log and bundle."
+            elif step.get("name") == "register_field_replay_case":
+                step["status"] = "skipped"
+                step["notes"] = "Terrain log was not validated in this workflow run."
+        capture_blocked_path = root / "capture_blocked_autonomy_evidence_workflow.json"
+        capture_blocked_path.write_text(json.dumps(capture_blocked_report))
+        capture_blocked_validation = validate_workflow_report(capture_blocked_path)
+        assert_equal(
+            capture_blocked_validation["next_required_step"]["name"],
+            "capture_field_terrain_log",
+            "workflow validation should surface capture after a condition is already selected",
+        )
+        assert_equal(
+            capture_blocked_validation["next_required_step"]["desktop_action"],
+            "Module Setup > Field Log Capture",
+            "workflow validation selected-condition defer keeps capture desktop action",
+        )
+        capture_blocked_checks = {check["name"]: check for check in capture_blocked_validation["checks"]}
+        assert_equal(
+            capture_blocked_checks["required_step_results"]["details"]["next_required_step"]["name"],
+            "capture_field_terrain_log",
+            "workflow validation required-step detail should surface capture after selected condition",
+        )
+
         metadata_blocked_report = json.loads(report_path.read_text())
         metadata_command = (
             "VISION_NAV_FIELD_MANIFEST=/tmp/field_manifest.json "
