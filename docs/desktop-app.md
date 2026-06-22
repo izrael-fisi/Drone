@@ -393,6 +393,13 @@ threshold report under the Pi replay-cases folder, and downloads it to
 Reports list shows downloaded JSON reports with coverage status, replay status,
 field-case count, and the main acceptance-rate margins.
 
+Module Setup can run the local-only `PX4 SITL Receiver Capture` action on the
+desktop/PX4 workstation. The action runs
+`scripts/dev/run_px4_sitl_external_vision_capture.sh`, stores the session under
+`~/DroneTransfer/from-pi/px4-sitl-evidence/`, and refreshes the PX4 Receiver
+Evidence list. The local readiness re-audit also scans that folder for
+`receiver_evidence.json`.
+
 Module Setup can run `ROS Bag Validation` after a terrain runtime/replay log
 exists. The action runs `scripts/pi/run_rosbag_export_validation.sh` over SSH,
 exports the default terrain log into the dependency-free ROS bag JSONL review

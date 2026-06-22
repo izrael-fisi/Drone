@@ -931,6 +931,50 @@ fn run_local_rosbag2_cli_review_inner(
 }
 
 #[tauri::command]
+pub async fn run_local_px4_sitl_receiver_capture(
+    repo_dir: String,
+    download_root: Option<String>,
+) -> Result<LocalCommandResult, String> {
+    tokio::task::spawn_blocking(move || {
+        run_local_px4_sitl_receiver_capture_inner(&repo_dir, download_root.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+fn run_local_px4_sitl_receiver_capture_inner(
+    repo_dir: &str,
+    download_root: Option<&str>,
+) -> Result<LocalCommandResult> {
+    let repo = expand_local_path(repo_dir)?;
+    let script = repo.join("scripts/dev/run_px4_sitl_external_vision_capture.sh");
+    if !script.is_file() {
+        return Err(anyhow!(
+            "Missing local PX4 SITL receiver capture wrapper: {}",
+            script.display()
+        ));
+    }
+
+    let download_root = expand_local_path(download_root.unwrap_or("~/DroneTransfer/from-pi"))?;
+    let session_dir = download_root.join("px4-sitl-evidence");
+    std::fs::create_dir_all(&session_dir)
+        .with_context(|| format!("Cannot create {}", session_dir.display()))?;
+
+    let output = Command::new("bash")
+        .arg(&script)
+        .current_dir(&repo)
+        .env("VISION_NAV_SITL_SMOKE_DIR", &session_dir)
+        .output()
+        .with_context(|| format!("Failed to run {}", script.display()))?;
+    Ok(LocalCommandResult {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
+}
+
+#[tauri::command]
 pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails, String> {
     let path = expand_local_path(&path).map_err(|e| e.to_string())?;
     let file = File::open(&path)
@@ -3836,7 +3880,8 @@ mod tests {
         list_field_evidence_reports, list_field_evidence_templates, list_px4_receiver_reports,
         list_rosbag_export_validation_reports, list_threshold_tuning_reports,
         read_support_bundle_details, run_local_autonomy_readiness_audit_inner,
-        run_local_rosbag2_cli_review_inner, support_summary_from_manifest,
+        run_local_px4_sitl_receiver_capture_inner, run_local_rosbag2_cli_review_inner,
+        support_summary_from_manifest,
     };
     use std::fs::{self, File};
     use std::io::Write;
@@ -3910,6 +3955,35 @@ mod tests {
         assert!(result.stdout.contains("terrain-match/rosbag2-native"));
         assert!(result.stdout.contains("__VISION_NAV_ROSBAG2_CLI_REVIEW__="));
         assert!(transfer_root.join("terrain-match").is_dir());
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn runs_local_px4_sitl_receiver_capture_wrapper_with_download_paths() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let repo = std::env::temp_dir().join(format!("drone-local-px4-sitl-capture-{stamp}"));
+        let script_dir = repo.join("scripts/dev");
+        fs::create_dir_all(&script_dir).expect("create script dir");
+        fs::write(
+            script_dir.join("run_px4_sitl_external_vision_capture.sh"),
+            "#!/usr/bin/env bash\nprintf 'session=%s\\n' \"$VISION_NAV_SITL_SMOKE_DIR\"\nprintf '__VISION_NAV_PX4_SITL_REPORT__=%s/receiver_evidence.json\\n' \"$VISION_NAV_SITL_SMOKE_DIR\"\nexit 6\n",
+        )
+        .expect("write wrapper");
+        let transfer_root = repo.join("from-pi");
+
+        let result = run_local_px4_sitl_receiver_capture_inner(
+            repo.to_str().expect("repo path"),
+            Some(transfer_root.to_str().expect("transfer path")),
+        )
+        .expect("run wrapper");
+
+        assert_eq!(result.exit_code, 6);
+        assert!(result.stdout.contains("px4-sitl-evidence"));
+        assert!(result.stdout.contains("__VISION_NAV_PX4_SITL_REPORT__="));
+        assert!(transfer_root.join("px4-sitl-evidence").is_dir());
         let _ = fs::remove_dir_all(&repo);
     }
 

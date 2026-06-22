@@ -3295,6 +3295,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const localEvidencePackage = parseAutonomyEvidencePackage(output);
       const localWorkflow = parseAutonomyEvidenceWorkflowReport(output);
       const localRosbag2CliReview = parseRosbag2CliReviewReport(output);
+      const localPx4Report = parsePx4SitlReport(output);
       const localFieldCollectionPlan = parseFieldCollectionPlan(output);
       const localFieldCollectionPlanMarkdown = parseFieldCollectionPlanMarkdown(output);
       if (localHandoff) {
@@ -3312,11 +3313,17 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       if (localFieldCollectionPlanMarkdown) {
         setFieldCollectionPlanMarkdownLocalPath(localFieldCollectionPlanMarkdown);
       }
-      const localEvidenceNotes = localRosbag2CliReview ? `\nrosbag2 CLI review: ${localRosbag2CliReview}` : "";
+      const localEvidenceNotes = [
+        localPx4Report ? `PX4 receiver report: ${localPx4Report}` : "",
+        localRosbag2CliReview ? `rosbag2 CLI review: ${localRosbag2CliReview}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const localEvidenceSummary = localEvidenceNotes ? `\n${localEvidenceNotes}` : "";
 
       setResult("local-autonomy-readiness", {
         status: result.exit_code === 0 && localReport ? "passed" : "failed",
-        output: `$ local autonomy readiness\n${output || "(no output)"}${localEvidenceNotes}\n[exit ${result.exit_code}]`,
+        output: `$ local autonomy readiness\n${output || "(no output)"}${localEvidenceSummary}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
       await refreshAutonomyReports();
@@ -3776,6 +3783,28 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const runLocalPx4SitlReceiverCapture = async () => {
+    setRunningStep("local-px4-sitl-receiver");
+    setError(null);
+    setResult("local-px4-sitl-receiver", { status: "running", output: "$ PX4 SITL receiver capture\n" });
+    try {
+      const result = await cmd.runLocalPx4SitlReceiverCapture(repoPath, DESKTOP_TRANSFER_FROM_PI_DIR);
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const localPx4Report = parsePx4SitlReport(output);
+      const localPx4Notes = localPx4Report ? `\nPX4 receiver report: ${localPx4Report}` : "";
+      setResult("local-px4-sitl-receiver", {
+        status: result.exit_code === 0 && localPx4Report ? "passed" : "failed",
+        output: `$ PX4 SITL receiver capture\n${output || "(no output)"}${localPx4Notes}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+      await refreshPx4ReceiverReports();
+    } catch (err) {
+      setResult("local-px4-sitl-receiver", { status: "failed", output: `$ PX4 SITL receiver capture\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const runFeatureMethodBenchmark = async () => {
     const resolvedAuth = auth();
     if (!resolvedAuth || !form.host) {
@@ -4214,6 +4243,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/check_micro_xrce_dds_agent.sh`,
     },
     {
+      id: "local-px4-sitl-receiver",
+      title: "PX4 SITL Receiver Capture",
+      detail: "Runs local PX4 SITL and captures receiver proof for the external-vision ODOMETRY path.",
+      localOnly: true,
+    },
+    {
       id: "calibration-capture",
       title: "Calibration Capture",
       detail: "Captures a short chessboard image set for down-camera calibration when the target is ready.",
@@ -4312,6 +4347,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     if (step.id === "local-rosbag2-cli-review") {
       await runLocalRosbag2CliReview();
+      return;
+    }
+    if (step.id === "local-px4-sitl-receiver") {
+      await runLocalPx4SitlReceiverCapture();
       return;
     }
     if (step.id === "field-collection-plan") {

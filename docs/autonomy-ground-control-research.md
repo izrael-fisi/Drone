@@ -71,6 +71,8 @@ Implementation tasks:
 - Add frame-transform tests for camera, body, local ENU, local NED, and PX4 FRD.
 - Add stream-health checks: output rate, timestamp skew, covariance bounds,
   stale-match rejection, and estimator reset events.
+- Surface PX4 SITL receiver capture from Module Setup so the operator can
+  generate the required ODOMETRY receiver proof in the same evidence workflow.
 - Add a PX4 parameter guidance doc for EKF external vision. Do not auto-change
   flight-controller parameters from the app.
 

@@ -789,13 +789,16 @@ VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" \
 The desktop SITL smoke and capture scripts print
 `__VISION_NAV_PX4_SITL_SESSION__=...` and
 `__VISION_NAV_PX4_SITL_REPORT__=...` markers after preparing or evaluating a
-session. Use the session marker as `VISION_NAV_PX4_SITL_SESSION`. The session
-folder is copied under `extras/px4_sitl_session/`, and the parsed pass/fail
-report is still written under `summaries/px4_sitl_evidence/`. Session-based
-receiver reports also compare the observed `vehicle_visual_odometry` listener
-rate against the smoke manifest `rate_hz`, so support bundles show whether PX4
-received the external-vision stream at a plausible rate. The same timing detail
-is carried into bench-readiness and final autonomy-readiness check details.
+session. Module Setup `PX4 SITL Receiver Capture` runs that desktop capture
+wrapper and saves the session under `~/DroneTransfer/from-pi/px4-sitl-evidence/`
+so local readiness re-audits can find it. Use the session marker as
+`VISION_NAV_PX4_SITL_SESSION`. The session folder is copied under
+`extras/px4_sitl_session/`, and the parsed pass/fail report is still written
+under `summaries/px4_sitl_evidence/`. Session-based receiver reports also
+compare the observed `vehicle_visual_odometry` listener rate against the smoke
+manifest `rate_hz`, so support bundles show whether PX4 received the
+external-vision stream at a plausible rate. The same timing detail is carried
+into bench-readiness and final autonomy-readiness check details.
 The final autonomy-readiness wrapper can also consume the report marker
 directly through `VISION_NAV_PX4_SITL_REPORT`, which is useful when receiver
 proof has already been evaluated and does not need to be repackaged into a new

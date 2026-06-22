@@ -38,6 +38,10 @@ VISION_NAV_MAVLINK_MESSAGE=vision_position_estimate
 The final bench-readiness and autonomy-readiness gates require PX4 receiver
 evidence from the `ODOMETRY` path. Compatibility-path captures remain useful
 for debugging, but they do not prove the preferred product interface.
+The desktop app's Module Setup page exposes the same requirement as the
+local-only `PX4 SITL Receiver Capture` action. It runs the dev wrapper below
+and stores the generated report under
+`~/DroneTransfer/from-pi/px4-sitl-evidence/` for local readiness re-audits.
 
 ## Frame And Covariance Rules
 
@@ -286,6 +290,9 @@ The final autonomy-readiness audit accepts either the full session via
 `--px4-sitl-session` or the already generated receiver report via
 `--px4-sitl-report`. That report must show `expected_message: odometry` before
 it can satisfy final readiness.
+From the desktop app, run Module Setup `PX4 SITL Receiver Capture` after PX4
+SITL and tmux are installed; the generated report is listed in PX4 Receiver
+Evidence and picked up by `Local Readiness Re-Audit`.
 
 For loose capture files outside a session folder, use:
 
