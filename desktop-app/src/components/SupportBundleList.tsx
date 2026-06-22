@@ -106,6 +106,21 @@ function commandRecords(value: unknown) {
   });
 }
 
+function namedCommandRecords(value: unknown) {
+  const record = asRecord(value);
+  if (!record) return [];
+  return Object.entries(record).flatMap(([key, rawValue]) => {
+    if (typeof rawValue === "string" && rawValue) {
+      return [{ label: key, command: rawValue }];
+    }
+    if (Array.isArray(rawValue)) {
+      const lines = rawValue.filter((item): item is string => typeof item === "string" && item.length > 0);
+      if (lines.length > 0) return [{ label: key, command: lines.join("\n") }];
+    }
+    return [];
+  });
+}
+
 function SupportBundleDetailPanel({
   details,
   onExtractArtifact,
@@ -121,6 +136,9 @@ function SupportBundleDetailPanel({
   const platform = nestedString(details.metadata, ["host", "platform"]);
   const healthStatus = nestedString(details.bundle_health, ["status"]);
   const checksumStatus = nestedString(details.bundle_health, ["checksums", "status"]);
+  const px4Evidence = asRecord(details.manifest.px4_sitl_evidence);
+  const px4SessionSummary = asRecord(px4Evidence?.session_summary);
+  const px4SessionCommands = namedCommandRecords(px4SessionSummary?.operator_commands);
   const px4Prereqs = asRecord(details.manifest.px4_sitl_prereqs);
   const px4PrereqFixCommands = commandRecords(px4Prereqs?.fix_commands);
 
@@ -158,6 +176,43 @@ function SupportBundleDetailPanel({
                 <span>{formatLabel(check.name)}</span>
                 {check.message && <span className="truncate text-slate-400">{check.message}</span>}
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {px4SessionCommands.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500">PX4 receiver session commands</div>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(px4SessionCommands.map((item) => `# ${formatLabel(item.label)}\n${item.command}`).join("\n\n"))}
+              className="btn-secondary px-1.5 py-0.5 text-[10px]"
+              title="Copy all PX4 receiver-session commands"
+            >
+              <Clipboard size={9} />
+              copy all
+            </button>
+          </div>
+          <div className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500">
+              <span>message {formatLabel(px4SessionSummary?.message_type as string | undefined)}</span>
+              <span>rate {formatLabel(px4SessionSummary?.rate_hz as string | number | undefined)} hz</span>
+              <span className="truncate">endpoint {formatLabel(px4SessionSummary?.endpoint as string | undefined)}</span>
+            </div>
+            {px4SessionCommands.slice(0, 5).map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => navigator.clipboard.writeText(item.command)}
+                className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/50 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
+                title={item.command}
+              >
+                <Clipboard size={9} className="shrink-0" />
+                <span className="shrink-0 text-slate-500">{formatLabel(item.label)}</span>
+                <span className="truncate whitespace-pre">{item.command}</span>
+              </button>
             ))}
           </div>
         </div>

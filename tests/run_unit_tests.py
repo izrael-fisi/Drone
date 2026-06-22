@@ -795,14 +795,33 @@ instance #0:
         (session_dir / "px4_sitl_evidence_session.json").write_text(
             json.dumps(
                 {
+                    "schema_version": "vision_nav_px4_sitl_evidence_session_v1",
                     "version": "0.1.0",
+                    "endpoint": "udp:14580",
                     "message_type": "odometry",
                     "rate_hz": 5.0,
+                    "repeat_count": 6,
+                    "synthetic_log": str(session_dir / "synthetic_external_vision.jsonl"),
+                    "capture_instructions": str(session_dir / "receiver_capture" / "README.md"),
                     "expected_captures": {
                         "vehicle_visual_odometry": "receiver_capture/vehicle_visual_odometry.txt",
                         "mavlink_status": "receiver_capture/mavlink_status.txt",
                     },
                     "receiver_report": "receiver_evidence.json",
+                    "operator_commands": {
+                        "send_synthetic_stream": "VISION_NAV_SITL_SMOKE_DIR=/tmp/px4 ./scripts/dev/px4_sitl_external_vision_smoke.sh",
+                        "px4_shell_capture": [
+                            "listener vehicle_visual_odometry",
+                            "listener vehicle_visual_odometry",
+                            "mavlink status",
+                        ],
+                        "evaluate_session": "./scripts/dev/evaluate_px4_sitl_session.sh /tmp/px4",
+                        "automated_capture": "VISION_NAV_SITL_SMOKE_DIR=/tmp/px4 ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+                    },
+                    "markers": {
+                        "__VISION_NAV_PX4_SITL_SESSION__": str(session_dir),
+                        "__VISION_NAV_PX4_SITL_REPORT__": str(session_dir / "receiver_evidence.json"),
+                    },
                 }
             )
         )
@@ -1902,14 +1921,33 @@ instance #0:
         (px4_session / "px4_sitl_evidence_session.json").write_text(
             json.dumps(
                 {
+                    "schema_version": "vision_nav_px4_sitl_evidence_session_v1",
                     "version": "0.1.0",
+                    "endpoint": "udp:14580",
                     "message_type": "odometry",
                     "rate_hz": 5.0,
+                    "repeat_count": 6,
+                    "synthetic_log": str(px4_session / "synthetic_external_vision.jsonl"),
+                    "capture_instructions": str(px4_session / "receiver_capture" / "README.md"),
                     "expected_captures": {
                         "vehicle_visual_odometry": "receiver_capture/vehicle_visual_odometry.txt",
                         "mavlink_status": "receiver_capture/mavlink_status.txt",
                     },
                     "receiver_report": "receiver_evidence.json",
+                    "operator_commands": {
+                        "send_synthetic_stream": "VISION_NAV_SITL_SMOKE_DIR=/tmp/px4 ./scripts/dev/px4_sitl_external_vision_smoke.sh",
+                        "px4_shell_capture": [
+                            "listener vehicle_visual_odometry",
+                            "listener vehicle_visual_odometry",
+                            "mavlink status",
+                        ],
+                        "evaluate_session": "./scripts/dev/evaluate_px4_sitl_session.sh /tmp/px4",
+                        "automated_capture": "VISION_NAV_SITL_SMOKE_DIR=/tmp/px4 ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+                    },
+                    "markers": {
+                        "__VISION_NAV_PX4_SITL_SESSION__": str(px4_session),
+                        "__VISION_NAV_PX4_SITL_REPORT__": str(px4_session / "receiver_evidence.json"),
+                    },
                 }
             )
         )
@@ -2299,6 +2337,23 @@ RC8_OPTION,90
         assert_equal(manifest["px4_sitl_evidence"]["listener"]["sample_count"], 2, "support px4 evidence samples")
         assert_equal(manifest["px4_sitl_evidence"]["listener"]["observed_rate_hz"], 5.0, "support px4 evidence rate")
         assert_equal(manifest["px4_sitl_evidence"]["config"]["expected_rate_hz"], 5.0, "support px4 expected rate")
+        assert_equal(
+            manifest["px4_sitl_evidence"]["session_summary"]["schema_version"],
+            "vision_nav_px4_sitl_evidence_session_v1",
+            "support px4 session summary schema",
+        )
+        assert_equal(
+            manifest["px4_sitl_evidence"]["session_summary"]["operator_commands"]["px4_shell_capture"][0],
+            "listener vehicle_visual_odometry",
+            "support px4 session shell capture command",
+        )
+        if "run_px4_sitl_external_vision_capture.sh" not in manifest["px4_sitl_evidence"]["session_summary"]["operator_commands"]["automated_capture"]:
+            raise AssertionError("support px4 session summary missing automated capture command")
+        assert_equal(
+            manifest["px4_sitl_evidence"]["session_summary"]["markers"]["__VISION_NAV_PX4_SITL_REPORT__"],
+            str(px4_session / "receiver_evidence.json"),
+            "support px4 session summary report marker",
+        )
         assert_equal(manifest["px4_sitl_prereqs"]["status"], "failed", "support px4 prereq status")
         assert_equal(
             manifest["px4_sitl_prereqs"]["failed_checks"][0]["name"],

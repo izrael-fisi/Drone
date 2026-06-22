@@ -504,6 +504,9 @@ def evaluate_px4_receiver_evidence(
             report["session_path"] = str(session)
             report["session_copy"] = copied
             report["source"] = "px4_sitl_session"
+        session_summary = summarize_px4_sitl_session_manifest(session)
+        if session_summary:
+            report["session_summary"] = session_summary
         report_path = evidence_dir / "receiver_evidence.json"
         report["report_path"] = str(report_path)
         report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
@@ -595,6 +598,64 @@ def evaluate_px4_receiver_evidence(
     report["report_path"] = str(report_path)
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return report
+
+
+def summarize_px4_sitl_session_manifest(session_path: Path) -> dict[str, Any] | None:
+    manifest_path = session_path / "px4_sitl_evidence_session.json" if session_path.is_dir() else session_path
+    if not manifest_path.exists():
+        return None
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("PX4 SITL session manifest root must be an object")
+    except Exception as exc:
+        return {
+            "path": str(manifest_path),
+            "status": "failed",
+            "issues": [{"severity": "warning", "message": f"Could not parse PX4 SITL session manifest: {exc}"}],
+        }
+    return {
+        "path": str(manifest_path),
+        "status": "passed",
+        "schema_version": raw.get("schema_version"),
+        "version": raw.get("version"),
+        "endpoint": raw.get("endpoint"),
+        "message_type": raw.get("message_type"),
+        "rate_hz": raw.get("rate_hz"),
+        "repeat_count": raw.get("repeat_count"),
+        "synthetic_log": raw.get("synthetic_log"),
+        "capture_instructions": raw.get("capture_instructions"),
+        "expected_captures": string_dict(raw.get("expected_captures")),
+        "receiver_report": raw.get("receiver_report"),
+        "operator_commands": operator_command_dict(raw.get("operator_commands")),
+        "markers": string_dict(raw.get("markers")),
+        "issues": [],
+    }
+
+
+def string_dict(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): str(raw_value)
+        for key, raw_value in value.items()
+        if raw_value is not None and not isinstance(raw_value, (dict, list))
+    }
+
+
+def operator_command_dict(value: Any) -> dict[str, str | list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    commands: dict[str, str | list[str]] = {}
+    for key, raw_value in value.items():
+        name = str(key)
+        if isinstance(raw_value, str) and raw_value:
+            commands[name] = raw_value
+        elif isinstance(raw_value, list):
+            lines = [str(item) for item in raw_value if isinstance(item, str) and item]
+            if lines:
+                commands[name] = lines
+    return commands
 
 
 def px4_prereq_candidate_from_session(session_path: str | None) -> Path | None:

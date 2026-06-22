@@ -461,7 +461,10 @@ autonomy-readiness cards expose those setup fixes as a separate
 `prereq fixes` command-copy group, distinct from proof-producing immediate and
 blocked follow-up commands. Downloaded support-bundle details also expose the
 same PX4 prerequisite fix commands when the bundle contains
-`px4_sitl_prereqs.fix_commands`.
+`px4_sitl_prereqs.fix_commands`. When a bundle includes a PX4 SITL evidence
+session, support-bundle details also show the session manifest's copyable
+receiver commands for sending the synthetic stream, running PX4 shell captures,
+evaluating the session, and rerunning the automated capture harness.
 
 Module Setup can run `ROS Bag Validation` after a terrain runtime/replay log
 exists. The action runs `scripts/pi/run_rosbag_export_validation.sh` over SSH,

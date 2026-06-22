@@ -322,6 +322,10 @@ vision-nav-support-bundle \
 
 The session folder is copied under `extras/px4_sitl_session/`, and the parsed
 receiver report is still written under `summaries/px4_sitl_evidence/`.
+The support manifest also summarizes the session manifest under
+`px4_sitl_evidence.session_summary`, including endpoint/message/rate metadata,
+artifact markers, and the copyable operator commands needed to send, capture,
+evaluate, or rerun the receiver proof.
 When `px4_sitl_capture_prereqs.json` exists, support bundles also copy it under
 `extras/px4_sitl_prereqs/` and summarize it under `px4_sitl_prereqs` for
 offline setup review. That prerequisite summary is diagnostic only; final PX4

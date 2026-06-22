@@ -37,6 +37,10 @@ Status:
   version, artifact markers, and copyable operator commands for sending the
   synthetic stream, capturing PX4 shell output, evaluating the session, and
   rerunning the automated capture harness.
+- Done: support bundles now summarize those PX4 evidence-session command
+  bundles under `px4_sitl_evidence.session_summary`, and downloaded
+  support-bundle details render copy buttons for the send, capture, evaluate,
+  and automated-capture commands.
 - Done: `vision-nav-evaluate-px4-sitl-session` and
   `scripts/dev/evaluate_px4_sitl_session.sh` evaluate an evidence-session
   folder directly, write `receiver_evidence.json`, and fail cleanly until the
