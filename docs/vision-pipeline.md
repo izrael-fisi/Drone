@@ -185,6 +185,10 @@ Or use the Pi wrapper:
 ./scripts/pi/run_terrain_nav_loop.sh
 ```
 
+For app-driven field collection, Module Setup `Field Log Capture` runs this
+wrapper with a finite frame count and downloads the emitted
+`__VISION_NAV_TERRAIN_LOG__` and `__VISION_NAV_RUNTIME_STATUS__` artifacts.
+
 It writes one JSON record per frame in `terrain_matches.jsonl`. Vertical fields
 remain unset unless optional barometer telemetry or a future visual vertical
 estimate is available.

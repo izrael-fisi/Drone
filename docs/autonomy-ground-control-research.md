@@ -143,6 +143,9 @@ Implementation tasks:
 - Let operators load pending field collection plan conditions into the field
   evidence registration form so required condition tags, expected behavior, and
   capture metadata stay consistent with the checklist.
+- Add a bounded Module Setup field-log capture action so real terrain replay
+  logs and runtime status snapshots can be collected and synced before field
+  evidence registration or threshold tuning.
 - Add QGC-style plan state:
   - unsaved changes,
   - not uploaded,

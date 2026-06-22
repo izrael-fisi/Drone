@@ -271,6 +271,13 @@ map, last match status/reason, confidence, estimator health, external-position
 health, frame sequence, and accepted/rejected counts, then downloads the raw
 `runtime_status.json` to `~/DroneTransfer/from-pi/runtime-status/` for the
 setup report.
+Module Setup can also run `Field Log Capture`, a bounded 30-frame
+`scripts/pi/run_terrain_nav_loop.sh` pass against the selected mission bundle.
+It uses the configured MAVLink endpoint when present, downloads
+`terrain_matches.jsonl` to `~/DroneTransfer/from-pi/terrain-match/`, and
+downloads the companion `runtime_status.json` for support review. That synced
+log can feed Field Evidence registration, ROS Bag Validation, Native rosbag2
+Review, feature-method benchmarking, and threshold tuning.
 
 The Runtime And MAVLink panel can also create a support bundle on the connected
 Raspberry Pi. Support bundles are written under

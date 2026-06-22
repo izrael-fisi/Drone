@@ -79,3 +79,13 @@ PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.run_terrain_loop \
   "${calibration_args[@]}" \
   "${mavlink_args[@]}" \
   "${ros2_args[@]}"
+
+cat <<EOF
+
+Terrain runtime outputs:
+  log:            $out_dir/terrain_matches.jsonl
+  runtime status: $out_dir/runtime_status.json
+
+__VISION_NAV_TERRAIN_LOG__=$out_dir/terrain_matches.jsonl
+__VISION_NAV_RUNTIME_STATUS__=$out_dir/runtime_status.json
+EOF

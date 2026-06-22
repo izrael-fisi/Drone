@@ -383,6 +383,14 @@ function parseRuntimeStatusPath(output: string) {
     ?.replace("__VISION_NAV_RUNTIME_STATUS__=", "");
 }
 
+function parseTerrainRuntimeLog(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_TERRAIN_LOG__="))
+    ?.replace("__VISION_NAV_TERRAIN_LOG__=", "");
+}
+
 function parseRuntimeStatusJson(output: string): Record<string, unknown> | null {
   const raw = output
     .split(/\r?\n/)
@@ -400,6 +408,17 @@ function parseRuntimeStatusJson(output: string): Record<string, unknown> | null 
 
 function runtimeStatusCommand(remoteProject: string) {
   return `cd ${shellQuote(remoteProject)} && ./scripts/pi/read_runtime_status.sh`;
+}
+
+function fieldLogCaptureCommand(remoteProject: string, remoteBundle: string, mavlinkEndpoint: string) {
+  const env = [
+    `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)}`,
+    "VISION_NAV_COUNT=30",
+    "VISION_NAV_INTERVAL_S=1.0",
+    mavlinkEndpoint.trim() ? `VISION_NAV_MAVLINK_ENDPOINT=${shellQuote(mavlinkEndpoint.trim())}` : "",
+    "VISION_NAV_MAVLINK_MESSAGE=odometry",
+  ].filter(Boolean).join(" ");
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_terrain_nav_loop.sh`;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -3080,6 +3099,71 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const runFieldLogCapture = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before capturing a field replay log.");
+      return;
+    }
+    setRunningStep("field-log-capture");
+    setError(null);
+    setResult("field-log-capture", { status: "running", output: "$ field log capture\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        fieldLogCaptureCommand(remoteProject, remoteBundle, form.mavlinkEndpoint),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteLog = parseTerrainRuntimeLog(output);
+      const remoteStatus = parseRuntimeStatusPath(output);
+      let downloadText = "";
+      if (remoteLog) {
+        setResult("field-log-capture", {
+          status: "running",
+          output: `$ field log capture\n${output}\n\n$ download terrain match log\nDownloading ${remoteLog}...`,
+        });
+        const downloadedLog = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteLog,
+          ROSBAG_VALIDATION_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download terrain match log\nSaved to ${downloadedLog.local_path}\n[${downloadedLog.bytes_received} bytes]`;
+      }
+      if (remoteStatus) {
+        setResult("field-log-capture", {
+          status: "running",
+          output: `$ field log capture\n${output}${downloadText}\n\n$ download runtime status\nDownloading ${remoteStatus}...`,
+        });
+        const downloadedStatus = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteStatus,
+          RUNTIME_STATUS_DOWNLOAD_DIR,
+        );
+        setRuntimeStatusRemotePath(remoteStatus);
+        setRuntimeStatusLocalPath(downloadedStatus.local_path);
+        downloadText += `\n\n$ download runtime status\nSaved to ${downloadedStatus.local_path}\n[${downloadedStatus.bytes_received} bytes]`;
+      }
+      setResult("field-log-capture", {
+        status: result.exit_code === 0 && remoteLog ? "passed" : "failed",
+        output: `$ field log capture\n${output || "(no output)"}${downloadText}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+    } catch (err) {
+      setResult("field-log-capture", { status: "failed", output: `$ field log capture\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const runAutonomyReadiness = async () => {
     const resolvedAuth = auth();
     if (!resolvedAuth || !form.host) {
@@ -4354,6 +4438,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       detail: "Fetches the latest terrain runtime snapshot with active map, match, estimator, and external-position health.",
     },
     {
+      id: "field-log-capture",
+      title: "Field Log Capture",
+      detail: "Runs a bounded 30-frame terrain capture on the module and downloads the replay log.",
+    },
+    {
       id: "bench-report",
       title: "Bench Report",
       detail: "Validates the deployed terrain bundle, creates a Pi support bundle, and downloads it.",
@@ -4410,6 +4499,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     if (step.id === "runtime-status") {
       await fetchRuntimeStatus();
+      return;
+    }
+    if (step.id === "field-log-capture") {
+      await runFieldLogCapture();
       return;
     }
     if (step.id === "feature-benchmark") {

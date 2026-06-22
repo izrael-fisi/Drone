@@ -422,6 +422,11 @@ Defaults:
   `~/DroneTransfer/outgoing/terrain-match/`
 - runs until you press `Ctrl+C`
 
+For a bounded app-driven field capture, Module Setup `Field Log Capture` runs
+the same wrapper with `VISION_NAV_COUNT=30`, uses the configured MAVLink
+endpoint when present, and downloads `terrain_matches.jsonl` plus
+`runtime_status.json` into the desktop transfer folders.
+
 `runtime_status.json` is the quick operator snapshot. It names the active map
 bundle, output path, latest frame, estimator health, last match status/reason,
 external-position health, and accepted/rejected counts without opening the full
