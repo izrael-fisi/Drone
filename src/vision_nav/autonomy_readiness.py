@@ -1966,9 +1966,20 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
             degraded_checks.append(item)
 
     next_actions = []
+    bundle_action_diagnostic = next(
+        (
+            check.get("bundle_diagnostic")
+            for check in checks
+            if check.get("name") == "bundle_path" and isinstance(check.get("bundle_diagnostic"), dict)
+        ),
+        None,
+    )
     for action in report.get("next_actions") or []:
         if not isinstance(action, dict):
             continue
+        action_bundle_diagnostic = action.get("bundle_diagnostic")
+        if not isinstance(action_bundle_diagnostic, dict) and action.get("id") == "prepare_bundle":
+            action_bundle_diagnostic = bundle_action_diagnostic
         next_actions.append(
             {
                 "id": action.get("id"),
@@ -1982,6 +1993,7 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
                 "source_log": action.get("source_log"),
                 "runtime_status_path": action.get("runtime_status_path"),
                 "notes": action.get("notes"),
+                "bundle_diagnostic": action_bundle_diagnostic,
             }
         )
 

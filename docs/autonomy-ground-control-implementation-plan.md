@@ -436,6 +436,10 @@ Status:
   diagnostic as the failed preflight check, including missing required files,
   detected candidate bundles, detected map sources, and recommended Mission
   Planner repair actions.
+- Done: support-bundle and final-readiness parsers backfill that bundle
+  diagnostic onto `prepare_bundle` next actions from older field-preflight JSON
+  files, so stale downloaded reports still show missing files and candidate
+  bundles beside the repair command.
 - Done: Module Setup, readiness report cards, support-bundle details, and
   handoff summaries preserve and copy field-capture preflight commands beside
   capture, metadata-update, and registration commands.

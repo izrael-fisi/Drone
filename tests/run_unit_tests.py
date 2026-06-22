@@ -2217,6 +2217,39 @@ RC8_OPTION,90
                                 "path": str(root / "missing-mission-bundle"),
                                 "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
                                 "validation_command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                                "diagnostic": {
+                                    "bundle_exists": False,
+                                    "missing_required_files": [
+                                        "manifest.json",
+                                        "ortho/map.png",
+                                        "features/map_features.npz",
+                                        "index/tiles.sqlite",
+                                    ],
+                                    "bundle_candidates": [
+                                        {
+                                            "path": str(bundle),
+                                            "bundle_id": "unit-test-bundle",
+                                            "tile_index_exists": True,
+                                        }
+                                    ],
+                                    "map_source_candidates": [
+                                        {
+                                            "path": str(root / "map-source"),
+                                            "name": "Unit Region",
+                                            "source": "unit",
+                                            "georef_source": "metadata",
+                                        }
+                                    ],
+                                    "recommended_actions": [
+                                        {
+                                            "id": "build_or_upload_selected_bundle",
+                                            "status": "action_required",
+                                            "title": "Build and upload the selected Mission Planner terrain bundle.",
+                                            "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                                            "command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                                        }
+                                    ],
+                                },
                             },
                         },
                         {
@@ -2631,6 +2664,13 @@ RC8_OPTION,90
             "prepare_bundle",
             "support field capture preflight next action",
         )
+        support_preflight_action_diagnostic = manifest["field_capture_preflights"]["reports"][0]["next_actions"][0].get(
+            "bundle_diagnostic"
+        ) or {}
+        if "manifest.json" not in support_preflight_action_diagnostic.get("missing_required_files", []):
+            raise AssertionError("Support field preflight action should inherit missing bundle diagnostics from old reports")
+        if not support_preflight_action_diagnostic.get("bundle_candidates"):
+            raise AssertionError("Support field preflight action should inherit bundle candidates from old reports")
         assert_equal(
             manifest["logs"]["runtime_statuses"][0]["schema_version"],
             "vision_nav_runtime_status_v1",
@@ -3764,6 +3804,39 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                                 "path": str(root / "missing-mission-bundle"),
                                 "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
                                 "validation_command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                                "diagnostic": {
+                                    "bundle_exists": False,
+                                    "missing_required_files": [
+                                        "manifest.json",
+                                        "ortho/map.png",
+                                        "features/map_features.npz",
+                                        "index/tiles.sqlite",
+                                    ],
+                                    "bundle_candidates": [
+                                        {
+                                            "path": str(root / "candidate-bundle"),
+                                            "bundle_id": "unit-test-bundle",
+                                            "tile_index_exists": True,
+                                        }
+                                    ],
+                                    "map_source_candidates": [
+                                        {
+                                            "path": str(root / "map-source"),
+                                            "name": "Unit Region",
+                                            "source": "unit",
+                                            "georef_source": "metadata",
+                                        }
+                                    ],
+                                    "recommended_actions": [
+                                        {
+                                            "id": "build_or_upload_selected_bundle",
+                                            "status": "action_required",
+                                            "title": "Build and upload the selected Mission Planner terrain bundle.",
+                                            "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                                            "command": f"VISION_NAV_BUNDLE={root / 'missing-mission-bundle'} ./scripts/pi/validate_terrain_bundle.sh",
+                                        }
+                                    ],
+                                },
                             },
                         }
                     ],
@@ -4068,6 +4141,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "bundle_path",
             "autonomy readiness field capture preflight failed check",
         )
+        readiness_prepare_bundle = next(
+            action
+            for action in missing_proof_ready["diagnostics"]["field_capture_preflight"]["next_actions"]
+            if action.get("id") == "prepare_bundle"
+        )
+        readiness_prepare_diagnostic = readiness_prepare_bundle.get("bundle_diagnostic") or {}
+        if "manifest.json" not in readiness_prepare_diagnostic.get("missing_required_files", []):
+            raise AssertionError("Autonomy readiness should backfill preflight action missing-file diagnostics")
+        if not readiness_prepare_diagnostic.get("bundle_candidates"):
+            raise AssertionError("Autonomy readiness should backfill preflight action bundle candidates")
         if "px4_sitl_prereqs" in {item.get("name") for item in missing_proof_ready["evidence_manifest"]["proof_items"]}:
             raise AssertionError("PX4 prerequisite diagnostics must not become a goal proof item")
         if "field_capture_preflight" in {
