@@ -172,8 +172,9 @@ It runs the strict readiness audit with the repo-local Python path, prints the
 current proof-item counts, external blockers, proof-runbook phase counts, and
 the next commands needed to collect missing evidence. The command list follows
 the proof runbook, so blocked work such as method/threshold tuning waits until
-the field dataset phase is ready, and bench proof starts with PX4 receiver
-capture before support-bundle creation. It scans the conventional
+the field dataset phase is ready, ROS replay validation waits for real field
+terrain logs, and bench proof starts with PX4 receiver capture before
+support-bundle creation. It scans the conventional
 `~/DroneTransfer/from-pi/` evidence folders and includes any downloaded support
 bundle, PX4 receiver report, field plan, field evidence, feature benchmark,
 threshold report, ROS bag validation, or native rosbag2 review it finds. It

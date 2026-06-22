@@ -3239,6 +3239,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "blocked",
             "autonomy readiness field runbook method phase blocked",
         )
+        assert_equal(
+            missing_field_phases["ros2_replay"]["status"],
+            "blocked",
+            "autonomy readiness field runbook ros2 phase blocked",
+        )
+        assert_equal(
+            missing_field_phases["ros2_replay"]["dependency_status"]["field_dataset"],
+            "action_required",
+            "autonomy readiness ros2 replay waits on field dataset",
+        )
 
         incomplete_field_collection_plan = root / "field_collection_plan_incomplete.json"
         incomplete_field_collection_plan.write_text(

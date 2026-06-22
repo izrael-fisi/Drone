@@ -723,6 +723,9 @@ Status:
 - Done: the proof runbook now orders the bench foundation phase so PX4 ODOMETRY
   receiver proof is captured before the support bundle is created, keeping the
   status helper and handoff commands aligned with the actual evidence workflow.
+- Done: the proof runbook now keeps ROS replay validation blocked until the
+  field dataset phase has real terrain logs, so goal-status next commands do
+  not ask operators to generate rosbag proof before replay evidence exists.
 - Done: `scripts/mac/goal_status.sh` now embeds that autonomy proof summary
   before its transfer-folder and Pi connectivity checks so one operator command
   reports both missing proof gates and setup connectivity.

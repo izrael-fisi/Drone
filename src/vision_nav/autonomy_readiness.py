@@ -82,8 +82,8 @@ PROOF_RUNBOOK_PHASES = [
         "id": "ros2_replay",
         "title": "Validate ROS replay artifacts",
         "checks": ["rosbag_export_validation", "rosbag2_cli_review"],
-        "depends_on": ["plan_source"],
-        "notes": "Export the replay artifact, then review the native rosbag2 export on a sourced ROS 2 workstation.",
+        "depends_on": ["field_dataset"],
+        "notes": "After real terrain replay logs exist, export the replay artifact, then review the native rosbag2 export on a sourced ROS 2 workstation.",
     },
     {
         "id": "final_audit",
