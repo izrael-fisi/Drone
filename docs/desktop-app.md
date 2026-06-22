@@ -417,7 +417,9 @@ manual capture README, then exits failed so the operator can fix the prerequisit
 without losing the capture instructions. The same folder includes
 `px4_sitl_capture_prereqs.json` and the
 `__VISION_NAV_PX4_SITL_PREREQS__=...` marker with the missing prerequisite
-checks.
+checks. Support bundles ingest that prerequisite report under
+`px4_sitl_prereqs` and show it as a separate `px4 prereqs` status, while PX4
+receiver proof still requires `receiver_evidence.json`.
 
 Module Setup can run `ROS Bag Validation` after a terrain runtime/replay log
 exists. The action runs `scripts/pi/run_rosbag_export_validation.sh` over SSH,

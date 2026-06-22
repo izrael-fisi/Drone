@@ -35,6 +35,7 @@ pub struct SupportBundleSummary {
     pub gnss_denied_plan_status: Option<String>,
     pub px4_sitl_evidence_status: Option<String>,
     pub px4_sitl_sample_count: Option<u64>,
+    pub px4_sitl_prereq_status: Option<String>,
     pub px4_params_status: Option<String>,
     pub px4_ev_ctrl: Option<i64>,
     pub ardupilot_params_status: Option<String>,
@@ -3975,6 +3976,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         px4_sitl_sample_count: manifest
             .pointer("/px4_sitl_evidence/listener/sample_count")
             .and_then(|value| value.as_u64()),
+        px4_sitl_prereq_status: json_string(manifest.pointer("/px4_sitl_prereqs/status")),
         px4_params_status: json_string(manifest.pointer("/px4_params/status")),
         px4_ev_ctrl: manifest
             .pointer("/px4_params/parameters/EKF2_EV_CTRL")
@@ -4075,6 +4077,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.replay_gate_status.is_none()
         && summary.gnss_denied_plan_status.is_none()
         && summary.px4_sitl_evidence_status.is_none()
+        && summary.px4_sitl_prereq_status.is_none()
         && summary.px4_params_status.is_none()
         && summary.ardupilot_params_status.is_none()
         && summary.feature_method_benchmark_status.is_none()
@@ -4265,6 +4268,9 @@ mod tests {
                     "sample_count": 2
                 }
             },
+            "px4_sitl_prereqs": {
+                "status": "failed"
+            },
             "px4_params": {
                 "status": "degraded",
                 "parameters": {
@@ -4350,6 +4356,7 @@ mod tests {
         assert_eq!(summary.gnss_denied_plan_status.as_deref(), Some("passed"));
         assert_eq!(summary.px4_sitl_evidence_status.as_deref(), Some("passed"));
         assert_eq!(summary.px4_sitl_sample_count, Some(2));
+        assert_eq!(summary.px4_sitl_prereq_status.as_deref(), Some("failed"));
         assert_eq!(summary.px4_params_status.as_deref(), Some("degraded"));
         assert_eq!(summary.px4_ev_ctrl, Some(1));
         assert_eq!(summary.ardupilot_params_status.as_deref(), Some("passed"));

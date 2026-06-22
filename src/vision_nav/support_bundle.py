@@ -39,6 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--px4-listener", help="Optional PX4 `listener vehicle_visual_odometry` capture text file.")
     parser.add_argument("--px4-mavlink-status", help="Optional PX4 `mavlink status` capture text file.")
     parser.add_argument("--px4-sitl-session", help="Optional PX4 SITL evidence session directory or manifest.")
+    parser.add_argument("--px4-sitl-prereqs", help="Optional PX4 SITL capture prerequisite report JSON.")
     parser.add_argument("--px4-sitl-report", help="Optional evaluated PX4 receiver_evidence.json report.")
     parser.add_argument("--px4-params", help="Optional PX4 parameter export file to check and include.")
     parser.add_argument("--ardupilot-params", help="Optional ArduPilot parameter export file to check and include.")
@@ -594,6 +595,93 @@ def evaluate_px4_receiver_evidence(
     report["report_path"] = str(report_path)
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return report
+
+
+def px4_prereq_candidate_from_session(session_path: str | None) -> Path | None:
+    if not session_path:
+        return None
+    session = Path(session_path).expanduser()
+    if session.is_dir():
+        return session / "px4_sitl_capture_prereqs.json"
+    return session.parent / "px4_sitl_capture_prereqs.json"
+
+
+def summarize_px4_capture_prereqs(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    checks = []
+    failed_checks = []
+    for check in report.get("checks") or []:
+        if not isinstance(check, dict):
+            continue
+        item = {
+            "name": check.get("name"),
+            "status": check.get("status"),
+            "message": check.get("message"),
+        }
+        checks.append(item)
+        if check.get("status") == "failed":
+            failed_checks.append(item)
+    return {
+        "path": str(report_path),
+        "schema_version": report.get("schema_version"),
+        "status": report.get("status"),
+        "session_dir": report.get("session_dir"),
+        "px4_dir": report.get("px4_dir"),
+        "px4_target": report.get("px4_target"),
+        "tmux_session": report.get("tmux_session"),
+        "receiver_report": report.get("receiver_report"),
+        "checks": checks,
+        "failed_checks": failed_checks,
+        "next_actions": report.get("next_actions") or [],
+    }
+
+
+def copy_px4_capture_prereqs(
+    *,
+    prereq_path: str | None = None,
+    session_path: str | None = None,
+    support_dir: Path,
+) -> dict[str, Any]:
+    explicit_source = bool(prereq_path)
+    source = Path(prereq_path).expanduser() if prereq_path else px4_prereq_candidate_from_session(session_path)
+    if source is None:
+        return {"status": "not_provided"}
+
+    summary_dir = support_dir / "summaries" / "px4_sitl_prereqs"
+    raw_dir = support_dir / "extras" / "px4_sitl_prereqs"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    if not source.exists():
+        if not explicit_source:
+            return {"status": "not_provided", "source_path": str(source)}
+        return {
+            "status": "failed",
+            "source_path": str(source),
+            "issues": [{"severity": "error", "message": "PX4 SITL capture prerequisite report is missing."}],
+        }
+    try:
+        report = json.loads(source.read_text(encoding="utf-8"))
+        if not isinstance(report, dict):
+            raise ValueError("PX4 prerequisite report root must be an object")
+    except Exception as exc:
+        copied = copy_file(source, raw_dir / "px4_sitl_capture_prereqs.json")
+        return {
+            "status": "failed",
+            "source_path": str(source),
+            "report_copy": copied,
+            "issues": [{"severity": "error", "message": f"PX4 prerequisite report could not be parsed: {exc}"}],
+        }
+
+    copied = copy_file(source, raw_dir / "px4_sitl_capture_prereqs.json")
+    summary_path = summary_dir / "px4_sitl_capture_prereqs.json"
+    summary_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    summary = summarize_px4_capture_prereqs(report, report_path=source)
+    summary["source_path"] = str(source)
+    summary["report_copy"] = copied
+    summary["summary_path"] = str(summary_path)
+    summary["issues"] = []
+    summary["status"] = str(summary.get("status") or "unknown")
+    return summary
 
 
 def evaluate_px4_param_export(
@@ -1206,6 +1294,7 @@ def create_support_bundle(
     px4_listener_path: str | None = None,
     px4_mavlink_status_path: str | None = None,
     px4_sitl_session_path: str | None = None,
+    px4_sitl_prereq_path: str | None = None,
     px4_sitl_report_path: str | None = None,
     px4_params_path: str | None = None,
     ardupilot_params_path: str | None = None,
@@ -1260,6 +1349,11 @@ def create_support_bundle(
         expected_message=px4_expected_message,
         support_dir=support_dir,
     )
+    px4_prereq_summary = copy_px4_capture_prereqs(
+        prereq_path=px4_sitl_prereq_path,
+        session_path=px4_sitl_session_path,
+        support_dir=support_dir,
+    )
     px4_params_summary = evaluate_px4_param_export(
         params_path=px4_params_path,
         support_dir=support_dir,
@@ -1300,6 +1394,7 @@ def create_support_bundle(
         "logs": log_summary,
         "replay_gates": replay_gate_summary,
         "px4_sitl_evidence": px4_evidence_summary,
+        "px4_sitl_prereqs": px4_prereq_summary,
         "px4_params": px4_params_summary,
         "ardupilot_params": ardupilot_params_summary,
         "feature_method_benchmarks": feature_method_benchmarks,
@@ -1349,6 +1444,9 @@ def print_human(result: dict[str, Any]) -> None:
     px4_evidence = manifest.get("px4_sitl_evidence") or {}
     if px4_evidence.get("status") not in {None, "not_provided"}:
         print(f"PX4 SITL evidence: {px4_evidence.get('status')}")
+    px4_prereqs = manifest.get("px4_sitl_prereqs") or {}
+    if px4_prereqs.get("status") not in {None, "not_provided"}:
+        print(f"PX4 SITL capture prerequisites: {px4_prereqs.get('status')}")
     px4_params = manifest.get("px4_params") or {}
     if px4_params.get("status") not in {None, "not_provided"}:
         print(f"PX4 params: {px4_params.get('status')}")
@@ -1395,6 +1493,7 @@ def main() -> None:
         px4_listener_path=args.px4_listener,
         px4_mavlink_status_path=args.px4_mavlink_status,
         px4_sitl_session_path=args.px4_sitl_session,
+        px4_sitl_prereq_path=args.px4_sitl_prereqs,
         px4_sitl_report_path=args.px4_sitl_report,
         px4_params_path=args.px4_params,
         ardupilot_params_path=args.ardupilot_params,

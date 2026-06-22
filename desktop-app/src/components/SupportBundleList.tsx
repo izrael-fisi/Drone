@@ -816,6 +816,12 @@ export function SupportBundleList({
                     px4 {formatLabel(bundle.summary.px4_sitl_evidence_status)}
                   </span>
                 )}
+                {bundle.summary.px4_sitl_prereq_status && bundle.summary.px4_sitl_prereq_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.px4_sitl_prereq_status)}>
+                    {statusIcon(bundle.summary.px4_sitl_prereq_status)}
+                    px4 prereqs {formatLabel(bundle.summary.px4_sitl_prereq_status)}
+                  </span>
+                )}
                 {bundle.summary.px4_params_status && bundle.summary.px4_params_status !== "not_provided" && (
                   <span className={statusClass(bundle.summary.px4_params_status)}>
                     {statusIcon(bundle.summary.px4_params_status)}
@@ -906,6 +912,7 @@ export function SupportBundleList({
                   <span>replay {formatLabel(bundle.summary.replay_gate_status)}</span>
                   <span>gnss prep {formatLabel(bundle.summary.gnss_denied_plan_status)}</span>
                   <span>px4 {formatLabel(bundle.summary.px4_sitl_evidence_status)}</span>
+                  <span>px4 prereqs {formatLabel(bundle.summary.px4_sitl_prereq_status)}</span>
                   <span>px4 samples {bundle.summary.px4_sitl_sample_count ?? 0}</span>
                   <span>params {formatLabel(bundle.summary.px4_params_status)}</span>
                   <span>EV ctrl {bundle.summary.px4_ev_ctrl ?? "n/a"}</span>

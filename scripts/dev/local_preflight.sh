@@ -243,6 +243,22 @@ cat >"$support_autodetect_home/px4-sitl-evidence/receiver_evidence.json" <<'EOF'
   "issues": []
 }
 EOF
+cat >"$support_autodetect_home/px4-sitl-evidence/px4_sitl_capture_prereqs.json" <<'EOF'
+{
+  "schema_version": "vision_nav_px4_sitl_capture_prereqs_v1",
+  "status": "failed",
+  "session_dir": "px4-sitl-evidence",
+  "px4_dir": "/missing/PX4-Autopilot",
+  "px4_target": "px4_sitl gz_x500",
+  "tmux_session": "vision-nav-px4-sitl",
+  "receiver_report": "receiver_evidence.json",
+  "checks": [
+    {"name": "tmux_installed", "status": "passed", "message": "tmux is installed."},
+    {"name": "px4_autopilot_dir", "status": "failed", "message": "PX4-Autopilot directory not found."}
+  ],
+  "next_actions": ["Set VISION_NAV_PX4_AUTOPILOT_DIR."]
+}
+EOF
 cat >"$support_autodetect_home/DroneTransfer/outgoing/replay-cases/field_manifest.json" <<'EOF'
 {
   "version": "0.1.0",
@@ -292,7 +308,7 @@ EK3_SRC_OPTIONS,0
 GPS_TYPE,0
 RC8_OPTION,90
 EOF
-env -u VISION_NAV_PX4_SITL_SESSION -u VISION_NAV_PX4_SITL_REPORT -u VISION_NAV_PX4_PARAMS -u VISION_NAV_ARDUPILOT_PARAMS -u VISION_NAV_REPLAY_CASE_MANIFEST \
+env -u VISION_NAV_PX4_SITL_SESSION -u VISION_NAV_PX4_SITL_PREREQS -u VISION_NAV_PX4_SITL_REPORT -u VISION_NAV_PX4_PARAMS -u VISION_NAV_ARDUPILOT_PARAMS -u VISION_NAV_REPLAY_CASE_MANIFEST \
 HOME="$support_autodetect_home" \
 VISION_NAV_PYTHON=python3 \
 VISION_NAV_SUPPORT_OUTPUT_DIR="$support_autodetect_dir" \
@@ -313,6 +329,8 @@ manifest = json.loads((support_dir / zips[0].stem / "support_manifest.json").rea
 assert manifest["px4_sitl_evidence"]["status"] == "passed"
 assert manifest["px4_sitl_evidence"]["source"] == "px4_sitl_report"
 assert manifest["px4_sitl_evidence"]["source_report_path"].endswith("px4-sitl-evidence/receiver_evidence.json")
+assert manifest["px4_sitl_prereqs"]["status"] == "failed"
+assert manifest["px4_sitl_prereqs"]["source_path"].endswith("px4-sitl-evidence/px4_sitl_capture_prereqs.json")
 assert manifest["px4_params"]["status"] in {"passed", "degraded"}
 assert manifest["px4_params"]["param_copy"]["source"].endswith("px4.params")
 assert manifest["ardupilot_params"]["status"] == "passed"
@@ -323,7 +341,9 @@ assert manifest["replay_gates"]["sources"][0].endswith("DroneTransfer/outgoing/r
 with zipfile.ZipFile(zips[0]) as archive:
     names = set(archive.namelist())
 assert "summaries/px4_sitl_evidence/receiver_evidence.json" in names
+assert "summaries/px4_sitl_prereqs/px4_sitl_capture_prereqs.json" in names
 assert "extras/px4_sitl_evidence/receiver_evidence.json" in names
+assert "extras/px4_sitl_prereqs/px4_sitl_capture_prereqs.json" in names
 assert "extras/px4_params/px4.params" in names
 assert "extras/ardupilot_params/ardupilot.params" in names
 assert "summaries/replay_gates/field-good-texture-smoke.gate.json" in names

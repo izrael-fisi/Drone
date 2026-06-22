@@ -13,6 +13,7 @@ threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransf
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
 rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
+px4_sitl_prereqs="${VISION_NAV_PX4_SITL_PREREQS:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 px4_params="${VISION_NAV_PX4_PARAMS:-}"
 ardupilot_params="${VISION_NAV_ARDUPILOT_PARAMS:-}"
@@ -24,6 +25,10 @@ fi
 
 if [[ -z "$px4_sitl_report" && -f "$HOME/px4-sitl-evidence/receiver_evidence.json" ]]; then
   px4_sitl_report="$HOME/px4-sitl-evidence/receiver_evidence.json"
+fi
+
+if [[ -z "$px4_sitl_prereqs" && -f "$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json" ]]; then
+  px4_sitl_prereqs="$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
 fi
 
 if [[ -z "$px4_params" && -f "$HOME/px4.params" ]]; then
@@ -84,6 +89,10 @@ fi
 
 if [[ -n "$px4_sitl_session" && -e "$px4_sitl_session" ]]; then
   args+=(--px4-sitl-session "$px4_sitl_session")
+fi
+
+if [[ -n "$px4_sitl_prereqs" && -f "$px4_sitl_prereqs" ]]; then
+  args+=(--px4-sitl-prereqs "$px4_sitl_prereqs")
 fi
 
 if [[ -n "$px4_sitl_report" && -f "$px4_sitl_report" ]]; then

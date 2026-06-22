@@ -63,6 +63,10 @@ Status:
   `--px4-sitl-session` / `VISION_NAV_PX4_SITL_SESSION`, copy it under
   `extras/px4_sitl_session/`, and publish the parsed receiver report under
   `summaries/px4_sitl_evidence/`.
+- Done: support bundles now ingest `px4_sitl_capture_prereqs.json` from a PX4
+  SITL evidence session or `--px4-sitl-prereqs` /
+  `VISION_NAV_PX4_SITL_PREREQS`, publish it under `px4_sitl_prereqs`, and show
+  the desktop `px4 prereqs` status without satisfying the receiver-proof gate.
 - Done: support bundles can also ingest an already evaluated
   `receiver_evidence.json` through `--px4-sitl-report` /
   `VISION_NAV_PX4_SITL_REPORT`, copy it under `extras/px4_sitl_evidence/`, and

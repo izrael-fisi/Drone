@@ -805,7 +805,10 @@ so local readiness re-audits can find it. Use the session marker as
 log, manual capture README, and `px4_sitl_capture_prereqs.json` before exiting
 failed; rerun the same command after fixing the prerequisite. The wrapper also
 prints `__VISION_NAV_PX4_SITL_PREREQS__=...` so the prerequisite report can be
-copied into setup notes. The session folder is copied under
+copied into setup notes. Support bundles auto-detect the default
+`~/px4-sitl-evidence/px4_sitl_capture_prereqs.json` path and summarize it under
+`px4_sitl_prereqs`; this does not satisfy PX4 receiver proof until the actual
+receiver report exists. The session folder is copied under
 `extras/px4_sitl_session/`, and the parsed pass/fail report is still written
 under `summaries/px4_sitl_evidence/`. Session-based receiver reports also
 compare the observed `vehicle_visual_odometry` listener rate against the smoke

@@ -1855,6 +1855,32 @@ instance #0:
                 }
             )
         )
+        (px4_session / "px4_sitl_capture_prereqs.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_px4_sitl_capture_prereqs_v1",
+                    "status": "failed",
+                    "session_dir": str(px4_session),
+                    "px4_dir": "/missing/PX4-Autopilot",
+                    "px4_target": "px4_sitl gz_x500",
+                    "tmux_session": "vision-nav-px4-sitl",
+                    "receiver_report": str(px4_session / "receiver_evidence.json"),
+                    "checks": [
+                        {
+                            "name": "tmux_installed",
+                            "status": "passed",
+                            "message": "tmux is installed.",
+                        },
+                        {
+                            "name": "px4_autopilot_dir",
+                            "status": "failed",
+                            "message": "PX4-Autopilot directory not found.",
+                        },
+                    ],
+                    "next_actions": ["Set VISION_NAV_PX4_AUTOPILOT_DIR."],
+                }
+            )
+        )
         px4_params = root / "px4.params"
         px4_params.write_text(
             """
@@ -2117,6 +2143,7 @@ RC8_OPTION,90
             "summaries/terrain_matches.summary.json",
             "summaries/replay_gates/unit-good.gate.json",
             "summaries/px4_sitl_evidence/receiver_evidence.json",
+            "summaries/px4_sitl_prereqs/px4_sitl_capture_prereqs.json",
             "summaries/px4_params/param_check.json",
             "summaries/ardupilot_params/param_check.json",
             "summaries/feature_method_benchmarks/unit-method-benchmark-01.json",
@@ -2129,6 +2156,8 @@ RC8_OPTION,90
             "extras/field_collection_plans/field_collection_plan.json",
             "extras/field_collection_plans/field_collection_plan.md",
             "extras/px4_sitl_session/px4_sitl_evidence_session.json",
+            "extras/px4_sitl_session/px4_sitl_capture_prereqs.json",
+            "extras/px4_sitl_prereqs/px4_sitl_capture_prereqs.json",
             "extras/px4_sitl_session/receiver_capture/vehicle_visual_odometry.txt",
             "extras/px4_sitl_session/receiver_capture/mavlink_status.txt",
             "extras/px4_params/px4.params",
@@ -2193,6 +2222,12 @@ RC8_OPTION,90
         assert_equal(manifest["px4_sitl_evidence"]["listener"]["sample_count"], 2, "support px4 evidence samples")
         assert_equal(manifest["px4_sitl_evidence"]["listener"]["observed_rate_hz"], 5.0, "support px4 evidence rate")
         assert_equal(manifest["px4_sitl_evidence"]["config"]["expected_rate_hz"], 5.0, "support px4 expected rate")
+        assert_equal(manifest["px4_sitl_prereqs"]["status"], "failed", "support px4 prereq status")
+        assert_equal(
+            manifest["px4_sitl_prereqs"]["failed_checks"][0]["name"],
+            "px4_autopilot_dir",
+            "support px4 prereq failed check",
+        )
         direct_px4_report = root / "direct_receiver_evidence.json"
         direct_px4_report.write_text(
             json.dumps(

@@ -136,6 +136,7 @@ export interface SupportBundleFile {
     gnss_denied_plan_status?: "passed" | "failed" | "degraded" | string;
     px4_sitl_evidence_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     px4_sitl_sample_count?: number;
+    px4_sitl_prereq_status?: "passed" | "failed" | "degraded" | "not_checked" | "not_provided" | string;
     px4_params_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     px4_ev_ctrl?: number;
     ardupilot_params_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
