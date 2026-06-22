@@ -194,6 +194,67 @@ refresh_evidence_workflow_validation_report() {
   fi
 }
 
+print_workflow_validation_summary() {
+  if [[ ! -f "$evidence_workflow_validation_report" ]]; then
+    return 0
+  fi
+  PYTHONPATH="$repo_root/src" "$python_bin" - "$evidence_workflow_validation_report" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+from vision_nav.autonomy_evidence_workflow import workflow_validation_detail_lines
+
+path = Path(sys.argv[1]).expanduser()
+try:
+    report = json.loads(path.read_text(encoding="utf-8"))
+except Exception as exc:
+    print()
+    print("Workflow validation summary:")
+    print(f"- could not parse {path}: {exc}")
+    raise SystemExit(0)
+
+validation_status = str(report.get("status") or "unknown")
+workflow_status = str(report.get("workflow_status") or "unknown")
+issues = report.get("issues") if isinstance(report.get("issues"), list) else []
+next_step = report.get("next_required_step") if isinstance(report.get("next_required_step"), dict) else None
+checks = [
+    str(check.get("name") or "unknown")
+    for check in report.get("checks") or []
+    if isinstance(check, dict) and check.get("status") != "passed"
+]
+
+if validation_status == "passed" and workflow_status == "passed" and not issues and not next_step and not checks:
+    raise SystemExit(0)
+
+print()
+print("Workflow validation summary:")
+print(
+    f"- status {validation_status}, workflow {workflow_status}, "
+    f"steps {report.get('step_count', 'unknown')}, issues {report.get('issue_count', len(issues))}"
+)
+if next_step:
+    name = next_step.get("name") or "unknown"
+    status = next_step.get("status") or "unknown"
+    print(f"- next required step: {name} [{status}]")
+    if next_step.get("desktop_action"):
+        print(f"  app: {next_step.get('desktop_action')}")
+    if next_step.get("command"):
+        print(f"  command: {next_step.get('command')}")
+for issue in issues[:4]:
+    print(f"- issue: {issue}")
+detail_lines = workflow_validation_detail_lines(report)
+if detail_lines:
+    print("Details:")
+    for line in detail_lines:
+        print(line)
+if checks:
+    print(f"- non-passing checks: {', '.join(checks[:6])}")
+PY
+}
+
 if [[ -z "$support_bundle" ]]; then
   support_bundle="$(latest_glob "$support_dir/*.zip")"
   if [[ -z "$support_bundle" ]]; then
@@ -355,6 +416,8 @@ __VISION_NAV_AUTONOMY_REPORT__=$output_report
 __VISION_NAV_AUTONOMY_HANDOFF__=$output_handoff
 __VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=$output_package
 EOF
+
+print_workflow_validation_summary
 
 if [[ -f "$px4_sitl_report" ]]; then
   echo "__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report"

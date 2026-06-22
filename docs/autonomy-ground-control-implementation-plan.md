@@ -949,6 +949,10 @@ Status:
   now prints the same missing-step, non-passing-step, and missing-marker
   diagnostics in its human output, so terminal-only validation has the same
   repair guidance as the goal-status helper.
+- Done: `scripts/dev/run_local_autonomy_readiness_audit.sh` now prints a
+  workflow-validation summary with next required step, issues, detailed
+  missing-step/non-passing-step/missing-marker diagnostics, and non-passing
+  check names whenever a validation report is available.
 - Done: `scripts/dev/autonomy_goal_status.sh` now includes a field collection
   preview that translates missing required conditions into operator-readable
   labels, expected outcomes, and the next condition to capture before the

@@ -784,6 +784,7 @@ local_audit_dir="$(mktemp -d "$preflight_tmp_dir/local-audit.XXXXXX")"
 mkdir -p "$local_audit_dir/feature-method-bench"
 mkdir -p "$local_audit_dir/px4-sitl-evidence"
 mkdir -p "$local_audit_dir/replay-cases"
+mkdir -p "$local_audit_dir/replay-cases/autonomy-evidence-workflow"
 cat >"$local_audit_dir/feature-method-bench/preflight_feature_benchmark.json" <<'EOF'
 {
   "status": "passed",
@@ -849,6 +850,56 @@ cat >"$local_audit_dir/replay-cases/field_collection_plan.json" <<'EOF'
 EOF
 cat >"$local_audit_dir/replay-cases/field_collection_plan.md" <<'EOF'
 # Field Evidence Collection Plan
+EOF
+cat >"$local_audit_dir/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.validation.json" <<'EOF'
+{
+  "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
+  "status": "degraded",
+  "workflow_status": "failed",
+  "step_count": 12,
+  "marker_count": 7,
+  "issue_count": 2,
+  "issues": [
+    "Workflow report is missing required step result records.",
+    "Workflow report is missing final-readiness proof artifact markers."
+  ],
+  "next_required_step": {
+    "name": "register_field_replay_case",
+    "status": "skipped",
+    "desktop_action": "Module Setup > Field Evidence Case > Register",
+    "command": "./scripts/pi/register_field_replay_case.sh"
+  },
+  "checks": [
+    {
+      "name": "required_step_results",
+      "status": "degraded",
+      "message": "Some required workflow steps did not pass.",
+      "details": {
+        "missing_steps": [],
+        "non_passed_steps": [
+          {
+            "name": "register_field_replay_case",
+            "status": "skipped",
+            "exit_code": 0,
+            "notes": "Set field case variables after capture metadata is complete."
+          }
+        ]
+      }
+    },
+    {
+      "name": "final_proof_markers",
+      "status": "degraded",
+      "message": "Workflow report is missing final-readiness proof artifact markers.",
+      "details": {
+        "missing_markers": [
+          "__VISION_NAV_FIELD_EVIDENCE_REPORT__",
+          "__VISION_NAV_ROSBAG2_CLI_REVIEW__"
+        ],
+        "present_markers": []
+      }
+    }
+  ]
+}
 EOF
 scanned_goal_status_output="$preflight_tmp_dir/autonomy_goal_status_scanned_preflight.txt"
 if VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
@@ -1045,6 +1096,9 @@ grep -q "__VISION_NAV_PX4_SITL_REPORT__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_PX4_SITL_PREREQS__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=" "$local_autonomy_output"
+grep -q "Workflow validation summary:" "$local_autonomy_output"
+grep -q "Details:" "$local_autonomy_output"
+grep -q "Missing final proof markers:" "$local_autonomy_output"
 grep -q "proof:support_bundle_bench_readiness" "$local_autonomy_output"
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
