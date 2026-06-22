@@ -3148,6 +3148,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         missing_proof_command_bundle = missing_proof_ready["command_bundle"]
         missing_proof_next_commands = missing_proof_command_bundle["next_action_commands"]
+        if (
+            "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
+            not in missing_proof_command_bundle["prerequisite_fix_commands"]
+        ):
+            raise AssertionError("autonomy readiness should expose PX4 prereq fix commands separately")
+        if (
+            "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
+            in missing_proof_command_bundle["next_action_commands"]
+        ):
+            raise AssertionError("autonomy readiness should not mix prereq fixes into proof next actions")
         if missing_proof_next_commands.index(px4_capture_command) > missing_proof_next_commands.index(support_bundle_command):
             raise AssertionError("autonomy command bundle should order PX4 receiver proof before support bundle")
         if "./scripts/pi/run_threshold_tuning_report.sh" not in missing_proof_command_bundle["blocked_follow_up_commands"]:
@@ -4075,6 +4085,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package missing command bundle")
             if "./scripts/pi/run_autonomy_evidence_workflow.sh" not in package_command_bundle["guided_workflow_commands"]:
                 raise AssertionError("autonomy evidence package missing guided workflow command")
+            if (
+                "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
+                not in package_command_bundle["prerequisite_fix_commands"]
+            ):
+                raise AssertionError("autonomy evidence package missing prereq fix command group")
             if "./scripts/pi/run_threshold_tuning_report.sh" not in package_command_bundle["immediate_next_action_commands"]:
                 raise AssertionError("autonomy evidence package missing immediate threshold command")
             if "./scripts/pi/run_threshold_tuning_report.sh" in package_command_bundle["blocked_follow_up_commands"]:

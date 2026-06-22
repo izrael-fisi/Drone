@@ -639,6 +639,7 @@ pub struct AutonomyReadinessReportFile {
 #[derive(Serialize)]
 pub struct AutonomyReadinessCommandBundle {
     pub guided_workflow_commands: Vec<String>,
+    pub prerequisite_fix_commands: Vec<String>,
     pub next_action_commands: Vec<String>,
     pub immediate_next_action_commands: Vec<String>,
     pub blocked_follow_up_commands: Vec<String>,
@@ -3133,6 +3134,7 @@ fn autonomy_readiness_command_bundle_from_bundle_json(
     }
     Some(AutonomyReadinessCommandBundle {
         guided_workflow_commands: json_string_array(bundle.get("guided_workflow_commands")),
+        prerequisite_fix_commands: json_string_array(bundle.get("prerequisite_fix_commands")),
         next_action_commands: json_string_array(bundle.get("next_action_commands")),
         immediate_next_action_commands: json_string_array(
             bundle.get("immediate_next_action_commands"),
@@ -4807,6 +4809,9 @@ mod tests {
                     "guided_workflow_commands": [
                         "./scripts/pi/run_autonomy_evidence_workflow.sh"
                     ],
+                    "prerequisite_fix_commands": [
+                        "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
+                    ],
                     "next_action_commands": [
                         "./scripts/dev/run_px4_sitl_external_vision_capture.sh",
                         "./scripts/pi/create_support_bundle.sh",
@@ -4825,7 +4830,7 @@ mod tests {
                     "field_collection_registration_commands": [
                         "./scripts/pi/register_field_replay_case.sh --condition blur"
                     ],
-                    "command_count": 6
+                    "command_count": 7
                 },
                 "plan_snapshot": {
                     "schema_version": "vision_nav_autonomy_plan_snapshot_v1",
@@ -5101,6 +5106,9 @@ mod tests {
                         "guided_workflow_commands": [
                             "./scripts/pi/run_autonomy_evidence_workflow.sh"
                         ],
+                        "prerequisite_fix_commands": [
+                            "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
+                        ],
                         "next_action_commands": [
                             "./scripts/dev/run_px4_sitl_external_vision_capture.sh",
                             "./scripts/pi/create_support_bundle.sh",
@@ -5119,7 +5127,7 @@ mod tests {
                         "field_collection_registration_commands": [
                             "./scripts/pi/register_field_replay_case.sh --condition blur"
                         ],
-                        "command_count": 6
+                        "command_count": 7
                     },
                     "workflow_validation_summary": {
                         "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
@@ -5349,6 +5357,10 @@ mod tests {
             "./scripts/pi/run_autonomy_evidence_workflow.sh"
         );
         assert_eq!(
+            package_command_bundle.prerequisite_fix_commands[0],
+            "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
+        );
+        assert_eq!(
             package_command_bundle.immediate_next_action_commands[0],
             "./scripts/dev/run_px4_sitl_external_vision_capture.sh"
         );
@@ -5356,7 +5368,7 @@ mod tests {
             package_command_bundle.blocked_follow_up_commands[0],
             "./scripts/pi/run_threshold_tuning_report.sh"
         );
-        assert_eq!(package_command_bundle.command_count, Some(6));
+        assert_eq!(package_command_bundle.command_count, Some(7));
         let package_validation = package_summary
             .workflow_validation_summary
             .as_ref()
@@ -5485,6 +5497,10 @@ mod tests {
             command_bundle.guided_workflow_commands[0],
             "./scripts/pi/run_autonomy_evidence_workflow.sh"
         );
+        assert_eq!(
+            command_bundle.prerequisite_fix_commands[0],
+            "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
+        );
         assert_eq!(command_bundle.next_action_commands.len(), 3);
         assert_eq!(
             command_bundle.next_action_commands[0],
@@ -5510,7 +5526,7 @@ mod tests {
             command_bundle.field_collection_registration_commands[0],
             "./scripts/pi/register_field_replay_case.sh --condition blur"
         );
-        assert_eq!(command_bundle.command_count, Some(6));
+        assert_eq!(command_bundle.command_count, Some(7));
         let field_collection_plan = reports[0]
             .field_collection_plan
             .as_ref()

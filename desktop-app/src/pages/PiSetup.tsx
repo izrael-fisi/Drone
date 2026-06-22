@@ -1211,6 +1211,7 @@ function AutonomyReadinessReportList({
             const immediateNextActionCommands = uniqueCommands(
               commandBundle?.immediate_next_action_commands ?? [],
             );
+            const prerequisiteFixCommands = uniqueCommands(commandBundle?.prerequisite_fix_commands ?? []);
             const blockedFollowUpCommands = uniqueCommands(commandBundle?.blocked_follow_up_commands ?? []);
             const primaryNextActionCommands =
               immediateNextActionCommands.length > 0 ? immediateNextActionCommands : nextActionCommands;
@@ -1653,6 +1654,7 @@ function AutonomyReadinessReportList({
               ))}
               {(
                 guidedWorkflowCommands.length > 0 ||
+                prerequisiteFixCommands.length > 0 ||
                 report.next_actions.length > 0 ||
                 nextActionCommands.length > 0 ||
                 blockedFollowUpCommands.length > 0
@@ -1690,6 +1692,17 @@ function AutonomyReadinessReportList({
                       >
                         <Copy size={9} />
                         {immediateNextActionCommands.length > 0 ? "immediate" : "commands"}
+                      </button>
+                    )}
+                    {prerequisiteFixCommands.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(prerequisiteFixCommands.join("\n"))}
+                        className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                        title="Copy setup prerequisite fix commands"
+                      >
+                        <Copy size={9} />
+                        prereq fixes
                       </button>
                     )}
                     {blockedFollowUpCommands.length > 0 && (

@@ -444,7 +444,10 @@ prerequisite report under `px4_sitl_prereqs` and show it as a separate
 `px4 prereqs` status, while PX4 receiver proof still requires
 `receiver_evidence.json`. Autonomy-readiness reports, evidence packages, and
 handoffs preserve the same fix commands so the operator can continue from a
-downloaded report without reopening the raw prerequisite JSON.
+downloaded report without reopening the raw prerequisite JSON. Downloaded
+autonomy-readiness cards expose those setup fixes as a separate
+`prereq fixes` command-copy group, distinct from proof-producing immediate and
+blocked follow-up commands.
 
 Module Setup can run `ROS Bag Validation` after a terrain runtime/replay log
 exists. The action runs `scripts/pi/run_rosbag_export_validation.sh` over SSH,

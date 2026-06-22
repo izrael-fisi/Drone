@@ -247,6 +247,7 @@ def build_command_bundle_summary(report: dict[str, Any]) -> dict[str, Any] | Non
         return None
     summary = {
         "guided_workflow_commands": string_list(bundle.get("guided_workflow_commands")),
+        "prerequisite_fix_commands": string_list(bundle.get("prerequisite_fix_commands")),
         "next_action_commands": string_list(bundle.get("next_action_commands")),
         "immediate_next_action_commands": string_list(bundle.get("immediate_next_action_commands")),
         "blocked_follow_up_commands": string_list(bundle.get("blocked_follow_up_commands")),

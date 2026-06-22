@@ -349,7 +349,9 @@ cases such as installing `tmux`, cloning PX4, pointing the harness at an
 existing PX4 checkout, or rerunning the same evidence session. The same
 commands are preserved in autonomy-readiness diagnostics, support bundles,
 evidence-package manifests, Markdown handoffs, and `autonomy_goal_status.sh`
-output. Fix the prerequisite and rerun the same command; the scaffold is not
+output. Autonomy-readiness command bundles keep them in
+`prerequisite_fix_commands`, separate from commands that produce proof
+artifacts. Fix the prerequisite and rerun the same command; the scaffold is not
 receiver proof until `receiver_evidence.json` is generated from real
 `vehicle_visual_odometry` and `mavlink status` captures.
 

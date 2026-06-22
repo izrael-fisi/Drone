@@ -284,6 +284,7 @@ def evaluate_autonomy_readiness(
             next_actions,
             field_collection_plan_path=field_collection_plan_path,
             proof_runbook=proof_runbook,
+            diagnostics=diagnostics,
         ),
         "summary": {
             "failed": sum(1 for check in checks if check["status"] == "failed"),
@@ -353,6 +354,7 @@ def build_command_bundle(
     *,
     field_collection_plan_path: str | Path | None = None,
     proof_runbook: dict[str, Any] | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     guided_workflow_commands = [GUIDED_EVIDENCE_WORKFLOW_COMMAND] if next_actions else []
     raw_next_action_commands = unique_strings(
@@ -373,8 +375,10 @@ def build_command_bundle(
     )
     field_collection_capture_commands = field_collection_commands(field_collection_plan_path, "capture_command")
     field_collection_registration_commands = field_collection_commands(field_collection_plan_path, "register_command")
+    prerequisite_fix_commands = diagnostic_fix_commands(diagnostics)
     return {
         "guided_workflow_commands": guided_workflow_commands,
+        "prerequisite_fix_commands": prerequisite_fix_commands,
         "next_action_commands": next_action_commands,
         "immediate_next_action_commands": immediate_next_action_commands,
         "blocked_follow_up_commands": blocked_follow_up_commands,
@@ -384,6 +388,7 @@ def build_command_bundle(
             unique_strings(
                 [
                     *guided_workflow_commands,
+                    *prerequisite_fix_commands,
                     *next_action_commands,
                     *field_collection_capture_commands,
                     *field_collection_registration_commands,
@@ -391,6 +396,19 @@ def build_command_bundle(
             )
         ),
     }
+
+
+def diagnostic_fix_commands(diagnostics: dict[str, Any] | None) -> list[str]:
+    if not isinstance(diagnostics, dict):
+        return []
+    px4_prereqs = diagnostics.get("px4_sitl_prereqs")
+    if not isinstance(px4_prereqs, dict):
+        return []
+    return unique_strings(
+        item.get("command")
+        for item in px4_prereqs.get("fix_commands") or []
+        if isinstance(item, dict)
+    )
 
 
 def proof_runbook_command_groups(

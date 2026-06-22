@@ -692,6 +692,7 @@ grep -q "px4_sitl_capture_prereqs.json" "$local_audit_dir/replay-cases/autonomy_
 grep -q "PX4 Capture Prerequisites" "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 grep -q '"next_actions"' "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 grep -q '"fix_commands"' "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+grep -q '"prerequisite_fix_commands"' "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 grep -q "Prerequisite fix commands" "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 grep -q "Autonomy Readiness Handoff" "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 python3 - "$local_audit_dir/replay-cases/autonomy_readiness_report.evidence.zip" <<'PY'
