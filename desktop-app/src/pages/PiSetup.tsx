@@ -1093,6 +1093,7 @@ function FieldCollectionConditionBadge({
     status?: string;
     case_name?: string;
     capture_command?: string;
+    metadata_update_command?: string;
     register_command?: string;
   };
   idPrefix: string;
@@ -1116,6 +1117,16 @@ function FieldCollectionConditionBadge({
           title={`Copy capture command: ${condition.capture_command}`}
         >
           cap
+        </button>
+      )}
+      {condition.metadata_update_command && (
+        <button
+          type="button"
+          onClick={() => navigator.clipboard.writeText(condition.metadata_update_command ?? "")}
+          className="text-cyan-300 hover:text-cyan-100"
+          title={`Copy metadata update command: ${condition.metadata_update_command}`}
+        >
+          <FileText size={9} />
         </button>
       )}
       {condition.register_command && (
@@ -3568,9 +3579,24 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     condition: FieldCollectionPlanFile["conditions"][number],
   ) => {
     setFieldCase((value) => fieldCaseFromCollectionPlanCondition(value, plan, condition));
+    const commandLines = [
+      condition.capture_command ? `capture: ${condition.capture_command}` : null,
+      condition.metadata_update_command ? `metadata: ${condition.metadata_update_command}` : null,
+      condition.register_command ? `register: ${condition.register_command}` : null,
+    ].filter((line): line is string => Boolean(line));
     setResult("field-evidence", {
       status: "idle",
-      output: `$ Load Field Collection Condition\ncase: ${condition.case_name ?? "n/a"}\ncondition: ${condition.condition ?? "n/a"}\nexpected: ${condition.expected ?? "n/a"}\nlog: ${condition.source_log ?? "latest default"}\nplan: ${plan.path}\n\nReview capture metadata, fill any missing values, then register the field evidence case.`,
+      output: [
+        "$ Load Field Collection Condition",
+        `case: ${condition.case_name ?? "n/a"}`,
+        `condition: ${condition.condition ?? "n/a"}`,
+        `expected: ${condition.expected ?? "n/a"}`,
+        `log: ${condition.source_log ?? "latest default"}`,
+        `plan: ${plan.path}`,
+        ...commandLines,
+        "",
+        "Review capture metadata, fill any missing values, then register the field evidence case.",
+      ].join("\n"),
     });
   };
 

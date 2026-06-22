@@ -740,7 +740,9 @@ Status:
 - Done: Module Setup renders the field plan's `next_condition` in downloaded
   field-plan and autonomy-readiness cards, including direct
   capture/metadata-update/register copy controls and a one-click `Load` action
-  in the field-plan list.
+  in the field-plan list. The compact next-condition badge and load output both
+  surface the metadata-update command so strict metadata gates are visible
+  before registration.
 - Done: Module Setup also exposes a top-level local-only `Load Next Field
   Condition` action that loads the newest downloaded plan's next condition into
   the Field Evidence Case form before registration.
