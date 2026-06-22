@@ -29,15 +29,16 @@ IMPORTANT_MARKERS = [
     "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__",
     "__VISION_NAV_TERRAIN_LOG__",
     "__VISION_NAV_RUNTIME_STATUS__",
-    "__VISION_NAV_PX4_SITL_SESSION__",
-    "__VISION_NAV_PX4_SITL_REPORT__",
     "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__",
     "__VISION_NAV_AUTONOMY_REPORT__",
 ]
 
+IMPORTANT_MARKER_ALTERNATIVES = [
+    ("__VISION_NAV_PX4_SITL_SESSION__", "__VISION_NAV_PX4_SITL_REPORT__"),
+]
+
 FINAL_PROOF_MARKERS = [
     "__VISION_NAV_SUPPORT_ZIP__",
-    "__VISION_NAV_PX4_SITL_REPORT__",
     "__VISION_NAV_FIELD_COLLECTION_PLAN__",
     "__VISION_NAV_FIELD_EVIDENCE_REPORT__",
     "__VISION_NAV_FEATURE_METHOD_REPORT__",
@@ -47,6 +48,10 @@ FINAL_PROOF_MARKERS = [
     "__VISION_NAV_AUTONOMY_REPORT__",
     "__VISION_NAV_AUTONOMY_HANDOFF__",
     "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__",
+]
+
+FINAL_PROOF_MARKER_ALTERNATIVES = [
+    ("__VISION_NAV_PX4_SITL_SESSION__", "__VISION_NAV_PX4_SITL_REPORT__"),
 ]
 
 
@@ -124,19 +129,39 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
         checks.append(passed("step_statuses", "Workflow step statuses are parseable.", status_counts))
 
     markers = report.get("markers") if isinstance(report.get("markers"), dict) else {}
-    missing_markers = [marker for marker in IMPORTANT_MARKERS if not markers.get(marker)]
+    important_presence = marker_presence(
+        markers,
+        required_markers=IMPORTANT_MARKERS,
+        alternative_groups=IMPORTANT_MARKER_ALTERNATIVES,
+    )
+    missing_markers = important_presence["missing_markers"]
     if missing_markers:
         checks.append(
             degraded(
                 "important_markers",
                 "Some high-value artifact markers are missing.",
-                {"missing_markers": missing_markers, "marker_count": len(markers)},
+                {
+                    "missing_markers": missing_markers,
+                    "present_markers": important_presence["present_markers"],
+                    "marker_count": len(markers),
+                },
             )
         )
     else:
-        checks.append(passed("important_markers", "Workflow report includes the high-value artifact markers.", {"marker_count": len(markers)}))
+        checks.append(
+            passed(
+                "important_markers",
+                "Workflow report includes the high-value artifact markers.",
+                {"present_markers": important_presence["present_markers"], "marker_count": len(markers)},
+            )
+        )
 
-    missing_final_proof_markers = [marker for marker in FINAL_PROOF_MARKERS if not markers.get(marker)]
+    final_proof_presence = marker_presence(
+        markers,
+        required_markers=FINAL_PROOF_MARKERS,
+        alternative_groups=FINAL_PROOF_MARKER_ALTERNATIVES,
+    )
+    missing_final_proof_markers = final_proof_presence["missing_markers"]
     if missing_final_proof_markers:
         checks.append(
             degraded(
@@ -144,7 +169,7 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
                 "Workflow report is missing final-readiness proof artifact markers.",
                 {
                     "missing_markers": missing_final_proof_markers,
-                    "present_markers": [marker for marker in FINAL_PROOF_MARKERS if markers.get(marker)],
+                    "present_markers": final_proof_presence["present_markers"],
                     "marker_count": len(markers),
                 },
             )
@@ -154,7 +179,7 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
             passed(
                 "final_proof_markers",
                 "Workflow report includes every final-readiness proof artifact marker.",
-                {"marker_count": len(markers)},
+                {"present_markers": final_proof_presence["present_markers"], "marker_count": len(markers)},
             )
         )
 
@@ -190,6 +215,37 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
         "checks": checks,
         "issues": issues,
     }
+
+
+def marker_presence(
+    markers: dict[str, Any],
+    *,
+    required_markers: list[str],
+    alternative_groups: list[tuple[str, ...]],
+) -> dict[str, list[str]]:
+    missing: list[str] = []
+    present: list[str] = []
+    seen_present: set[str] = set()
+
+    for marker in required_markers:
+        if markers.get(marker):
+            if marker not in seen_present:
+                present.append(marker)
+                seen_present.add(marker)
+        else:
+            missing.append(marker)
+
+    for group in alternative_groups:
+        present_group = [marker for marker in group if markers.get(marker)]
+        if present_group:
+            for marker in present_group:
+                if marker not in seen_present:
+                    present.append(marker)
+                    seen_present.add(marker)
+        else:
+            missing.extend(group)
+
+    return {"missing_markers": missing, "present_markers": present}
 
 
 def validate_log_archive(raw_path: Any, *, report_path: Path, step_names: list[str]) -> dict[str, Any]:

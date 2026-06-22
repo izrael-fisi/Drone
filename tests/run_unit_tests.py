@@ -2405,8 +2405,46 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         assert_equal(validation_exit_code(validation), 0, "workflow validation degraded exit code")
         checks = {check["name"]: check["status"] for check in validation["checks"]}
         assert_equal(checks["log_archive"], "passed", "workflow validation log archive")
+        assert_equal(checks["important_markers"], "passed", "workflow validation important markers")
         assert_equal(checks["final_proof_markers"], "passed", "workflow validation final proof markers")
         assert_equal(validation["step_count"], len(REQUIRED_WORKFLOW_STEPS), "workflow validation step count")
+
+        session_only_report = json.loads(report_path.read_text())
+        session_only_report["markers"].pop("__VISION_NAV_PX4_SITL_REPORT__")
+        session_only_report["markers"]["__VISION_NAV_PX4_SITL_SESSION__"] = str(root / "px4-sitl-evidence")
+        session_only_path = root / "session_only_px4_autonomy_evidence_workflow.json"
+        session_only_path.write_text(json.dumps(session_only_report))
+        session_only_validation = validate_workflow_report(session_only_path)
+        session_only_checks = {check["name"]: check for check in session_only_validation["checks"]}
+        assert_equal(
+            session_only_checks["important_markers"]["status"],
+            "passed",
+            "workflow validation px4 session satisfies important marker",
+        )
+        assert_equal(
+            session_only_checks["final_proof_markers"]["status"],
+            "passed",
+            "workflow validation px4 session satisfies final proof marker",
+        )
+        if "__VISION_NAV_PX4_SITL_SESSION__" not in session_only_checks["final_proof_markers"]["details"]["present_markers"]:
+            raise AssertionError("workflow validation should list PX4 session as a present final proof marker")
+
+        missing_px4_report = json.loads(report_path.read_text())
+        missing_px4_report["markers"].pop("__VISION_NAV_PX4_SITL_REPORT__")
+        missing_px4_path = root / "missing_px4_autonomy_evidence_workflow.json"
+        missing_px4_path.write_text(json.dumps(missing_px4_report))
+        missing_px4_validation = validate_workflow_report(missing_px4_path)
+        missing_px4_checks = {check["name"]: check for check in missing_px4_validation["checks"]}
+        assert_equal(
+            missing_px4_checks["final_proof_markers"]["status"],
+            "degraded",
+            "workflow validation missing all px4 proof markers degraded",
+        )
+        assert_equal(
+            missing_px4_checks["final_proof_markers"]["details"]["missing_markers"],
+            ["__VISION_NAV_PX4_SITL_SESSION__", "__VISION_NAV_PX4_SITL_REPORT__"],
+            "workflow validation missing px4 proof marker alternatives",
+        )
 
         incomplete_marker_report = json.loads(report_path.read_text())
         incomplete_marker_report["markers"].pop("__VISION_NAV_THRESHOLD_REPORT__")
