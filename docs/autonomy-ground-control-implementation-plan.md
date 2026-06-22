@@ -581,9 +581,10 @@ Status:
 - Done: Module Setup can copy all shell commands from an autonomy-readiness
   report's next actions in one click, while preserving per-action command copy.
 - Done: autonomy-readiness JSON reports include a machine-readable
-  `command_bundle` with next-action commands and pending field replay
-  registration commands for downstream support tooling, and Module Setup
-  consumes that bundle for bulk command copy plus saved setup-report exports.
+  `command_bundle` with next-action commands, pending field replay capture
+  commands, and pending field replay registration commands for downstream
+  support tooling, and Module Setup consumes that bundle for bulk command copy
+  plus saved setup-report exports.
 - Done: field-evidence readiness next actions now point to the current
   proof-collection flow: load a pending Field Collection Plan condition, run
   `Field Log Capture`, then register the captured replay case.
@@ -645,7 +646,8 @@ Status:
   external proof blockers, missing field conditions, bench subchecks, and next
   actions.
 - Done: the Markdown handoff includes a copy-friendly command bundle for
-  next-action shell commands and pending field replay registration commands.
+  next-action shell commands plus pending field replay capture and registration
+  commands.
 - Done: the Markdown handoff renders the proof runbook so support can follow
   the correct proof collection order from the generated handoff instead of
   opening the raw JSON report.

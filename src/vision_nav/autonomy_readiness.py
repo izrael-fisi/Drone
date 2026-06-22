@@ -290,15 +290,21 @@ def build_command_bundle(
         for action in next_actions
         if isinstance(action, dict)
     )
-    field_collection_commands = field_collection_registration_commands(field_collection_plan_path)
+    field_collection_capture_commands = field_collection_commands(field_collection_plan_path, "capture_command")
+    field_collection_registration_commands = field_collection_commands(field_collection_plan_path, "register_command")
     return {
         "next_action_commands": next_action_commands,
-        "field_collection_registration_commands": field_collection_commands,
-        "command_count": len(next_action_commands) + len(field_collection_commands),
+        "field_collection_capture_commands": field_collection_capture_commands,
+        "field_collection_registration_commands": field_collection_registration_commands,
+        "command_count": (
+            len(next_action_commands)
+            + len(field_collection_capture_commands)
+            + len(field_collection_registration_commands)
+        ),
     }
 
 
-def field_collection_registration_commands(path: str | Path | None) -> list[str]:
+def field_collection_commands(path: str | Path | None, key: str) -> list[str]:
     if not path:
         return []
     source = Path(path).expanduser()
@@ -314,7 +320,7 @@ def field_collection_registration_commands(path: str | Path | None) -> list[str]
     if not isinstance(conditions, list):
         return []
     return unique_strings(
-        item.get("register_command")
+        item.get(key)
         for item in conditions
         if isinstance(item, dict) and item.get("status") != "registered"
     )

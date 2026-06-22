@@ -557,11 +557,12 @@ the card shows plan pass/degraded state, registered-vs-required condition
 counts, per-condition placeholder/missing/registered status, and lets support
 extract the JSON/Markdown plan artifacts from the ZIP.
 Pending field-collection condition pills and command buttons in Module Setup
-copy individual or batched generated registration commands when the plan
-includes them, which keeps real replay-case registration out of manual
-retyping.
+copy individual or batched generated capture and registration commands when the
+plan includes them, which keeps real replay-case collection and registration
+out of manual retyping.
 The Markdown handoff mirrors that workflow with a copy-friendly command bundle
-for next-action commands and pending field replay registration commands. It also
+for next-action commands and pending field replay capture/registration
+commands. It also
 summarizes the research/implementation source-doc snapshot that the final audit
 used, including required marker coverage and implementation track/task counts.
 It also renders the readiness report's proof runbook so support can see which

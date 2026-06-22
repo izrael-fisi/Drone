@@ -766,13 +766,14 @@ function formatReportTime(ms?: number) {
   return new Date(ms).toLocaleString();
 }
 
-function fieldCollectionRegisterCommands(
-  conditions: Array<{ register_command?: string; status?: string }>,
+function fieldCollectionCommands(
+  conditions: Array<{ capture_command?: string; register_command?: string; status?: string }>,
+  key: "capture_command" | "register_command",
 ) {
   return uniqueCommands(
     conditions
       .filter((condition) => condition.status !== "registered")
-      .map((condition) => condition.register_command),
+      .map((condition) => condition[key]),
   );
 }
 
@@ -818,39 +819,42 @@ function FieldCollectionConditionBadge({
     label?: string;
     status?: string;
     case_name?: string;
+    capture_command?: string;
     register_command?: string;
   };
   idPrefix: string;
 }) {
   const label = formatReadinessLabel(condition.condition ?? condition.label);
   const status = formatReadinessLabel(condition.status);
-  const content = (
-    <>
-      {condition.register_command && <Copy size={9} />}
-      <span>{label}</span>
-      <span>{status}</span>
-    </>
-  );
-  if (condition.register_command) {
-    return (
-      <button
-        key={`${idPrefix}-${condition.condition ?? condition.label ?? condition.case_name}`}
-        type="button"
-        onClick={() => navigator.clipboard.writeText(condition.register_command ?? "")}
-        className={cn(readinessBadgeClass(condition.status), "text-[10px] hover:border-cyan-400/50 hover:text-cyan-200")}
-        title={`Copy register command: ${condition.register_command}`}
-      >
-        {content}
-      </button>
-    );
-  }
+  const key = `${idPrefix}-${condition.condition ?? condition.label ?? condition.case_name}`;
   return (
     <span
-      key={`${idPrefix}-${condition.condition ?? condition.label ?? condition.case_name}`}
-      className={cn(readinessBadgeClass(condition.status), "text-[10px]")}
+      key={key}
+      className={cn(readinessBadgeClass(condition.status), "text-[10px] gap-1")}
       title={condition.case_name ?? condition.condition ?? "pending condition"}
     >
-      {content}
+      <span>{label}</span>
+      <span>{status}</span>
+      {condition.capture_command && (
+        <button
+          type="button"
+          onClick={() => navigator.clipboard.writeText(condition.capture_command ?? "")}
+          className="text-cyan-300 hover:text-cyan-100"
+          title={`Copy capture command: ${condition.capture_command}`}
+        >
+          cap
+        </button>
+      )}
+      {condition.register_command && (
+        <button
+          type="button"
+          onClick={() => navigator.clipboard.writeText(condition.register_command ?? "")}
+          className="text-cyan-300 hover:text-cyan-100"
+          title={`Copy register command: ${condition.register_command}`}
+        >
+          <Copy size={9} />
+        </button>
+      )}
     </span>
   );
 }
@@ -1009,8 +1013,12 @@ function AutonomyReadinessReportList({
       ) : (
         <div className="space-y-2">
           {reports.slice(0, 4).map((report) => {
-            const fieldPlanCommands = uniqueCommands([
-              ...fieldCollectionRegisterCommands(report.field_collection_plan?.pending_conditions ?? []),
+            const fieldPlanCaptureCommands = uniqueCommands([
+              ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "capture_command"),
+              ...(report.command_bundle?.field_collection_capture_commands ?? []),
+            ]);
+            const fieldPlanRegisterCommands = uniqueCommands([
+              ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "register_command"),
               ...(report.command_bundle?.field_collection_registration_commands ?? []),
             ]);
             const nextActionCommands = uniqueCommands([
@@ -1199,15 +1207,26 @@ function AutonomyReadinessReportList({
                         <span className="font-mono text-slate-500">
                           pending {report.field_collection_plan.pending_conditions.length}
                         </span>
-                        {fieldPlanCommands.length > 0 && (
+                        {fieldPlanCaptureCommands.length > 0 && (
                           <button
                             type="button"
-                            onClick={() => navigator.clipboard.writeText(fieldPlanCommands.join("\n"))}
+                            onClick={() => navigator.clipboard.writeText(fieldPlanCaptureCommands.join("\n"))}
+                            className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                            title="Copy pending capture commands"
+                          >
+                            <Copy size={9} />
+                            capture
+                          </button>
+                        )}
+                        {fieldPlanRegisterCommands.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(fieldPlanRegisterCommands.join("\n"))}
                             className="btn-secondary px-1.5 py-0.5 text-[10px]"
                             title="Copy pending registration commands"
                           >
                             <Copy size={9} />
-                            commands
+                            register
                           </button>
                         )}
                       </div>
@@ -2059,7 +2078,8 @@ function FieldCollectionPlanList({
               (file.summary.missing_count ?? 0) +
               (file.summary.registered_missing_log_count ?? 0);
             const revealPath = file.markdown_path ?? file.path;
-            const registerCommands = fieldCollectionRegisterCommands(file.conditions);
+            const captureCommands = fieldCollectionCommands(file.conditions, "capture_command");
+            const registerCommands = fieldCollectionCommands(file.conditions, "register_command");
             return (
               <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
                 <div className="flex items-start justify-between gap-3">
@@ -2077,6 +2097,17 @@ function FieldCollectionPlanList({
                       </span>
                       {file.site_name && <span className="font-mono text-[10px] text-slate-500">{file.site_name}</span>}
                       {file.markdown_path && <span className="font-mono text-[10px] text-cyan-400">markdown</span>}
+                      {captureCommands.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(captureCommands.join("\n"))}
+                          className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                          title="Copy pending capture commands"
+                        >
+                          <Copy size={9} />
+                          capture
+                        </button>
+                      )}
                       {registerCommands.length > 0 && (
                         <button
                           type="button"
@@ -2085,7 +2116,7 @@ function FieldCollectionPlanList({
                           title="Copy pending registration commands"
                         >
                           <Copy size={9} />
-                          commands
+                          register
                         </button>
                       )}
                     </div>

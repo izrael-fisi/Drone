@@ -551,6 +551,7 @@ export interface AutonomyReadinessReportFile {
   }>;
   command_bundle?: {
     next_action_commands: string[];
+    field_collection_capture_commands?: string[];
     field_collection_registration_commands: string[];
     command_count?: number;
   };
@@ -613,6 +614,8 @@ export interface AutonomyReadinessReportFile {
       case_name?: string;
       manifest_log_path?: string;
       manifest_log_exists?: boolean;
+      source_log?: string;
+      capture_command?: string;
       register_command?: string;
     }>;
   };

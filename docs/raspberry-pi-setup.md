@@ -1052,7 +1052,7 @@ vs required field conditions and the pending placeholder/missing cases. It
 also includes an artifact-availability table when the referenced evidence
 paths are visible from the machine rendering the handoff. The handoff also
 includes a copy-friendly command bundle for next-action commands and pending
-field replay registration commands.
+field replay capture/registration commands.
 
 The desktop Module Setup `Bench Report` action runs the terrain bundle validator
 against the configured deployed bundle, creates this same support bundle, and
@@ -1087,8 +1087,8 @@ downloaded sibling `field_collection_plan.json` beside the report. The local
 Markdown handoff renderer and evidence ZIP packager use the same fallback, so
 support packages can still include the downloaded JSON/Markdown checklist. The
 pending field-collection condition pills and command buttons in Module Setup
-copy individual or batched generated replay-case registration commands when
-the plan includes them. The
+copy individual or batched generated replay-case capture and registration
+commands when the plan includes them. The
 autonomy-readiness list detects the sibling Markdown handoff and evidence ZIP
 package beside each JSON report and exposes copy/reveal controls for support
 review. When the evidence ZIP contains the expected package manifest, the list

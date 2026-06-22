@@ -228,6 +228,11 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
             lines.extend(["Next-action commands:", "", "```bash"])
             lines.extend(next_action_commands)
             lines.append("```")
+        field_capture_commands = command_groups.get("field_collection_capture") or []
+        if field_capture_commands:
+            lines.extend(["", "Field collection capture commands:", "", "```bash"])
+            lines.extend(field_capture_commands)
+            lines.append("```")
         field_commands = command_groups.get("field_collection") or []
         if field_commands:
             lines.extend(["", "Field collection registration commands:", "", "```bash"])
@@ -421,8 +426,19 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
             ],
         ]
     )
+    field_capture_commands = json_string_list(report_bundle.get("field_collection_capture_commands"))
     field_commands = json_string_list(report_bundle.get("field_collection_registration_commands"))
     if field_plan is not None:
+        field_capture_commands = unique_strings(
+            [
+                *field_capture_commands,
+                *[
+                    item.get("capture_command")
+                    for item in field_collection_pending_conditions(field_plan)
+                    if isinstance(item, dict)
+                ],
+            ]
+        )
         field_commands = unique_strings(
             [
                 *field_commands,
@@ -436,6 +452,8 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
     result: dict[str, list[str]] = {}
     if next_action_commands:
         result["next_actions"] = next_action_commands
+    if field_capture_commands:
+        result["field_collection_capture"] = field_capture_commands
     if field_commands:
         result["field_collection"] = field_commands
     return result

@@ -2459,6 +2459,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "status": "placeholder",
                             "expected": "degraded",
                             "case_name": "unit-blur",
+                            "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
                             "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur",
                         },
                     ],
@@ -3129,6 +3130,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         if "./scripts/pi/run_threshold_tuning_report.sh" not in command_bundle["next_action_commands"]:
             raise AssertionError("autonomy readiness JSON missing next-action command bundle")
         if (
+            "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
+            not in command_bundle["field_collection_capture_commands"]
+        ):
+            raise AssertionError("autonomy readiness JSON missing field capture command bundle")
+        if (
             "./scripts/pi/register_field_replay_case.sh --condition blur"
             not in command_bundle["field_collection_registration_commands"]
         ):
@@ -3164,6 +3170,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff field collection plan path")
         if "## Command Bundle" not in handoff:
             raise AssertionError("autonomy handoff command bundle")
+        if "Field collection capture commands:" not in handoff:
+            raise AssertionError("autonomy handoff field capture commands")
         if "## Proof Runbook" not in handoff:
             raise AssertionError("autonomy handoff proof runbook")
         if "Benchmark methods and tune replay thresholds" not in handoff:
