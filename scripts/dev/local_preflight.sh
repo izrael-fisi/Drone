@@ -621,6 +621,10 @@ load_next_app = text.index("Module Setup > Load Next Field Condition", bench_ord
 evidence_workflow_app = text.index("Module Setup > Evidence Workflow", bench_order)
 assert px4_prereq_app < px4_capture_app
 assert create_plan_app < load_next_app < evidence_workflow_app
+guided = text.index("Guided workflow option:")
+guided_app = text.index("app: ", guided)
+guided_workflow_label = text.index("Evidence Workflow", guided_app)
+guided_command = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", guided)
 next_commands = text.index("Next commands:")
 px4 = text.index("VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh", next_commands)
 px4_app = text.index("app: Module Setup > PX4 SITL Receiver Capture, then Local Readiness Re-Audit", next_commands)
@@ -631,6 +635,7 @@ field_plan_app = text.index("app: Module Setup > Create Plan", next_commands)
 workflow = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", next_commands)
 workflow_app = text.index("app: Module Setup > Evidence Workflow", next_commands)
 assert px4_app < px4
+assert guided_app < guided_workflow_label < guided_command < next_commands
 assert px4 < support
 assert field_plan_app < field_plan
 assert workflow_app < workflow
@@ -761,6 +766,9 @@ import sys
 text = Path(sys.argv[1]).read_text()
 fixes = text.index("Immediate prerequisite fixes:")
 guided = text.index("Guided workflow option:")
+guided_app = text.index("app: ", guided)
+guided_workflow_label = text.index("Evidence Workflow", guided_app)
+guided_command = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", guided)
 bench_order = text.index("suggested collection order:")
 px4_prereq_app = text.index("Module Setup > PX4 Prereq Setup", bench_order)
 px4_capture_app = text.index("Module Setup > PX4 SITL Receiver Capture", bench_order)
@@ -776,6 +784,7 @@ support_bundle = text.index("./scripts/pi/create_support_bundle.sh", next_comman
 support_app = text.index("app: Module Setup > Bench Report", next_commands)
 blocked_followups = text.index("Blocked follow-up commands:")
 assert fixes < guided < next_commands
+assert guided_app < guided_workflow_label < guided_command < next_commands
 assert px4_prereq_app < px4_capture_app
 assert create_plan_app < load_next_app < evidence_workflow_app
 assert field_plan_app < field_plan

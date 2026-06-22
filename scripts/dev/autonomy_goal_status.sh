@@ -485,6 +485,14 @@ guided_workflow_commands = [
     for command in command_bundle.get("guided_workflow_commands") or []
     if isinstance(command, str) and command
 ]
+command_app_hints = {}
+for item in command_bundle.get("command_items") or []:
+    if not isinstance(item, dict):
+        continue
+    command = item.get("command")
+    desktop_action = item.get("desktop_action")
+    if isinstance(command, str) and command and isinstance(desktop_action, str) and desktop_action:
+        command_app_hints.setdefault(command, desktop_action)
 prerequisite_fix_commands = [
     str(command)
     for command in command_bundle.get("prerequisite_fix_commands") or []
@@ -762,6 +770,7 @@ if guided_workflow_commands:
             print(f"{index}. Run the ordered Pi evidence workflow and preserve partial artifacts.")
         else:
             print(f"{index}. Guided evidence workflow command.")
+        print(f"   app: {command_app_hints.get(command) or 'Module Setup > Evidence Workflow'}")
         print(f"   {command}")
 
 phase_commands = []

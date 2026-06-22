@@ -892,6 +892,10 @@ Status:
   capture/metadata-update/register commands available in generated handoffs and
   command bundles for operators who want to inspect or run each prerequisite
   manually.
+- Done: the guided workflow option in `scripts/dev/autonomy_goal_status.sh` now
+  prints its matching Module Setup app route from the structured command bundle,
+  including the `Load Next Field Condition` preload step when the field plan is
+  the active prerequisite.
 - Done: `scripts/dev/autonomy_goal_status.sh` now includes a field collection
   preview that translates missing required conditions into operator-readable
   labels, expected outcomes, and the next condition to capture before the
