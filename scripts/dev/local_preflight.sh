@@ -272,7 +272,10 @@ validation = json.loads(Path(sys.argv[1]).read_text())
 assert validation["schema_version"] == "vision_nav_autonomy_evidence_workflow_validation_v1"
 assert validation["status"] in {"passed", "degraded"}
 checks = {check["name"]: check["status"] for check in validation["checks"]}
+details = {check["name"]: check.get("details") or {} for check in validation["checks"]}
 assert checks["log_archive"] == "passed"
+assert checks["required_step_results"] == "degraded"
+assert details["required_step_results"]["non_passed_count"] > 0
 PY
 invalid_workflow_dir="$field_smoke_dir/workflow-invalid-log"
 mkdir -p "$invalid_workflow_dir"

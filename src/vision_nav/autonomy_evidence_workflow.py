@@ -128,6 +128,9 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
     else:
         checks.append(passed("step_statuses", "Workflow step statuses are parseable.", status_counts))
 
+    step_result_check = validate_required_step_results(steps)
+    checks.append(step_result_check)
+
     markers = report.get("markers") if isinstance(report.get("markers"), dict) else {}
     important_presence = marker_presence(
         markers,
@@ -313,6 +316,50 @@ def last_workflow_step(steps: list[Any], name: str) -> dict[str, Any] | None:
         if isinstance(step, dict) and step.get("name") == name:
             return step
     return None
+
+
+def validate_required_step_results(steps: list[Any]) -> dict[str, Any]:
+    by_name = {str(step.get("name")): step for step in steps if isinstance(step, dict) and step.get("name")}
+    non_passed_steps: list[dict[str, Any]] = []
+    missing_steps: list[str] = []
+    for name in REQUIRED_WORKFLOW_STEPS:
+        step = by_name.get(name)
+        if step is None:
+            missing_steps.append(name)
+            continue
+        status = str(step.get("status") or "unknown")
+        if status != "passed":
+            non_passed_steps.append(
+                {
+                    "name": name,
+                    "status": status,
+                    "exit_code": step.get("exit_code"),
+                    "notes": step.get("notes"),
+                }
+            )
+    details = {
+        "required_count": len(REQUIRED_WORKFLOW_STEPS),
+        "missing_steps": missing_steps,
+        "non_passed_steps": non_passed_steps,
+        "non_passed_count": len(non_passed_steps),
+    }
+    if missing_steps:
+        return failed(
+            "required_step_results",
+            "Workflow report is missing required step result records.",
+            details,
+        )
+    if non_passed_steps:
+        return degraded(
+            "required_step_results",
+            "Some required workflow steps did not pass; preserve the report for diagnostics and rerun after collecting prerequisites.",
+            details,
+        )
+    return passed(
+        "required_step_results",
+        "Every required workflow step passed.",
+        details,
+    )
 
 
 def marker_presence(

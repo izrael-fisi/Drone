@@ -2495,13 +2495,43 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         assert_equal(checks["log_archive"], "passed", "workflow validation log archive")
         assert_equal(checks["important_markers"], "passed", "workflow validation important markers")
         assert_equal(checks["final_proof_markers"], "passed", "workflow validation final proof markers")
+        assert_equal(checks["required_step_results"], "degraded", "workflow validation required step results")
         assert_equal(checks["final_readiness_status"], "passed", "workflow validation final readiness status")
         assert_equal(validation["step_count"], len(REQUIRED_WORKFLOW_STEPS), "workflow validation step count")
         detailed_checks = {check["name"]: check for check in validation["checks"]}
+        assert_equal(
+            detailed_checks["required_step_results"]["details"]["non_passed_steps"][0]["name"],
+            "run_autonomy_readiness_audit",
+            "workflow validation reports non-passed final audit step",
+        )
         if "__VISION_NAV_PX4_SITL_PREREQS__" not in detailed_checks["important_markers"]["details"]["present_markers"]:
             raise AssertionError("workflow validation should list PX4 prereqs as an important diagnostic marker")
         if "__VISION_NAV_PX4_SITL_PREREQS__" in detailed_checks["final_proof_markers"]["details"]["present_markers"]:
             raise AssertionError("PX4 prereq diagnostics should not satisfy final proof markers")
+
+        missing_required_step_report = json.loads(report_path.read_text())
+        missing_required_step_report["steps"] = [
+            step for step in missing_required_step_report["steps"] if step.get("name") != "capture_field_terrain_log"
+        ]
+        missing_required_step_path = root / "missing_required_step_autonomy_evidence_workflow.json"
+        missing_required_step_path.write_text(json.dumps(missing_required_step_report))
+        missing_required_step_validation = validate_workflow_report(missing_required_step_path)
+        missing_required_step_checks = {check["name"]: check for check in missing_required_step_validation["checks"]}
+        assert_equal(
+            missing_required_step_validation["status"],
+            "failed",
+            "workflow validation fails missing required step result",
+        )
+        assert_equal(
+            missing_required_step_checks["required_step_results"]["status"],
+            "failed",
+            "workflow validation missing required step result check",
+        )
+        assert_equal(
+            missing_required_step_checks["required_step_results"]["details"]["missing_steps"],
+            ["capture_field_terrain_log"],
+            "workflow validation missing required step result detail",
+        )
 
         mismatched_readiness_report = json.loads(report_path.read_text())
         for step in mismatched_readiness_report["steps"]:
