@@ -1181,6 +1181,9 @@ Status:
 - Done: missing-bundle workflow-validation handoffs now run the selected terrain
   capture and `read_runtime_status.sh` after bundle validation, matching the
   required terrain-log plus runtime-status proof markers.
+- Done: workflow-validation next-step summaries now carry the expected sibling
+  `runtime_status.json` path through CLI output, support bundles, desktop
+  workflow cards, and evidence-package manifests.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

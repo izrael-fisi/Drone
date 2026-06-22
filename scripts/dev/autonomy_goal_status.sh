@@ -641,6 +641,8 @@ if workflow_validation:
                 print(f"  expected log: {next_step.get('expected_log')}")
             if next_step.get("output_dir"):
                 print(f"  output: {next_step.get('output_dir')}")
+            if next_step.get("runtime_status_path"):
+                print(f"  runtime status: {next_step.get('runtime_status_path')}")
             if next_step.get("capture_command_after_bundle"):
                 print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
             if next_step.get("metadata_update_command"):

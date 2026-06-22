@@ -279,6 +279,9 @@ function SupportBundleDetailPanel({
                   {workflowNextStep.bundle_path && <span className="truncate">bundle {workflowNextStep.bundle_path}</span>}
                   {workflowNextStep.expected_log && <span className="truncate">log {workflowNextStep.expected_log}</span>}
                   {workflowNextStep.output_dir && <span className="truncate">output {workflowNextStep.output_dir}</span>}
+                  {workflowNextStep.runtime_status_path && (
+                    <span className="truncate">runtime {workflowNextStep.runtime_status_path}</span>
+                  )}
                 </div>
                 {workflowNextCommand && (
                   <button

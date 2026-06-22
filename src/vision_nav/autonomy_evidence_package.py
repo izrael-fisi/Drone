@@ -435,6 +435,7 @@ def compact_workflow_next_step(value: Any) -> dict[str, Any] | None:
         "bundle_path",
         "expected_log",
         "output_dir",
+        "runtime_status_path",
         "capture_command_after_bundle",
     ):
         item = value.get(key)

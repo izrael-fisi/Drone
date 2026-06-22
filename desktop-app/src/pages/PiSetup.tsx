@@ -866,6 +866,7 @@ function workflowNextStepTitle(nextStep: WorkflowValidationSummary["next_require
     nextStep.bundle_path ? `bundle: ${nextStep.bundle_path}` : null,
     nextStep.expected_log ? `expected log: ${nextStep.expected_log}` : null,
     nextStep.output_dir ? `output: ${nextStep.output_dir}` : null,
+    nextStep.runtime_status_path ? `runtime status: ${nextStep.runtime_status_path}` : null,
     nextStep.metadata_update_command,
     nextStep.notes,
   ]

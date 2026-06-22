@@ -604,6 +604,7 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
         summary["expected_log"] = expected_log
     if output_dir:
         summary["output_dir"] = output_dir
+        summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)
     if bundle_path:
         summary["bundle_path"] = bundle_path
     if bundle_status == "missing":
@@ -633,6 +634,10 @@ def command_with_runtime_status_read(command: str) -> str:
     if "read_runtime_status.sh" in command:
         return command
     return f"{command} && ./scripts/pi/read_runtime_status.sh"
+
+
+def runtime_status_path_for_output(output_dir: str) -> str:
+    return f"{output_dir.rstrip('/')}/runtime_status.json"
 
 
 def marker_presence(
@@ -786,6 +791,7 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
         ("Bundle", next_step.get("bundle_path")),
         ("Expected log", next_step.get("expected_log")),
         ("Output", next_step.get("output_dir")),
+        ("Runtime status", next_step.get("runtime_status_path")),
         ("After bundle", next_step.get("capture_command_after_bundle")),
         ("Metadata update", next_step.get("metadata_update_command")),
     ]

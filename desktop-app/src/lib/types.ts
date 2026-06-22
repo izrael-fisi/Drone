@@ -701,6 +701,7 @@ export interface AutonomyEvidenceWorkflowValidationNextStep {
   bundle_path?: string;
   expected_log?: string;
   output_dir?: string;
+  runtime_status_path?: string;
   capture_command_after_bundle?: string;
 }
 

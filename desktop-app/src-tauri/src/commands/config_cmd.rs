@@ -742,6 +742,7 @@ pub struct AutonomyEvidenceWorkflowValidationNextStep {
     pub bundle_path: Option<String>,
     pub expected_log: Option<String>,
     pub output_dir: Option<String>,
+    pub runtime_status_path: Option<String>,
     pub capture_command_after_bundle: Option<String>,
 }
 
@@ -3822,6 +3823,7 @@ fn workflow_validation_next_step_from_json(
         bundle_path: json_string(value.get("bundle_path")),
         expected_log: json_string(value.get("expected_log")),
         output_dir: json_string(value.get("output_dir")),
+        runtime_status_path: json_string(value.get("runtime_status_path")),
         capture_command_after_bundle: json_string(value.get("capture_command_after_bundle")),
     })
 }
@@ -6155,7 +6157,8 @@ mod tests {
                     "bundle_path": "/home/user/drone-data/map_bundles/mission_bundle",
                     "expected_log": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/terrain_matches.jsonl",
                     "output_dir": "/home/user/DroneTransfer/outgoing/field-captures/good_texture",
-                    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
+                    "runtime_status_path": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/runtime_status.json",
+                    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh"
                 },
                 "checks": [
                     {
@@ -6319,8 +6322,12 @@ mod tests {
             Some("/home/user/DroneTransfer/outgoing/field-captures/good_texture")
         );
         assert_eq!(
+            next_step.runtime_status_path.as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/field-captures/good_texture/runtime_status.json")
+        );
+        assert_eq!(
             next_step.capture_command_after_bundle.as_deref(),
-            Some("VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh")
+            Some("VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh")
         );
         assert_eq!(validation.checks.len(), 3);
         assert_eq!(

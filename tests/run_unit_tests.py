@@ -2935,6 +2935,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             f"{capture_command} && ./scripts/pi/read_runtime_status.sh",
             "workflow validation preserves capture command after missing-bundle fix",
         )
+        assert_equal(
+            capture_blocked_validation["next_required_step"]["runtime_status_path"],
+            str(capture_output_dir / "runtime_status.json"),
+            "workflow validation surfaces expected runtime status path",
+        )
         capture_blocked_checks = {check["name"]: check for check in capture_blocked_validation["checks"]}
         assert_equal(
             capture_blocked_checks["required_step_results"]["details"]["next_required_step"]["name"],
@@ -3526,6 +3531,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "bundle_path": str(root / "mission_bundle"),
                         "expected_log": str(root / "field-captures/good_texture/terrain_matches.jsonl"),
                         "output_dir": str(root / "field-captures/good_texture"),
+                        "runtime_status_path": str(root / "field-captures/good_texture/runtime_status.json"),
                         "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
                     },
                     "checks": [
@@ -5045,6 +5051,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 workflow_validation_summary["next_required_step"]["bundle_path"],
                 str(root / "mission_bundle"),
                 "autonomy evidence package workflow validation bundle path",
+            )
+            assert_equal(
+                workflow_validation_summary["next_required_step"]["runtime_status_path"],
+                str(root / "field-captures/good_texture/runtime_status.json"),
+                "autonomy evidence package workflow validation runtime status path",
             )
             required_step_check = next(
                 item
