@@ -6247,6 +6247,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   Bench
                 </button>
               </div>
+              <button
+                onClick={runAutonomyEvidenceWorkflow}
+                disabled={!connectionReady || !!runningStep}
+                className="btn-secondary w-full justify-center text-xs"
+              >
+                {runningStep === "autonomy-evidence-workflow" ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                Run Guided Evidence Workflow
+              </button>
             </div>
           )}
 

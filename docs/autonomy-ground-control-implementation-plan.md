@@ -368,8 +368,8 @@ Status:
   bundle auto-ingest.
 - Done: Mission Planner now hands an uploaded Pi mission bundle directly to the
   matching Module Setup tab for proof-order follow-up: bundle diagnostics,
-  field-plan generation, field-capture preflight, and bench-report creation all
-  run against the handed off remote bundle path.
+  field-plan generation, field-capture preflight, guided evidence workflow, and
+  bench-report creation all run against the handed off remote bundle path.
 - In progress: Devices and Module Setup now provide local Wi-Fi discovery for
   saved Pi hosts, common Raspberry Pi mDNS names, and local SSH neighbors, with
   recent discoveries persisted in desktop storage.

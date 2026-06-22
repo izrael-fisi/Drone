@@ -614,10 +614,10 @@ After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
 `Open Preflight` and `Open Bench Report` actions open that device's setup tab
 with the uploaded bundle path already handed off. From there, the Mission Bundle
 Handoff card can diagnose the bundle, create or refresh the field collection
-plan, run field-capture preflight, or create the bench report against the same
-deployed bundle. `Create Bench Report` validates the deployed terrain bundle,
-creates the support bundle on the Pi, and downloads it to the desktop. The
-following `Autonomy Readiness` setup action
+plan, run field-capture preflight, run the guided evidence workflow, or create
+the bench report against the same deployed bundle. `Create Bench Report`
+validates the deployed terrain bundle, creates the support bundle on the Pi, and
+downloads it to the desktop. The following `Autonomy Readiness` setup action
 runs `scripts/pi/run_autonomy_readiness_audit.sh` over SSH using the latest
 Pi-side support bundle when available, then downloads the strict final audit report to
 `~/DroneTransfer/from-pi/replay-cases/` on the desktop. When the Pi emits a
