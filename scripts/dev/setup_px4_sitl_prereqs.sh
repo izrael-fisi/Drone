@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+python_bin="${VISION_NAV_PYTHON:-python3}"
 px4_dir="${VISION_NAV_PX4_AUTOPILOT_DIR:-$HOME/PX4-Autopilot}"
 apply=0
 clone_px4=0
@@ -16,6 +17,7 @@ By default this is a dry run: it prints the commands it would run.
 
 Options:
   --apply          Run package/install commands instead of only printing them.
+                   Installs tmux, cmake, and PX4 Python requirements when missing.
   --clone-px4     Clone PX4-Autopilot if the checkout is missing.
   --px4-dir PATH  PX4 checkout path. Defaults to VISION_NAV_PX4_AUTOPILOT_DIR
                   or \$HOME/PX4-Autopilot.
@@ -86,6 +88,55 @@ install_tmux_if_needed() {
   esac
 }
 
+install_cmake_if_needed() {
+  if have_command cmake; then
+    echo "[OK] cmake is installed: $(command -v cmake)"
+    return 0
+  fi
+
+  echo "[INFO] cmake is missing."
+  case "$(uname -s)" in
+    Darwin)
+      if ! have_command brew; then
+        echo "[WARN] Homebrew is not installed. Install Homebrew first, then rerun this helper." >&2
+        return 0
+      fi
+      run_or_print brew install cmake
+      ;;
+    Linux)
+      if have_command apt-get; then
+        run_or_print sudo apt-get update
+        run_or_print sudo apt-get install -y cmake
+      elif have_command dnf; then
+        run_or_print sudo dnf install -y cmake
+      elif have_command pacman; then
+        run_or_print sudo pacman -S --needed cmake
+      else
+        echo "[WARN] No supported package manager found. Install cmake manually." >&2
+      fi
+      ;;
+    *)
+      echo "[WARN] Unsupported OS for automatic cmake install. Install cmake manually." >&2
+      ;;
+  esac
+}
+
+install_px4_python_requirements_if_needed() {
+  local requirements="$px4_dir/Tools/setup/requirements.txt"
+  if [[ ! -f "$requirements" ]]; then
+    echo "[INFO] PX4 Python requirements file is not available yet: $requirements"
+    return 0
+  fi
+
+  if "$python_bin" -c "import menuconfig" >/dev/null 2>&1; then
+    echo "[OK] PX4 Python build requirements are available for $python_bin"
+    return 0
+  fi
+
+  echo "[INFO] PX4 Python build requirements are missing for $python_bin."
+  run_or_print "$python_bin" -m pip install -r "$requirements"
+}
+
 prepare_px4_checkout() {
   if [[ -d "$px4_dir" ]]; then
     echo "[OK] PX4 checkout path exists: $px4_dir"
@@ -144,7 +195,9 @@ echo "Repo: $repo_root"
 echo "PX4 checkout: $px4_dir"
 
 install_tmux_if_needed
+install_cmake_if_needed
 prepare_px4_checkout
+install_px4_python_requirements_if_needed
 
 cat <<EOF
 

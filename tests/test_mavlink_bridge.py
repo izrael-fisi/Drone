@@ -1,6 +1,14 @@
+import sys
 import time
+from types import SimpleNamespace
 
-from vision_nav.mavlink_bridge import MavlinkSendResult, MavlinkVisionBridge, parse_mavlink_endpoint, send_records_once
+from vision_nav.mavlink_bridge import (
+    MavlinkSendResult,
+    MavlinkVisionBridge,
+    _load_mavutil,
+    parse_mavlink_endpoint,
+    send_records_once,
+)
 
 
 def test_parse_mavlink_endpoint_aliases():
@@ -270,3 +278,52 @@ def test_send_records_once_uses_selected_message_type_and_reports_skips():
     assert report["skipped"] == 2
     assert report["skip_reasons"] == {"match_not_accepted": 2}
     assert {message_type for _result, message_type in calls} == {"odometry"}
+
+
+def test_load_mavutil_requires_mavlink2_for_odometry():
+    class FakeMavlink:
+        class MAVLink:
+            pass
+
+    class FakeMavutil:
+        mavlink = FakeMavlink()
+
+        @staticmethod
+        def set_dialect(_dialect):
+            return None
+
+    previous_package = sys.modules.get("pymavlink")
+    sys.modules["pymavlink"] = SimpleNamespace(mavutil=FakeMavutil)
+    try:
+        _load_mavutil(require_odometry=True)
+    except RuntimeError as exc:
+        assert "MAVLink 2" in str(exc)
+    else:
+        raise AssertionError("MAVLink 1 dialect should not satisfy ODOMETRY output")
+    finally:
+        if previous_package is None:
+            sys.modules.pop("pymavlink", None)
+        else:
+            sys.modules["pymavlink"] = previous_package
+
+
+def test_send_odometry_reports_unsupported_connection():
+    class FakeMav:
+        pass
+
+    class FakeConnection:
+        mav = FakeMav()
+
+    bridge = MavlinkVisionBridge("udp:14550")
+    bridge._conn = FakeConnection()
+    bridge._last_heartbeat_s = time.monotonic()
+
+    result = bridge.send_odometry_match_result(
+        {
+            "status": "accepted",
+            "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0},
+        }
+    )
+
+    assert result.sent is False
+    assert result.reason == "mavlink_odometry_unsupported"

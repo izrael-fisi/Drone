@@ -348,16 +348,20 @@ dry run unless `--apply` is provided, and it only clones PX4 when
 ./scripts/dev/setup_px4_sitl_prereqs.sh --apply --clone-px4
 ```
 
-If the workstation is missing PX4 or `tmux`, the harness exits nonzero but
+If the workstation is missing PX4, `tmux`, `cmake`, or PX4 Python build
+requirements, the harness exits nonzero but
 still prepares the evidence-session scaffold, including the synthetic sender
 log, `px4_sitl_evidence_session.json`, and
-`receiver_capture/README.md`. It also writes
+`receiver_capture/README.md`. During automated capture it also clears stale
+listener/status captures and records PX4 build/startup output in
+`receiver_capture/px4_sitl_console.txt`, so simulator dependency failures are
+preserved even if the tmux session exits early. It also writes
 `px4_sitl_capture_prereqs.json` and prints
 `__VISION_NAV_PX4_SITL_PREREQS__=...` so the missing checks are visible in app
 logs and setup notes. That JSON includes copyable `fix_commands` for common
-cases such as running the setup helper, installing `tmux`, cloning PX4,
-pointing the harness at an existing PX4 checkout, or rerunning the same
-evidence session. The same
+cases such as running the setup helper, installing `tmux` or `cmake`, installing
+PX4's Python build requirements, cloning PX4, pointing the harness at an
+existing PX4 checkout, or rerunning the same evidence session. The same
 commands are preserved in autonomy-readiness diagnostics, support bundles,
 evidence-package manifests, Markdown handoffs, and `autonomy_goal_status.sh`
 output. Autonomy-readiness command bundles keep them in

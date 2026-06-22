@@ -437,16 +437,17 @@ desktop/PX4 workstation. The action runs
 `~/DroneTransfer/from-pi/px4-sitl-evidence/`, refreshes the PX4 Capture
 Prerequisites list, and refreshes the PX4 Receiver Evidence list. The local
 readiness re-audit also scans that folder for `receiver_evidence.json`. If the
-local workstation is missing PX4 or `tmux`, the action still prepares the
-evidence-session folder, synthetic sender log, and manual capture README, then
-exits failed so the operator can fix the prerequisite without losing the capture
-instructions. The same folder includes
+local workstation is missing PX4, `tmux`, `cmake`, or PX4's Python build
+requirements, the action still prepares the evidence-session folder, synthetic
+sender log, and manual capture README, then exits failed so the operator can
+fix the prerequisite without losing the capture instructions. The same folder includes
 `px4_sitl_capture_prereqs.json` and the
 `__VISION_NAV_PX4_SITL_PREREQS__=...` marker with the missing prerequisite
 checks. Module Setup lists those checks, copyable next actions, and copyable
 fix commands separately from receiver proof. Those fix commands now include the
 dry-run-first `scripts/dev/setup_px4_sitl_prereqs.sh` helper, which can install
-`tmux` with `--apply` and clone PX4 only when `--clone-px4` is also provided.
+`tmux`, `cmake`, and PX4 Python build requirements with `--apply` and clone PX4
+only when `--clone-px4` is also provided.
 The local-only `PX4 Prereq Setup` action runs that helper in dry-run mode from
 the app before receiver capture, so the operator can review the exact install
 and clone commands without modifying the workstation.

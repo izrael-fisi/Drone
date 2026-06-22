@@ -4,6 +4,7 @@ import argparse
 from dataclasses import dataclass
 import json
 import math
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -112,7 +113,7 @@ class MavlinkVisionBridge:
 
     def connect(self) -> None:
         try:
-            from pymavlink import mavutil
+            mavutil = _load_mavutil()
         except ImportError as exc:
             raise RuntimeError("pymavlink is required for MAVLink output. Install drone-vision-nav[mavlink].") from exc
 
@@ -136,7 +137,7 @@ class MavlinkVisionBridge:
         now = time.monotonic()
         if now - self._last_heartbeat_s < 1.0:
             return
-        from pymavlink import mavutil
+        mavutil = _load_mavutil()
 
         self._conn.mav.heartbeat_send(
             mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
@@ -233,6 +234,17 @@ class MavlinkVisionBridge:
         time_usec = int(time.time() * 1_000_000) - int(self.ev_delay_ms * 1000)
         reset_counter = self._odometry_reset_tracker.update_from_result(result)
         payload = build_odometry_payload(estimate, time_usec=time_usec, reset_counter=reset_counter)
+        if not hasattr(self._conn.mav, "odometry_send"):
+            try:
+                _load_mavutil(require_odometry=True)
+            except (ImportError, RuntimeError) as exc:
+                return MavlinkSendResult(False, reason="mavlink_odometry_unsupported", message=str(exc))
+        if not hasattr(self._conn.mav, "odometry_send"):
+            return MavlinkSendResult(
+                False,
+                reason="mavlink_odometry_unsupported",
+                message="Connected MAVLink dialect does not support ODOMETRY. Set MAVLINK20=1 before connecting.",
+            )
         self._conn.mav.odometry_send(
             payload.time_usec,
             _mavlink_enum_value(payload.frame_id),
@@ -273,6 +285,20 @@ def _as_optional_float(value: Any) -> float | None:
         return None
 
 
+def _load_mavutil(*, require_odometry: bool = False) -> Any:
+    os.environ.setdefault("MAVLINK20", "1")
+    from pymavlink import mavutil
+
+    if require_odometry and not hasattr(mavutil.mavlink.MAVLink, "odometry_send"):
+        mavutil.set_dialect(os.environ.get("MAVLINK_DIALECT", "ardupilotmega"))
+    if require_odometry and not hasattr(mavutil.mavlink.MAVLink, "odometry_send"):
+        raise RuntimeError(
+            "MAVLink ODOMETRY output requires the MAVLink 2 pymavlink dialect. "
+            "Run this process with MAVLINK20=1 before importing pymavlink."
+        )
+    return mavutil
+
+
 def _mavlink_enum_value(name: str) -> int:
     defaults = {
         "MAV_FRAME_LOCAL_FRD": 20,
@@ -280,7 +306,7 @@ def _mavlink_enum_value(name: str) -> int:
         "MAV_ESTIMATOR_TYPE_VISION": 2,
     }
     try:
-        from pymavlink import mavutil
+        mavutil = _load_mavutil()
     except ImportError:
         return defaults[name]
     return int(getattr(mavutil.mavlink, name, defaults[name]))

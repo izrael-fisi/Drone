@@ -16,6 +16,7 @@ dry_run="${VISION_NAV_SITL_CAPTURE_DRY_RUN:-0}"
 capture_dir="$session_dir/receiver_capture"
 listener_capture="$capture_dir/vehicle_visual_odometry.txt"
 mavlink_status_capture="$capture_dir/mavlink_status.txt"
+px4_console_capture="$capture_dir/px4_sitl_console.txt"
 receiver_report="$session_dir/receiver_evidence.json"
 prereq_report="$session_dir/px4_sitl_capture_prereqs.json"
 
@@ -27,14 +28,19 @@ write_prereq_report() {
   local tmux_message="$3"
   local px4_status="$4"
   local px4_message="$5"
-  local session_status="$6"
-  local session_message="$7"
+  local cmake_status="$6"
+  local cmake_message="$7"
+  local px4_python_status="$8"
+  local px4_python_message="$9"
+  local session_status="${10}"
+  local session_message="${11}"
   PYTHONPATH="$repo_root/src" "$python_bin" - \
     "$prereq_report" \
     "$report_status" \
     "$session_dir" \
     "$capture_dir" \
     "$repo_root" \
+    "$python_bin" \
     "$px4_dir" \
     "$px4_target" \
     "$tmux_session" \
@@ -43,6 +49,10 @@ write_prereq_report() {
     "$tmux_message" \
     "$px4_status" \
     "$px4_message" \
+    "$cmake_status" \
+    "$cmake_message" \
+    "$px4_python_status" \
+    "$px4_python_message" \
     "$session_status" \
     "$session_message" <<'PY'
 from __future__ import annotations
@@ -59,6 +69,7 @@ import sys
     session_dir,
     capture_dir,
     repo_root,
+    python_bin,
     px4_dir,
     px4_target,
     tmux_session,
@@ -67,6 +78,10 @@ import sys
     tmux_message,
     px4_status,
     px4_message,
+    cmake_status,
+    cmake_message,
+    px4_python_status,
+    px4_python_message,
     session_status,
     session_message,
 ) = sys.argv[1:]
@@ -74,6 +89,8 @@ path = Path(report_path)
 checks = [
     {"name": "tmux_installed", "status": tmux_status, "message": tmux_message},
     {"name": "px4_autopilot_dir", "status": px4_status, "message": px4_message},
+    {"name": "cmake_installed", "status": cmake_status, "message": cmake_message},
+    {"name": "px4_python_requirements", "status": px4_python_status, "message": px4_python_message},
     {"name": "tmux_session_available", "status": session_status, "message": session_message},
 ]
 
@@ -88,13 +105,45 @@ def q(value: str) -> str:
 
 fix_commands = []
 setup_helper = str(Path(repo_root) / "scripts/dev/setup_px4_sitl_prereqs.sh")
-if tmux_status == "failed" or px4_status == "failed":
+if tmux_status == "failed" or px4_status == "failed" or cmake_status == "failed" or px4_python_status == "failed":
     fix_commands.append(
         fix_command(
             "Review PX4 SITL prerequisite setup helper",
             q(setup_helper),
             "px4_sitl_prereqs",
         )
+    )
+if cmake_status == "failed":
+    fix_commands.extend(
+        [
+            fix_command(
+                "Install cmake with the setup helper",
+                " ".join([q(setup_helper), "--apply", "--px4-dir", q(px4_dir)]),
+                "cmake_installed",
+            ),
+            fix_command("Install cmake with Homebrew", "brew install cmake", "cmake_installed"),
+            fix_command(
+                "Install cmake on Ubuntu/Debian",
+                "sudo apt update && sudo apt install -y cmake",
+                "cmake_installed",
+            ),
+        ]
+    )
+if px4_python_status == "failed":
+    requirements = Path(px4_dir) / "Tools/setup/requirements.txt"
+    fix_commands.extend(
+        [
+            fix_command(
+                "Install PX4 Python requirements with the setup helper",
+                " ".join([q(setup_helper), "--apply", "--px4-dir", q(px4_dir)]),
+                "px4_python_requirements",
+            ),
+            fix_command(
+                "Install PX4 Python requirements with pip",
+                " ".join([q(python_bin), "-m", "pip", "install", "-r", q(str(requirements))]),
+                "px4_python_requirements",
+            ),
+        ]
     )
 if tmux_status == "failed":
     fix_commands.extend(
@@ -183,6 +232,10 @@ check_capture_prereqs() {
   local tmux_message="tmux is installed."
   local px4_status="passed"
   local px4_message="PX4-Autopilot directory exists: $px4_dir"
+  local cmake_status="passed"
+  local cmake_message="cmake is installed."
+  local px4_python_status="passed"
+  local px4_python_message="PX4 Python build requirements are installed for $python_bin."
   local session_status="passed"
   local session_message="tmux session name is available: $tmux_session"
   local report_status="passed"
@@ -203,6 +256,26 @@ check_capture_prereqs() {
     report_status="failed"
   fi
 
+  local px4_requirements="$px4_dir/Tools/setup/requirements.txt"
+  if [[ ! -d "$px4_dir" ]]; then
+    px4_python_status="skipped"
+    px4_python_message="PX4 Python requirements were not checked because the PX4-Autopilot directory is missing."
+  elif [[ ! -f "$px4_requirements" ]]; then
+    px4_python_status="failed"
+    px4_python_message="PX4 Python requirements file not found: $px4_requirements."
+    report_status="failed"
+  elif ! "$python_bin" -c "import menuconfig" >/dev/null 2>&1; then
+    px4_python_status="failed"
+    px4_python_message="PX4 Python build requirements are missing for $python_bin. Install $px4_requirements before running make $px4_target."
+    report_status="failed"
+  fi
+
+  if ! command -v cmake >/dev/null 2>&1; then
+    cmake_status="failed"
+    cmake_message="cmake is required to build PX4 SITL. Install cmake before running make $px4_target."
+    report_status="failed"
+  fi
+
   if [[ "$tmux_available" == "1" ]] && tmux has-session -t "$tmux_session" 2>/dev/null; then
     session_status="failed"
     session_message="tmux session already exists: $tmux_session. Set VISION_NAV_PX4_TMUX_SESSION to another name or close the existing session."
@@ -215,6 +288,10 @@ check_capture_prereqs() {
     "$tmux_message" \
     "$px4_status" \
     "$px4_message" \
+    "$cmake_status" \
+    "$cmake_message" \
+    "$px4_python_status" \
+    "$px4_python_message" \
     "$session_status" \
     "$session_message"
   [[ "$report_status" == "passed" ]]
@@ -264,6 +341,10 @@ if [[ "$dry_run" == "1" ]]; then
     "not_checked" \
     "Dry run prepared the evidence-session scaffold without requiring PX4." \
     "not_checked" \
+    "Dry run prepared the evidence-session scaffold without requiring cmake." \
+    "not_checked" \
+    "Dry run prepared the evidence-session scaffold without requiring PX4 Python build requirements." \
+    "not_checked" \
     "Dry run did not inspect tmux session availability."
   cat <<EOF
 PX4 SITL capture dry run prepared:
@@ -287,8 +368,38 @@ cleanup() {
 }
 trap cleanup EXIT
 
+fail_px4_session_unavailable() {
+  local stage="$1"
+  "$repo_root/scripts/dev/evaluate_px4_sitl_session.sh" "$session_dir" || true
+  cat <<EOF >&2
+PX4 SITL tmux session was not available during: $stage
+Inspect the PX4 console log for build or simulator startup errors:
+  $px4_console_capture
+EOF
+  exit 1
+}
+
+tmux_send_keys_checked() {
+  local stage="$1"
+  shift
+  tmux has-session -t "$tmux_session" 2>/dev/null || fail_px4_session_unavailable "$stage"
+  tmux send-keys -t "$tmux_session" "$@" || fail_px4_session_unavailable "$stage"
+}
+
+tmux_capture_checked() {
+  local stage="$1"
+  local output="$2"
+  shift 2
+  tmux has-session -t "$tmux_session" 2>/dev/null || fail_px4_session_unavailable "$stage"
+  tmux capture-pane -t "$tmux_session" "$@" > "$output" || fail_px4_session_unavailable "$stage"
+}
+
 tmux new-session -d -s "$tmux_session" -c "$px4_dir"
-tmux send-keys -t "$tmux_session" "make $px4_target" C-m
+: > "$listener_capture"
+: > "$mavlink_status_capture"
+: > "$px4_console_capture"
+tmux pipe-pane -o -t "$tmux_session" "cat >> '$px4_console_capture'"
+tmux_send_keys_checked "PX4 SITL launch" "make $px4_target" C-m
 
 cat <<EOF
 Started PX4 SITL in tmux session '$tmux_session':
@@ -299,30 +410,41 @@ Waiting ${boot_wait_s}s before sending synthetic external-vision records...
 EOF
 sleep "$boot_wait_s"
 
+if ! tmux has-session -t "$tmux_session" 2>/dev/null; then
+  fail_px4_session_unavailable "PX4 boot wait"
+fi
+
 VISION_NAV_SITL_DRY_RUN=1 \
 VISION_NAV_SITL_SMOKE_DIR="$session_dir" \
 "$repo_root/scripts/dev/px4_sitl_external_vision_smoke.sh" >/dev/null
 
-tmux send-keys -t "$tmux_session" C-l
-tmux send-keys -t "$tmux_session" "listener vehicle_visual_odometry 5" C-m
+tmux_send_keys_checked "listener clear" C-l
+tmux_send_keys_checked "listener command" "listener vehicle_visual_odometry 5" C-m
 sleep "$listener_arm_wait_s"
 
+VISION_NAV_SITL_EVALUATE_RECEIVER=0 \
 VISION_NAV_SITL_SMOKE_DIR="$session_dir" \
 "$repo_root/scripts/dev/px4_sitl_external_vision_smoke.sh"
 
-sleep "$capture_wait_s"
-tmux capture-pane -t "$tmux_session" -p -S -2000 > "$listener_capture"
+if ! tmux has-session -t "$tmux_session" 2>/dev/null; then
+  fail_px4_session_unavailable "synthetic sender"
+fi
 
-tmux send-keys -t "$tmux_session" C-l
-tmux send-keys -t "$tmux_session" "mavlink status" C-m
 sleep "$capture_wait_s"
-tmux capture-pane -t "$tmux_session" -p -S -2000 > "$mavlink_status_capture"
+tmux_capture_checked "listener capture" "$listener_capture" -p -S -2000
 
-"$repo_root/scripts/dev/evaluate_px4_sitl_session.sh" "$session_dir"
+tmux_send_keys_checked "mavlink status clear" C-l
+tmux_send_keys_checked "mavlink status command" "mavlink status" C-m
+sleep "$capture_wait_s"
+tmux_capture_checked "mavlink status capture" "$mavlink_status_capture" -p -S -2000
+
+eval_status=0
+"$repo_root/scripts/dev/evaluate_px4_sitl_session.sh" "$session_dir" || eval_status=$?
 
 cat <<EOF
 PX4 SITL receiver capture complete:
   session:  $session_dir
+  console:  $px4_console_capture
   listener: $listener_capture
   mavlink status: $mavlink_status_capture
   report: $receiver_report
@@ -334,3 +456,5 @@ echo "__VISION_NAV_PX4_SITL_REPORT__=$receiver_report"
 if [[ "$keep_tmux" == "1" ]]; then
   echo "Keeping tmux session '$tmux_session' because VISION_NAV_PX4_KEEP_TMUX=1."
 fi
+
+exit "$eval_status"

@@ -47,12 +47,14 @@ Status:
   evaluator when a local PX4 checkout is available.
 - Done: the automated PX4 SITL capture harness now leaves behind the
   evidence-session scaffold, synthetic sender log, manual capture README, and
-  `px4_sitl_capture_prereqs.json` even when local prerequisites such as PX4 or
-  `tmux` are missing, while still exiting nonzero so missing prerequisites
-  cannot be mistaken for receiver proof.
+  `px4_sitl_capture_prereqs.json` even when local prerequisites such as PX4,
+  `tmux`, `cmake`, or PX4 Python build requirements are missing, while still
+  exiting nonzero so missing prerequisites cannot be mistaken for receiver
+  proof.
 - Done: `scripts/dev/setup_px4_sitl_prereqs.sh` provides a dry-run-first setup
-  helper for PX4 receiver-capture prerequisites, can install `tmux` with
-  `--apply`, and only clones PX4 when `--clone-px4` is explicitly supplied.
+  helper for PX4 receiver-capture prerequisites, can install `tmux`, `cmake`,
+  and PX4 Python build requirements with `--apply`, and only clones PX4 when
+  `--clone-px4` is explicitly supplied.
 - Done: Module Setup exposes a local-only `PX4 Prereq Setup` action that runs
   that helper in dry-run mode before `PX4 SITL Receiver Capture`.
 - Done: the strict readiness guidance now lists `PX4 Prereq Setup` before PX4

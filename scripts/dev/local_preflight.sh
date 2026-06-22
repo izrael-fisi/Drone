@@ -826,8 +826,11 @@ import sys
 from pathlib import Path
 
 report = json.loads(Path(sys.argv[1]).read_text())
+checks = {check["name"]: check for check in report["checks"]}
 assert report["schema_version"] == "vision_nav_px4_sitl_capture_prereqs_v1"
 assert report["status"] == "not_checked"
+assert "cmake_installed" in checks
+assert "px4_python_requirements" in checks
 assert "__VISION_NAV_PX4_SITL_PREREQS__" in report["markers"]
 assert any(command["condition"] == "rerun_capture" for command in report["fix_commands"])
 PY
@@ -857,6 +860,8 @@ checks = {check["name"]: check for check in report["checks"]}
 assert report["schema_version"] == "vision_nav_px4_sitl_capture_prereqs_v1"
 assert report["status"] == "failed"
 assert checks["px4_autopilot_dir"]["status"] == "failed"
+assert "cmake_installed" in checks
+assert "px4_python_requirements" in checks
 assert "__VISION_NAV_PX4_SITL_PREREQS__" in report["markers"]
 assert report["next_actions"]
 conditions = {command["condition"] for command in report["fix_commands"]}

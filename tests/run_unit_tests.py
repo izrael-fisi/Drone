@@ -8,9 +8,11 @@ from pathlib import Path
 import shutil
 import sqlite3
 import struct
+import sys
 import tarfile
 import tempfile
 import time
+from types import SimpleNamespace
 import zipfile
 
 import numpy as np
@@ -53,7 +55,13 @@ from vision_nav.field_evidence_gate import evaluate_field_evidence_gate
 from vision_nav.field_workflow_selection import select_next_field_condition, shell_assignments
 from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health_report
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
-from vision_nav.mavlink_bridge import MavlinkSendResult, MavlinkVisionBridge, parse_mavlink_endpoint, send_records_once
+from vision_nav.mavlink_bridge import (
+    MavlinkSendResult,
+    MavlinkVisionBridge,
+    _load_mavutil,
+    parse_mavlink_endpoint,
+    send_records_once,
+)
 from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sitl_evidence
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.px4_params import check_px4_external_vision_params, evaluate_px4_param_file, params_from_text
@@ -630,6 +638,54 @@ def test_mavlink_log_sender_uses_selected_message_type() -> None:
     assert_equal(report["skipped"], 2, "mavlink log sender skipped count")
     assert_equal(report["skip_reasons"], {"match_not_accepted": 2}, "mavlink log sender skip reasons")
     assert_equal({message_type for _result, message_type in calls}, {"odometry"}, "mavlink log sender dispatch type")
+
+
+def test_mavlink_odometry_requires_mavlink2_dialect() -> None:
+    class FakeMavlink:
+        class MAVLink:
+            pass
+
+    class FakeMavutil:
+        mavlink = FakeMavlink()
+
+        @staticmethod
+        def set_dialect(_dialect):
+            return None
+
+    previous_package = sys.modules.get("pymavlink")
+    sys.modules["pymavlink"] = SimpleNamespace(mavutil=FakeMavutil)
+    try:
+        _load_mavutil(require_odometry=True)
+    except RuntimeError as exc:
+        if "MAVLink 2" not in str(exc):
+            raise AssertionError("MAVLink 1 odometry failure should explain MAVLink 2 requirement") from exc
+    else:
+        raise AssertionError("MAVLink 1 dialect should not satisfy ODOMETRY output")
+    finally:
+        if previous_package is None:
+            sys.modules.pop("pymavlink", None)
+        else:
+            sys.modules["pymavlink"] = previous_package
+
+
+def test_mavlink_odometry_reports_unsupported_connection() -> None:
+    class FakeMav:
+        pass
+
+    class FakeConnection:
+        mav = FakeMav()
+
+    bridge = MavlinkVisionBridge("udp:14550")
+    bridge._conn = FakeConnection()
+    bridge._last_heartbeat_s = time.monotonic()
+    result = bridge.send_odometry_match_result(
+        {
+            "status": "accepted",
+            "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0},
+        }
+    )
+    assert_equal(result.sent, False, "unsupported ODOMETRY connection send status")
+    assert_equal(result.reason, "mavlink_odometry_unsupported", "unsupported ODOMETRY connection reason")
 
 
 def test_px4_sitl_receiver_evidence_gate() -> None:
@@ -5602,6 +5658,8 @@ def main() -> None:
         test_quality_metrics_and_covariance,
         test_mavlink_endpoint_parsing_and_axis_mapping,
         test_mavlink_log_sender_uses_selected_message_type,
+        test_mavlink_odometry_requires_mavlink2_dialect,
+        test_mavlink_odometry_reports_unsupported_connection,
         test_px4_sitl_receiver_evidence_gate,
         test_px4_sitl_session_evaluator_writes_report_and_flags_missing_captures,
         test_px4_param_checker_flags_external_vision_readiness,

@@ -16,6 +16,7 @@ listener_capture="$capture_dir/vehicle_visual_odometry.txt"
 mavlink_status_capture="$capture_dir/mavlink_status.txt"
 receiver_report="$out_dir/receiver_evidence.json"
 dry_run="${VISION_NAV_SITL_DRY_RUN:-0}"
+evaluate_receiver="${VISION_NAV_SITL_EVALUATE_RECEIVER:-1}"
 
 case "$message_type" in
   vision_position_estimate|odometry) ;;
@@ -193,7 +194,7 @@ PYTHONPATH="$repo_root/src" "$python_bin" -m vision_nav.mavlink_bridge \
   --rate-hz "$rate_hz" \
   --repeat "$repeat_count"
 
-if [[ -f "$listener_capture" ]]; then
+if [[ "$evaluate_receiver" == "1" && -f "$listener_capture" ]]; then
   eval_args=(
     -m vision_nav.px4_sitl_evidence
     --listener "$listener_capture"
