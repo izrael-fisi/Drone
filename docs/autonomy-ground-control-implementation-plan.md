@@ -608,6 +608,10 @@ Status:
 - Done: downloaded support-bundle details show bundled field collection plan
   status, registered-vs-required counts, per-condition collection state, and
   extractable JSON/Markdown checklist artifacts.
+- Done: downloaded support-bundle details now include copyable capture,
+  metadata-update, and registration commands from the bundled field collection
+  plan, allowing an offline support ZIP to hand the operator back to the exact
+  next field-proof command sequence.
 - Done: autonomy readiness audits record field collection plan/checklist paths
   when present so `autonomy_readiness_report.evidence.zip` includes the
   operator plan beside the final handoff and machine-readable report.

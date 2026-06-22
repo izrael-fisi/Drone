@@ -2317,6 +2317,18 @@ RC8_OPTION,90
             "support field collection condition metadata update command flag",
         )
         assert_equal(
+            manifest["field_collection_plans"]["reports"][0]["conditions"][0]["has_register_command"],
+            True,
+            "support field collection condition registration command flag",
+        )
+        field_collection_condition = manifest["field_collection_plans"]["reports"][0]["conditions"][0]
+        if "run_terrain_nav_loop.sh" not in field_collection_condition.get("capture_command", ""):
+            raise AssertionError("Expected support field collection condition to preserve capture command text")
+        if "update_field_capture_metadata.sh" not in field_collection_condition.get("metadata_update_command", ""):
+            raise AssertionError("Expected support field collection condition to preserve metadata update command text")
+        if "register_field_replay_case.sh" not in field_collection_condition.get("register_command", ""):
+            raise AssertionError("Expected support field collection condition to preserve registration command text")
+        assert_equal(
             manifest["logs"]["runtime_statuses"][0]["schema_version"],
             "vision_nav_runtime_status_v1",
             "support runtime status schema",

@@ -372,6 +372,9 @@ checklist step, downloads the emitted plan artifacts, and records the emitted
 plan markers in the workflow report. Support bundles copy the JSON checklist
 and sibling Markdown file when present, and the final autonomy evidence package
 includes the plan/checklist paths recorded by the readiness audit.
+Downloaded support-bundle details also show copyable capture, metadata-update,
+and registration commands from the bundled field collection plan so the next
+real-world proof step can be recovered from an offline ZIP.
 In the Field Collection Plans list, each pending condition has a `Load` action
 that fills the Field Evidence Case form with the plan case name, condition,
 expected behavior, notes, site, and any non-placeholder capture metadata. This

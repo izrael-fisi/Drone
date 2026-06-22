@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AlertTriangle, Archive, CheckCircle2, Clipboard, Eye, FileDown, FolderOpen, Trash2 } from "lucide-react";
 import { cmd } from "../lib/tauri";
-import type { SupportBundleDetails, SupportBundleFile } from "../lib/types";
+import type { FieldCollectionPlanCondition, SupportBundleDetails, SupportBundleFile } from "../lib/types";
 
 function formatBundleSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -118,6 +118,17 @@ function namedCommandRecords(value: unknown) {
       if (lines.length > 0) return [{ label: key, command: lines.join("\n") }];
     }
     return [];
+  });
+}
+
+function fieldConditionCommandRecords(conditions: FieldCollectionPlanCondition[]) {
+  return conditions.flatMap((condition) => {
+    const label = condition.label || condition.condition || "condition";
+    return [
+      condition.capture_command ? { stage: "capture", label, command: condition.capture_command } : null,
+      condition.metadata_update_command ? { stage: "metadata", label, command: condition.metadata_update_command } : null,
+      condition.register_command ? { stage: "register", label, command: condition.register_command } : null,
+    ].filter((item): item is { stage: string; label: string; command: string } => Boolean(item));
   });
 }
 
@@ -602,54 +613,87 @@ function SupportBundleDetailPanel({
       {details.field_collection_plan_reports.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Field collection plan</div>
-          {details.field_collection_plan_reports.slice(0, 2).map((report, index) => (
-            <div key={`${report.manifest_path}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className={statusClass(report.status)}>
-                  {statusIcon(report.status)}
-                  {formatLabel(report.status)}
-                </span>
-                <span className="font-mono text-slate-400 truncate">{formatLabel(report.site_name)}</span>
-                <span className="font-mono text-slate-500">
-                  registered {report.summary.registered_count ?? 0}/{report.summary.required_count ?? 0}
-                </span>
-                <span className="font-mono text-slate-500">placeholder {report.summary.placeholder_count ?? 0}</span>
-                <span className="font-mono text-slate-500">missing {report.summary.missing_count ?? 0}</span>
-                <span className="font-mono text-slate-500">capture cmds {report.pending_capture_command_count ?? 0}</span>
-                <span className="font-mono text-slate-500">metadata cmds {report.pending_metadata_update_command_count ?? 0}</span>
-                <span className="font-mono text-slate-500">source logs {report.condition_source_log_count ?? 0}</span>
-                <span className="font-mono text-slate-500">runtime paths {report.runtime_status_path_count ?? 0}</span>
-              </div>
-              <div className="font-mono text-slate-500 truncate">
-                manifest {formatLabel(report.manifest_path)} / log {formatLabel(report.source_log)}
-              </div>
-              {report.capture_root && (
-                <div className="font-mono text-slate-500 truncate">
-                  capture root {formatLabel(report.capture_root)}
-                </div>
-              )}
-              {report.conditions.length > 0 && (
-                <div className="flex flex-wrap gap-1 pt-0.5">
-                  {report.conditions.slice(0, 8).map((condition) => (
-                    <span
-                      key={`${report.manifest_path}-${condition.condition}`}
-                      className={statusClass(condition.status)}
-                      title={[
-                        condition.source_log ? `log ${condition.source_log}` : "",
-                        condition.runtime_status_path ? `runtime ${condition.runtime_status_path}` : "",
-                        condition.capture_output_dir ? `capture ${condition.capture_output_dir}` : "",
-                      ].filter(Boolean).join(" / ") || undefined}
+          {details.field_collection_plan_reports.slice(0, 2).map((report, index) => {
+            const fieldCommands = fieldConditionCommandRecords(report.conditions);
+            return (
+              <div key={`${report.manifest_path}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={statusClass(report.status)}>
+                    {statusIcon(report.status)}
+                    {formatLabel(report.status)}
+                  </span>
+                  <span className="font-mono text-slate-400 truncate">{formatLabel(report.site_name)}</span>
+                  <span className="font-mono text-slate-500">
+                    registered {report.summary.registered_count ?? 0}/{report.summary.required_count ?? 0}
+                  </span>
+                  <span className="font-mono text-slate-500">placeholder {report.summary.placeholder_count ?? 0}</span>
+                  <span className="font-mono text-slate-500">missing {report.summary.missing_count ?? 0}</span>
+                  <span className="font-mono text-slate-500">capture cmds {report.pending_capture_command_count ?? 0}</span>
+                  <span className="font-mono text-slate-500">metadata cmds {report.pending_metadata_update_command_count ?? 0}</span>
+                  <span className="font-mono text-slate-500">source logs {report.condition_source_log_count ?? 0}</span>
+                  <span className="font-mono text-slate-500">runtime paths {report.runtime_status_path_count ?? 0}</span>
+                  {fieldCommands.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(fieldCommands.map((item) => `# ${formatLabel(item.label)} ${item.stage}\n${item.command}`).join("\n\n"))}
+                      className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                      title="Copy all field collection commands"
                     >
-                      {statusIcon(condition.status)}
-                      {formatLabel(condition.condition)} {formatLabel(condition.status)}
-                      {condition.has_capture_command ? " cap" : ""}
-                      {condition.runtime_status_path ? " status" : ""}
-                    </span>
-                  ))}
+                      <Clipboard size={9} />
+                      copy commands
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="font-mono text-slate-500 truncate">
+                  manifest {formatLabel(report.manifest_path)} / log {formatLabel(report.source_log)}
+                </div>
+                {report.capture_root && (
+                  <div className="font-mono text-slate-500 truncate">
+                    capture root {formatLabel(report.capture_root)}
+                  </div>
+                )}
+                {fieldCommands.length > 0 && (
+                  <div className="space-y-1 pt-0.5">
+                    {fieldCommands.slice(0, 6).map((item, commandIndex) => (
+                      <button
+                        key={`${report.manifest_path}-${item.label}-${item.stage}-${commandIndex}`}
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(item.command)}
+                        className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/50 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
+                        title={item.command}
+                      >
+                        <Clipboard size={9} className="shrink-0" />
+                        <span className="shrink-0 text-slate-500">{formatLabel(item.label)} {item.stage}</span>
+                        <span className="truncate whitespace-pre">{item.command}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {report.conditions.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {report.conditions.slice(0, 8).map((condition) => (
+                      <span
+                        key={`${report.manifest_path}-${condition.condition}`}
+                        className={statusClass(condition.status)}
+                        title={[
+                          condition.source_log ? `log ${condition.source_log}` : "",
+                          condition.runtime_status_path ? `runtime ${condition.runtime_status_path}` : "",
+                          condition.capture_output_dir ? `capture ${condition.capture_output_dir}` : "",
+                        ].filter(Boolean).join(" / ") || undefined}
+                      >
+                        {statusIcon(condition.status)}
+                        {formatLabel(condition.condition)} {formatLabel(condition.status)}
+                        {condition.has_capture_command ? " cap" : ""}
+                        {condition.has_metadata_update_command ? " meta" : ""}
+                        {condition.has_register_command ? " reg" : ""}
+                        {condition.runtime_status_path ? " status" : ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

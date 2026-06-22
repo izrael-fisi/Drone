@@ -1013,7 +1013,7 @@ def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path
     for item in report.get("conditions") or []:
         if not isinstance(item, dict):
             continue
-        conditions.append(summarize_field_collection_condition(item))
+        conditions.append(summarize_field_collection_condition(item, include_commands=True))
     pending_conditions = [item for item in conditions if item.get("status") != "registered"]
     raw_next_condition = report.get("next_condition") if isinstance(report.get("next_condition"), dict) else None
     next_condition = (
