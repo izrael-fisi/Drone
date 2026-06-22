@@ -105,6 +105,7 @@ def create_evidence_package(
             "readiness_report_metadata": report.get("metadata") if isinstance(report.get("metadata"), dict) else None,
             "plan_snapshot": report.get("plan_snapshot") if isinstance(report.get("plan_snapshot"), dict) else None,
             "proof_summary": build_proof_summary(report),
+            "diagnostic_summary": build_diagnostic_summary(report),
             "proof_runbook_summary": build_proof_runbook_summary(report),
             "command_bundle": build_command_bundle_summary(report),
             "max_artifact_bytes": max_artifact_bytes,
@@ -173,6 +174,44 @@ def build_proof_summary(report: dict[str, Any]) -> dict[str, Any]:
         "completion_blockers": compact_evidence_items(completion_blockers, limit=MAX_MANIFEST_BLOCKERS),
         "external_blockers": compact_evidence_items(external_blockers, limit=MAX_MANIFEST_BLOCKERS),
     }
+
+
+def build_diagnostic_summary(report: dict[str, Any]) -> dict[str, Any] | None:
+    evidence = report.get("evidence_manifest") if isinstance(report.get("evidence_manifest"), dict) else {}
+    diagnostic_items = dict_items(evidence.get("diagnostic_items"))
+    diagnostics = report.get("diagnostics") if isinstance(report.get("diagnostics"), dict) else {}
+    if not diagnostic_items and not diagnostics:
+        return None
+    summary: dict[str, Any] = {
+        "diagnostic_item_count": len(diagnostic_items),
+        "diagnostic_items": compact_evidence_items(diagnostic_items, limit=MAX_MANIFEST_PROOF_ITEMS),
+    }
+    px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
+    if isinstance(px4_prereqs, dict):
+        summary["px4_sitl_prereqs"] = compact_px4_prereq_diagnostic(px4_prereqs)
+    return summary
+
+
+def compact_px4_prereq_diagnostic(item: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("status", "path", "schema_version", "session_dir", "px4_target", "tmux_session", "receiver_report"):
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            compact[key] = value
+    failed_checks = dict_items(item.get("failed_checks"))
+    if failed_checks:
+        compact["failed_checks"] = [
+            {
+                key: str(check.get(key))
+                for key in ("name", "status", "message")
+                if check.get(key) is not None
+            }
+            for check in failed_checks[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+        ]
+    next_actions = string_list(item.get("next_actions"))
+    if next_actions:
+        compact["next_actions"] = next_actions[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+    return compact
 
 
 def build_proof_runbook_summary(report: dict[str, Any]) -> dict[str, Any] | None:

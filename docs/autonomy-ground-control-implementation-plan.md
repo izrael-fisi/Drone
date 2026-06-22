@@ -737,6 +737,11 @@ Status:
 - Done: the Pi and local autonomy-readiness wrappers emit
   `__VISION_NAV_PX4_SITL_REPORT__=...` when direct receiver proof is available,
   letting Module Setup download the receiver report beside the final audit.
+- Done: the Pi and local autonomy-readiness wrappers also auto-detect
+  `px4_sitl_capture_prereqs.json`, pass it into the final audit as a diagnostic
+  input, emit `__VISION_NAV_PX4_SITL_PREREQS__=...`, and preserve it in the
+  Markdown handoff and evidence ZIP without letting it satisfy
+  `px4_receiver_proof`.
 - Done: `scripts/dev/run_local_autonomy_readiness_audit.sh` scans the
   conventional downloaded desktop artifact folders, writes the same strict
   autonomy-readiness report locally, includes the latest downloaded

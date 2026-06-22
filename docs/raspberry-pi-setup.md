@@ -1061,6 +1061,11 @@ artifacts and records `support_bundle_bench_readiness` as a missing proof gate.
 If `field_collection_plan.json` and `field_collection_plan.md` are present next
 to the replay-case artifacts, the audit records them as inputs and the evidence
 ZIP includes both files.
+If `~/px4-sitl-evidence/px4_sitl_capture_prereqs.json` is present, the audit
+records it as a diagnostic input, the handoff shows the prerequisite check
+results, and the evidence ZIP includes the JSON for support review. This does
+not satisfy `px4_receiver_proof`; the actual receiver proof still requires
+`receiver_evidence.json` or a complete PX4 SITL evidence session.
 Override the support bundle with
 `VISION_NAV_AUTONOMY_SUPPORT_BUNDLE=/path/to/bundle.zip` when reviewing an older
 artifact. The audit intentionally fails until the external PX4 receiver proof
@@ -1091,6 +1096,9 @@ downloaded ROS bag export validation reports, and a downloaded field collection
 plan/checklist, plus a local PX4 SITL evidence session or receiver report when
 present. The local wrapper looks for the default validation report at
 `~/DroneTransfer/from-pi/terrain-match/rosbag-jsonl-validation.json`.
+When a downloaded `px4_sitl_capture_prereqs.json` lives beside
+`receiver_evidence.json`, the local wrapper consumes it as a diagnostic artifact
+and includes it in the generated handoff/evidence package.
 If the downloaded support bundle is still missing, the local wrapper prints a
 fail-closed warning, still writes the failed report, handoff, and evidence ZIP,
 and records `support_bundle_bench_readiness` as a missing proof gate.

@@ -19,6 +19,7 @@ evidence_workflow_validation_report="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-
 evidence_workflow_log_archive="${VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE:-}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
+px4_sitl_prereqs="${VISION_NAV_PX4_SITL_PREREQS:-}"
 json_copy="${VISION_NAV_AUTONOMY_GOAL_STATUS_JSON:-}"
 quiet_exit="${VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT:-0}"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-goal-status.XXXXXX")"
@@ -59,6 +60,29 @@ first_existing_px4_report() {
     "$PWD/px4-sitl-evidence/receiver_evidence.json"
     "$HOME/px4-sitl-evidence/receiver_evidence.json"
     "$download_root/px4-sitl-evidence/receiver_evidence.json"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
+first_existing_px4_prereqs() {
+  local candidates=()
+  if [[ -n "$px4_sitl_session" ]]; then
+    candidates+=("$px4_sitl_session/px4_sitl_capture_prereqs.json")
+  fi
+  if [[ -n "$px4_sitl_report" ]]; then
+    candidates+=("$(dirname "$px4_sitl_report")/px4_sitl_capture_prereqs.json")
+  fi
+  candidates+=(
+    "$repo_root/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+    "$PWD/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+    "$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+    "$download_root/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
@@ -141,6 +165,10 @@ if [[ -z "$px4_sitl_report" ]]; then
   px4_sitl_report="$(first_existing_px4_report || true)"
 fi
 
+if [[ -z "$px4_sitl_prereqs" ]]; then
+  px4_sitl_prereqs="$(first_existing_px4_prereqs || true)"
+fi
+
 if [[ -z "$evidence_workflow_report" ]]; then
   evidence_workflow_report="$(first_existing_workflow_report || true)"
 fi
@@ -168,6 +196,10 @@ if [[ -n "$px4_sitl_session" && -f "$px4_sitl_session/px4_sitl_evidence_session.
   args+=(--px4-sitl-session "$px4_sitl_session")
 elif [[ -f "$px4_sitl_report" ]]; then
   args+=(--px4-sitl-report "$px4_sitl_report")
+fi
+
+if [[ -f "$px4_sitl_prereqs" ]]; then
+  args+=(--px4-sitl-prereqs "$px4_sitl_prereqs")
 fi
 
 if [[ -f "$field_evidence_report" ]]; then

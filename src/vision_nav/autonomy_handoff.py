@@ -70,6 +70,11 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
             )
         )
 
+    px4_prereqs = px4_prereq_diagnostic(report)
+    if px4_prereqs is not None:
+        lines.extend(["", "## PX4 Capture Prerequisites", ""])
+        lines.extend(px4_prereq_diagnostic_lines(px4_prereqs))
+
     field_plan = load_field_collection_plan(report, report_path=report_path)
     if field_plan is not None:
         lines.extend(["", "## Field Collection Plan", ""])
@@ -300,6 +305,51 @@ def artifact_availability(report: dict[str, Any], *, report_path: str | Path | N
             }
         )
     return artifacts
+
+
+def px4_prereq_diagnostic(report: dict[str, Any]) -> dict[str, Any] | None:
+    diagnostics = report.get("diagnostics") if isinstance(report.get("diagnostics"), dict) else {}
+    px4_prereqs = diagnostics.get("px4_sitl_prereqs")
+    if not isinstance(px4_prereqs, dict) or px4_prereqs.get("status") == "not_provided":
+        return None
+    return px4_prereqs
+
+
+def px4_prereq_diagnostic_lines(px4_prereqs: dict[str, Any]) -> list[str]:
+    lines = [
+        f"- Status: {format_cell(px4_prereqs.get('status'))}",
+        f"- Report: {format_cell(px4_prereqs.get('path'))}",
+        f"- Session: {format_cell(px4_prereqs.get('session_dir'))}",
+        f"- PX4 target: {format_cell(px4_prereqs.get('px4_target'))}",
+    ]
+    checks = dict_items(px4_prereqs.get("checks"))
+    if checks:
+        lines.extend(
+            [
+                "",
+                *table(
+                    ["Check", "Status", "Message"],
+                    [
+                        [
+                            item.get("name"),
+                            item.get("status"),
+                            item.get("message"),
+                        ]
+                        for item in checks
+                    ],
+                ),
+            ]
+        )
+    next_actions = [
+        str(item)
+        for item in px4_prereqs.get("next_actions") or []
+        if str(item)
+    ]
+    if next_actions:
+        lines.extend(["", "Prerequisite follow-up:", ""])
+        for action in next_actions:
+            lines.append(f"- [ ] {action}")
+    return lines
 
 
 def looks_like_path(value: str) -> bool:

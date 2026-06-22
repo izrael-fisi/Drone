@@ -450,6 +450,22 @@ cat >"$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" <<'EOF'
   "issues": []
 }
 EOF
+cat >"$local_audit_dir/px4-sitl-evidence/px4_sitl_capture_prereqs.json" <<'EOF'
+{
+  "schema_version": "vision_nav_px4_sitl_capture_prereqs_v1",
+  "status": "failed",
+  "session_dir": "preflight-px4-sitl-evidence",
+  "px4_dir": "preflight-missing-px4",
+  "px4_target": "px4_sitl gz_x500",
+  "tmux_session": "vision-nav-px4-sitl",
+  "receiver_report": "receiver_evidence.json",
+  "checks": [
+    {"name": "tmux_installed", "status": "passed", "message": "tmux is installed."},
+    {"name": "px4_autopilot_dir", "status": "failed", "message": "PX4-Autopilot directory not found."}
+  ],
+  "next_actions": ["PX4-Autopilot directory not found."]
+}
+EOF
 cat >"$local_audit_dir/replay-cases/field_collection_plan.json" <<'EOF'
 {
   "schema_version": "vision_nav_field_collection_plan_v1",
@@ -481,6 +497,7 @@ grep -q "Evidence inputs:" "$scanned_goal_status_output"
 grep -q "feature_method_benchmark_report" "$scanned_goal_status_output"
 grep -q "field_collection_plan" "$scanned_goal_status_output"
 grep -q "px4_sitl_report" "$scanned_goal_status_output"
+grep -q "px4_sitl_prereqs" "$scanned_goal_status_output"
 VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
@@ -492,6 +509,7 @@ grep -q "__VISION_NAV_AUTONOMY_REPORT__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_AUTONOMY_HANDOFF__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_PX4_SITL_REPORT__=" "$local_autonomy_output"
+grep -q "__VISION_NAV_PX4_SITL_PREREQS__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=" "$local_autonomy_output"
 grep -q "proof:support_bundle_bench_readiness" "$local_autonomy_output"
@@ -500,6 +518,8 @@ test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.evidence.zip"
 grep -q "preflight_feature_benchmark.json" "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 grep -q "receiver_evidence.json" "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+grep -q "px4_sitl_capture_prereqs.json" "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
+grep -q "PX4 Capture Prerequisites" "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 grep -q '"next_actions"' "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 grep -q "Autonomy Readiness Handoff" "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 python3 - "$local_audit_dir/replay-cases/autonomy_readiness_report.evidence.zip" <<'PY'
@@ -509,6 +529,7 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     assert "manifest.json" in names
     assert "reports/autonomy_readiness_report.json" in names
     assert "reports/autonomy_readiness_report.md" in names
+    assert any(name.startswith("artifacts/input_px4_sitl_prereqs-") for name in names)
     assert any(name.startswith("artifacts/input_field_collection_plan-") for name in names)
     assert any(name.startswith("artifacts/input_field_collection_plan_markdown-") for name in names)
 PY

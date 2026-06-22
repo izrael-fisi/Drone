@@ -2830,6 +2830,30 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 }
             )
         )
+        px4_prereq_report = root / "px4_sitl_capture_prereqs.json"
+        px4_prereq_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_px4_sitl_capture_prereqs_v1",
+                    "status": "failed",
+                    "session_dir": str(root / "px4-sitl-evidence"),
+                    "capture_dir": str(root / "px4-sitl-evidence" / "receiver_capture"),
+                    "px4_dir": str(root / "PX4-Autopilot"),
+                    "px4_target": "px4_sitl gz_x500",
+                    "tmux_session": "vision-nav-px4-sitl",
+                    "receiver_report": str(px4_receiver_report),
+                    "checks": [
+                        {"name": "tmux_installed", "status": "passed", "message": "tmux is installed."},
+                        {
+                            "name": "px4_autopilot_dir",
+                            "status": "failed",
+                            "message": "PX4-Autopilot directory not found.",
+                        },
+                    ],
+                    "next_actions": ["PX4-Autopilot directory not found."],
+                }
+            )
+        )
         threshold_report = root / "threshold_tuning.json"
         threshold_report.write_text(
             json.dumps(
@@ -2950,8 +2974,32 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         missing_proof_ready = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
             implementation_plan_path=implementation_plan,
+            px4_sitl_prereq_path=px4_prereq_report,
         )
         missing_proof_phases = {phase["id"]: phase for phase in missing_proof_ready["proof_runbook"]["phases"]}
+        assert_equal(
+            missing_proof_ready["inputs"]["px4_sitl_prereqs"],
+            str(px4_prereq_report),
+            "autonomy readiness px4 prereq diagnostic input",
+        )
+        assert_equal(
+            missing_proof_ready["diagnostics"]["px4_sitl_prereqs"]["status"],
+            "failed",
+            "autonomy readiness px4 prereq diagnostic status",
+        )
+        if "px4_sitl_prereqs" in {item.get("name") for item in missing_proof_ready["evidence_manifest"]["proof_items"]}:
+            raise AssertionError("PX4 prerequisite diagnostics must not become a goal proof item")
+        prereq_diagnostic_items = [
+            item
+            for item in missing_proof_ready["evidence_manifest"]["diagnostic_items"]
+            if item.get("name") == "px4_sitl_prereqs"
+        ]
+        assert_equal(len(prereq_diagnostic_items), 1, "autonomy readiness px4 prereq diagnostic item")
+        assert_equal(
+            prereq_diagnostic_items[0]["requires_external_proof"],
+            False,
+            "autonomy readiness px4 prereq diagnostic is not external proof",
+        )
         bench_commands = missing_proof_phases["bench_foundation"]["commands"]
         px4_capture_command = "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh"
         support_bundle_command = "./scripts/pi/create_support_bundle.sh"
@@ -2988,6 +3036,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             implementation_plan_path=implementation_plan,
             support_bundle_path=direct_report_support_manifest,
             px4_sitl_report_path=px4_receiver_report,
+            px4_sitl_prereq_path=px4_prereq_report,
             field_evidence_report_path=field_report,
             field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
@@ -3025,6 +3074,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             ready["inputs"]["evidence_workflow_log_archive"],
             str(workflow_log_archive),
             "autonomy readiness workflow log archive input",
+        )
+        assert_equal(
+            ready["diagnostics"]["px4_sitl_prereqs"]["failed_checks"][0]["name"],
+            "px4_autopilot_dir",
+            "autonomy readiness px4 prereq failed check",
         )
         assert_equal(
             ready["plan_snapshot"]["schema_version"],
@@ -3716,6 +3770,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             research_doc_path=research_doc,
             implementation_plan_path=implementation_plan,
             support_bundle_path=support_manifest,
+            px4_sitl_prereq_path=px4_prereq_report,
             field_evidence_report_path=field_report,
             field_collection_plan_path=field_collection_plan,
             evidence_workflow_report_path=workflow_report,
@@ -3791,6 +3846,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff missing condition checklist")
         if "## Artifact Availability" not in handoff:
             raise AssertionError("autonomy handoff artifact availability")
+        if "## PX4 Capture Prerequisites" not in handoff:
+            raise AssertionError("autonomy handoff missing PX4 prereq diagnostics")
+        if "px4_autopilot_dir" not in handoff:
+            raise AssertionError("autonomy handoff missing PX4 prereq failed check")
         if "## Field Collection Plan" not in handoff:
             raise AssertionError("autonomy handoff field collection plan")
         if "## Plan Source Snapshot" not in handoff:
@@ -3835,6 +3894,13 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             package_manifest = json.loads(archive.read("manifest.json"))
             if not package_manifest.get("proof_runbook_summary"):
                 raise AssertionError("autonomy evidence package missing proof runbook summary")
+            if not package_manifest.get("diagnostic_summary"):
+                raise AssertionError("autonomy evidence package missing diagnostic summary")
+            if (
+                package_manifest["diagnostic_summary"]["px4_sitl_prereqs"]["failed_checks"][0]["name"]
+                != "px4_autopilot_dir"
+            ):
+                raise AssertionError("autonomy evidence package missing PX4 prereq diagnostic detail")
             if package_manifest["proof_runbook_summary"]["summary"]["action_required"] < 1:
                 raise AssertionError("autonomy evidence package proof runbook summary should show pending action")
             package_command_bundle = package_manifest.get("command_bundle")
@@ -3925,6 +3991,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package did not include workflow validation artifact")
             if not any(item["label"] == "input:evidence_workflow_log_archive" for item in manifest["included"]):
                 raise AssertionError("autonomy evidence package did not include workflow log archive artifact")
+            if not any(item["label"] == "input:px4_sitl_prereqs" for item in manifest["included"]):
+                raise AssertionError("autonomy evidence package did not include PX4 prereq report artifact")
 
         downloaded_report_data = json.loads(json.dumps(missing_threshold))
         downloaded_report_data["inputs"]["field_collection_plan"] = (

@@ -558,6 +558,10 @@ readiness wrapper also emits evidence-workflow report, workflow-log archive,
 workflow-validation, field-evidence, feature-benchmark, threshold-tuning, or
 field-collection markers, the same action downloads those sibling artifacts and
 refreshes the matching report lists.
+When the wrapper emits `__VISION_NAV_PX4_SITL_PREREQS__`, Module Setup downloads
+the PX4 capture prerequisite JSON beside the receiver report. The final
+readiness handoff and evidence ZIP keep that file as a diagnostic artifact, but
+it does not satisfy the PX4 receiver-proof gate.
 If a field collection plan/checklist exists in the replay-cases folder, the
 audit records those paths and the evidence ZIP includes them as referenced
 artifacts.

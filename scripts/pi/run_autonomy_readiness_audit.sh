@@ -17,6 +17,7 @@ evidence_workflow_validation_report="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-
 evidence_workflow_log_archive="${VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE:-${evidence_workflow_report%.json}.logs.tar.gz}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
+px4_sitl_prereqs="${VISION_NAV_PX4_SITL_PREREQS:-}"
 output_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json}"
 output_handoff="${VISION_NAV_AUTONOMY_HANDOFF:-${output_report%.json}.md}"
 output_package="${VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE:-${output_report%.json}.evidence.zip}"
@@ -50,6 +51,10 @@ if [[ -z "$px4_sitl_report" && -f "$HOME/px4-sitl-evidence/receiver_evidence.jso
   px4_sitl_report="$HOME/px4-sitl-evidence/receiver_evidence.json"
 fi
 
+if [[ -z "$px4_sitl_prereqs" && -f "$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json" ]]; then
+  px4_sitl_prereqs="$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+fi
+
 mkdir -p "$(dirname "$output_report")"
 
 args=(
@@ -70,6 +75,10 @@ if [[ -n "$px4_sitl_session" && -f "$px4_sitl_session/px4_sitl_evidence_session.
   args+=(--px4-sitl-session "$px4_sitl_session")
 elif [[ -f "$px4_sitl_report" ]]; then
   args+=(--px4-sitl-report "$px4_sitl_report")
+fi
+
+if [[ -f "$px4_sitl_prereqs" ]]; then
+  args+=(--px4-sitl-prereqs "$px4_sitl_prereqs")
 fi
 
 if [[ -f "$field_evidence_report" ]]; then
@@ -129,6 +138,7 @@ Autonomy readiness audit outputs:
   support bundle:            $([[ -f "$support_bundle" ]] && printf '%s' "$support_bundle" || printf 'not found')
   px4 sitl session:          ${px4_sitl_session:-not found}
   px4 sitl report:           $([[ -f "$px4_sitl_report" ]] && printf '%s' "$px4_sitl_report" || printf 'not found')
+  px4 prereq report:         $([[ -f "$px4_sitl_prereqs" ]] && printf '%s' "$px4_sitl_prereqs" || printf 'not found')
   field evidence report:     $([[ -f "$field_evidence_report" ]] && printf '%s' "$field_evidence_report" || printf 'not found')
   field collection plan:     $([[ -f "$field_collection_plan" ]] && printf '%s' "$field_collection_plan" || printf 'not found')
   feature benchmark report:  $([[ -f "$feature_method_benchmark_report" ]] && printf '%s' "$feature_method_benchmark_report" || printf 'not found')
@@ -149,6 +159,10 @@ EOF
 
 if [[ -f "$px4_sitl_report" ]]; then
   echo "__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report"
+fi
+
+if [[ -f "$px4_sitl_prereqs" ]]; then
+  echo "__VISION_NAV_PX4_SITL_PREREQS__=$px4_sitl_prereqs"
 fi
 
 if [[ -f "$field_evidence_report" ]]; then

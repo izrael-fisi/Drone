@@ -134,6 +134,10 @@ def parse_args() -> argparse.Namespace:
         help="Optional receiver_evidence.json report to evaluate directly.",
     )
     parser.add_argument(
+        "--px4-sitl-prereqs",
+        help="Optional px4_sitl_capture_prereqs.json diagnostic report from the PX4 receiver-capture wrapper.",
+    )
+    parser.add_argument(
         "--field-evidence-report",
         help="Optional field-evidence gate report to evaluate directly.",
     )
@@ -181,6 +185,7 @@ def evaluate_autonomy_readiness(
     support_bundle_path: str | Path | None = None,
     px4_sitl_session_path: str | Path | None = None,
     px4_sitl_report_path: str | Path | None = None,
+    px4_sitl_prereq_path: str | Path | None = None,
     field_evidence_report_path: str | Path | None = None,
     field_collection_plan_path: str | Path | None = None,
     feature_method_benchmark_report_path: str | Path | None = None,
@@ -222,12 +227,24 @@ def evaluate_autonomy_readiness(
         candidate = Path(field_collection_plan_path).expanduser().with_suffix(".md")
         if candidate.exists():
             field_collection_markdown_path = candidate
+    resolved_px4_sitl_prereq_path = resolve_px4_sitl_prereq_path(
+        px4_sitl_prereq_path,
+        px4_sitl_session_path=px4_sitl_session_path,
+        px4_sitl_report_path=px4_sitl_report_path,
+    )
+    px4_sitl_prereq_diagnostic = summarize_px4_sitl_prereq_diagnostic(
+        resolved_px4_sitl_prereq_path,
+        explicit=px4_sitl_prereq_path is not None,
+    )
     inputs = {
         "research_doc": str(Path(research_doc_path).expanduser()),
         "implementation_plan": str(Path(implementation_plan_path).expanduser()),
         "support_bundle": str(Path(support_bundle_path).expanduser()) if support_bundle_path else None,
         "px4_sitl_session": str(Path(px4_sitl_session_path).expanduser()) if px4_sitl_session_path else None,
         "px4_sitl_report": str(Path(px4_sitl_report_path).expanduser()) if px4_sitl_report_path else None,
+        "px4_sitl_prereqs": (
+            str(resolved_px4_sitl_prereq_path) if resolved_px4_sitl_prereq_path is not None else None
+        ),
         "field_evidence_report": str(Path(field_evidence_report_path).expanduser()) if field_evidence_report_path else None,
         "field_collection_plan": str(Path(field_collection_plan_path).expanduser()) if field_collection_plan_path else None,
         "field_collection_plan_markdown": str(field_collection_markdown_path) if field_collection_markdown_path else None,
@@ -253,7 +270,8 @@ def evaluate_autonomy_readiness(
             str(Path(evidence_workflow_log_archive_path).expanduser()) if evidence_workflow_log_archive_path else None
         ),
     }
-    evidence_manifest = build_evidence_manifest(status, checks, inputs, next_actions)
+    diagnostics = build_diagnostics(px4_sitl_prereq_diagnostic)
+    evidence_manifest = build_evidence_manifest(status, checks, inputs, next_actions, diagnostics=diagnostics)
     proof_runbook = build_proof_runbook(checks, next_actions, evidence_manifest)
     report = {
         "metadata": build_audit_metadata(),
@@ -272,6 +290,7 @@ def evaluate_autonomy_readiness(
         },
         "inputs": inputs,
         "plan_snapshot": plan_snapshot,
+        "diagnostics": diagnostics,
         "evidence_manifest": evidence_manifest,
         "proof_runbook": proof_runbook,
     }
@@ -450,6 +469,8 @@ def build_evidence_manifest(
     checks: list[dict[str, Any]],
     inputs: dict[str, Any],
     next_actions: list[dict[str, Any]],
+    *,
+    diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     action_conditions: dict[str, list[str]] = {}
     for action in next_actions:
@@ -487,7 +508,31 @@ def build_evidence_manifest(
         "completion_blockers": completion_blockers,
         "external_blockers": external_blockers,
         "proof_items": proof_items,
+        "diagnostic_items": evidence_diagnostic_items(diagnostics or {}, inputs),
     }
+
+
+def evidence_diagnostic_items(diagnostics: dict[str, Any], inputs: dict[str, Any]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
+    if isinstance(px4_prereqs, dict) and px4_prereqs.get("status") != "not_provided":
+        status = str(px4_prereqs.get("status") or "unknown")
+        if status == "passed":
+            message = "PX4 SITL capture prerequisites were available when the capture wrapper ran."
+        elif status == "failed":
+            message = "PX4 SITL capture prerequisites were not ready; this is diagnostic only and does not satisfy receiver proof."
+        else:
+            message = "PX4 SITL capture prerequisite report was recorded as a diagnostic artifact."
+        items.append(
+            {
+                "name": "px4_sitl_prereqs",
+                "status": status,
+                "message": message,
+                "source": str(px4_prereqs.get("path") or inputs.get("px4_sitl_prereqs") or ""),
+                "requires_external_proof": False,
+            }
+        )
+    return items
 
 
 def build_proof_runbook(
@@ -1194,6 +1239,87 @@ def count_plan_list_items_under_heading(text: str, heading: str, *, include_bull
     return total
 
 
+def resolve_px4_sitl_prereq_path(
+    path: str | Path | None,
+    *,
+    px4_sitl_session_path: str | Path | None = None,
+    px4_sitl_report_path: str | Path | None = None,
+) -> Path | None:
+    if path is not None:
+        return Path(path).expanduser()
+    candidates: list[Path] = []
+    if px4_sitl_session_path is not None:
+        session = Path(px4_sitl_session_path).expanduser()
+        if session.is_dir():
+            candidates.append(session / "px4_sitl_capture_prereqs.json")
+        else:
+            candidates.append(session.parent / "px4_sitl_capture_prereqs.json")
+    if px4_sitl_report_path is not None:
+        candidates.append(Path(px4_sitl_report_path).expanduser().parent / "px4_sitl_capture_prereqs.json")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def summarize_px4_sitl_prereq_diagnostic(path: Path | None, *, explicit: bool = False) -> dict[str, Any]:
+    if path is None:
+        return {"status": "not_provided"}
+    if not path.exists():
+        if not explicit:
+            return {"status": "not_provided", "path": str(path)}
+        return {
+            "status": "failed",
+            "path": str(path),
+            "issues": [{"severity": "error", "message": "PX4 SITL capture prerequisite report is missing."}],
+        }
+    try:
+        report = json.loads(path.read_text())
+        if not isinstance(report, dict):
+            raise ValueError("PX4 prerequisite report root must be an object")
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "path": str(path),
+            "issues": [{"severity": "error", "message": f"PX4 prerequisite report could not be parsed: {exc}"}],
+        }
+    checks = []
+    failed_checks = []
+    for check in report.get("checks") or []:
+        if not isinstance(check, dict):
+            continue
+        item = {
+            "name": check.get("name"),
+            "status": check.get("status"),
+            "message": check.get("message"),
+        }
+        checks.append(item)
+        if normalize_status(check.get("status")) == "failed":
+            failed_checks.append(item)
+    return {
+        "status": normalize_status(report.get("status")) or "unknown",
+        "path": str(path),
+        "schema_version": report.get("schema_version"),
+        "generated_at": report.get("generated_at"),
+        "session_dir": report.get("session_dir"),
+        "px4_dir": report.get("px4_dir"),
+        "px4_target": report.get("px4_target"),
+        "tmux_session": report.get("tmux_session"),
+        "receiver_report": report.get("receiver_report"),
+        "checks": checks,
+        "failed_checks": failed_checks,
+        "next_actions": [str(action) for action in report.get("next_actions") or [] if str(action)],
+        "issues": [],
+    }
+
+
+def build_diagnostics(px4_sitl_prereq_diagnostic: dict[str, Any]) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {}
+    if px4_sitl_prereq_diagnostic.get("status") != "not_provided":
+        diagnostics["px4_sitl_prereqs"] = px4_sitl_prereq_diagnostic
+    return diagnostics
+
+
 def check_px4_receiver_proof(
     session_path: str | Path | None,
     report_path: str | Path | None,
@@ -1850,6 +1976,7 @@ def main() -> None:
         support_bundle_path=args.support_bundle,
         px4_sitl_session_path=args.px4_sitl_session,
         px4_sitl_report_path=args.px4_sitl_report,
+        px4_sitl_prereq_path=args.px4_sitl_prereqs,
         field_evidence_report_path=args.field_evidence_report,
         field_collection_plan_path=args.field_collection_plan,
         feature_method_benchmark_report_path=args.feature_method_benchmark_report,

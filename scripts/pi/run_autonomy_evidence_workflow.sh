@@ -22,6 +22,7 @@ rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoin
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-$HOME/px4-sitl-evidence}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-$px4_sitl_session/receiver_evidence.json}"
+px4_sitl_prereqs="${VISION_NAV_PX4_SITL_PREREQS:-$px4_sitl_session/px4_sitl_capture_prereqs.json}"
 autonomy_readiness_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json}"
 steps_jsonl=""
 
@@ -66,6 +67,7 @@ Common optional overrides:
   VISION_NAV_BUNDLE                       Default: $bundle
   VISION_NAV_PX4_SITL_SESSION             Default: $px4_sitl_session
   VISION_NAV_PX4_SITL_REPORT              Default: $px4_sitl_report
+  VISION_NAV_PX4_SITL_PREREQS             Default: $px4_sitl_prereqs
 EOF
 }
 
@@ -389,6 +391,10 @@ fi
 if [[ -f "$px4_sitl_report" ]]; then
   export VISION_NAV_PX4_SITL_REPORT="$px4_sitl_report"
   px4_marker_lines+=("__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report")
+fi
+if [[ -f "$px4_sitl_prereqs" ]]; then
+  export VISION_NAV_PX4_SITL_PREREQS="$px4_sitl_prereqs"
+  px4_marker_lines+=("__VISION_NAV_PX4_SITL_PREREQS__=$px4_sitl_prereqs")
 fi
 
 if ((${#px4_marker_lines[@]} > 0)); then
