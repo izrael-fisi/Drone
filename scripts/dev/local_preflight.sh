@@ -156,6 +156,7 @@ assert "create_field_evidence_template" in steps
 assert "create_field_collection_plan" in steps
 assert "capture_field_terrain_log" in steps
 assert "validate_rosbag_export" in steps
+assert "check_px4_receiver_proof" in steps
 assert "run_autonomy_readiness_audit" in steps
 assert "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__" in report["markers"]
 assert "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__" in report["markers"]
@@ -175,6 +176,7 @@ assert "logs/create_field_evidence_template.log" in names
 assert "logs/create_field_collection_plan.log" in names
 assert "logs/capture_field_terrain_log.log" in names
 assert "logs/validate_rosbag_export.log" in names
+assert "logs/check_px4_receiver_proof.log" in names
 assert "logs/run_autonomy_readiness_audit.log" in names
 PY
 PYTHONPATH=src python3 -m vision_nav.autonomy_evidence_workflow \

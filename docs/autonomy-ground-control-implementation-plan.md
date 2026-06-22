@@ -754,7 +754,8 @@ Status:
 - Done: `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the ordered
   field-template, field-collection checklist, optional field-case registration,
   feature-benchmark, threshold-tuning, ROS bag JSONL export validation,
-  support-bundle, and final-readiness sequence while writing a
+  PX4 receiver-proof check, support-bundle, and final-readiness sequence while
+  writing a
   machine-readable per-step workflow report with logs and emitted artifact
   markers even when the final gates still fail.
 - Done: the evidence workflow uses the standalone

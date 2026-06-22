@@ -17,6 +17,7 @@ REQUIRED_WORKFLOW_STEPS = [
     "run_feature_method_benchmark",
     "run_threshold_tuning_report",
     "validate_rosbag_export",
+    "check_px4_receiver_proof",
     "create_support_bundle",
     "run_autonomy_readiness_audit",
 ]
@@ -28,6 +29,8 @@ IMPORTANT_MARKERS = [
     "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__",
     "__VISION_NAV_TERRAIN_LOG__",
     "__VISION_NAV_RUNTIME_STATUS__",
+    "__VISION_NAV_PX4_SITL_SESSION__",
+    "__VISION_NAV_PX4_SITL_REPORT__",
     "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__",
     "__VISION_NAV_AUTONOMY_REPORT__",
 ]

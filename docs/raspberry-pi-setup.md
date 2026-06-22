@@ -946,8 +946,11 @@ The workflow creates or reuses the field evidence template, optionally
 registers a field case when `VISION_NAV_FIELD_CASE_NAME`,
 `VISION_NAV_FIELD_EXPECTED`, and `VISION_NAV_FIELD_CONDITION(S)` are set, then
 attempts feature benchmarking, threshold tuning, dependency-free ROS bag JSONL
-export validation, support-bundle creation, and the final autonomy-readiness
-audit. It writes
+export validation, checks for PX4 ODOMETRY receiver proof, creates the support
+bundle, and runs the final autonomy-readiness audit. The PX4 proof check passes
+when `VISION_NAV_PX4_SITL_REPORT` or `VISION_NAV_PX4_SITL_SESSION` points to an
+existing receiver artifact; otherwise it is recorded as a skipped prerequisite
+with the capture command in the step log. It writes
 `~/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json`
 with per-step status, log paths, tail output, a compressed workflow-log archive,
 and any emitted `__VISION_NAV_*__` markers. The archive preserves the full step

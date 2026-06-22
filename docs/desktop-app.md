@@ -429,7 +429,10 @@ For Pi-side support sessions where a single command is easier than clicking each
 step, `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the same ordered
 path: field template, field collection checklist, optional field-case
 registration, feature benchmark, threshold tuning, ROS bag JSONL export
-validation, support bundle, and final readiness audit. It writes
+validation, PX4 ODOMETRY receiver proof check, support bundle, and final
+readiness audit. The PX4 check records passed evidence when
+`VISION_NAV_PX4_SITL_REPORT` or `VISION_NAV_PX4_SITL_SESSION` is available and
+otherwise logs the capture command as a skipped prerequisite. It writes
 `autonomy_evidence_workflow.json` with per-step status, log paths, output tails,
 an accompanying compressed workflow-log archive, and emitted markers, while
 still failing honestly in the final readiness report until real PX4 and field

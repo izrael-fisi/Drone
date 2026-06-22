@@ -19,6 +19,8 @@ field_capture_count="${VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT:-30}"
 rosbag_export_dir="${VISION_NAV_ROSBAG_EXPORT_DIR:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
+px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-$HOME/px4-sitl-evidence}"
+px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-$px4_sitl_session/receiver_evidence.json}"
 steps_jsonl=""
 
 export VISION_NAV_FIELD_COLLECTION_PLAN="$field_collection_plan"
@@ -39,8 +41,9 @@ This wrapper attempts the ordered evidence collection path:
   5. run feature-method benchmark when a replay log exists
   6. run threshold tuning when a field manifest exists
   7. export and validate ROS bag JSONL replay artifacts when a replay log exists
-  8. create a support bundle
-  9. run the strict autonomy-readiness audit and evidence package
+  8. check whether PX4 ODOMETRY receiver proof is available
+  9. create a support bundle
+  10. run the strict autonomy-readiness audit and evidence package
 
 Common optional overrides:
   VISION_NAV_EVIDENCE_WORKFLOW_REPORT     Default: $report
@@ -56,6 +59,8 @@ Common optional overrides:
   VISION_NAV_ROSBAG_EXPORT_DIR            Default: $rosbag_export_dir
   VISION_NAV_ROSBAG_EXPORT_VALIDATION     Default: $rosbag_export_validation
   VISION_NAV_BUNDLE                       Default: $bundle
+  VISION_NAV_PX4_SITL_SESSION             Default: $px4_sitl_session
+  VISION_NAV_PX4_SITL_REPORT              Default: $px4_sitl_report
 EOF
 }
 
@@ -312,6 +317,25 @@ if [[ -f "$field_log" ]]; then
   )
 else
   skip_step "validate_rosbag_export" "Missing terrain match replay log: $field_log"
+fi
+
+px4_marker_lines=()
+if [[ -f "$px4_sitl_session/px4_sitl_evidence_session.json" ]]; then
+  export VISION_NAV_PX4_SITL_SESSION="$px4_sitl_session"
+  px4_marker_lines+=("__VISION_NAV_PX4_SITL_SESSION__=$px4_sitl_session")
+fi
+if [[ -f "$px4_sitl_report" ]]; then
+  export VISION_NAV_PX4_SITL_REPORT="$px4_sitl_report"
+  px4_marker_lines+=("__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report")
+fi
+
+if ((${#px4_marker_lines[@]} > 0)); then
+  pass_step "check_px4_receiver_proof" \
+    "PX4 external-vision receiver evidence is available for support-bundle and final-readiness evidence." \
+    "${px4_marker_lines[@]}"
+else
+  skip_step "check_px4_receiver_proof" \
+    "Missing PX4 ODOMETRY receiver proof. Capture it before treating the support bundle as bench-ready: VISION_NAV_SITL_SMOKE_DIR=\$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh"
 fi
 
 run_step "create_support_bundle" ./scripts/pi/create_support_bundle.sh
