@@ -1010,6 +1010,19 @@ vision-nav-bench-readiness \
   --support-bundle "$HOME/DroneTransfer/outgoing/support-bundles/<bundle>.zip"
 ```
 
+To check only the Mission Planner GNSS-denied prep metadata before creating a
+full support bundle, run:
+
+```bash
+VISION_NAV_BUNDLE="$HOME/drone-data/map_bundles/mission_bundle" \
+./scripts/pi/check_gnss_denied_plan.sh
+```
+
+Use `VISION_NAV_MISSION_PLAN=/path/to/mission_plan.json` to inspect a copied
+Mission Planner JSON or QGroundControl `.plan` file directly. The checker is
+read-only: it reports missing or failed satellite-source, map reset, home reset,
+heading, and estimator-readiness fields, but it does not mark the plan ready.
+
 The gate checks terrain bundle health, Mission Planner GNSS-denied prep from
 the bundled mission JSON, runtime logs, replay gates, PX4 receiver evidence, and
 PX4 parameter readiness in one report. If an ArduPilot ExternalNav parameter

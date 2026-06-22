@@ -75,6 +75,7 @@ from vision_nav.field_evidence_gate import evaluate_field_evidence_gate
 from vision_nav.field_workflow_selection import select_next_field_condition, shell_assignments
 from vision_nav.geospatial_health import gdal_raster_metadata, geospatial_health_report
 from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_from_json, georef_to_json
+from vision_nav.gnss_denied_plan import evaluate_gnss_denied_plan
 from vision_nav.mavlink_bridge import (
     MavlinkSendResult,
     MavlinkVisionBridge,
@@ -3128,6 +3129,7 @@ RC8_OPTION,90
         compatibility_failed = evaluate_bench_readiness(compatibility_px4)
         compatibility_checks = {check["name"]: check["status"] for check in compatibility_failed["checks"]}
         assert_equal(compatibility_failed["status"], "failed", "bench readiness requires odometry px4 evidence")
+
         assert_equal(
             compatibility_checks["px4_sitl_evidence"],
             "failed",
@@ -3256,6 +3258,50 @@ RC8_OPTION,90
             raise AssertionError("Field evidence should be optional unless required")
         field_required = evaluate_bench_readiness(missing_field_evidence, require_field_evidence=True)
         assert_equal(field_required["status"], "failed", "bench readiness required missing field evidence")
+
+
+def test_gnss_denied_plan_checker_reports_ready_and_missing_cases() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bundle = create_minimal_terrain_bundle(root)
+        write_ready_gnss_denied_mission_plan(bundle)
+
+        ready_bundle = evaluate_gnss_denied_plan(bundle_path=bundle)
+        assert_equal(ready_bundle["status"], "passed", "gnss denied bundle plan passes")
+        assert_equal(
+            ready_bundle["mission_plan"]["path"],
+            "mission/mission_plan.json",
+            "gnss denied bundle plan path",
+        )
+        assert_equal(
+            ready_bundle["field_ready"]["satellite_source_disabled"],
+            True,
+            "gnss denied satellite field readiness",
+        )
+
+        plan_path = bundle / "mission" / "mission_plan.json"
+        ready_plan = evaluate_gnss_denied_plan(plan_path=plan_path)
+        assert_equal(ready_plan["status"], "passed", "gnss denied standalone plan passes")
+
+        incomplete = json.loads(plan_path.read_text())
+        incomplete["gnss_denied"]["status"] = "incomplete"
+        incomplete["gnss_denied"]["checks"] = [
+            {"name": "satellite_source_disabled", "status": "passed"},
+            {"name": "map_position_reset", "status": "failed"},
+        ]
+        incomplete_plan = root / "incomplete_mission_plan.json"
+        incomplete_plan.write_text(json.dumps(incomplete))
+        incomplete_report = evaluate_gnss_denied_plan(plan_path=incomplete_plan)
+        assert_equal(incomplete_report["status"], "failed", "gnss denied incomplete plan fails")
+        if "home_position" not in incomplete_report["missing_checks"]:
+            raise AssertionError("Expected incomplete GNSS-denied plan to report missing checks")
+        if "map_position_reset" not in incomplete_report["failed_checks"]:
+            raise AssertionError("Expected incomplete GNSS-denied plan to report failed checks")
+
+        missing_bundle = root / "missing_mission_bundle"
+        missing_bundle.mkdir()
+        missing_report = evaluate_gnss_denied_plan(bundle_path=missing_bundle)
+        assert_equal(missing_report["status"], "degraded", "gnss denied missing plan degrades")
 
 
 def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
@@ -7812,6 +7858,7 @@ def main() -> None:
         test_terrain_profile_reports_agl_and_gsd_warnings,
         test_runtime_status_snapshot_reports_active_map_and_last_match,
         test_support_bundle_collects_manifest_health_logs_and_summary,
+        test_gnss_denied_plan_checker_reports_ready_and_missing_cases,
         test_autonomy_evidence_workflow_validation_checks_log_archive,
         test_autonomy_readiness_requires_external_proof_artifacts,
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,

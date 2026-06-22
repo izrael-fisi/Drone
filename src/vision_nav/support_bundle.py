@@ -17,6 +17,7 @@ from vision_nav.bench_readiness import evaluate_bench_readiness
 from vision_nav.bundle import load_manifest
 from vision_nav.field_collection_plan import preflight_command_for_condition
 from vision_nav.geospatial_health import write_geospatial_health_report
+from vision_nav.gnss_denied_plan import summarize_gnss_denied_plan
 from vision_nav.px4_params import evaluate_px4_param_file
 from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sitl_evidence
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
@@ -296,38 +297,6 @@ def summarize_mission_plan(bundle_dir: Path, manifest: dict[str, Any]) -> dict[s
             "gnss_denied": summarize_gnss_denied_plan(plan),
         }
     return {"status": "not_provided", "path": None}
-
-
-def summarize_gnss_denied_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    raw = plan.get("gnss_denied") or plan.get("gnssDenied")
-    vision_navigation = plan.get("visionNavigation")
-    if not isinstance(raw, dict) and isinstance(vision_navigation, dict):
-        raw = vision_navigation.get("gnss_denied") or vision_navigation.get("gnssDenied")
-    if not isinstance(raw, dict):
-        return {"status": "not_provided", "checks": []}
-
-    checks = []
-    for check in raw.get("checks") or []:
-        if not isinstance(check, dict):
-            continue
-        checks.append(
-            {
-                "name": check.get("name"),
-                "label": check.get("label"),
-                "status": check.get("status"),
-            }
-        )
-
-    return {
-        "status": raw.get("status"),
-        "checks": checks,
-        "satellite_source_disabled": raw.get("satellite_source_disabled") is True,
-        "map_position_reset_set": raw.get("map_position_reset") is not None,
-        "home_position_set": raw.get("home_position") is not None,
-        "heading_set": isinstance(raw.get("heading_deg"), (int, float)),
-        "estimator_health": raw.get("estimator_health"),
-        "updated_at": raw.get("updated_at"),
-    }
 
 
 def copy_logs(logs: list[str], support_dir: Path, *, max_log_bytes: int) -> dict[str, Any]:
