@@ -631,7 +631,8 @@ if bench_inputs or support_bundle_command or bench_actions:
             print(f"  - ... {len(bench_inputs) - 10} more")
     if bench_actions:
         print("- suggested collection order:")
-        for index, action in enumerate(bench_actions[:10], start=1):
+        max_bench_actions = 14
+        for index, action in enumerate(bench_actions[:max_bench_actions], start=1):
             label = action.get("label") or "bench evidence step"
             print(f"  {index}. {label}")
             desktop_action = action.get("desktop_action")
@@ -643,8 +644,8 @@ if bench_inputs or support_bundle_command or bench_actions:
             command = action.get("command")
             if command:
                 print(f"     command: {command}")
-        if len(bench_actions) > 10:
-            print(f"  - ... {len(bench_actions) - 10} more")
+        if len(bench_actions) > max_bench_actions:
+            print(f"  - ... {len(bench_actions) - max_bench_actions} more")
     action_commands = {str(action.get("command") or "") for action in bench_actions}
     if support_bundle_command and support_bundle_command not in action_commands:
         print(f"- create or refresh support bundle after inputs exist: {support_bundle_command}")

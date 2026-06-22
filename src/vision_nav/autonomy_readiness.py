@@ -92,7 +92,9 @@ STRICT_SUPPORT_BUNDLE_INPUTS = [
     "PX4 external-vision parameter check report",
     "field evidence report covering all required real-world conditions",
     "feature-method benchmark report from real field logs",
-    "optional ROS replay validation and native rosbag2 review artifacts when available",
+    "threshold tuning report from real field logs",
+    "ROS replay export validation report",
+    "native rosbag2 CLI review report",
 ]
 STRICT_SUPPORT_BUNDLE_ACTIONS = [
     {
@@ -150,10 +152,31 @@ STRICT_SUPPORT_BUNDLE_ACTIONS = [
         "notes": "Run after real field logs exist.",
     },
     {
+        "label": "Tune replay gates against field logs.",
+        "desktop_action": "Module Setup > Threshold Tuning",
+        "command": "./scripts/pi/run_threshold_tuning_report.sh",
+        "blocked_by": "field_dataset",
+        "notes": "Run after all required field conditions have registered logs.",
+    },
+    {
+        "label": "Export and validate the ROS replay artifact.",
+        "desktop_action": "Module Setup > ROS Bag Validation",
+        "command": "./scripts/pi/run_rosbag_export_validation.sh",
+        "blocked_by": "field_dataset",
+        "notes": "Run after field replay logs exist so final readiness has odometry and diagnostics replay proof.",
+    },
+    {
+        "label": "Review the native rosbag2 export with ROS 2 CLI tools.",
+        "desktop_action": "Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit",
+        "command": "./scripts/dev/run_rosbag2_cli_review.sh",
+        "blocked_by": "field_dataset",
+        "notes": "Run on a sourced ROS 2 workstation after native rosbag2 export is available.",
+    },
+    {
         "label": "Create or refresh the support bundle.",
         "desktop_action": "Module Setup > Bench Report",
         "command": SUPPORT_BUNDLE_COMMAND,
-        "notes": "Run after the relevant bench and field artifacts exist.",
+        "notes": "Run after the relevant bench, field, threshold, and ROS proof artifacts exist.",
     },
 ]
 

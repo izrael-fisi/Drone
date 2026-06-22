@@ -3316,6 +3316,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         expected_bench_inputs = support_check["details"]["expected_bench_inputs"]
         if "runtime terrain log and runtime_status.json snapshot" not in expected_bench_inputs:
             raise AssertionError("autonomy readiness missing support bundle should list runtime evidence input")
+        if "threshold tuning report from real field logs" not in expected_bench_inputs:
+            raise AssertionError("autonomy readiness missing support bundle should list threshold tuning evidence input")
+        if "ROS replay export validation report" not in expected_bench_inputs:
+            raise AssertionError("autonomy readiness missing support bundle should list ROS bag validation evidence input")
+        if "native rosbag2 CLI review report" not in expected_bench_inputs:
+            raise AssertionError("autonomy readiness missing support bundle should list native rosbag2 review evidence input")
         assert_equal(
             support_check["details"]["support_bundle_command"],
             "./scripts/pi/create_support_bundle.sh",
@@ -3334,6 +3340,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy readiness missing support bundle should expose support bundle action")
         if "Module Setup > Load Next Field Condition" not in bench_action_desktop_actions:
             raise AssertionError("autonomy readiness missing support bundle should expose next field condition action")
+        if "Module Setup > Threshold Tuning" not in bench_action_desktop_actions:
+            raise AssertionError("autonomy readiness missing support bundle should expose threshold tuning action")
+        if "Module Setup > ROS Bag Validation" not in bench_action_desktop_actions:
+            raise AssertionError("autonomy readiness missing support bundle should expose ROS bag validation action")
+        if "Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit" not in bench_action_desktop_actions:
+            raise AssertionError("autonomy readiness missing support bundle should expose native rosbag2 review action")
         if bench_action_commands.index("./scripts/dev/setup_px4_sitl_prereqs.sh") > bench_action_commands.index(
             px4_capture_command
         ):
@@ -3346,6 +3358,22 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "Module Setup > Load Next Field Condition"
         ) > bench_action_desktop_actions.index("Module Setup > Evidence Workflow"):
             raise AssertionError("autonomy readiness should load the next field condition before evidence workflow")
+        if bench_action_desktop_actions.index("Module Setup > Feature Benchmark") > bench_action_desktop_actions.index(
+            "Module Setup > Threshold Tuning"
+        ):
+            raise AssertionError("autonomy readiness should benchmark methods before threshold tuning")
+        if bench_action_desktop_actions.index("Module Setup > Threshold Tuning") > bench_action_desktop_actions.index(
+            "Module Setup > ROS Bag Validation"
+        ):
+            raise AssertionError("autonomy readiness should tune thresholds before ROS bag validation")
+        if bench_action_desktop_actions.index("Module Setup > ROS Bag Validation") > bench_action_desktop_actions.index(
+            "Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit"
+        ):
+            raise AssertionError("autonomy readiness should validate ROS bag before native rosbag2 review")
+        if bench_action_desktop_actions.index(
+            "Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit"
+        ) > bench_action_desktop_actions.index("Module Setup > Bench Report"):
+            raise AssertionError("autonomy readiness should run ROS proof before refreshing support bundle")
         support_blocker = next(
             blocker
             for blocker in missing_proof_ready["evidence_manifest"]["external_blockers"]
@@ -4185,12 +4213,20 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         if "runtime terrain log and runtime_status.json snapshot" not in runtime_blockers[0].get("expected_bench_inputs", []):
             raise AssertionError("stale support bundle blocker should preserve strict expected bench inputs")
+        if "ROS replay export validation report" not in runtime_blockers[0].get("expected_bench_inputs", []):
+            raise AssertionError("stale support bundle blocker should preserve final ROS evidence input")
         if not any(
             action.get("command") == "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
             for action in runtime_blockers[0].get("bench_evidence_actions", [])
             if isinstance(action, dict)
         ):
             raise AssertionError("stale support bundle blocker should preserve bench refresh action hints")
+        if not any(
+            action.get("command") == "./scripts/pi/run_rosbag_export_validation.sh"
+            for action in runtime_blockers[0].get("bench_evidence_actions", [])
+            if isinstance(action, dict)
+        ):
+            raise AssertionError("stale support bundle blocker should preserve ROS validation refresh hint")
         assert_equal(
             runtime_blockers[0].get("support_bundle_command"),
             "./scripts/pi/create_support_bundle.sh",

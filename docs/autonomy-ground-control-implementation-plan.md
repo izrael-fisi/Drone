@@ -755,6 +755,10 @@ Status:
   expected bench inputs, collection-order actions, and refresh command even when
   a stale support bundle exists, so `autonomy_goal_status.sh` and Module Setup
   can show how to rebuild the evidence instead of only listing failed subchecks.
+- Done: the strict support-review checklist now includes threshold tuning, ROS
+  replay export validation, and native rosbag2 CLI review before the final
+  support-bundle refresh, matching the final autonomy proof gates instead of
+  treating ROS artifacts as optional operator context.
 - Done: autonomy-readiness reports now include a strict
   `evidence_manifest` section with completion blockers, external proof
   blockers, missing field conditions, and failed/degraded bench subchecks so the

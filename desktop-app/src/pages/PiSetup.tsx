@@ -1741,14 +1741,14 @@ function AutonomyReadinessReportList({
                   </div>
                   {benchExpectedInputs.length > 0 && (
                     <div className="flex flex-wrap gap-1">
-                      {benchExpectedInputs.slice(0, 8).map((input) => (
+                      {benchExpectedInputs.slice(0, 12).map((input) => (
                         <span key={`${report.path}-bench-input-${input}`} className="font-mono text-[10px] text-slate-500">
                           {input}
                         </span>
                       ))}
                     </div>
                   )}
-                  {benchEvidenceActions.slice(0, 6).map((action, index) => (
+                  {benchEvidenceActions.slice(0, 14).map((action, index) => (
                     <div key={`${report.path}-bench-action-${action.label ?? action.command ?? index}`} className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-1 text-[10px]">
                       <span className="font-mono text-cyan-400">{index + 1}</span>
                       <div className="flex min-w-0 flex-wrap items-center gap-1.5">

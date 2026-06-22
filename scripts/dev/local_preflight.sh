@@ -594,10 +594,16 @@ grep -q "External proof blockers:" "$goal_status_output"
 grep -q "Bench evidence preview:" "$goal_status_output"
 grep -q "runtime terrain log and runtime_status.json snapshot" "$goal_status_output"
 grep -q "PX4 ODOMETRY receiver evidence report" "$goal_status_output"
+grep -q "threshold tuning report from real field logs" "$goal_status_output"
+grep -q "ROS replay export validation report" "$goal_status_output"
+grep -q "native rosbag2 CLI review report" "$goal_status_output"
 grep -q "suggested collection order:" "$goal_status_output"
 grep -q "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" "$goal_status_output"
 grep -q "Module Setup > PX4 Prereq Setup" "$goal_status_output"
 grep -q "Module Setup > PX4 SITL Receiver Capture" "$goal_status_output"
+grep -q "Module Setup > Threshold Tuning" "$goal_status_output"
+grep -q "Module Setup > ROS Bag Validation" "$goal_status_output"
+grep -q "Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit" "$goal_status_output"
 grep -q "Field collection preview:" "$goal_status_output"
 grep -q "Good texture, matching map (good_texture), expected good_map" "$goal_status_output"
 grep -q "Wrong-map rejection (wrong_map), expected wrong_map" "$goal_status_output"
@@ -619,8 +625,14 @@ px4_capture_app = text.index("Module Setup > PX4 SITL Receiver Capture", bench_o
 create_plan_app = text.index("Module Setup > Create Plan", bench_order)
 load_next_app = text.index("Module Setup > Load Next Field Condition", bench_order)
 evidence_workflow_app = text.index("Module Setup > Evidence Workflow", bench_order)
+feature_benchmark_app = text.index("Module Setup > Feature Benchmark", bench_order)
+threshold_tuning_app = text.index("Module Setup > Threshold Tuning", bench_order)
+rosbag_validation_app = text.index("Module Setup > ROS Bag Validation", bench_order)
+rosbag2_review_app = text.index("Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit", bench_order)
+bench_report_app = text.index("Module Setup > Bench Report", bench_order)
 assert px4_prereq_app < px4_capture_app
 assert create_plan_app < load_next_app < evidence_workflow_app
+assert evidence_workflow_app < feature_benchmark_app < threshold_tuning_app < rosbag_validation_app < rosbag2_review_app < bench_report_app
 guided = text.index("Guided workflow option:")
 guided_app = text.index("app: ", guided)
 guided_workflow_label = text.index("Evidence Workflow", guided_app)
@@ -754,9 +766,13 @@ grep -q "Field collection preview:" "$scanned_goal_status_output"
 grep -q "Good texture, matching map (good_texture), expected good_map" "$scanned_goal_status_output"
 grep -q "Bench evidence preview:" "$scanned_goal_status_output"
 grep -q "field evidence report covering all required real-world conditions" "$scanned_goal_status_output"
+grep -q "threshold tuning report from real field logs" "$scanned_goal_status_output"
+grep -q "native rosbag2 CLI review report" "$scanned_goal_status_output"
 grep -q "suggested collection order:" "$scanned_goal_status_output"
 grep -q "Module Setup > PX4 Prereq Setup" "$scanned_goal_status_output"
 grep -q "Module Setup > Load Next Field Condition" "$scanned_goal_status_output"
+grep -q "Module Setup > Threshold Tuning" "$scanned_goal_status_output"
+grep -q "Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit" "$scanned_goal_status_output"
 grep -q "Module Setup > Bench Report" "$scanned_goal_status_output"
 grep -q "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh" "$scanned_goal_status_output"
 python3 - "$scanned_goal_status_output" <<'PY'
@@ -775,6 +791,11 @@ px4_capture_app = text.index("Module Setup > PX4 SITL Receiver Capture", bench_o
 create_plan_app = text.index("Module Setup > Create Plan", bench_order)
 load_next_app = text.index("Module Setup > Load Next Field Condition", bench_order)
 evidence_workflow_app = text.index("Module Setup > Evidence Workflow", bench_order)
+feature_benchmark_app = text.index("Module Setup > Feature Benchmark", bench_order)
+threshold_tuning_app = text.index("Module Setup > Threshold Tuning", bench_order)
+rosbag_validation_app = text.index("Module Setup > ROS Bag Validation", bench_order)
+rosbag2_review_app = text.index("Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit", bench_order)
+bench_report_app = text.index("Module Setup > Bench Report", bench_order)
 next_commands = text.index("Next commands:")
 field_plan = text.index("./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh", next_commands)
 field_plan_app = text.index("app: Module Setup > Create Plan", next_commands)
@@ -787,6 +808,7 @@ assert fixes < guided < next_commands
 assert guided_app < guided_workflow_label < guided_command < next_commands
 assert px4_prereq_app < px4_capture_app
 assert create_plan_app < load_next_app < evidence_workflow_app
+assert evidence_workflow_app < feature_benchmark_app < threshold_tuning_app < rosbag_validation_app < rosbag2_review_app < bench_report_app
 assert field_plan_app < field_plan
 assert workflow_app < workflow
 assert field_plan < workflow < support_bundle
