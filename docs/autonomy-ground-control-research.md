@@ -92,6 +92,9 @@ Implementation tasks:
 - Keep direct MAVLink as a no-ROS fallback for simple Pi deployments.
 - Add rosbag/replay compatibility so every field run can be replayed on the
   desktop PC.
+- Surface the native rosbag2 CLI review from Module Setup after the Pi JSONL
+  validation syncs the source terrain log, so the final proof gate can be
+  generated from the same operator workflow.
 
 ### 3. Terrain Map And Bundle Pipeline
 

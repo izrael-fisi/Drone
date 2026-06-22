@@ -318,6 +318,10 @@ ROS 2 tooling. Set `VISION_NAV_ROSBAG_SOURCE_LOG`,
 paths. The final autonomy-readiness audit treats this review as its own proof
 gate, either from the standalone JSON report or from the same report packaged
 in a support bundle.
+In the desktop app, run Module Setup `ROS Bag Validation` first to sync the
+source `terrain_matches.jsonl`, then run the local-only `Native rosbag2 Review`
+step on the ROS 2 workstation to create the CLI review artifact used by the
+next local readiness audit.
 When a validation report exists at the normal Pi transfer path,
 `scripts/pi/create_support_bundle.sh` packages it, and it also packages
 `rosbag2-cli-review.json` when that native workstation review exists. Desktop

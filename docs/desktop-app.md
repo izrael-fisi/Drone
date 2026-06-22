@@ -397,8 +397,13 @@ Module Setup can run `ROS Bag Validation` after a terrain runtime/replay log
 exists. The action runs `scripts/pi/run_rosbag_export_validation.sh` over SSH,
 exports the default terrain log into the dependency-free ROS bag JSONL review
 format, validates the export, downloads `rosbag-jsonl-validation.json` to
-`~/DroneTransfer/from-pi/terrain-match/`, and refreshes the ROS Bag Validation
-list used by the final readiness audit.
+`~/DroneTransfer/from-pi/terrain-match/`, downloads the source
+`terrain_matches.jsonl`, and refreshes the ROS Bag Validation list used by the
+final readiness audit. After that log is synced, the local-only `Native rosbag2
+Review` action runs `scripts/dev/run_rosbag2_cli_review.sh` from the desktop
+repo against the downloaded log and writes
+`~/DroneTransfer/from-pi/terrain-match/rosbag2-cli-review.json` for the next
+local readiness re-audit.
 
 For Pi-side support sessions where a single command is easier than clicking each
 step, `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the same ordered

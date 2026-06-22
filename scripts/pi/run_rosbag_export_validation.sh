@@ -91,6 +91,7 @@ when present at the default path.
 
 __VISION_NAV_ROSBAG_EXPORT_DIR__=$export_dir
 __VISION_NAV_ROSBAG_EXPORT_VALIDATION__=$validation_report
+__VISION_NAV_ROSBAG_SOURCE_LOG__=$source_log
 EOF
 
 if [[ "$validation_status" -ne 0 ]]; then

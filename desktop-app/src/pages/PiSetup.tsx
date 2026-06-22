@@ -303,6 +303,14 @@ function parseRosbagExportValidationReport(output: string) {
     ?.replace("__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=", "");
 }
 
+function parseRosbagSourceLog(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_ROSBAG_SOURCE_LOG__="))
+    ?.replace("__VISION_NAV_ROSBAG_SOURCE_LOG__=", "");
+}
+
 function parseRosbag2CliReviewReport(output: string) {
   return output
     .split(/\r?\n/)
@@ -3692,6 +3700,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteReport = parseRosbagExportValidationReport(output);
+      const remoteSourceLog = parseRosbagSourceLog(output);
       if (!remoteReport) {
         setResult("rosbag-validation", {
           status: "failed",
@@ -3713,14 +3722,55 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         remoteReport,
         ROSBAG_VALIDATION_DOWNLOAD_DIR,
       );
+      let sourceLogDownloadText = "";
+      if (remoteSourceLog) {
+        setResult("rosbag-validation", {
+          status: "running",
+          output: `$ ROS bag validation\n${output}\n\n$ download ROS bag validation\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n\n$ download terrain match log\nDownloading ${remoteSourceLog}...`,
+        });
+        try {
+          const downloadedLog = await cmd.sshDownloadFile(
+            form.host,
+            form.port,
+            form.username,
+            resolvedAuth,
+            remoteSourceLog,
+            ROSBAG_VALIDATION_DOWNLOAD_DIR,
+          );
+          sourceLogDownloadText = `\n\n$ download terrain match log\nSaved to ${downloadedLog.local_path}\n[${downloadedLog.bytes_received} bytes]`;
+        } catch (err) {
+          sourceLogDownloadText = `\n\n$ download terrain match log\nFailed to download ${remoteSourceLog}: ${err}`;
+        }
+      }
       setResult("rosbag-validation", {
         status: result.exit_code === 0 ? "passed" : "failed",
-        output: `$ ROS bag validation\n${output}\n\n$ download ROS bag validation\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        output: `$ ROS bag validation\n${output}\n\n$ download ROS bag validation\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${sourceLogDownloadText}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
       await refreshRosbagValidationReports();
     } catch (err) {
       setResult("rosbag-validation", { status: "failed", output: `$ ROS bag validation\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
+  const runLocalRosbag2CliReview = async () => {
+    setRunningStep("local-rosbag2-cli-review");
+    setError(null);
+    setResult("local-rosbag2-cli-review", { status: "running", output: "$ native rosbag2 review\n" });
+    try {
+      const result = await cmd.runLocalRosbag2CliReview(repoPath, DESKTOP_TRANSFER_FROM_PI_DIR);
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const localReview = parseRosbag2CliReviewReport(output);
+      const localReviewNotes = localReview ? `\nrosbag2 CLI review: ${localReview}` : "";
+      setResult("local-rosbag2-cli-review", {
+        status: result.exit_code === 0 && localReview ? "passed" : "failed",
+        output: `$ native rosbag2 review\n${output || "(no output)"}${localReviewNotes}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+    } catch (err) {
+      setResult("local-rosbag2-cli-review", { status: "failed", output: `$ native rosbag2 review\nERROR: ${err}` });
     } finally {
       setRunningStep(null);
     }
@@ -4212,7 +4262,13 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     {
       id: "rosbag-validation",
       title: "ROS Bag Validation",
-      detail: "Exports the latest terrain log as ROS bag JSONL and downloads the validation report.",
+      detail: "Exports the latest terrain log as ROS bag JSONL and downloads the validation report plus source log.",
+    },
+    {
+      id: "local-rosbag2-cli-review",
+      title: "Native rosbag2 Review",
+      detail: "Runs the desktop ROS 2 rosbag2 CLI review against the downloaded terrain log.",
+      localOnly: true,
     },
     {
       id: "autonomy-evidence-workflow",
@@ -4252,6 +4308,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     if (step.id === "rosbag-validation") {
       await runRosbagExportValidation();
+      return;
+    }
+    if (step.id === "local-rosbag2-cli-review") {
+      await runLocalRosbag2CliReview();
       return;
     }
     if (step.id === "field-collection-plan") {

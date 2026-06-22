@@ -882,6 +882,55 @@ fn run_local_autonomy_readiness_audit_inner(
 }
 
 #[tauri::command]
+pub async fn run_local_rosbag2_cli_review(
+    repo_dir: String,
+    download_root: Option<String>,
+) -> Result<LocalCommandResult, String> {
+    tokio::task::spawn_blocking(move || {
+        run_local_rosbag2_cli_review_inner(&repo_dir, download_root.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+fn run_local_rosbag2_cli_review_inner(
+    repo_dir: &str,
+    download_root: Option<&str>,
+) -> Result<LocalCommandResult> {
+    let repo = expand_local_path(repo_dir)?;
+    let script = repo.join("scripts/dev/run_rosbag2_cli_review.sh");
+    if !script.is_file() {
+        return Err(anyhow!(
+            "Missing local rosbag2 CLI review wrapper: {}",
+            script.display()
+        ));
+    }
+
+    let download_root = expand_local_path(download_root.unwrap_or("~/DroneTransfer/from-pi"))?;
+    let terrain_dir = download_root.join("terrain-match");
+    std::fs::create_dir_all(&terrain_dir)
+        .with_context(|| format!("Cannot create {}", terrain_dir.display()))?;
+    let source_log = terrain_dir.join("terrain_matches.jsonl");
+    let export_dir = terrain_dir.join("rosbag2-native");
+    let review_report = terrain_dir.join("rosbag2-cli-review.json");
+
+    let output = Command::new("bash")
+        .arg(&script)
+        .current_dir(&repo)
+        .env("VISION_NAV_ROSBAG_SOURCE_LOG", &source_log)
+        .env("VISION_NAV_ROSBAG2_EXPORT_DIR", &export_dir)
+        .env("VISION_NAV_ROSBAG2_CLI_REVIEW", &review_report)
+        .output()
+        .with_context(|| format!("Failed to run {}", script.display()))?;
+    Ok(LocalCommandResult {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
+}
+
+#[tauri::command]
 pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails, String> {
     let path = expand_local_path(&path).map_err(|e| e.to_string())?;
     let file = File::open(&path)
@@ -3787,7 +3836,7 @@ mod tests {
         list_field_evidence_reports, list_field_evidence_templates, list_px4_receiver_reports,
         list_rosbag_export_validation_reports, list_threshold_tuning_reports,
         read_support_bundle_details, run_local_autonomy_readiness_audit_inner,
-        support_summary_from_manifest,
+        run_local_rosbag2_cli_review_inner, support_summary_from_manifest,
     };
     use std::fs::{self, File};
     use std::io::Write;
@@ -3829,6 +3878,38 @@ mod tests {
         assert!(result.stdout.contains("root="));
         assert!(result.stdout.contains("__VISION_NAV_AUTONOMY_REPORT__="));
         assert!(result.stderr.is_empty());
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn runs_local_rosbag2_cli_review_wrapper_with_download_paths() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let repo = std::env::temp_dir().join(format!("drone-local-rosbag2-review-{stamp}"));
+        let script_dir = repo.join("scripts/dev");
+        fs::create_dir_all(&script_dir).expect("create script dir");
+        fs::write(
+            script_dir.join("run_rosbag2_cli_review.sh"),
+            "#!/usr/bin/env bash\nprintf 'source=%s\\n' \"$VISION_NAV_ROSBAG_SOURCE_LOG\"\nprintf 'export=%s\\n' \"$VISION_NAV_ROSBAG2_EXPORT_DIR\"\nprintf '__VISION_NAV_ROSBAG2_CLI_REVIEW__=%s\\n' \"$VISION_NAV_ROSBAG2_CLI_REVIEW\"\nexit 5\n",
+        )
+        .expect("write wrapper");
+        let transfer_root = repo.join("from-pi");
+
+        let result = run_local_rosbag2_cli_review_inner(
+            repo.to_str().expect("repo path"),
+            Some(transfer_root.to_str().expect("transfer path")),
+        )
+        .expect("run wrapper");
+
+        assert_eq!(result.exit_code, 5);
+        assert!(result
+            .stdout
+            .contains("terrain-match/terrain_matches.jsonl"));
+        assert!(result.stdout.contains("terrain-match/rosbag2-native"));
+        assert!(result.stdout.contains("__VISION_NAV_ROSBAG2_CLI_REVIEW__="));
+        assert!(transfer_root.join("terrain-match").is_dir());
         let _ = fs::remove_dir_all(&repo);
     }
 
@@ -3969,10 +4050,7 @@ mod tests {
         assert_eq!(summary.feature_method_benchmark_report_count, Some(1));
         assert_eq!(summary.field_evidence_status.as_deref(), Some("passed"));
         assert_eq!(summary.field_evidence_field_case_count, Some(8));
-        assert_eq!(
-            summary.field_evidence_capture_metadata_issue_count,
-            Some(0)
-        );
+        assert_eq!(summary.field_evidence_capture_metadata_issue_count, Some(0));
         assert_eq!(summary.field_evidence_report_count, Some(1));
         assert_eq!(
             summary.field_collection_plan_status.as_deref(),

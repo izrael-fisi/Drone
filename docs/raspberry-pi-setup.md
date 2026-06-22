@@ -691,6 +691,10 @@ Set `VISION_NAV_ROSBAG_SOURCE_LOG`, `VISION_NAV_ROSBAG2_EXPORT_DIR`, or
 paths are different. The wrapper writes the native rosbag2 directory, runs the
 strict validator, captures `ros2 bag info`, and emits
 `__VISION_NAV_ROSBAG2_CLI_REVIEW__=...`.
+When Module Setup runs `ROS Bag Validation`, it also downloads the source
+`terrain_matches.jsonl` to `~/DroneTransfer/from-pi/terrain-match/`; the
+desktop `Native rosbag2 Review` action uses that downloaded log and writes the
+CLI review artifact beside it.
 
 The equivalent low-level review command for an already exported native rosbag2
 directory is:
