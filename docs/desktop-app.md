@@ -445,6 +445,11 @@ as a goal-completion proof summary. It shows whether the implementation is ready
 to be treated as complete, the final audit's proof-item passed/total count, how
 many external proof blockers remain, and the first missing PX4 receiver, field
 replay, feature-benchmark, threshold, or support-bundle evidence items.
+The JSON report also includes a `proof_runbook` that orders the remaining proof
+work into source-plan, bench, field dataset, method/threshold, ROS replay, and
+final-audit phases. This keeps downstream support tooling from treating all
+missing evidence as parallel work when some gates depend on real field logs
+first.
 The same card renders the report `plan_snapshot` when present, showing research
 marker/reference coverage and implementation track/task/done counts without
 opening the JSON report.
@@ -514,15 +519,18 @@ The Markdown handoff mirrors that workflow with a copy-friendly command bundle
 for next-action commands and pending field replay registration commands. It also
 summarizes the research/implementation source-doc snapshot that the final audit
 used, including required marker coverage and implementation track/task counts.
+It also renders the readiness report's proof runbook so support can see which
+phase is passed, waiting on an operator action, or blocked by an upstream proof
+artifact.
 When downloaded evidence-workflow JSON, workflow-validation JSON, and workflow
 log archives are available, the local/Pi readiness audit records them as
 non-gating inputs so the handoff can show availability and the evidence ZIP can
 carry them with the rest of the review package when they are under the artifact
 size limit. The evidence ZIP manifest also includes the plan snapshot, bounded
-proof counts, and the first proof items, and the Autonomy Readiness Reports card
-shows those package proof counts beside compact workflow, validation, and logs
-chips for referenced inputs, with copy/reveal actions when the downloaded local
-artifact exists.
+proof counts, a bounded proof-runbook summary, and the first proof items, and
+the Autonomy Readiness Reports card shows those package proof counts beside
+compact workflow, validation, and logs chips for referenced inputs, with
+copy/reveal actions when the downloaded local artifact exists.
 
 ## MAVLink
 

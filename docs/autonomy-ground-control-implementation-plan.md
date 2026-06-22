@@ -581,6 +581,10 @@ Status:
   `evidence_manifest` section with completion blockers, external proof
   blockers, missing field conditions, and failed/degraded bench subchecks so the
   final goal cannot be marked complete from partial evidence.
+- Done: autonomy-readiness reports now include a dependency-aware
+  `proof_runbook` that orders source-plan, bench, field dataset,
+  method/threshold, ROS replay, and final-audit phases, then marks each phase as
+  passed, action-required, or blocked by upstream proof.
 - Done: Module Setup renders the readiness `evidence_manifest` as a compact
   goal-completion proof summary, including external blocker count and the first
   missing PX4, field, feature-benchmark, threshold, ROS replay validation, or
@@ -617,12 +621,16 @@ Status:
   actions.
 - Done: the Markdown handoff includes a copy-friendly command bundle for
   next-action shell commands and pending field replay registration commands.
+- Done: the Markdown handoff renders the proof runbook so support can follow
+  the correct proof collection order from the generated handoff instead of
+  opening the raw JSON report.
 - Done: `vision-nav-autonomy-evidence-package` creates a support-review ZIP
   containing the strict readiness JSON, Markdown handoff, package manifest, and
   small referenced evidence artifacts that exist locally while listing missing
   or oversized artifacts in the manifest. The package manifest also carries a
-  plan source snapshot plus a bounded goal-proof summary with proof pass counts,
-  first proof items, completion-blocker count, and external-blocker count.
+  plan source snapshot plus a bounded goal-proof summary and proof-runbook
+  summary with proof pass counts, first proof items, completion-blocker count,
+  external-blocker count, and ordered phase state.
 - Done: the Pi and local autonomy-readiness wrappers emit
   `__VISION_NAV_PX4_SITL_REPORT__=...` when direct receiver proof is available,
   letting Module Setup download the receiver report beside the final audit.

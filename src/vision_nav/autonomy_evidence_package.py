@@ -14,6 +14,8 @@ from vision_nav.autonomy_handoff import artifact_availability
 DEFAULT_MAX_ARTIFACT_BYTES = 25_000_000
 MAX_MANIFEST_PROOF_ITEMS = 12
 MAX_MANIFEST_BLOCKERS = 12
+MAX_MANIFEST_RUNBOOK_PHASES = 8
+MAX_MANIFEST_RUNBOOK_ACTIONS = 8
 
 
 def parse_args() -> argparse.Namespace:
@@ -101,6 +103,7 @@ def create_evidence_package(
             else None,
             "plan_snapshot": report.get("plan_snapshot") if isinstance(report.get("plan_snapshot"), dict) else None,
             "proof_summary": build_proof_summary(report),
+            "proof_runbook_summary": build_proof_runbook_summary(report),
             "max_artifact_bytes": max_artifact_bytes,
             "included": included,
             "missing": missing,
@@ -137,6 +140,61 @@ def build_proof_summary(report: dict[str, Any]) -> dict[str, Any]:
         "completion_blockers": compact_evidence_items(completion_blockers, limit=MAX_MANIFEST_BLOCKERS),
         "external_blockers": compact_evidence_items(external_blockers, limit=MAX_MANIFEST_BLOCKERS),
     }
+
+
+def build_proof_runbook_summary(report: dict[str, Any]) -> dict[str, Any] | None:
+    runbook = report.get("proof_runbook") if isinstance(report.get("proof_runbook"), dict) else {}
+    if not runbook:
+        return None
+    phases = dict_items(runbook.get("phases"))
+    return {
+        "schema_version": runbook.get("schema_version"),
+        "ready_for_goal_completion": runbook.get("ready_for_goal_completion"),
+        "summary": runbook.get("summary") if isinstance(runbook.get("summary"), dict) else {},
+        "phases_truncated": len(phases) > MAX_MANIFEST_RUNBOOK_PHASES,
+        "phases": [compact_runbook_phase(phase) for phase in phases[:MAX_MANIFEST_RUNBOOK_PHASES]],
+    }
+
+
+def compact_runbook_phase(phase: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("id", "title", "status", "notes"):
+        value = phase.get(key)
+        if isinstance(value, str) and value:
+            compact[key] = value
+    depends_on = string_list(phase.get("depends_on"))
+    if depends_on:
+        compact["depends_on"] = depends_on
+    commands = string_list(phase.get("commands"))
+    if commands:
+        compact["commands"] = commands
+    checks = dict_items(phase.get("checks"))
+    if checks:
+        compact["checks"] = [
+            {
+                key: str(item.get(key))
+                for key in ("name", "status", "message")
+                if item.get(key) is not None
+            }
+            for item in checks
+        ]
+    actions = dict_items(phase.get("actions"))
+    if actions:
+        compact["actions_truncated"] = len(actions) > MAX_MANIFEST_RUNBOOK_ACTIONS
+        compact["actions"] = [compact_runbook_action(action) for action in actions[:MAX_MANIFEST_RUNBOOK_ACTIONS]]
+    return compact
+
+
+def compact_runbook_action(action: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("check", "status", "desktop_action", "command", "notes", "bench_subcheck"):
+        value = action.get(key)
+        if isinstance(value, str) and value:
+            compact[key] = value
+    missing_conditions = string_list(action.get("missing_conditions"))
+    if missing_conditions:
+        compact["missing_conditions"] = missing_conditions
+    return compact
 
 
 def dict_items(value: Any) -> list[dict[str, Any]]:

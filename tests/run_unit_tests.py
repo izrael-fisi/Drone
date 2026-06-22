@@ -2657,6 +2657,24 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             0,
             "autonomy readiness evidence manifest no external blockers",
         )
+        assert_equal(
+            ready["proof_runbook"]["schema_version"],
+            "vision_nav_autonomy_proof_runbook_v1",
+            "autonomy readiness proof runbook schema",
+        )
+        assert_equal(
+            ready["proof_runbook"]["summary"]["passed"],
+            6,
+            "autonomy readiness proof runbook all phases passed",
+        )
+        ready_runbook_phases = {phase["id"]: phase for phase in ready["proof_runbook"]["phases"]}
+        assert_equal(
+            ready_runbook_phases["final_audit"]["status"],
+            "passed",
+            "autonomy readiness proof runbook final phase passed",
+        )
+        if "./scripts/dev/run_local_autonomy_readiness_audit.sh" not in ready_runbook_phases["final_audit"]["commands"]:
+            raise AssertionError("autonomy readiness proof runbook missing final local audit command")
 
         compatibility_receiver_report = root / "receiver_evidence_compatibility.json"
         compatibility_receiver_data = json.loads(px4_receiver_report.read_text())
@@ -2715,6 +2733,17 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             if blocker.get("name") == "feature_method_benchmark"
         ]
         assert_equal(len(feature_blockers), 1, "autonomy readiness feature benchmark evidence blocker")
+        missing_feature_phases = {phase["id"]: phase for phase in missing_feature_direct["proof_runbook"]["phases"]}
+        assert_equal(
+            missing_feature_phases["method_thresholds"]["status"],
+            "action_required",
+            "autonomy readiness feature runbook method phase action required",
+        )
+        assert_equal(
+            missing_feature_phases["final_audit"]["status"],
+            "blocked",
+            "autonomy readiness feature runbook final blocked",
+        )
 
         missing_field_direct = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
@@ -2747,6 +2776,17 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_field_actions[0]["desktop_action"],
             "Module Setup > Field Evidence Case > Create Template, then Register",
             "autonomy readiness support field evidence desktop action",
+        )
+        missing_field_phases = {phase["id"]: phase for phase in missing_field_direct["proof_runbook"]["phases"]}
+        assert_equal(
+            missing_field_phases["field_dataset"]["status"],
+            "action_required",
+            "autonomy readiness field runbook field phase action required",
+        )
+        assert_equal(
+            missing_field_phases["method_thresholds"]["status"],
+            "blocked",
+            "autonomy readiness field runbook method phase blocked",
         )
 
         missing_rosbag_manifest = root / "support_manifest_without_rosbag_validation.json"
@@ -2990,6 +3030,14 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             REQUIRED_FIELD_CONDITIONS,
             "autonomy readiness threshold evidence missing conditions",
         )
+        missing_threshold_phases = {phase["id"]: phase for phase in missing_threshold["proof_runbook"]["phases"]}
+        assert_equal(
+            missing_threshold_phases["method_thresholds"]["status"],
+            "action_required",
+            "autonomy readiness threshold runbook method phase action required",
+        )
+        if "./scripts/pi/run_threshold_tuning_report.sh" not in missing_threshold_phases["method_thresholds"]["commands"]:
+            raise AssertionError("autonomy readiness proof runbook missing threshold command")
         command_bundle = missing_threshold["command_bundle"]
         if "./scripts/pi/run_threshold_tuning_report.sh" not in command_bundle["next_action_commands"]:
             raise AssertionError("autonomy readiness JSON missing next-action command bundle")
@@ -3029,6 +3077,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff field collection plan path")
         if "## Command Bundle" not in handoff:
             raise AssertionError("autonomy handoff command bundle")
+        if "## Proof Runbook" not in handoff:
+            raise AssertionError("autonomy handoff proof runbook")
+        if "Benchmark methods and tune replay thresholds" not in handoff:
+            raise AssertionError("autonomy handoff proof runbook phase")
         if "./scripts/pi/run_threshold_tuning_report.sh" not in handoff:
             raise AssertionError("autonomy handoff next-action command bundle")
         if "./scripts/pi/register_field_replay_case.sh --condition blur" not in handoff:
@@ -3054,6 +3106,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             }:
                 if expected not in names:
                     raise AssertionError(f"autonomy evidence package missing {expected}")
+            package_manifest = json.loads(archive.read("manifest.json"))
+            if not package_manifest.get("proof_runbook_summary"):
+                raise AssertionError("autonomy evidence package missing proof runbook summary")
+            if package_manifest["proof_runbook_summary"]["summary"]["action_required"] < 1:
+                raise AssertionError("autonomy evidence package proof runbook summary should show pending action")
             manifest = json.loads(archive.read("manifest.json"))
             assert_equal(manifest["readiness_status"], "failed", "autonomy evidence package status")
             assert_equal(

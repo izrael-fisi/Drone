@@ -175,9 +175,11 @@ for human review and summarizes status, inputs, checks, external proof blockers,
 missing field conditions, bench subchecks, and next actions. It also renders
 checkbox checklists for missing field-evidence conditions and failed/degraded
 bench subchecks so the next evidence-collection pass can be tracked directly
-from the handoff. When rendered on a machine that can see the referenced
-artifacts, it also includes an artifact-availability table with present/missing
-state and file sizes.
+from the handoff. The handoff also includes a proof runbook that orders source
+plan, bench, field dataset, method/threshold, ROS replay, and final-audit phases
+so downstream proof dependencies are visible. When rendered on a machine that
+can see the referenced artifacts, it also includes an artifact-availability
+table with present/missing state and file sizes.
 The evidence ZIP packages the JSON report, Markdown handoff, and small
 referenced evidence artifacts that exist locally; large or missing artifacts are
 listed in its manifest instead of being silently ignored.

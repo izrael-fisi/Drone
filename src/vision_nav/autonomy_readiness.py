@@ -44,6 +44,62 @@ EXTERNAL_PROOF_CHECKS = {
     "rosbag2_cli_review",
 }
 
+PROOF_RUNBOOK_PHASES = [
+    {
+        "id": "plan_source",
+        "title": "Confirm source plan coverage",
+        "checks": ["research_doc", "implementation_plan"],
+        "depends_on": [],
+        "notes": "Keep the research and implementation-plan documents present so the final audit records which plan version it evaluated.",
+    },
+    {
+        "id": "bench_foundation",
+        "title": "Create bench evidence package",
+        "checks": ["support_bundle_bench_readiness", "px4_receiver_proof"],
+        "depends_on": [],
+        "notes": "Build and upload the terrain bundle, run the runtime, capture PX4 ODOMETRY receiver proof, export parameters, then create the support bundle.",
+    },
+    {
+        "id": "field_dataset",
+        "title": "Collect real field replay coverage",
+        "checks": ["field_evidence_proof"],
+        "depends_on": [],
+        "notes": "Start from the field evidence template and replace every required placeholder with a real terrain log.",
+    },
+    {
+        "id": "method_thresholds",
+        "title": "Benchmark methods and tune replay thresholds",
+        "checks": ["feature_method_benchmark", "threshold_tuning"],
+        "depends_on": ["field_dataset"],
+        "notes": "Run after field logs exist so method selection and replay thresholds are based on real GNSS-denied terrain data.",
+    },
+    {
+        "id": "ros2_replay",
+        "title": "Validate ROS replay artifacts",
+        "checks": ["rosbag_export_validation", "rosbag2_cli_review"],
+        "depends_on": [],
+        "notes": "Export the replay artifact, then review the native rosbag2 export on a sourced ROS 2 workstation.",
+    },
+    {
+        "id": "final_audit",
+        "title": "Run final autonomy readiness audit",
+        "checks": [
+            "research_doc",
+            "implementation_plan",
+            "support_bundle_bench_readiness",
+            "px4_receiver_proof",
+            "field_evidence_proof",
+            "feature_method_benchmark",
+            "threshold_tuning",
+            "rosbag_export_validation",
+            "rosbag2_cli_review",
+        ],
+        "depends_on": ["plan_source", "bench_foundation", "field_dataset", "method_thresholds", "ros2_replay"],
+        "commands": ["./scripts/pi/run_autonomy_readiness_audit.sh", "./scripts/dev/run_local_autonomy_readiness_audit.sh"],
+        "notes": "Re-run after all proof artifacts are downloaded so the JSON report, Markdown handoff, and evidence ZIP can be used for final review.",
+    },
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -200,6 +256,7 @@ def evaluate_autonomy_readiness(
             str(Path(evidence_workflow_log_archive_path).expanduser()) if evidence_workflow_log_archive_path else None
         ),
     }
+    evidence_manifest = build_evidence_manifest(status, checks, inputs, next_actions)
     report = {
         "status": status,
         "checks": checks,
@@ -215,7 +272,8 @@ def evaluate_autonomy_readiness(
         },
         "inputs": inputs,
         "plan_snapshot": plan_snapshot,
-        "evidence_manifest": build_evidence_manifest(status, checks, inputs, next_actions),
+        "evidence_manifest": evidence_manifest,
+        "proof_runbook": build_proof_runbook(checks, next_actions, evidence_manifest),
     }
     if support_report.get("report") is not None:
         report["bench_readiness"] = support_report["report"]
@@ -318,6 +376,120 @@ def build_evidence_manifest(
         "external_blockers": external_blockers,
         "proof_items": proof_items,
     }
+
+
+def build_proof_runbook(
+    checks: list[dict[str, Any]],
+    next_actions: list[dict[str, Any]],
+    evidence_manifest: dict[str, Any],
+) -> dict[str, Any]:
+    checks_by_name = {
+        str(check.get("name") or ""): check
+        for check in checks
+        if isinstance(check, dict) and check.get("name")
+    }
+    phase_statuses: dict[str, str] = {}
+    phases: list[dict[str, Any]] = []
+    for spec in PROOF_RUNBOOK_PHASES:
+        phase_id = str(spec["id"])
+        check_names = [str(name) for name in spec.get("checks", []) if str(name)]
+        depends_on = [str(name) for name in spec.get("depends_on", []) if str(name)]
+        dependency_status = {name: phase_statuses.get(name, "unknown") for name in depends_on}
+        dependencies_passed = all(status == "passed" for status in dependency_status.values())
+        check_items = [proof_runbook_check_item(name, checks_by_name.get(name)) for name in check_names]
+        checks_passed = all(item.get("status") == "passed" for item in check_items)
+        if dependencies_passed and checks_passed:
+            phase_status = "passed"
+        elif not dependencies_passed:
+            phase_status = "blocked"
+        else:
+            phase_status = "action_required"
+        phase_statuses[phase_id] = phase_status
+        phase_actions = proof_runbook_actions(check_names, next_actions)
+        commands = unique_strings(
+            [
+                *[action.get("command") for action in phase_actions if isinstance(action, dict)],
+                *[command for command in spec.get("commands", []) if isinstance(command, str)],
+            ]
+        )
+        phase = {
+            "id": phase_id,
+            "title": str(spec["title"]),
+            "status": phase_status,
+            "depends_on": depends_on,
+            "dependency_status": dependency_status,
+            "checks": check_items,
+            "actions": phase_actions,
+            "commands": commands,
+            "notes": str(spec.get("notes") or ""),
+        }
+        phases.append(phase)
+    return {
+        "schema_version": "vision_nav_autonomy_proof_runbook_v1",
+        "ready_for_goal_completion": evidence_manifest.get("ready_for_goal_completion") is True,
+        "summary": {
+            "phase_count": len(phases),
+            "passed": sum(1 for phase in phases if phase.get("status") == "passed"),
+            "action_required": sum(1 for phase in phases if phase.get("status") == "action_required"),
+            "blocked": sum(1 for phase in phases if phase.get("status") == "blocked"),
+        },
+        "phases": phases,
+    }
+
+
+def proof_runbook_check_item(name: str, check: dict[str, Any] | None) -> dict[str, Any]:
+    if check is None:
+        return {
+            "name": name,
+            "status": "missing",
+            "message": "Check was not present in this readiness report.",
+        }
+    return {
+        "name": name,
+        "status": str(check.get("status") or "unknown"),
+        "message": str(check.get("message") or ""),
+    }
+
+
+def proof_runbook_actions(
+    check_names: list[str],
+    next_actions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    for action in next_actions:
+        if not isinstance(action, dict):
+            continue
+        action_check = str(action.get("check") or "")
+        if not action_check:
+            continue
+        if not any(action_check == name or action_check.startswith(f"{name}.") for name in check_names):
+            continue
+        actions.append(compact_proof_runbook_action(action))
+    return actions
+
+
+def compact_proof_runbook_action(action: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in (
+        "check",
+        "status",
+        "title",
+        "desktop_action",
+        "command",
+        "notes",
+        "bench_subcheck",
+        "bench_message",
+    ):
+        value = action.get(key)
+        if isinstance(value, str) and value:
+            compact[key] = value
+    missing_conditions = action.get("missing_conditions")
+    if isinstance(missing_conditions, list):
+        compact["missing_conditions"] = [str(item) for item in missing_conditions if str(item)]
+    bench_subchecks = normalize_bench_subchecks(action.get("bench_subchecks"))
+    if bench_subchecks:
+        compact["bench_subchecks"] = bench_subchecks
+    return compact
 
 
 def evidence_manifest_item(

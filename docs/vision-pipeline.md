@@ -480,7 +480,10 @@ or
 `vision-nav-autonomy-handoff --report <report.json> --output <handoff.md>` to
 render a handoff from an existing report. The handoff and evidence ZIP package
 include bounded goal-proof summaries so support review can see both passing
-proof items and remaining completion blockers.
+proof items and remaining completion blockers. New reports also include a
+`proof_runbook` that orders the missing evidence into bench, field, method,
+ROS replay, and final-audit phases instead of presenting every missing proof
+gate as independent work.
 
 This is intentionally stricter than the synthetic smoke tests. It fails until
 PX4 receiver proof, real field coverage, feature-method benchmark evidence,

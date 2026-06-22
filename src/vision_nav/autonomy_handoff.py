@@ -178,6 +178,11 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
     else:
         lines.append("No external proof blockers were recorded.")
 
+    proof_runbook = report.get("proof_runbook") if isinstance(report.get("proof_runbook"), dict) else {}
+    if proof_runbook:
+        lines.extend(["", "## Proof Runbook", ""])
+        lines.extend(proof_runbook_lines(proof_runbook))
+
     missing_conditions = missing_condition_checklist(report)
     if missing_conditions:
         lines.extend(["", "## Field Evidence Collection Checklist", ""])
@@ -434,6 +439,82 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
     if field_commands:
         result["field_collection"] = field_commands
     return result
+
+
+def proof_runbook_lines(runbook: dict[str, Any]) -> list[str]:
+    phases = dict_items(runbook.get("phases"))
+    if not phases:
+        return ["No proof runbook phases were recorded."]
+    summary = runbook.get("summary") if isinstance(runbook.get("summary"), dict) else {}
+    lines = [
+        (
+            f"- Phases: {int(summary.get('passed') or 0)} passed, "
+            f"{int(summary.get('action_required') or 0)} action required, "
+            f"{int(summary.get('blocked') or 0)} blocked"
+        ),
+        "",
+    ]
+    lines.extend(
+        table(
+            ["Phase", "Status", "Depends On", "Checks", "Commands", "Notes"],
+            [
+                [
+                    phase.get("title") or phase.get("id"),
+                    phase.get("status"),
+                    proof_runbook_dependencies(phase),
+                    proof_runbook_check_summary(phase.get("checks")),
+                    join_values(phase.get("commands")),
+                    phase.get("notes"),
+                ]
+                for phase in phases
+            ],
+        )
+    )
+    action_rows = []
+    for phase in phases:
+        phase_title = phase.get("title") or phase.get("id")
+        for action in dict_items(phase.get("actions")):
+            action_rows.append(
+                [
+                    phase_title,
+                    action.get("check"),
+                    action.get("desktop_action"),
+                    action.get("command"),
+                ]
+            )
+    if action_rows:
+        lines.extend(["", "Runbook action commands:", ""])
+        lines.extend(table(["Phase", "Check", "Desktop Action", "Command"], action_rows))
+    return lines
+
+
+def proof_runbook_dependencies(phase: dict[str, Any]) -> str:
+    depends_on = phase.get("depends_on")
+    if not isinstance(depends_on, list) or not depends_on:
+        return ""
+    dependency_status = phase.get("dependency_status") if isinstance(phase.get("dependency_status"), dict) else {}
+    parts = []
+    for dependency in depends_on:
+        name = str(dependency)
+        status = dependency_status.get(name)
+        parts.append(f"{name} ({status})" if status else name)
+    return ", ".join(parts)
+
+
+def proof_runbook_check_summary(value: Any) -> str:
+    if not isinstance(value, list):
+        return ""
+    parts = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        status = item.get("status")
+        if name and status:
+            parts.append(f"{name} ({status})")
+        elif name:
+            parts.append(str(name))
+    return ", ".join(parts)
 
 
 def json_string_list(value: Any) -> list[str]:

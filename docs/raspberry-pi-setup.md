@@ -1003,7 +1003,8 @@ It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and
 `~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.evidence.zip`,
 even when the audit fails, so the missing proof artifacts are visible in both a
 machine-readable report, a support handoff, and a package manifest with the
-plan source snapshot and compact goal-proof counts.
+plan source snapshot, compact goal-proof counts, and a bounded proof-runbook
+summary.
 Failed or degraded gates include `next_actions` entries with the matching
 Module Setup action or shell command to run next. Field-evidence and
 threshold-tuning next actions include the missing real-world condition keys.
@@ -1015,6 +1016,9 @@ bench subchecks into checkbox lists for field collection and support review. It
 also lists all goal proof items and separates completion blockers from external
 proof blockers. The handoff includes a plan source snapshot so support can see
 which research and implementation-plan markers were present during the audit.
+It also includes a proof runbook that marks each source-plan, bench, field
+dataset, method/threshold, ROS replay, and final-audit phase as passed,
+action-required, or blocked by upstream proof.
 When a field collection plan is present, the handoff also summarizes registered
 vs required field conditions and the pending placeholder/missing cases. It
 also includes an artifact-availability table when the referenced evidence
