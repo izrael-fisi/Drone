@@ -755,6 +755,10 @@ function formatReadinessLabel(value?: string | number | null) {
   return String(value).replace(/_/g, " ");
 }
 
+function shortSha(value?: string) {
+  return value ? value.slice(0, 10) : "n/a";
+}
+
 function formatReportSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -1342,6 +1346,7 @@ function AutonomyReadinessReportList({
                         <span>research markers {(researchSnapshot.required_marker_count ?? 0) - researchSnapshot.missing_markers.length}/{researchSnapshot.required_marker_count ?? 0}</span>
                         <span>refs {researchSnapshot.highest_value_reference_count ?? 0}</span>
                         <span>near-term {researchSnapshot.near_term_item_count ?? 0}</span>
+                        <span>research sha {shortSha(researchSnapshot.source_sha256)}</span>
                       </>
                     )}
                     {implementationSnapshot && (
@@ -1349,6 +1354,7 @@ function AutonomyReadinessReportList({
                         <span>tracks {implementationSnapshot.track_count ?? 0}</span>
                         <span>done {implementationSnapshot.done_count ?? 0}</span>
                         <span>tasks {implementationSnapshot.task_count ?? 0}</span>
+                        <span>plan sha {shortSha(implementationSnapshot.source_sha256)}</span>
                       </>
                     )}
                   </div>

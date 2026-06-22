@@ -411,6 +411,8 @@ export interface ExtractedSupportBundleArtifact {
 export interface AutonomyReadinessPlanSourceSnapshot {
   path?: string;
   exists?: boolean;
+  source_sha256?: string;
+  source_size_bytes?: number;
   required_marker_count?: number;
   missing_markers: string[];
   highest_value_reference_count?: number;

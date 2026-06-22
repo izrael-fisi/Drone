@@ -2819,6 +2819,20 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "autonomy readiness research snapshot markers",
         )
         assert_equal(
+            len(ready["plan_snapshot"]["research_doc"]["source_sha256"]),
+            64,
+            "autonomy readiness research source hash",
+        )
+        if not ready["plan_snapshot"]["research_doc"]["source_size_bytes"]:
+            raise AssertionError("autonomy readiness research source size missing")
+        assert_equal(
+            len(ready["plan_snapshot"]["implementation_plan"]["source_sha256"]),
+            64,
+            "autonomy readiness implementation source hash",
+        )
+        if not ready["plan_snapshot"]["implementation_plan"]["source_size_bytes"]:
+            raise AssertionError("autonomy readiness implementation source size missing")
+        assert_equal(
             ready["plan_snapshot"]["implementation_plan"]["track_count"],
             6,
             "autonomy readiness implementation track count",
@@ -3540,6 +3554,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff plan snapshot")
         if "implementation_plan" not in handoff:
             raise AssertionError("autonomy handoff missing implementation plan snapshot")
+        if "SHA256" not in handoff:
+            raise AssertionError("autonomy handoff missing plan source hash column")
         if "- Registered: 8/8" not in handoff:
             raise AssertionError("autonomy handoff field collection plan summary")
         if "field_collection_plan.json" not in handoff:
@@ -3584,6 +3600,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 manifest["plan_snapshot"]["schema_version"],
                 "vision_nav_autonomy_plan_snapshot_v1",
                 "autonomy evidence package plan snapshot schema",
+            )
+            assert_equal(
+                len(manifest["plan_snapshot"]["research_doc"]["source_sha256"]),
+                64,
+                "autonomy evidence package research source hash",
+            )
+            assert_equal(
+                len(manifest["plan_snapshot"]["implementation_plan"]["source_sha256"]),
+                64,
+                "autonomy evidence package implementation source hash",
             )
             proof_summary = manifest["proof_summary"]
             expected_proof_items = missing_threshold["evidence_manifest"]["proof_items"]

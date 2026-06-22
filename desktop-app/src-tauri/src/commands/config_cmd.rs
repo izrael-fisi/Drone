@@ -472,6 +472,8 @@ pub struct AutonomyReadinessProofRunbook {
 pub struct AutonomyReadinessPlanSourceSnapshot {
     pub path: Option<String>,
     pub exists: Option<bool>,
+    pub source_sha256: Option<String>,
+    pub source_size_bytes: Option<u64>,
     pub required_marker_count: Option<u64>,
     pub missing_markers: Vec<String>,
     pub highest_value_reference_count: Option<u64>,
@@ -3075,6 +3077,10 @@ fn autonomy_readiness_plan_source_from_json(
     Some(AutonomyReadinessPlanSourceSnapshot {
         path: json_string(value.get("path")),
         exists: value.get("exists").and_then(|value| value.as_bool()),
+        source_sha256: json_string(value.get("source_sha256")),
+        source_size_bytes: value
+            .get("source_size_bytes")
+            .and_then(|value| value.as_u64()),
         required_marker_count: value
             .get("required_marker_count")
             .and_then(|value| value.as_u64()),

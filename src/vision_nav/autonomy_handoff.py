@@ -580,6 +580,7 @@ def plan_snapshot_lines(snapshot: dict[str, Any]) -> list[str]:
                 "yes" if research.get("exists") else "no",
                 research.get("required_marker_count"),
                 len(research.get("missing_markers") or []),
+                short_hash(research.get("source_sha256")),
                 (
                     f"{int(research.get('highest_value_reference_count') or 0)} refs, "
                     f"{int(research.get('near_term_item_count') or 0)} near-term"
@@ -594,6 +595,7 @@ def plan_snapshot_lines(snapshot: dict[str, Any]) -> list[str]:
                 "yes" if implementation.get("exists") else "no",
                 implementation.get("required_marker_count"),
                 len(implementation.get("missing_markers") or []),
+                short_hash(implementation.get("source_sha256")),
                 (
                     f"{int(implementation.get('track_count') or 0)} tracks, "
                     f"{int(implementation.get('done_count') or 0)} done, "
@@ -603,7 +605,13 @@ def plan_snapshot_lines(snapshot: dict[str, Any]) -> list[str]:
         )
     if not rows:
         return ["No plan snapshot was recorded."]
-    return table(["Source", "Path", "Present", "Markers", "Missing", "Summary"], rows)
+    return table(["Source", "Path", "Present", "Markers", "Missing", "SHA256", "Summary"], rows)
+
+
+def short_hash(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return "n/a"
+    return value[:12]
 
 
 def dict_items(value: Any) -> list[dict[str, Any]]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -864,6 +865,8 @@ def check_research_doc_source(path: str | Path) -> dict[str, Any]:
     summary = summarize_research_doc(path)
     details = {
         "path": summary["path"],
+        "source_sha256": summary["source_sha256"],
+        "source_size_bytes": summary["source_size_bytes"],
         "required_marker_count": summary["required_marker_count"],
         "missing_markers": summary["missing_markers"],
         "highest_value_reference_count": summary["highest_value_reference_count"],
@@ -897,6 +900,8 @@ def check_implementation_plan_source(path: str | Path) -> dict[str, Any]:
     summary = summarize_implementation_plan(path)
     details = {
         "path": summary["path"],
+        "source_sha256": summary["source_sha256"],
+        "source_size_bytes": summary["source_size_bytes"],
         "required_marker_count": summary["required_marker_count"],
         "missing_markers": summary["missing_markers"],
         "track_count": summary["track_count"],
@@ -943,6 +948,8 @@ def summarize_research_doc(path: str | Path) -> dict[str, Any]:
     return {
         "path": str(source),
         "exists": source.is_file(),
+        "source_sha256": sha256_file(source),
+        "source_size_bytes": file_size_bytes(source),
         "required_marker_count": len(RESEARCH_DOC_MARKERS),
         "missing_markers": missing_markers,
         "highest_value_reference_count": count_markdown_table_rows(
@@ -966,6 +973,8 @@ def summarize_implementation_plan(path: str | Path) -> dict[str, Any]:
     return {
         "path": str(source),
         "exists": source.is_file(),
+        "source_sha256": sha256_file(source),
+        "source_size_bytes": file_size_bytes(source),
         "required_marker_count": len(IMPLEMENTATION_PLAN_MARKERS),
         "missing_markers": missing_markers,
         "track_count": len(re.findall(r"^### Track \d+:", text, flags=re.MULTILINE)),
@@ -986,6 +995,22 @@ def safe_read_text(path: Path) -> str:
     if not path.is_file():
         return ""
     return path.read_text(errors="replace")
+
+
+def sha256_file(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def file_size_bytes(path: Path) -> int | None:
+    if not path.is_file():
+        return None
+    return path.stat().st_size
 
 
 def section_text(text: str, heading: str) -> str:
