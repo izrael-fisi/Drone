@@ -399,7 +399,8 @@ the Pi terminal instead of the desktop form can run
 condition and regenerate the collection plan before running the Evidence
 Workflow again. When the Evidence Workflow skips registration for incomplete
 metadata, its report markers include the condition-specific metadata update
-command for support review.
+command for support review, and Module Setup shows a `metadata` copy chip on the
+downloaded Evidence Workflow report card.
 
 Module Setup can also register the latest Pi terrain runtime log as a field
 evidence case after capture. The operator selects expected behavior, condition

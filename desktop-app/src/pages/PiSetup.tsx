@@ -1967,6 +1967,17 @@ function AutonomyEvidenceWorkflowReportList({
               </div>
               <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-slate-500">
                 <span>markers {report.marker_count}</span>
+                {report.field_metadata_update_command && (
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(report.field_metadata_update_command ?? "")}
+                    className="inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300 hover:border-cyan-400/60 hover:text-cyan-100"
+                    title={`Copy field metadata update command: ${report.field_metadata_update_command}`}
+                  >
+                    <Copy size={9} />
+                    metadata
+                  </button>
+                )}
                 {markerArtifacts.length > 1 && (
                   <button
                     type="button"
@@ -4983,6 +4994,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             status: latestWorkflowReport.status ?? null,
             summary: latestWorkflowReport.summary,
             marker_count: latestWorkflowReport.marker_count,
+            field_metadata_update_command: latestWorkflowReport.field_metadata_update_command ?? null,
             workflow_logs_path: latestWorkflowReport.workflow_logs_local_path ?? latestWorkflowReport.workflow_logs_path ?? null,
             workflow_validation_path:
               latestWorkflowReport.workflow_validation_local_path ?? latestWorkflowReport.workflow_validation_path ?? null,
