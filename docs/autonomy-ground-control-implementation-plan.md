@@ -392,6 +392,9 @@ Status:
   Pi script surface, and local preflight checks that it emits the stable
   `__VISION_NAV_RUNTIME_STATUS__` and `__VISION_NAV_RUNTIME_STATUS_JSON__`
   markers expected by Module Setup and support-bundle workflows.
+- Done: field collection plans now append `read_runtime_status.sh` to generated
+  terrain capture commands and show the expected `runtime_status.json` path for
+  the next pending condition, so checklist captures produce both proof files.
 
 Tasks:
 

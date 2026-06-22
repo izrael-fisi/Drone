@@ -4355,7 +4355,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "expected": "degraded",
                             "case_name": "unit-blur",
                             "bundle": str(root / "map_bundles/unit_bundle"),
-                            "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
+                            "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh",
                             "metadata_update_command": "./scripts/pi/update_field_capture_metadata.sh --condition blur",
                             "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur",
                         },
@@ -4392,7 +4392,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         assert_equal(
             next_condition["capture_command"],
-            "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
+            "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh",
             "autonomy readiness incomplete field collection next capture command",
         )
         assert_equal(
@@ -4428,7 +4428,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         ):
             raise AssertionError("autonomy readiness JSON missing field collection bootstrap command")
         if (
-            "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
+            "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh"
             not in field_plan_bundle["field_collection_capture_commands"]
         ):
             raise AssertionError("autonomy readiness JSON missing field capture command bundle")
@@ -5601,6 +5601,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected generated capture command to include output directory")
         if "VISION_NAV_COUNT=30" not in good_texture["capture_command"]:
             raise AssertionError("Expected generated capture command to be bounded")
+        if "read_runtime_status.sh" not in good_texture["capture_command"]:
+            raise AssertionError("Expected generated capture command to read runtime status after capture")
         if "update_field_capture_metadata.sh" not in good_texture["metadata_update_command"]:
             raise AssertionError("Expected generated metadata update command")
         if "VISION_NAV_FIELD_CONDITION=good_texture" not in good_texture["metadata_update_command"]:
@@ -5611,10 +5613,16 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         human_text = human_output.getvalue()
         if "Next metadata update command:" not in human_text:
             raise AssertionError("Expected human field collection output to include metadata update command")
+        if "Next runtime status path:" not in human_text:
+            raise AssertionError("Expected human field collection output to include runtime status path")
         if "update_field_capture_metadata.sh" not in human_text:
             raise AssertionError("Expected human field collection output to include the metadata helper")
         if human_text.index("Next capture command:") > human_text.index("Next metadata update command:"):
             raise AssertionError("Expected capture command before metadata update command")
+        if human_text.index("Next capture command:") > human_text.index("Next runtime status path:"):
+            raise AssertionError("Expected capture command before runtime status path")
+        if human_text.index("Next runtime status path:") > human_text.index("Next metadata update command:"):
+            raise AssertionError("Expected runtime status path before metadata update command")
         if human_text.index("Next metadata update command:") > human_text.index("Next register command:"):
             raise AssertionError("Expected metadata update command before register command")
         capture_metadata = good_texture.get("capture_metadata") or {}
@@ -5640,6 +5648,10 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         markdown_text = (base / "field_collection_plan.md").read_text()
         if "Update capture metadata:" not in markdown_text:
             raise AssertionError("Expected Markdown plan to include the next metadata update command")
+        if "Runtime status:" not in markdown_text:
+            raise AssertionError("Expected Markdown plan to include the next runtime status path")
+        if "read_runtime_status.sh" not in markdown_text:
+            raise AssertionError("Expected Markdown plan capture command to collect runtime status")
         if "update_field_capture_metadata.sh" not in markdown_text:
             raise AssertionError("Expected Markdown plan to include the metadata helper")
         selection = select_next_field_condition(base / "field_collection_plan.json")

@@ -702,6 +702,12 @@ def unique_strings(values: Any) -> list[str]:
     return result
 
 
+def command_with_runtime_status_read(command: str) -> str:
+    if "read_runtime_status.sh" in command:
+        return command
+    return f"{command} && ./scripts/pi/read_runtime_status.sh"
+
+
 def build_evidence_manifest(
     status: str,
     checks: list[dict[str, Any]],
@@ -1291,7 +1297,7 @@ def enrich_action_with_field_capture(
     capture_command = condition.get("capture_command")
     if isinstance(capture_command, str) and capture_command.strip():
         if append_runtime_status_read:
-            action["command"] = f"{capture_command} && ./scripts/pi/read_runtime_status.sh"
+            action["command"] = command_with_runtime_status_read(capture_command)
         else:
             action["command"] = capture_command
 

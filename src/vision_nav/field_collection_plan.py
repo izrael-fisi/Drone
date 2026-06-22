@@ -213,6 +213,7 @@ def condition_plan(
         "VISION_NAV_FIELD_MANIFEST": str(manifest_path),
         "VISION_NAV_FIELD_CONDITION": condition,
     }
+    capture_command = shell_command(capture_env, "./scripts/pi/run_terrain_nav_loop.sh")
     return {
         "condition": condition,
         "label": label_for_condition(condition),
@@ -230,7 +231,7 @@ def condition_plan(
         "capture_metadata": capture_metadata,
         "capture_checklist": capture_checklist,
         "capture_env": capture_env,
-        "capture_command": shell_command(capture_env, "./scripts/pi/run_terrain_nav_loop.sh"),
+        "capture_command": command_with_runtime_status_read(capture_command),
         "metadata_update_env": metadata_update_env,
         "metadata_update_command": shell_command(
             metadata_update_env,
@@ -266,6 +267,12 @@ def case_log_exists(manifest_path: Path, case: dict[str, Any]) -> bool:
 def shell_command(env: dict[str, str], command: str) -> str:
     parts = [f"{key}={shlex.quote(str(value))}" for key, value in env.items()]
     return " \\\n  ".join(parts + [command])
+
+
+def command_with_runtime_status_read(command: str) -> str:
+    if "read_runtime_status.sh" in command:
+        return command
+    return f"{command} && ./scripts/pi/read_runtime_status.sh"
 
 
 def remote_path_join(root: str, *parts: str) -> str:
@@ -322,6 +329,7 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 f"- Current status: `{next_condition.get('status')}`",
                 f"- Capture output: `{next_condition.get('capture_output_dir')}`",
                 f"- Terrain log: `{next_condition.get('source_log')}`",
+                f"- Runtime status: `{next_condition.get('runtime_status_path')}`",
                 "",
                 "Capture:",
                 "",
@@ -431,6 +439,9 @@ def print_human(plan: dict[str, Any]) -> None:
         if next_condition.get("capture_command"):
             print("Next capture command:")
             print(next_condition["capture_command"])
+        if next_condition.get("runtime_status_path"):
+            print("Next runtime status path:")
+            print(next_condition["runtime_status_path"])
         if next_condition.get("metadata_update_command"):
             print("Next metadata update command:")
             print(next_condition["metadata_update_command"])
