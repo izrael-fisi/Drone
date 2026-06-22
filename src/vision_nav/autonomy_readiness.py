@@ -154,6 +154,10 @@ def evaluate_autonomy_readiness(
         "status": status,
         "checks": checks,
         "next_actions": next_actions,
+        "command_bundle": build_command_bundle(
+            next_actions,
+            field_collection_plan_path=field_collection_plan_path,
+        ),
         "summary": {
             "failed": sum(1 for check in checks if check["status"] == "failed"),
             "degraded": sum(1 for check in checks if check["status"] == "degraded"),
@@ -165,6 +169,59 @@ def evaluate_autonomy_readiness(
     if support_report.get("report") is not None:
         report["bench_readiness"] = support_report["report"]
     return report
+
+
+def build_command_bundle(
+    next_actions: list[dict[str, Any]],
+    *,
+    field_collection_plan_path: str | Path | None = None,
+) -> dict[str, Any]:
+    next_action_commands = unique_strings(
+        action.get("command")
+        for action in next_actions
+        if isinstance(action, dict)
+    )
+    field_collection_commands = field_collection_registration_commands(field_collection_plan_path)
+    return {
+        "next_action_commands": next_action_commands,
+        "field_collection_registration_commands": field_collection_commands,
+        "command_count": len(next_action_commands) + len(field_collection_commands),
+    }
+
+
+def field_collection_registration_commands(path: str | Path | None) -> list[str]:
+    if not path:
+        return []
+    source = Path(path).expanduser()
+    if not source.is_file():
+        return []
+    try:
+        plan = json.loads(source.read_text())
+    except Exception:
+        return []
+    if not isinstance(plan, dict):
+        return []
+    conditions = plan.get("conditions")
+    if not isinstance(conditions, list):
+        return []
+    return unique_strings(
+        item.get("register_command")
+        for item in conditions
+        if isinstance(item, dict) and item.get("status") != "registered"
+    )
+
+
+def unique_strings(values: Any) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str) or not value:
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def build_evidence_manifest(

@@ -2002,7 +2002,21 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "placeholder_count": len(REQUIRED_FIELD_CONDITIONS) - 1,
                         "missing_count": 0,
                     },
-                    "conditions": [],
+                    "conditions": [
+                        {
+                            "condition": "good_texture",
+                            "status": "registered",
+                            "expected": "good_map",
+                            "case_name": "unit-good-texture",
+                        },
+                        {
+                            "condition": "blur",
+                            "status": "placeholder",
+                            "expected": "degraded",
+                            "case_name": "unit-blur",
+                            "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur",
+                        },
+                    ],
                 }
             )
         )
@@ -2258,6 +2272,14 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             REQUIRED_FIELD_CONDITIONS,
             "autonomy readiness threshold evidence missing conditions",
         )
+        command_bundle = missing_threshold["command_bundle"]
+        if "./scripts/pi/run_threshold_tuning_report.sh" not in command_bundle["next_action_commands"]:
+            raise AssertionError("autonomy readiness JSON missing next-action command bundle")
+        if (
+            "./scripts/pi/register_field_replay_case.sh --condition blur"
+            not in command_bundle["field_collection_registration_commands"]
+        ):
+            raise AssertionError("autonomy readiness JSON missing field registration command bundle")
         handoff = render_handoff_markdown(missing_threshold)
         if "Goal completion: waiting on proof" not in handoff:
             raise AssertionError("autonomy handoff waiting state")
@@ -2277,6 +2299,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff field collection plan summary")
         if "field_collection_plan.json" not in handoff:
             raise AssertionError("autonomy handoff field collection plan path")
+        if "## Command Bundle" not in handoff:
+            raise AssertionError("autonomy handoff command bundle")
+        if "./scripts/pi/run_threshold_tuning_report.sh" not in handoff:
+            raise AssertionError("autonomy handoff next-action command bundle")
+        if "./scripts/pi/register_field_replay_case.sh --condition blur" not in handoff:
+            raise AssertionError("autonomy handoff field registration command bundle")
         missing_threshold_report = root / "autonomy_readiness_missing_threshold.json"
         missing_threshold_handoff = root / "autonomy_readiness_missing_threshold.md"
         missing_threshold_report.write_text(json.dumps(missing_threshold))
@@ -2306,6 +2334,35 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package did not include field collection plan artifact")
             if not any(item["label"] == "input:field_collection_plan_markdown" for item in manifest["included"]):
                 raise AssertionError("autonomy evidence package did not include field collection checklist artifact")
+
+        downloaded_report_data = json.loads(json.dumps(missing_threshold))
+        downloaded_report_data["inputs"]["field_collection_plan"] = (
+            "/home/user/DroneTransfer/outgoing/replay-cases/field_collection_plan.json"
+        )
+        downloaded_report_data["inputs"]["field_collection_plan_markdown"] = (
+            "/home/user/DroneTransfer/outgoing/replay-cases/field_collection_plan.md"
+        )
+        downloaded_report = root / "downloaded_autonomy_readiness_report.json"
+        downloaded_handoff = root / "downloaded_autonomy_readiness_report.md"
+        downloaded_report.write_text(json.dumps(downloaded_report_data))
+        downloaded_handoff_text = render_handoff_markdown(
+            downloaded_report_data,
+            report_path=downloaded_report,
+        )
+        downloaded_handoff.write_text(downloaded_handoff_text)
+        if "## Field Collection Plan" not in downloaded_handoff_text:
+            raise AssertionError("downloaded autonomy handoff missing sibling field collection plan")
+        downloaded_package_result = create_evidence_package(
+            downloaded_report,
+            handoff_path=downloaded_handoff,
+            output_path=root / "downloaded_autonomy_evidence_package.zip",
+        )
+        with zipfile.ZipFile(Path(downloaded_package_result["zip_path"])) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            if not any(item["label"] == "input:field_collection_plan" for item in manifest["included"]):
+                raise AssertionError("downloaded evidence package did not include sibling field collection plan")
+            if not any(item["label"] == "input:field_collection_plan_markdown" for item in manifest["included"]):
+                raise AssertionError("downloaded evidence package did not include sibling field collection checklist")
 
 
 def test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance() -> None:

@@ -74,7 +74,8 @@ failed bench install.
 When autonomy-readiness reports are available, the setup report also includes a
 compact final-audit snapshot with the latest status, handoff path, evidence
 package path, goal-completion flag, external blocker count, bounded blocker
-details, and the first next actions.
+details, the first next actions, and the referenced field collection plan
+summary when it is available locally.
 The readiness wrappers also create
 `autonomy_readiness_report.evidence.zip`, a support-review package with the JSON
 report, Markdown handoff, package manifest, and any small referenced evidence
@@ -429,10 +430,30 @@ exposes copy and reveal controls for both artifacts. When the evidence ZIP has
 the expected `manifest.json`, the list also shows included, missing, and
 skipped artifact counts plus the first missing/skipped artifact labels so
 support can tell what proof is absent without opening the archive.
+Readiness report cards also provide a bulk command copy action for all
+machine-readable next-action shell commands, while preserving each row's
+individual command copy control. The underlying JSON report includes the same
+command bundle for downstream support tooling, and Module Setup reads that
+bundle directly so bulk copy still works when the referenced Pi-side field plan
+is only available as downloaded report metadata. Saved setup reports also
+include the latest readiness report's `command_bundle`.
+If the readiness report points to a local field collection plan, the same card
+shows the plan status, registered-vs-required count, pending condition count,
+and first pending collection conditions. For Pi-generated reports that still
+refer to Pi-side absolute paths, the app falls back to a downloaded sibling
+`field_collection_plan.json` beside the readiness report. The local Markdown
+handoff renderer and evidence ZIP packager use the same fallback, so support
+packages can still include the downloaded JSON/Markdown checklist.
 Downloaded support-bundle details also surface bundled field collection plans:
 the card shows plan pass/degraded state, registered-vs-required condition
 counts, per-condition placeholder/missing/registered status, and lets support
 extract the JSON/Markdown plan artifacts from the ZIP.
+Pending field-collection condition pills and command buttons in Module Setup
+copy individual or batched generated registration commands when the plan
+includes them, which keeps real replay-case registration out of manual
+retyping.
+The Markdown handoff mirrors that workflow with a copy-friendly command bundle
+for next-action commands and pending field replay registration commands.
 
 ## MAVLink
 

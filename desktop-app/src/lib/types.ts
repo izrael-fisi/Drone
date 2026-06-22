@@ -418,6 +418,11 @@ export interface AutonomyReadinessReportFile {
       message?: string;
     }>;
   }>;
+  command_bundle?: {
+    next_action_commands: string[];
+    field_collection_registration_commands: string[];
+    command_count?: number;
+  };
   evidence_manifest?: {
     schema_version?: string;
     ready_for_goal_completion?: boolean;
@@ -442,6 +447,30 @@ export interface AutonomyReadinessReportFile {
         status?: "passed" | "failed" | "degraded" | string;
         message?: string;
       }>;
+    }>;
+  };
+  field_collection_plan?: {
+    path: string;
+    status?: "passed" | "failed" | "degraded" | string;
+    site_name?: string;
+    manifest_path?: string;
+    bundle?: string;
+    summary: {
+      required_count?: number;
+      registered_count?: number;
+      registered_missing_log_count?: number;
+      placeholder_count?: number;
+      missing_count?: number;
+    };
+    pending_conditions: Array<{
+      condition?: string;
+      label?: string;
+      expected?: string;
+      status?: "registered" | "registered_missing_log" | "placeholder" | "missing" | string;
+      case_name?: string;
+      manifest_log_path?: string;
+      manifest_log_exists?: boolean;
+      register_command?: string;
     }>;
   };
 }

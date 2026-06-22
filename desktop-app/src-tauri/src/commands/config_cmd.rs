@@ -383,7 +383,27 @@ pub struct AutonomyReadinessReportFile {
     pub summary: AutonomyReadinessSummary,
     pub checks: Vec<AutonomyReadinessCheck>,
     pub next_actions: Vec<AutonomyReadinessNextAction>,
+    pub command_bundle: Option<AutonomyReadinessCommandBundle>,
     pub evidence_manifest: Option<AutonomyReadinessEvidenceManifest>,
+    pub field_collection_plan: Option<AutonomyReadinessFieldCollectionPlan>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessCommandBundle {
+    pub next_action_commands: Vec<String>,
+    pub field_collection_registration_commands: Vec<String>,
+    pub command_count: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessFieldCollectionPlan {
+    pub path: String,
+    pub status: Option<String>,
+    pub site_name: Option<String>,
+    pub manifest_path: Option<String>,
+    pub bundle: Option<String>,
+    pub summary: FieldCollectionPlanSummary,
+    pub pending_conditions: Vec<FieldCollectionPlanCondition>,
 }
 
 #[derive(Serialize)]
@@ -849,6 +869,8 @@ pub fn list_autonomy_readiness_reports(
                 Some(value) => value,
                 None => continue,
             };
+        let command_bundle = autonomy_readiness_command_bundle_from_json(&value);
+        let field_collection_plan = autonomy_readiness_field_collection_plan_from_json(&value, &p);
         let modified_unix_ms = metadata
             .modified()
             .ok()
@@ -898,7 +920,9 @@ pub fn list_autonomy_readiness_reports(
             summary,
             checks,
             next_actions,
+            command_bundle,
             evidence_manifest,
+            field_collection_plan,
         });
     }
     files.sort_by(|a, b| {
@@ -2235,6 +2259,57 @@ fn autonomy_readiness_report_from_json(
     ))
 }
 
+fn autonomy_readiness_field_collection_plan_from_json(
+    value: &serde_json::Value,
+    report_path: &Path,
+) -> Option<AutonomyReadinessFieldCollectionPlan> {
+    let input_path = value
+        .pointer("/inputs/field_collection_plan")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .and_then(|path| expand_local_path(path).ok());
+    let sibling_path = report_path
+        .parent()
+        .map(|parent| parent.join("field_collection_plan.json"));
+    let path = [input_path, sibling_path]
+        .into_iter()
+        .flatten()
+        .find(|path| path.is_file())?;
+    let text = std::fs::read_to_string(&path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let plan = field_collection_plan_from_json(&value)?;
+    let pending_conditions = plan
+        .conditions
+        .into_iter()
+        .filter(|condition| condition.status.as_deref() != Some("registered"))
+        .collect::<Vec<_>>();
+    Some(AutonomyReadinessFieldCollectionPlan {
+        path: path.to_string_lossy().into_owned(),
+        status: plan.status,
+        site_name: plan.site_name,
+        manifest_path: plan.manifest_path,
+        bundle: plan.bundle,
+        summary: plan.summary,
+        pending_conditions,
+    })
+}
+
+fn autonomy_readiness_command_bundle_from_json(
+    value: &serde_json::Value,
+) -> Option<AutonomyReadinessCommandBundle> {
+    let bundle = value.get("command_bundle")?;
+    if !bundle.is_object() {
+        return None;
+    }
+    Some(AutonomyReadinessCommandBundle {
+        next_action_commands: json_string_array(bundle.get("next_action_commands")),
+        field_collection_registration_commands: json_string_array(
+            bundle.get("field_collection_registration_commands"),
+        ),
+        command_count: bundle.get("command_count").and_then(|value| value.as_u64()),
+    })
+}
+
 fn autonomy_evidence_manifest_from_json(
     value: Option<&serde_json::Value>,
 ) -> Option<AutonomyReadinessEvidenceManifest> {
@@ -3032,11 +3107,39 @@ mod tests {
             .as_nanos();
         let dir = std::env::temp_dir().join(format!("drone-readiness-reports-{stamp}"));
         std::fs::create_dir_all(&dir).expect("create readiness dir");
+        let field_collection_plan_path = dir.join("field_collection_plan.json");
+        std::fs::write(
+            &field_collection_plan_path,
+            serde_json::json!({
+                "schema_version": "vision_nav_field_collection_plan_v1",
+                "status": "degraded",
+                "site_name": "test-range",
+                "manifest_path": "field_manifest.json",
+                "bundle": "mission-bundle",
+                "summary": {
+                    "required_count": 3,
+                    "registered_count": 1,
+                    "registered_missing_log_count": 1,
+                    "placeholder_count": 1,
+                    "missing_count": 0
+                },
+                "conditions": [
+                    {"condition": "good_texture", "label": "Good texture", "expected": "good_map", "status": "registered", "case_name": "good-texture", "manifest_log_exists": true},
+                    {"condition": "blur", "label": "Blur", "expected": "degraded", "status": "placeholder", "case_name": "blur", "manifest_log_exists": false},
+                    {"condition": "wrong_map", "label": "Wrong map", "expected": "wrong_map", "status": "registered_missing_log", "case_name": "wrong-map", "manifest_log_exists": false}
+                ]
+            })
+            .to_string(),
+        )
+        .expect("write field collection plan");
         let report_path = dir.join("autonomy_readiness_report.json");
         std::fs::write(
             &report_path,
             serde_json::json!({
                 "status": "failed",
+                "inputs": {
+                    "field_collection_plan": "/home/user/DroneTransfer/outgoing/replay-cases/field_collection_plan.json"
+                },
                 "summary": {"failed": 2, "degraded": 1, "passed": 4},
                 "checks": [
                     {"name": "research_doc", "status": "passed", "message": "Research doc ready."},
@@ -3082,6 +3185,16 @@ mod tests {
                         "missing_conditions": ["good_texture", "wrong_map"]
                     }
                 ],
+                "command_bundle": {
+                    "next_action_commands": [
+                        "./scripts/pi/create_support_bundle.sh",
+                        "./scripts/pi/run_threshold_tuning_report.sh"
+                    ],
+                    "field_collection_registration_commands": [
+                        "./scripts/pi/register_field_replay_case.sh --condition blur"
+                    ],
+                    "command_count": 3
+                },
                 "evidence_manifest": {
                     "schema_version": "vision_nav_autonomy_evidence_manifest_v1",
                     "ready_for_goal_completion": false,
@@ -3244,6 +3357,41 @@ mod tests {
             Some("runtime_status")
         );
         assert_eq!(reports[0].next_actions[2].missing_conditions.len(), 2);
+        let command_bundle = reports[0].command_bundle.as_ref().expect("command bundle");
+        assert_eq!(command_bundle.next_action_commands.len(), 2);
+        assert_eq!(
+            command_bundle.next_action_commands[1],
+            "./scripts/pi/run_threshold_tuning_report.sh"
+        );
+        assert_eq!(
+            command_bundle.field_collection_registration_commands[0],
+            "./scripts/pi/register_field_replay_case.sh --condition blur"
+        );
+        assert_eq!(command_bundle.command_count, Some(3));
+        let field_collection_plan = reports[0]
+            .field_collection_plan
+            .as_ref()
+            .expect("field collection plan summary");
+        assert_eq!(field_collection_plan.status.as_deref(), Some("degraded"));
+        assert_eq!(
+            field_collection_plan.site_name.as_deref(),
+            Some("test-range")
+        );
+        assert_eq!(
+            Path::new(&field_collection_plan.path)
+                .file_name()
+                .and_then(|name| name.to_str()),
+            Some("field_collection_plan.json")
+        );
+        assert_eq!(field_collection_plan.summary.registered_count, Some(1));
+        assert_eq!(field_collection_plan.summary.required_count, Some(3));
+        assert_eq!(field_collection_plan.pending_conditions.len(), 2);
+        assert_eq!(
+            field_collection_plan.pending_conditions[0]
+                .condition
+                .as_deref(),
+            Some("blur")
+        );
         let evidence = reports[0]
             .evidence_manifest
             .as_ref()

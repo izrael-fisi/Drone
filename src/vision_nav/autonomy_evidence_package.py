@@ -55,7 +55,7 @@ def create_evidence_package(
         else:
             missing.append({"label": "autonomy_handoff", "path": str(handoff_file)})
 
-        for artifact in artifact_availability(report):
+        for artifact in artifact_availability(report, report_path=report_file):
             label = str(artifact.get("label") or "artifact")
             raw_path = str(artifact.get("path") or "")
             if not raw_path:

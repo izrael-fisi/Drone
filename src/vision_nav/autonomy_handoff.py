@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def render_handoff_markdown(report: dict[str, Any]) -> str:
+def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path | None = None) -> str:
     evidence = report.get("evidence_manifest") if isinstance(report.get("evidence_manifest"), dict) else {}
     ready = evidence.get("ready_for_goal_completion") is True
     lines = [
@@ -35,7 +35,7 @@ def render_handoff_markdown(report: dict[str, Any]) -> str:
     else:
         lines.append("No input metadata was recorded.")
 
-    artifacts = artifact_availability(report)
+    artifacts = artifact_availability(report, report_path=report_path)
     if artifacts:
         lines.extend(["", "## Artifact Availability", ""])
         lines.extend(
@@ -53,7 +53,7 @@ def render_handoff_markdown(report: dict[str, Any]) -> str:
             )
         )
 
-    field_plan = load_field_collection_plan(report)
+    field_plan = load_field_collection_plan(report, report_path=report_path)
     if field_plan is not None:
         lines.extend(["", "## Field Collection Plan", ""])
         summary = field_plan.get("summary") if isinstance(field_plan.get("summary"), dict) else {}
@@ -164,16 +164,33 @@ def render_handoff_markdown(report: dict[str, Any]) -> str:
         )
     else:
         lines.append("No next actions were recorded.")
+    command_groups = command_bundle(report, field_plan)
+    if command_groups:
+        lines.extend(["", "## Command Bundle", ""])
+        next_action_commands = command_groups.get("next_actions") or []
+        if next_action_commands:
+            lines.extend(["Next-action commands:", "", "```bash"])
+            lines.extend(next_action_commands)
+            lines.append("```")
+        field_commands = command_groups.get("field_collection") or []
+        if field_commands:
+            lines.extend(["", "Field collection registration commands:", "", "```bash"])
+            lines.extend(field_commands)
+            lines.append("```")
     lines.append("")
     return "\n".join(lines)
 
 
-def artifact_availability(report: dict[str, Any]) -> list[dict[str, Any]]:
+def artifact_availability(report: dict[str, Any], *, report_path: str | Path | None = None) -> list[dict[str, Any]]:
     paths: dict[str, str] = {}
     inputs = report.get("inputs") if isinstance(report.get("inputs"), dict) else {}
     for key, value in sorted(inputs.items()):
         if isinstance(value, str) and looks_like_path(value):
             paths[f"input:{key}"] = value
+    for key in ("field_collection_plan", "field_collection_plan_markdown"):
+        resolved = resolve_report_input_path(report, key, report_path=report_path)
+        if resolved is not None:
+            paths[f"input:{key}"] = str(resolved)
 
     evidence = report.get("evidence_manifest") if isinstance(report.get("evidence_manifest"), dict) else {}
     for key in ("proof_items", "external_blockers", "completion_blockers"):
@@ -216,13 +233,36 @@ def looks_like_path(value: str) -> bool:
     )
 
 
-def load_field_collection_plan(report: dict[str, Any]) -> dict[str, Any] | None:
+def resolve_report_input_path(
+    report: dict[str, Any],
+    key: str,
+    *,
+    report_path: str | Path | None = None,
+) -> Path | None:
     inputs = report.get("inputs") if isinstance(report.get("inputs"), dict) else {}
-    path_value = inputs.get("field_collection_plan")
-    if not isinstance(path_value, str) or not path_value:
+    path_value = inputs.get(key)
+    if isinstance(path_value, str) and path_value:
+        path = Path(path_value).expanduser()
+        if path.is_file():
+            return path
+    sibling_names = {
+        "field_collection_plan": "field_collection_plan.json",
+        "field_collection_plan_markdown": "field_collection_plan.md",
+    }
+    sibling_name = sibling_names.get(key)
+    if not sibling_name or report_path is None:
         return None
-    path = Path(path_value).expanduser()
-    if not path.exists() or not path.is_file():
+    sibling = Path(report_path).expanduser().parent / sibling_name
+    return sibling if sibling.is_file() else None
+
+
+def load_field_collection_plan(
+    report: dict[str, Any],
+    *,
+    report_path: str | Path | None = None,
+) -> dict[str, Any] | None:
+    path = resolve_report_input_path(report, "field_collection_plan", report_path=report_path)
+    if path is None:
         return None
     try:
         plan = json.loads(path.read_text())
@@ -312,6 +352,58 @@ def bench_subcheck_checklist(report: dict[str, Any]) -> list[dict[str, str]]:
     return subchecks
 
 
+def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) -> dict[str, list[str]]:
+    report_bundle = report.get("command_bundle") if isinstance(report.get("command_bundle"), dict) else {}
+    actions = report.get("next_actions") if isinstance(report.get("next_actions"), list) else []
+    next_action_commands = unique_strings(
+        [
+            *json_string_list(report_bundle.get("next_action_commands")),
+            *[
+                item.get("command")
+                for item in actions
+                if isinstance(item, dict)
+            ],
+        ]
+    )
+    field_commands = json_string_list(report_bundle.get("field_collection_registration_commands"))
+    if field_plan is not None:
+        field_commands = unique_strings(
+            [
+                *field_commands,
+                *[
+                    item.get("register_command")
+                    for item in field_collection_pending_conditions(field_plan)
+                    if isinstance(item, dict)
+                ],
+            ]
+        )
+    result: dict[str, list[str]] = {}
+    if next_action_commands:
+        result["next_actions"] = next_action_commands
+    if field_commands:
+        result["field_collection"] = field_commands
+    return result
+
+
+def json_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
+
+
+def unique_strings(values: Any) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or not value:
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
 def summary_counts(summary: Any) -> str:
     if not isinstance(summary, dict):
         return "unknown"
@@ -380,7 +472,7 @@ def main() -> None:
     args = parse_args()
     report_path = Path(args.report).expanduser()
     report = json.loads(report_path.read_text())
-    markdown = render_handoff_markdown(report)
+    markdown = render_handoff_markdown(report, report_path=report_path)
     if args.output:
         output = Path(args.output).expanduser()
         output.parent.mkdir(parents=True, exist_ok=True)

@@ -522,6 +522,70 @@ function formatReportTime(ms?: number) {
   return new Date(ms).toLocaleString();
 }
 
+function fieldCollectionRegisterCommands(
+  conditions: Array<{ register_command?: string; status?: string }>,
+) {
+  return uniqueCommands(
+    conditions
+      .filter((condition) => condition.status !== "registered")
+      .map((condition) => condition.register_command),
+  );
+}
+
+function uniqueCommands(commands: Array<string | undefined>) {
+  return Array.from(new Set(commands.filter((command): command is string => Boolean(command))));
+}
+
+function uniqueActionCommands(actions: Array<{ command?: string }>) {
+  return uniqueCommands(actions.map((action) => action.command));
+}
+
+function FieldCollectionConditionBadge({
+  condition,
+  idPrefix,
+}: {
+  condition: {
+    condition?: string;
+    label?: string;
+    status?: string;
+    case_name?: string;
+    register_command?: string;
+  };
+  idPrefix: string;
+}) {
+  const label = formatReadinessLabel(condition.condition ?? condition.label);
+  const status = formatReadinessLabel(condition.status);
+  const content = (
+    <>
+      {condition.register_command && <Copy size={9} />}
+      <span>{label}</span>
+      <span>{status}</span>
+    </>
+  );
+  if (condition.register_command) {
+    return (
+      <button
+        key={`${idPrefix}-${condition.condition ?? condition.label ?? condition.case_name}`}
+        type="button"
+        onClick={() => navigator.clipboard.writeText(condition.register_command ?? "")}
+        className={cn(readinessBadgeClass(condition.status), "text-[10px] hover:border-cyan-400/50 hover:text-cyan-200")}
+        title={`Copy register command: ${condition.register_command}`}
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <span
+      key={`${idPrefix}-${condition.condition ?? condition.label ?? condition.case_name}`}
+      className={cn(readinessBadgeClass(condition.status), "text-[10px]")}
+      title={condition.case_name ?? condition.condition ?? "pending condition"}
+    >
+      {content}
+    </span>
+  );
+}
+
 function RuntimeStatusCard({
   status,
   remotePath,
@@ -675,7 +739,16 @@ function AutonomyReadinessReportList({
         </div>
       ) : (
         <div className="space-y-2">
-          {reports.slice(0, 4).map((report) => (
+          {reports.slice(0, 4).map((report) => {
+            const fieldPlanCommands = uniqueCommands([
+              ...fieldCollectionRegisterCommands(report.field_collection_plan?.pending_conditions ?? []),
+              ...(report.command_bundle?.field_collection_registration_commands ?? []),
+            ]);
+            const nextActionCommands = uniqueCommands([
+              ...uniqueActionCommands(report.next_actions),
+              ...(report.command_bundle?.next_action_commands ?? []),
+            ]);
+            return (
             <div key={report.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -741,6 +814,49 @@ function AutonomyReadinessReportList({
                             >
                               skipped {formatReadinessLabel(artifact.label ?? artifact.path ?? "artifact")}
                             </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {report.field_collection_plan && (
+                    <div className="mt-1 rounded-md border border-border bg-slate-950/30 px-2 py-1.5 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                        <span className={cn(readinessBadgeClass(report.field_collection_plan.status), "text-[10px]")}>
+                          {readinessIcon(report.field_collection_plan.status)}
+                          {formatReadinessLabel(report.field_collection_plan.status)}
+                        </span>
+                        <span className="font-mono text-slate-500">field collection plan</span>
+                        <span className="font-mono text-slate-500">
+                          registered {report.field_collection_plan.summary.registered_count ?? 0}/
+                          {report.field_collection_plan.summary.required_count ?? 0}
+                        </span>
+                        <span className="font-mono text-slate-500">
+                          pending {report.field_collection_plan.pending_conditions.length}
+                        </span>
+                        {fieldPlanCommands.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(fieldPlanCommands.join("\n"))}
+                            className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                            title="Copy pending registration commands"
+                          >
+                            <Copy size={9} />
+                            commands
+                          </button>
+                        )}
+                      </div>
+                      <div className="font-mono text-[10px] text-slate-600 truncate" title={report.field_collection_plan.path}>
+                        {formatReadinessLabel(report.field_collection_plan.site_name)} / {report.field_collection_plan.path}
+                      </div>
+                      {report.field_collection_plan.pending_conditions.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {report.field_collection_plan.pending_conditions.slice(0, 8).map((condition, index) => (
+                            <FieldCollectionConditionBadge
+                              key={`${report.path}-field-plan-${condition.condition ?? condition.label ?? index}`}
+                              condition={condition}
+                              idPrefix={`${report.path}-field-plan`}
+                            />
                           ))}
                         </div>
                       )}
@@ -873,10 +989,23 @@ function AutonomyReadinessReportList({
                   {check.message && <span className="text-slate-400 truncate">{check.message}</span>}
                 </div>
               ))}
-              {report.next_actions.length > 0 && (
+              {(report.next_actions.length > 0 || nextActionCommands.length > 0) && (
                 <div className="space-y-1 border-t border-border pt-2">
-                  <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                    Next actions
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                      Next actions
+                    </div>
+                    {nextActionCommands.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(nextActionCommands.join("\n"))}
+                        className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                        title="Copy next-action commands"
+                      >
+                        <Copy size={9} />
+                        commands
+                      </button>
+                    )}
                   </div>
                   {report.next_actions.slice(0, 4).map((action) => (
                     <div key={`${report.path}-${action.check}`} className="space-y-1">
@@ -932,7 +1061,8 @@ function AutonomyReadinessReportList({
                 </div>
               )}
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
     </div>
@@ -1370,6 +1500,7 @@ function FieldCollectionPlanList({
               (file.summary.missing_count ?? 0) +
               (file.summary.registered_missing_log_count ?? 0);
             const revealPath = file.markdown_path ?? file.path;
+            const registerCommands = fieldCollectionRegisterCommands(file.conditions);
             return (
               <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
                 <div className="flex items-start justify-between gap-3">
@@ -1387,6 +1518,17 @@ function FieldCollectionPlanList({
                       </span>
                       {file.site_name && <span className="font-mono text-[10px] text-slate-500">{file.site_name}</span>}
                       {file.markdown_path && <span className="font-mono text-[10px] text-cyan-400">markdown</span>}
+                      {registerCommands.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(registerCommands.join("\n"))}
+                          className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                          title="Copy pending registration commands"
+                        >
+                          <Copy size={9} />
+                          commands
+                        </button>
+                      )}
                     </div>
                     <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
                       {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
@@ -1422,11 +1564,8 @@ function FieldCollectionPlanList({
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {file.conditions.slice(0, 8).map((condition) => (
-                    <div key={`${file.path}-${condition.condition}`} className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500">
-                      <span className={cn(readinessBadgeClass(condition.status), "text-[10px]")}>
-                        {formatReadinessLabel(condition.status)}
-                      </span>
-                      <span className="truncate">{formatReadinessLabel(condition.condition)}</span>
+                    <div key={`${file.path}-${condition.condition}`} className="flex min-w-0">
+                      <FieldCollectionConditionBadge condition={condition} idPrefix={file.path} />
                     </div>
                   ))}
                 </div>
@@ -3213,6 +3352,19 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             external_blockers: latestExternalBlockers.slice(0, 8),
             next_action_count: latestAutonomyReport.next_actions.length,
             next_actions: latestAutonomyReport.next_actions.slice(0, 8),
+            command_bundle: latestAutonomyReport.command_bundle ?? null,
+            field_collection_plan: latestAutonomyReport.field_collection_plan
+              ? {
+                  path: latestAutonomyReport.field_collection_plan.path,
+                  status: latestAutonomyReport.field_collection_plan.status ?? null,
+                  site_name: latestAutonomyReport.field_collection_plan.site_name ?? null,
+                  manifest_path: latestAutonomyReport.field_collection_plan.manifest_path ?? null,
+                  bundle: latestAutonomyReport.field_collection_plan.bundle ?? null,
+                  summary: latestAutonomyReport.field_collection_plan.summary,
+                  pending_condition_count: latestAutonomyReport.field_collection_plan.pending_conditions.length,
+                  pending_conditions: latestAutonomyReport.field_collection_plan.pending_conditions.slice(0, 8),
+                }
+              : null,
           }
         : null,
       downloaded_autonomy_workflow_reports: autonomyWorkflowReports.slice(0, 5),

@@ -429,6 +429,18 @@ Status:
 - Done: autonomy readiness audits record field collection plan/checklist paths
   when present so `autonomy_readiness_report.evidence.zip` includes the
   operator plan beside the final handoff and machine-readable report.
+- Done: downloaded autonomy-readiness report cards parse the referenced field
+  collection plan when it is available locally, showing registered-vs-required
+  counts and pending placeholder/missing collection conditions.
+- Done: autonomy-readiness report cards fall back to the downloaded sibling
+  `field_collection_plan.json` when a Pi-generated report still references the
+  Pi-side absolute path.
+- Done: local Markdown handoff rendering and evidence-package creation use the
+  same downloaded sibling field-plan fallback, so support ZIPs can include the
+  JSON/Markdown checklist after Pi reports are copied to the desktop.
+- Done: pending field-collection conditions in Module Setup can copy individual
+  or batched replay-case registration commands directly from readiness and
+  collection-plan cards.
 - Done: `scripts/pi/register_field_replay_case.sh` registers Pi terrain
   runtime/replay logs into the outgoing field replay manifest, writes the
   combined field-evidence report, and leaves it at the default path that support
@@ -468,6 +480,12 @@ Status:
 - Done: autonomy-readiness reports include machine-readable `next_actions` for
   failed or degraded proof gates, with the relevant Module Setup action and
   shell command to collect the missing artifact.
+- Done: Module Setup can copy all shell commands from an autonomy-readiness
+  report's next actions in one click, while preserving per-action command copy.
+- Done: autonomy-readiness JSON reports include a machine-readable
+  `command_bundle` with next-action commands and pending field replay
+  registration commands for downstream support tooling, and Module Setup
+  consumes that bundle for bulk command copy plus saved setup-report exports.
 - Done: field-evidence readiness next actions now point operators to
   `Create Template, then Register`, so missing real-world replay evidence starts
   with the eight-condition starter manifest instead of ad hoc case entry.
@@ -500,6 +518,8 @@ Status:
   `autonomy_readiness_report.json` into a Markdown handoff with status, inputs,
   checks, external proof blockers, missing field conditions, bench subchecks,
   and next actions.
+- Done: the Markdown handoff includes a copy-friendly command bundle for
+  next-action shell commands and pending field replay registration commands.
 - Done: `vision-nav-autonomy-evidence-package` creates a support-review ZIP
   containing the strict readiness JSON, Markdown handoff, package manifest, and
   small referenced evidence artifacts that exist locally while listing missing

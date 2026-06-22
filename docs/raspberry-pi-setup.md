@@ -879,12 +879,17 @@ machine-readable report, a support handoff, and a package manifest.
 Failed or degraded gates include `next_actions` entries with the matching
 Module Setup action or shell command to run next. Field-evidence and
 threshold-tuning next actions include the missing real-world condition keys.
+The Module Setup readiness card can copy all next-action shell commands at once
+or copy a single command from its row, and the JSON report includes the same
+machine-readable command bundle for support tooling.
 The Markdown handoff turns those missing condition keys and failed/degraded
 bench subchecks into checkbox lists for field collection and support review.
 When a field collection plan is present, the handoff also summarizes registered
 vs required field conditions and the pending placeholder/missing cases. It
 also includes an artifact-availability table when the referenced evidence
-paths are visible from the machine rendering the handoff.
+paths are visible from the machine rendering the handoff. The handoff also
+includes a copy-friendly command bundle for next-action commands and pending
+field replay registration commands.
 
 The desktop Module Setup `Bench Report` action runs the terrain bundle validator
 against the configured deployed bundle, creates this same support bundle, and
@@ -899,12 +904,23 @@ support-bundle summaries, downloaded feature-benchmark summaries, downloaded
 field-evidence coverage summaries, downloaded autonomy-readiness report
 summaries, downloaded autonomy-workflow reports, and a compact latest-readiness
 snapshot with handoff path, evidence package path, goal-completion flag,
-external blockers, and next actions. The same Module
+external blockers, next actions, the readiness `command_bundle`, and the
+referenced field collection plan summary when it is available locally. The same Module
 Setup panel lists the latest downloaded feature-method benchmark JSON reports
 with recommended method and accepted rates, lists field-evidence JSON reports
 with per-condition coverage, then lists autonomy-readiness JSON reports with
 pass, degraded, and fail counts plus the support-bundle, PX4 receiver,
-field-evidence, feature-benchmark, and threshold-tuning gate statuses. The
+field-evidence, feature-benchmark, and threshold-tuning gate statuses. When the
+referenced field collection plan is available locally, the same report card
+shows plan status, registered-vs-required counts, and pending
+placeholder/missing condition keys. If a Pi-generated readiness report still
+references the Pi-side absolute plan path, the desktop falls back to a
+downloaded sibling `field_collection_plan.json` beside the report. The local
+Markdown handoff renderer and evidence ZIP packager use the same fallback, so
+support packages can still include the downloaded JSON/Markdown checklist. The
+pending field-collection condition pills and command buttons in Module Setup
+copy individual or batched generated replay-case registration commands when
+the plan includes them. The
 autonomy-readiness list detects the sibling Markdown handoff and evidence ZIP
 package beside each JSON report and exposes copy/reveal controls for support
 review. When the evidence ZIP contains the expected package manifest, the list
