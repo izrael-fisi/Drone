@@ -829,6 +829,20 @@ function EvidencePackageArtifactPill({
 }
 
 function validationCheckDetail(check: WorkflowValidationCheck) {
+  if (check.missing_steps.length > 0) {
+    const missing = check.missing_steps.slice(0, 3).map(formatReadinessLabel).join(", ");
+    const extra = check.missing_steps.length > 3 ? ` +${check.missing_steps.length - 3}` : "";
+    return `missing steps ${missing}${extra}`;
+  }
+  if ((check.non_passed_count ?? 0) > 0 || check.non_passed_steps.length > 0) {
+    const steps = check.non_passed_steps
+      .slice(0, 3)
+      .map((step) => `${formatReadinessLabel(step.name)}:${formatReadinessLabel(step.status)}`)
+      .join(", ");
+    const count = check.non_passed_count ?? check.non_passed_steps.length;
+    const extra = count > 3 ? ` +${count - 3}` : "";
+    return steps ? `steps ${steps}${extra}` : `steps not passed ${count}`;
+  }
   if (check.missing_markers.length > 0) {
     const missing = check.missing_markers.slice(0, 3).map(formatReadinessLabel).join(", ");
     const extra = check.missing_markers.length > 3 ? ` +${check.missing_markers.length - 3}` : "";
@@ -856,7 +870,22 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
       <span className="font-mono text-slate-600">issues {summary.issue_count}</span>
       {highlightedChecks.map((check) => {
         const detail = validationCheckDetail(check);
-        const title = [check.message, detail, ...check.missing_markers].filter(Boolean).join("\n");
+        const nonPassedStepTitle = check.non_passed_steps
+          .map((step) =>
+            [formatReadinessLabel(step.name), formatReadinessLabel(step.status), step.notes]
+              .filter(Boolean)
+              .join(" - "),
+          )
+          .join("\n");
+        const title = [
+          check.message,
+          detail,
+          ...check.missing_markers,
+          ...check.missing_steps,
+          nonPassedStepTitle,
+        ]
+          .filter(Boolean)
+          .join("\n");
         return (
           <span
             key={`${check.name ?? "check"}-${check.status ?? "status"}`}

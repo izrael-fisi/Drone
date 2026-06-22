@@ -723,6 +723,14 @@ export interface AutonomyEvidenceWorkflowReportFile {
       marker_count?: number;
       missing_markers: string[];
       present_markers: string[];
+      missing_steps: string[];
+      non_passed_count?: number;
+      non_passed_steps: Array<{
+        name?: string;
+        status?: "passed" | "failed" | "degraded" | "skipped" | string;
+        exit_code?: number;
+        notes?: string;
+      }>;
     }>;
     log_archive?: string;
   };

@@ -900,10 +900,13 @@ Status:
   artifact path when the app can resolve it. When the downloaded validation JSON
   is present, the card also shows validation status, workflow status, issue
   count, failed/degraded validation checks, missing final-proof markers, and the
-  first validation issue.
+  first validation issue; required-step validation checks now preserve the
+  missing/non-passing step names so skipped or failed proof actions are visible
+  without opening the raw JSON.
 - Done: saved Module Setup reports preserve bounded workflow-validation check
-  details, including missing and present final-proof marker arrays, so exported
-  setup reports keep the same support-review context as the workflow card.
+  details, including missing/present final-proof marker arrays and
+  missing/non-passing required-step summaries, so exported setup reports keep
+  the same support-review context as the workflow card.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

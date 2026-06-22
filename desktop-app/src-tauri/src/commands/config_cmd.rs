@@ -641,6 +641,17 @@ pub struct AutonomyEvidenceWorkflowValidationCheck {
     pub marker_count: Option<u64>,
     pub missing_markers: Vec<String>,
     pub present_markers: Vec<String>,
+    pub missing_steps: Vec<String>,
+    pub non_passed_count: Option<u64>,
+    pub non_passed_steps: Vec<AutonomyEvidenceWorkflowValidationStepResult>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyEvidenceWorkflowValidationStepResult {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub exit_code: Option<i64>,
+    pub notes: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -3435,6 +3446,30 @@ fn workflow_validation_summary_from_json(
                         .and_then(|details| details.get("marker_count"))
                         .or_else(|| item.get("marker_count"))
                         .and_then(|value| value.as_u64());
+                    let missing_steps = details
+                        .and_then(|details| details.get("missing_steps"))
+                        .or_else(|| item.get("missing_steps"));
+                    let non_passed_count = details
+                        .and_then(|details| details.get("non_passed_count"))
+                        .or_else(|| item.get("non_passed_count"))
+                        .and_then(|value| value.as_u64());
+                    let non_passed_steps = details
+                        .and_then(|details| details.get("non_passed_steps"))
+                        .or_else(|| item.get("non_passed_steps"))
+                        .and_then(|value| value.as_array())
+                        .map(|items| {
+                            items
+                                .iter()
+                                .filter(|item| item.is_object())
+                                .map(|item| AutonomyEvidenceWorkflowValidationStepResult {
+                                    name: json_string(item.get("name")),
+                                    status: json_string(item.get("status")),
+                                    exit_code: item.get("exit_code").and_then(|value| value.as_i64()),
+                                    notes: json_string(item.get("notes")),
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
                     AutonomyEvidenceWorkflowValidationCheck {
                         name: json_string(item.get("name")),
                         status: json_string(item.get("status")),
@@ -3442,6 +3477,9 @@ fn workflow_validation_summary_from_json(
                         marker_count,
                         missing_markers: json_string_array(missing_markers),
                         present_markers: json_string_array(present_markers),
+                        missing_steps: json_string_array(missing_steps),
+                        non_passed_count,
+                        non_passed_steps,
                     }
                 })
                 .collect::<Vec<_>>()
@@ -5298,6 +5336,29 @@ mod tests {
                         "details": {"step_count": 3}
                     },
                     {
+                        "name": "required_step_results",
+                        "status": "degraded",
+                        "message": "Some required workflow steps did not pass.",
+                        "details": {
+                            "non_passed_count": 2,
+                            "missing_steps": [],
+                            "non_passed_steps": [
+                                {
+                                    "name": "register_field_replay_case",
+                                    "status": "skipped",
+                                    "exit_code": 0,
+                                    "notes": "Set field case variables."
+                                },
+                                {
+                                    "name": "run_autonomy_readiness_audit",
+                                    "status": "failed",
+                                    "exit_code": 1,
+                                    "notes": "Final autonomy readiness failed."
+                                }
+                            ]
+                        }
+                    },
+                    {
                         "name": "final_proof_markers",
                         "status": "degraded",
                         "message": "Missing final proof artifact markers.",
@@ -5398,22 +5459,43 @@ mod tests {
         assert_eq!(validation.marker_count, Some(12));
         assert_eq!(validation.issue_count, 1);
         assert_eq!(validation.issues.len(), 1);
-        assert_eq!(validation.checks.len(), 2);
+        assert_eq!(validation.checks.len(), 3);
         assert_eq!(
             validation.checks[1].name.as_deref(),
-            Some("final_proof_markers")
+            Some("required_step_results")
         );
         assert_eq!(validation.checks[1].status.as_deref(), Some("degraded"));
-        assert_eq!(validation.checks[1].marker_count, Some(12));
+        assert_eq!(validation.checks[1].non_passed_count, Some(2));
+        assert_eq!(validation.checks[1].missing_steps.len(), 0);
+        assert_eq!(validation.checks[1].non_passed_steps.len(), 2);
         assert_eq!(
-            validation.checks[1].missing_markers,
+            validation.checks[1].non_passed_steps[0]
+                .name
+                .as_deref(),
+            Some("register_field_replay_case")
+        );
+        assert_eq!(
+            validation.checks[1].non_passed_steps[0]
+                .status
+                .as_deref(),
+            Some("skipped")
+        );
+        assert_eq!(validation.checks[1].non_passed_steps[0].exit_code, Some(0));
+        assert_eq!(
+            validation.checks[2].name.as_deref(),
+            Some("final_proof_markers")
+        );
+        assert_eq!(validation.checks[2].status.as_deref(), Some("degraded"));
+        assert_eq!(validation.checks[2].marker_count, Some(12));
+        assert_eq!(
+            validation.checks[2].missing_markers,
             vec![
                 "__VISION_NAV_FIELD_COLLECTION_PLAN__".to_string(),
                 "__VISION_NAV_ROSBAG2_CLI_REVIEW__".to_string()
             ]
         );
         assert_eq!(
-            validation.checks[1].present_markers,
+            validation.checks[2].present_markers,
             vec![
                 "__VISION_NAV_SUPPORT_ZIP__".to_string(),
                 "__VISION_NAV_PX4_SITL_REPORT__".to_string(),
