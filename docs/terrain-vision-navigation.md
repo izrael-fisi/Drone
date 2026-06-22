@@ -94,7 +94,9 @@ carry those assets into `mission_bundle/elevation/`.
 Use `vision-nav-diagnose-bundle-inputs` or
 `./scripts/pi/diagnose_mission_bundle.sh` when field preflight says the mission
 bundle is missing. It looks for complete terrain bundles and raw desktop map
-sources, then prints the app action or validation command to run next.
+sources, then prints the app action or validation command to run next. The Pi
+wrapper can also write a downloadable JSON report with
+`VISION_NAV_BUNDLE_DIAGNOSTIC_JSON=/path/to/report.json`.
 
 ## Runtime
 

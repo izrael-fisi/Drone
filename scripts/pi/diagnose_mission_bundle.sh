@@ -16,6 +16,10 @@ raw Mission Planner map sources with satellite.png plus metadata.json.
 Common optional overrides:
   VISION_NAV_BUNDLE               Default: $bundle
   VISION_NAV_BUNDLE_SEARCH_ROOTS  Optional colon-separated scan roots
+  VISION_NAV_BUNDLE_DIAGNOSTIC_JSON
+                                  Optional path to write JSON diagnostic output
+  VISION_NAV_BUNDLE_DIAGNOSTIC_FORMAT
+                                  Set to json to print JSON without writing a file
   VISION_NAV_PYTHON               Default: $venv_python
 EOF
 }
@@ -37,4 +41,15 @@ elif ! command -v "$venv_python" >/dev/null 2>&1; then
   exit 1
 fi
 
-PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.bundle_diagnostics --bundle "$bundle"
+json_output="${VISION_NAV_BUNDLE_DIAGNOSTIC_JSON:-}"
+format="${VISION_NAV_BUNDLE_DIAGNOSTIC_FORMAT:-text}"
+
+if [[ -n "$json_output" ]]; then
+  mkdir -p "$(dirname "$json_output")"
+  PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.bundle_diagnostics --bundle "$bundle" --json | tee "$json_output"
+  echo "__VISION_NAV_BUNDLE_DIAGNOSTIC__=$json_output"
+elif [[ "$format" == "json" ]]; then
+  PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.bundle_diagnostics --bundle "$bundle" --json
+else
+  PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.bundle_diagnostics --bundle "$bundle"
+fi

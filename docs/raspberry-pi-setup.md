@@ -379,6 +379,8 @@ The diagnostic scans the expected `VISION_NAV_BUNDLE` path, nearby bundle
 candidates, and raw Mission Planner map sources that contain `satellite.png`
 plus `metadata.json`. Example or synthetic bundles may be listed for smoke
 testing, but they do not satisfy real field-evidence proof.
+Set `VISION_NAV_BUNDLE_DIAGNOSTIC_JSON=/path/to/report.json` to save the full
+diagnostic as JSON for desktop download or support review.
 
 The validator checks:
 

@@ -249,6 +249,14 @@ function parseSupportBundleZip(output: string) {
     ?.replace("__VISION_NAV_SUPPORT_ZIP__=", "");
 }
 
+function parseBundleDiagnosticReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_BUNDLE_DIAGNOSTIC__="))
+    ?.replace("__VISION_NAV_BUNDLE_DIAGNOSTIC__=", "");
+}
+
 function parseAutonomyReadinessReport(output: string) {
   return output
     .split(/\r?\n/)
@@ -426,6 +434,15 @@ function parseRuntimeStatusJson(output: string): Record<string, unknown> | null 
 
 function runtimeStatusCommand(remoteProject: string) {
   return `cd ${shellQuote(remoteProject)} && ./scripts/pi/read_runtime_status.sh`;
+}
+
+function bundleDiagnosticCommand(remoteProject: string, remoteBundle: string) {
+  return [
+    `cd ${shellQuote(remoteProject)}`,
+    `mkdir -p "$HOME/DroneTransfer/outgoing/replay-cases"`,
+    `diagnostic="$HOME/DroneTransfer/outgoing/replay-cases/bundle_input_diagnostic_$(date -u +%Y%m%dT%H%M%SZ).json"`,
+    `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} VISION_NAV_BUNDLE_DIAGNOSTIC_JSON="$diagnostic" ./scripts/pi/diagnose_mission_bundle.sh`,
+  ].join("; ");
 }
 
 function fieldLogCaptureCommand(remoteProject: string, remoteBundle: string, mavlinkEndpoint: string) {
@@ -3860,6 +3877,59 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const runBundleDiagnostic = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before diagnosing the mission bundle.");
+      return;
+    }
+    setRunningStep("bundle-diagnostic");
+    setError(null);
+    setResult("bundle-diagnostic", { status: "running", output: "$ bundle diagnostic\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        bundleDiagnosticCommand(remoteProject, remoteBundle),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteReport = parseBundleDiagnosticReport(output);
+      if (!remoteReport) {
+        setResult("bundle-diagnostic", {
+          status: result.exit_code === 0 ? "passed" : "failed",
+          output: `$ bundle diagnostic\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      setResult("bundle-diagnostic", {
+        status: "running",
+        output: `$ bundle diagnostic\n${output}\n\n$ download bundle diagnostic\nDownloading ${remoteReport}...`,
+      });
+      const downloaded = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remoteReport,
+        AUTONOMY_REPORT_DOWNLOAD_DIR,
+      );
+      setResult("bundle-diagnostic", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ bundle diagnostic\n${output}\n\n$ download bundle diagnostic\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+      await refreshAutonomyReports();
+    } catch (err) {
+      setResult("bundle-diagnostic", { status: "failed", output: `$ bundle diagnostic\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const createBenchReport = async () => {
     const resolvedAuth = auth();
     if (!resolvedAuth || !form.host) {
@@ -5375,6 +5445,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ./scripts/pi/validate_terrain_bundle.sh`,
     },
     {
+      id: "bundle-diagnostic",
+      title: "Bundle Diagnostic",
+      detail: "Scans the selected mission bundle, bundle candidates, and saved map sources before support capture.",
+    },
+    {
       id: "runtime-status",
       title: "Runtime Status",
       detail: "Fetches the latest terrain runtime snapshot with active map, match, estimator, and external-position health.",
@@ -5443,6 +5518,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const runSetupStep = async (step: SetupStep) => {
     if (step.id === "bench-report") {
       await createBenchReport();
+      return;
+    }
+    if (step.id === "bundle-diagnostic") {
+      await runBundleDiagnostic();
       return;
     }
     if (step.id === "runtime-status") {
@@ -6056,10 +6135,16 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 </div>
                 <div className="text-[10px] font-mono text-slate-500 truncate">{remoteBundle}</div>
               </div>
-              <button onClick={createBenchReport} disabled={!connectionReady || !!runningStep} className="btn-primary w-full justify-center">
-                {runningStep === "bench-report" ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
-                Create Bench Report
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={runBundleDiagnostic} disabled={!connectionReady || !!runningStep} className="btn-secondary justify-center">
+                  {runningStep === "bundle-diagnostic" ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                  Diagnose Bundle
+                </button>
+                <button onClick={createBenchReport} disabled={!connectionReady || !!runningStep} className="btn-primary justify-center">
+                  {runningStep === "bench-report" ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
+                  Bench Report
+                </button>
+              </div>
             </div>
           )}
 

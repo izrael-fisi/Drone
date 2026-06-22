@@ -330,8 +330,10 @@ missing runtime status degrades the report, while missing active-map or
 last-match state fails the runtime-status check. Field capture preflight details
 also surface missing mission-bundle files, detected bundle or raw map-source
 candidates, and the next build/import action from the bundle diagnostic report.
-It also
-previews a bounded set of small image artifacts from camera, debug, replay,
+Module Setup also exposes a Bundle Diagnostic action that runs the same Pi-side
+diagnostic before support-bundle capture and downloads the JSON report into the
+desktop replay-cases folder. It also previews a bounded set of small image
+artifacts from camera, debug, replay,
 smoke, or extra-file paths while skipping full map, orthophoto, and tile
 assets. Full artifacts such as runtime logs, replay-gate reports, PX4 receiver
 reports, parameter reports, field-evidence reports, threshold-tuning reports,
