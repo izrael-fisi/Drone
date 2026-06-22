@@ -791,6 +791,11 @@ Status:
   writing a
   machine-readable per-step workflow report with logs and emitted artifact
   markers even when the final gates still fail.
+- Done: the evidence workflow now reads the generated
+  `autonomy_readiness_report.json` after the final audit wrapper runs and
+  mirrors that report status onto the `run_autonomy_readiness_audit` workflow
+  step, so `VISION_NAV_AUTONOMY_ALLOW_FAILED=1` can preserve artifacts without
+  making a failed final audit look passed.
 - Done: the evidence workflow uses the standalone
   `scripts/pi/run_rosbag_export_validation.sh` wrapper for its ROS bag
   validation step, so direct operator runs and full workflow runs generate the

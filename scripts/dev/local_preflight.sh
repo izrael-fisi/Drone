@@ -186,6 +186,8 @@ assert "validate_rosbag_export" in steps
 assert "check_native_rosbag2_review" in steps
 assert "check_px4_receiver_proof" in steps
 assert "run_autonomy_readiness_audit" in steps
+assert steps["run_autonomy_readiness_audit"]["status"] == "failed"
+assert steps["run_autonomy_readiness_audit"]["readiness_report_status"] == "failed"
 assert "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__" in report["markers"]
 assert "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__" in report["markers"]
 assert "__VISION_NAV_SUPPORT_ZIP__" in report["markers"]
@@ -195,7 +197,7 @@ assert "__VISION_NAV_TERRAIN_LOG__" in report["markers"]
 assert "__VISION_NAV_RUNTIME_STATUS__" in report["markers"]
 assert "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__" in report["markers"]
 assert "__VISION_NAV_ROSBAG2_CLI_REVIEW__" in report["markers"]
-assert report["status"] in {"passed", "degraded", "failed"}
+assert report["status"] == "failed"
 assert Path(report["markers"]["__VISION_NAV_ROSBAG_EXPORT_VALIDATION__"]).exists()
 assert Path(report["markers"]["__VISION_NAV_ROSBAG2_CLI_REVIEW__"]).exists()
 log_archive = Path(report["markers"]["__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__"])

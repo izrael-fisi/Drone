@@ -22,6 +22,7 @@ rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoin
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-$HOME/px4-sitl-evidence}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-$px4_sitl_session/receiver_evidence.json}"
+autonomy_readiness_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json}"
 steps_jsonl=""
 
 export VISION_NAV_FIELD_COLLECTION_PLAN="$field_collection_plan"
@@ -263,6 +264,54 @@ pass_step() {
   record_step "$name" "passed" 0 "$log_path" "$notes"
 }
 
+sync_readiness_step_status() {
+  local readiness_report="$1"
+  if [[ ! -f "$readiness_report" ]]; then
+    return 0
+  fi
+  PYTHONPATH="$repo_root/src" "$venv_python" - "$steps_jsonl" "$readiness_report" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+steps_path = Path(sys.argv[1])
+report_path = Path(sys.argv[2]).expanduser()
+try:
+    readiness = json.loads(report_path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(0)
+readiness_status = str(readiness.get("status") or "").strip()
+if readiness_status not in {"passed", "degraded", "failed"}:
+    raise SystemExit(0)
+steps = []
+if steps_path.exists():
+    for line in steps_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.strip():
+            steps.append(json.loads(line))
+for step in reversed(steps):
+    if step.get("name") != "run_autonomy_readiness_audit":
+        continue
+    step["readiness_report_status"] = readiness_status
+    step["readiness_report_path"] = str(report_path)
+    if readiness_status != "passed":
+        step["status"] = readiness_status
+        step["notes"] = (
+            "Final autonomy-readiness report status is "
+            f"{readiness_status}; preserve the report, handoff, and evidence package for follow-up."
+        )
+        if readiness_status == "failed" and int(step.get("exit_code") or 0) == 0:
+            step["exit_code"] = 1
+    else:
+        step["status"] = "passed"
+    break
+with steps_path.open("w", encoding="utf-8") as handle:
+    for step in steps:
+        handle.write(json.dumps(step, sort_keys=True) + "\n")
+PY
+}
+
 if [[ -f "$field_template" && -f "$field_manifest" && "${VISION_NAV_EVIDENCE_WORKFLOW_REFRESH_TEMPLATE:-0}" != "1" ]]; then
   skip_step "create_field_evidence_template" "Field template and active manifest already exist. Set VISION_NAV_EVIDENCE_WORKFLOW_REFRESH_TEMPLATE=1 and template force variables if you need to regenerate them."
 else
@@ -353,11 +402,12 @@ fi
 
 run_step "create_support_bundle" ./scripts/pi/create_support_bundle.sh
 VISION_NAV_AUTONOMY_ALLOW_FAILED=1 run_step "run_autonomy_readiness_audit" ./scripts/pi/run_autonomy_readiness_audit.sh
+sync_readiness_step_status "$autonomy_readiness_report"
 
 final_status="passed"
 if grep -q '"status": "failed"' "$steps_jsonl"; then
   final_status="failed"
-elif grep -q '"status": "skipped"' "$steps_jsonl"; then
+elif grep -Eq '"status": "(degraded|skipped)"' "$steps_jsonl"; then
   final_status="degraded"
 fi
 

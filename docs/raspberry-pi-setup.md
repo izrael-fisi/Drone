@@ -984,7 +984,10 @@ workflow report and log archive are internally consistent and reporting any
 missing final-proof artifact markers. By default it exits successfully after
 writing the report even when evidence is still incomplete; set
 `VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED=0` when you want a CI-style nonzero
-exit on missing proof.
+exit on missing proof. The `run_autonomy_readiness_audit` step still mirrors
+the generated `autonomy_readiness_report.json` status, so a failed final audit
+is visible in the workflow report even when the wrapper preserves artifacts and
+returns success.
 From the desktop app, Module Setup exposes the same sequence as `Evidence
 Workflow`. It uses the current Field Evidence Case form values for the optional
 registration step, downloads the workflow JSON to the replay-cases transfer

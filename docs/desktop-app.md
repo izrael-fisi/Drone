@@ -436,9 +436,11 @@ otherwise logs the capture command as a skipped prerequisite. It writes
 `autonomy_evidence_workflow.json` with per-step status, log paths, output tails,
 an accompanying compressed workflow-log archive, and emitted markers, while
 still failing honestly in the final readiness report until real PX4 and field
-evidence exist. The archive preserves the full step outputs under `logs/*.log`
-for support review. The wrapper also writes a validation JSON beside the
-workflow report to prove the report/archive pair is internally consistent.
+evidence exist. The final audit step mirrors the generated readiness report's
+status, even when the wrapper exits successfully to preserve artifacts. The
+archive preserves the full step outputs under `logs/*.log` for support review.
+The wrapper also writes a validation JSON beside the workflow report to prove
+the report/archive pair is internally consistent.
 The Module Setup `Evidence Workflow` action runs that wrapper over SSH, uses the
 current Field Evidence Case form values for optional case registration,
 downloads the workflow JSON, log archive, and validation JSON, and also
