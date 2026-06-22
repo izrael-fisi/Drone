@@ -2941,6 +2941,16 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             "capture_field_terrain_log",
             "workflow validation required-step detail should surface capture after selected condition",
         )
+        capture_blocked_output = io.StringIO()
+        with contextlib.redirect_stdout(capture_blocked_output):
+            print_workflow_validation_human(capture_blocked_validation)
+        capture_blocked_text = capture_blocked_output.getvalue()
+        if "After bundle: " not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should include post-bundle capture command")
+        if "Bundle: " not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should include selected bundle path")
+        if "Expected log: " not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should include expected terrain log")
 
         metadata_blocked_report = json.loads(report_path.read_text())
         metadata_command = (

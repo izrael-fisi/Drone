@@ -867,7 +867,12 @@ cat >"$local_audit_dir/replay-cases/autonomy-evidence-workflow/autonomy_evidence
     "name": "register_field_replay_case",
     "status": "skipped",
     "desktop_action": "Module Setup > Field Evidence Case > Register",
-    "command": "./scripts/pi/register_field_replay_case.sh"
+    "command": "./scripts/pi/register_field_replay_case.sh",
+    "metadata_update_command": "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh",
+    "bundle_path": "/tmp/mission_bundle",
+    "expected_log": "/tmp/field-captures/good_texture/terrain_matches.jsonl",
+    "output_dir": "/tmp/field-captures/good_texture",
+    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
   },
   "checks": [
     {
@@ -940,6 +945,11 @@ grep -q "Module Setup > Threshold Tuning" "$scanned_goal_status_output"
 grep -q "Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit" "$scanned_goal_status_output"
 grep -q "Module Setup > Bench Report" "$scanned_goal_status_output"
 grep -q "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh" "$scanned_goal_status_output"
+grep -q "metadata update: VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh" "$scanned_goal_status_output"
+grep -q "bundle: /tmp/mission_bundle" "$scanned_goal_status_output"
+grep -q "expected log: /tmp/field-captures/good_texture/terrain_matches.jsonl" "$scanned_goal_status_output"
+grep -q "output: /tmp/field-captures/good_texture" "$scanned_goal_status_output"
+grep -q "after bundle: VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" "$scanned_goal_status_output"
 python3 - "$scanned_goal_status_output" <<'PY'
 from pathlib import Path
 import sys

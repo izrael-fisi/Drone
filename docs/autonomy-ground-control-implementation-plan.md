@@ -1165,6 +1165,9 @@ Status:
 - Done: Tauri parsers, evidence-package summaries, Module Setup workflow cards,
   and support-bundle detail views now preserve and expose those bundle-aware
   next-step fields, including the post-bundle field-capture command.
+- Done: CLI workflow-validation summaries now print bundle path, expected log,
+  capture output, metadata update, and post-bundle capture commands, keeping
+  terminal audits aligned with Module Setup guidance.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

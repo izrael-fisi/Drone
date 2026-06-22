@@ -243,6 +243,16 @@ if next_step:
         print(f"  app: {next_step.get('desktop_action')}")
     if next_step.get("command"):
         print(f"  command: {next_step.get('command')}")
+    if next_step.get("bundle_path"):
+        print(f"  bundle: {next_step.get('bundle_path')}")
+    if next_step.get("expected_log"):
+        print(f"  expected log: {next_step.get('expected_log')}")
+    if next_step.get("output_dir"):
+        print(f"  output: {next_step.get('output_dir')}")
+    if next_step.get("capture_command_after_bundle"):
+        print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
+    if next_step.get("metadata_update_command"):
+        print(f"  metadata update: {next_step.get('metadata_update_command')}")
 for issue in issues[:4]:
     print(f"- issue: {issue}")
 detail_lines = workflow_validation_detail_lines(report)

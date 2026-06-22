@@ -775,6 +775,21 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
     return lines
 
 
+def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
+    details = [
+        ("Bundle", next_step.get("bundle_path")),
+        ("Expected log", next_step.get("expected_log")),
+        ("Output", next_step.get("output_dir")),
+        ("After bundle", next_step.get("capture_command_after_bundle")),
+        ("Metadata update", next_step.get("metadata_update_command")),
+    ]
+    return [
+        f"{label}: {value}"
+        for label, value in details
+        if isinstance(value, str) and value.strip()
+    ]
+
+
 def print_human(report: dict[str, Any]) -> None:
     print(f"Evidence workflow validation: {report.get('report_path')}")
     print(f"Status: {report.get('status')} workflow={report.get('workflow_status')}")
@@ -791,6 +806,8 @@ def print_human(report: dict[str, Any]) -> None:
             print(f"Desktop action: {next_step.get('desktop_action')}")
         if next_step.get("command"):
             print(f"Command: {next_step.get('command')}")
+        for line in workflow_next_step_detail_lines(next_step):
+            print(line)
     issues = report.get("issues") if isinstance(report.get("issues"), list) else []
     if issues:
         print("Issues:")
