@@ -122,8 +122,12 @@ Status:
   installed and sourced.
 - In progress: `vision-nav-run-terrain-loop --ros2-publish` can publish live
   odometry and diagnostics during camera/matcher runtime.
-- In progress: repo-local launch files under `ros2/launch/` start live terrain
+- Done: repo-local launch files under `ros2/launch/` start live terrain
   runtime publishing or replay publishing with repeatable arguments.
+- Done: `terrain_nav_live.launch.py` exposes optional PX4 SITL/direct MAVLink
+  arguments including endpoint, `ODOMETRY` message selection, source IDs, and
+  external-position health thresholds, while keeping ROS-only launch behavior
+  as the default when no endpoint is set.
 - Done: Pi diagnostics and Module Setup now include an optional Micro
   XRCE-DDS Agent check for PX4 uXRCE-DDS/ROS 2 bridge readiness.
 - In progress: `vision-nav-ros2-replay-log --export-rosbag-jsonl` writes a
@@ -172,11 +176,12 @@ Status:
 
 Tasks:
 
-1. Add PX4 SITL launch profile arguments once SITL receiver verification is
-   available.
-2. Run `scripts/dev/run_rosbag2_cli_review.sh` on a sourced ROS 2 workstation
+1. Run `scripts/dev/run_rosbag2_cli_review.sh` on a sourced ROS 2 workstation
    against real terrain logs, then save the resulting native export and review
    artifact.
+2. Run the ROS 2 live launch profile with `mavlink_endpoint:=udp:14550` during
+   PX4 SITL receiver verification and include the generated receiver artifacts
+   in the final support bundle.
 
 Acceptance checks:
 

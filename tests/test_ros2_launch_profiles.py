@@ -18,6 +18,8 @@ def test_live_launch_profile_is_import_safe_without_ros_installed():
     defaults = module.LAUNCH_ARGUMENT_DEFAULTS
     assert defaults["odometry_topic"] == "/vision_nav/odometry"
     assert defaults["diagnostics_topic"] == "/diagnostics"
+    assert defaults["mavlink_endpoint"] == ""
+    assert defaults["mavlink_message"] == "odometry"
     assert callable(module.generate_launch_description)
 
 
@@ -34,6 +36,9 @@ def test_launch_profiles_execute_expected_modules():
     replay_source = (ROOT / "ros2" / "launch" / "terrain_nav_replay.launch.py").read_text()
     assert "vision_nav.run_terrain_loop" in live_source
     assert "--ros2-publish" in live_source
+    assert "--mavlink-endpoint" in live_source
+    assert "--mavlink-message" in live_source
+    assert "external_position_min_rate_hz" in live_source
     assert "vision_nav.ros2_bridge" in replay_source
     assert "--publish" in replay_source
 

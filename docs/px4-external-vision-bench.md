@@ -195,6 +195,20 @@ Then send a synthetic external-vision stream from this repo:
 ./scripts/dev/px4_sitl_external_vision_smoke.sh
 ```
 
+For a live ROS 2 terrain-runtime bench check instead of the synthetic sender,
+run the ROS 2 launch profile with the PX4 SITL UDP endpoint:
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 launch ros2/launch/terrain_nav_live.launch.py \
+  repo_root:=$(pwd) \
+  pythonpath:=$(pwd)/src \
+  bundle:=mission_bundle \
+  output_dir:=terrain-run \
+  mavlink_endpoint:=udp:14550 \
+  mavlink_message:=odometry
+```
+
 Defaults:
 
 ```text

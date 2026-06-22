@@ -1283,7 +1283,16 @@ def test_ros2_launch_profiles_static() -> None:
     root = Path(__file__).resolve().parents[1]
     live = (root / "ros2" / "launch" / "terrain_nav_live.launch.py").read_text()
     replay = (root / "ros2" / "launch" / "terrain_nav_replay.launch.py").read_text()
-    for expected in ("vision_nav.run_terrain_loop", "--ros2-publish", "/vision_nav/odometry", "/diagnostics"):
+    for expected in (
+        "vision_nav.run_terrain_loop",
+        "--ros2-publish",
+        "/vision_nav/odometry",
+        "/diagnostics",
+        "--mavlink-endpoint",
+        "--mavlink-message",
+        "odometry",
+        "--external-position-min-rate-hz",
+    ):
         if expected not in live:
             raise AssertionError(f"Live ROS 2 launch profile missing {expected}")
     for expected in ("vision_nav.ros2_bridge", "--publish", "/vision_nav/odometry", "/diagnostics"):

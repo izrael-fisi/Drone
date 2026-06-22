@@ -174,6 +174,24 @@ ros2 launch ros2/launch/terrain_nav_live.launch.py \
   output_dir:=terrain-run
 ```
 
+For PX4 SITL receiver checks, the same live launch profile can also enable the
+direct MAVLink `ODOMETRY` output path:
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 launch ros2/launch/terrain_nav_live.launch.py \
+  repo_root:=$(pwd) \
+  pythonpath:=$(pwd)/src \
+  bundle:=mission_bundle \
+  output_dir:=terrain-run \
+  mavlink_endpoint:=udp:14550 \
+  mavlink_message:=odometry \
+  external_position_min_rate_hz:=1.0
+```
+
+Leave `mavlink_endpoint` empty for ROS-only publishing. When set, the runtime
+records MAVLink stream health in diagnostics and in `terrain_matches.jsonl`.
+
 These are repo-local launch profiles. If this project later needs colcon-native
 packaging, the repo now includes a thin `ament_python` package wrapper under
 `ros2/drone_vision_nav/`. Build it from a ROS 2 workspace that has this repo
