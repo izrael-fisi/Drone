@@ -13,6 +13,7 @@ field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$replay_dir/field_col
 feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$replay_dir/threshold_tuning_report.json}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$download_root/terrain-match/rosbag-jsonl-validation.json}"
+rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$download_root/terrain-match/rosbag2-cli-review.json}"
 evidence_workflow_report="${VISION_NAV_EVIDENCE_WORKFLOW_REPORT:-}"
 evidence_workflow_validation_report="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-}"
 evidence_workflow_log_archive="${VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE:-}"
@@ -190,6 +191,10 @@ if [[ -f "$rosbag_export_validation" ]]; then
   args+=(--rosbag-export-validation "$rosbag_export_validation")
 fi
 
+if [[ -f "$rosbag2_cli_review" ]]; then
+  args+=(--rosbag2-cli-review "$rosbag2_cli_review")
+fi
+
 if [[ -f "$evidence_workflow_report" ]]; then
   args+=(--evidence-workflow-report "$evidence_workflow_report")
 fi
@@ -228,6 +233,7 @@ Local autonomy readiness audit inputs:
   feature benchmark report: $([[ -f "$feature_method_benchmark_report" ]] && printf '%s' "$feature_method_benchmark_report" || printf 'not found')
   threshold tuning report: $([[ -f "$threshold_tuning_report" ]] && printf '%s' "$threshold_tuning_report" || printf 'not found')
   rosbag validation report: $([[ -f "$rosbag_export_validation" ]] && printf '%s' "$rosbag_export_validation" || printf 'not found')
+  rosbag2 cli review:     $([[ -f "$rosbag2_cli_review" ]] && printf '%s' "$rosbag2_cli_review" || printf 'not found')
   evidence workflow report: $([[ -f "$evidence_workflow_report" ]] && printf '%s' "$evidence_workflow_report" || printf 'not found')
   workflow validation:     $([[ -f "$evidence_workflow_validation_report" ]] && printf '%s' "$evidence_workflow_validation_report" || printf 'not found')
   workflow log archive:    $([[ -f "$evidence_workflow_log_archive" ]] && printf '%s' "$evidence_workflow_log_archive" || printf 'not found')
@@ -265,6 +271,10 @@ fi
 
 if [[ -f "$rosbag_export_validation" ]]; then
   echo "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=$rosbag_export_validation"
+fi
+
+if [[ -f "$rosbag2_cli_review" ]]; then
+  echo "__VISION_NAV_ROSBAG2_CLI_REVIEW__=$rosbag2_cli_review"
 fi
 
 if [[ -f "$evidence_workflow_report" ]]; then

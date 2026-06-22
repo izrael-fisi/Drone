@@ -478,6 +478,7 @@ export interface AutonomyReadinessReportFile {
     feature_method_benchmark_status?: "passed" | "failed" | "degraded" | string;
     threshold_tuning_status?: "passed" | "failed" | "degraded" | string;
     rosbag_export_validation_status?: "passed" | "failed" | "degraded" | string;
+    rosbag2_cli_review_status?: "passed" | "failed" | "degraded" | string;
   };
   checks: Array<{
     name?: string;

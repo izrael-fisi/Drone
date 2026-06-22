@@ -151,6 +151,9 @@ Status:
   `extras/rosbag2_cli_reviews/`, publish parsed summaries under
   `summaries/rosbag2_cli_reviews/`, and include the optional review in bench
   readiness when provided.
+- Done: final autonomy-readiness audits accept standalone native rosbag2 CLI
+  review reports or support-bundle summaries as a strict proof item, failing
+  closed until `ros2 bag info` succeeds against the native export.
 - Done: `ros2/drone_vision_nav/` provides a thin `ament_python` package wrapper
   with package metadata, installed launch profiles, and `terrain_nav_live` /
   `terrain_nav_replay` console scripts for colcon-based ROS 2 workstations.
@@ -166,7 +169,9 @@ Acceptance checks:
 
 - ROS 2 topics can replay a saved frame log on the desktop.
 - ROS replay exports have a passed validation report with odometry and
-  diagnostics topics before they count toward final readiness.
+  diagnostics topics, plus a passing native rosbag2 CLI review when native
+  rosbag2 export is part of the evidence path, before they count toward final
+  readiness.
 - PX4 SITL can receive external-position output through ROS 2 or direct MAVLink.
 - The direct Python `vision-nav-run-terrain-loop` command remains usable.
 
@@ -563,16 +568,20 @@ Status:
   required condition keys so operators can see which real-world cases still
   need to be collected.
 - Done: the final readiness audit accepts standalone PX4 receiver,
-  field-evidence, feature-method benchmark, threshold-tuning, and ROS replay
-  export validation JSON reports in addition to support-bundle summaries, so
-  downloaded evidence can be re-audited without repackaging the support bundle.
+  field-evidence, feature-method benchmark, threshold-tuning, ROS replay export
+  validation, and native rosbag2 CLI review JSON reports in addition to
+  support-bundle summaries, so downloaded evidence can be re-audited without
+  repackaging the support bundle.
 - Done: the Pi and local autonomy-readiness wrappers pass
-  `rosbag-jsonl-validation.json` to the final audit when it exists and emit
-  `__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=...` for support handoff notes.
+  `rosbag-jsonl-validation.json` and `rosbag2-cli-review.json` to the final
+  audit when they exist and emit stable markers for support handoff notes.
 - Done: Module Setup parses `__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=...`,
   downloads the validation JSON into the terrain-match transfer folder, lists
   downloaded ROS bag validation reports after restart, and shows the ROS bag
   gate in autonomy-readiness report cards and saved setup reports.
+- Done: Module Setup parses `__VISION_NAV_ROSBAG2_CLI_REVIEW__=...`, downloads
+  the native workstation review artifact into the terrain-match transfer folder,
+  and shows the rosbag2 proof gate in autonomy-readiness report cards.
 - Done: Module Setup exposes a standalone `ROS Bag Validation` action that runs
   `scripts/pi/run_rosbag_export_validation.sh`, downloads the emitted validation
   report, and refreshes the ROS Bag Validation evidence list without requiring

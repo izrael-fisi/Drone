@@ -289,6 +289,14 @@ function parseRosbagExportValidationReport(output: string) {
     ?.replace("__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=", "");
 }
 
+function parseRosbag2CliReviewReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_ROSBAG2_CLI_REVIEW__="))
+    ?.replace("__VISION_NAV_ROSBAG2_CLI_REVIEW__=", "");
+}
+
 function parseFieldEvidenceReport(output: string) {
   return output
     .split(/\r?\n/)
@@ -1080,6 +1088,7 @@ function AutonomyReadinessReportList({
                   ["features", report.summary.feature_method_benchmark_status],
                   ["thresholds", report.summary.threshold_tuning_status],
                   ["rosbag", report.summary.rosbag_export_validation_status],
+                  ["rosbag2", report.summary.rosbag2_cli_review_status],
                 ].map(([label, status]) => (
                   <div key={label} className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500">
                     <span className={cn(readinessBadgeClass(status), "text-[10px]")}>
@@ -2790,6 +2799,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const remoteFeatureMethodReport = parseFeatureMethodReport(output);
       const remoteThresholdReport = parseThresholdTuningReport(output);
       const remoteRosbagValidation = parseRosbagExportValidationReport(output);
+      const remoteRosbag2CliReview = parseRosbag2CliReviewReport(output);
       if (!remoteReport) {
         setResult("autonomy-readiness", {
           status: "failed",
@@ -2957,6 +2967,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         );
         proofDownloadText += `\n\n$ download ROS bag validation\nSaved to ${downloadedRosbagValidation.local_path}\n[${downloadedRosbagValidation.bytes_received} bytes]`;
       }
+      if (remoteRosbag2CliReview) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}\n\n$ download rosbag2 CLI review\nDownloading ${remoteRosbag2CliReview}...`,
+        });
+        const downloadedRosbag2Review = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteRosbag2CliReview,
+          ROSBAG_VALIDATION_DOWNLOAD_DIR,
+        );
+        proofDownloadText += `\n\n$ download rosbag2 CLI review\nSaved to ${downloadedRosbag2Review.local_path}\n[${downloadedRosbag2Review.bytes_received} bytes]`;
+      }
       if (remoteFieldCollectionPlan) {
         setResult("autonomy-readiness", {
           status: "running",
@@ -3036,6 +3061,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const localHandoff = parseAutonomyReadinessHandoff(output);
       const localEvidencePackage = parseAutonomyEvidencePackage(output);
       const localWorkflow = parseAutonomyEvidenceWorkflowReport(output);
+      const localRosbag2CliReview = parseRosbag2CliReviewReport(output);
       const localFieldCollectionPlan = parseFieldCollectionPlan(output);
       const localFieldCollectionPlanMarkdown = parseFieldCollectionPlanMarkdown(output);
       if (localHandoff) {
@@ -3053,10 +3079,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       if (localFieldCollectionPlanMarkdown) {
         setFieldCollectionPlanMarkdownLocalPath(localFieldCollectionPlanMarkdown);
       }
+      const localEvidenceNotes = localRosbag2CliReview ? `\nrosbag2 CLI review: ${localRosbag2CliReview}` : "";
 
       setResult("local-autonomy-readiness", {
         status: result.exit_code === 0 && localReport ? "passed" : "failed",
-        output: `$ local autonomy readiness\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+        output: `$ local autonomy readiness\n${output || "(no output)"}${localEvidenceNotes}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
       await refreshAutonomyReports();
@@ -3106,6 +3133,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const remoteFeatureMethodReport = parseFeatureMethodReport(output);
       const remoteThresholdReport = parseThresholdTuningReport(output);
       const remoteRosbagValidation = parseRosbagExportValidationReport(output);
+      const remoteRosbag2CliReview = parseRosbag2CliReviewReport(output);
       const remotePx4Report = parsePx4SitlReport(output);
       if (!remoteWorkflow) {
         setResult("autonomy-evidence-workflow", {
@@ -3235,6 +3263,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
           ROSBAG_VALIDATION_DOWNLOAD_DIR,
         );
         downloadText += `\n\n$ download ROS bag validation\nSaved to ${downloadedRosbagValidation.local_path}\n[${downloadedRosbagValidation.bytes_received} bytes]`;
+      }
+      if (remoteRosbag2CliReview) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download rosbag2 CLI review\nDownloading ${remoteRosbag2CliReview}...`,
+        });
+        const downloadedRosbag2Review = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteRosbag2CliReview,
+          ROSBAG_VALIDATION_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download rosbag2 CLI review\nSaved to ${downloadedRosbag2Review.local_path}\n[${downloadedRosbag2Review.bytes_received} bytes]`;
       }
       if (remoteReport) {
         setResult("autonomy-evidence-workflow", {

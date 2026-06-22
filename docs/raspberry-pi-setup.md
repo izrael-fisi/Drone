@@ -674,6 +674,10 @@ output. If the `ros2` CLI is not sourced, the report degrades by default; add
 The support-bundle wrapper auto-includes
 `~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json` when it
 exists, or set `VISION_NAV_ROSBAG2_CLI_REVIEW` to package a custom review path.
+The Pi and desktop autonomy-readiness wrappers also pass this report into the
+final audit when it exists and emit `__VISION_NAV_ROSBAG2_CLI_REVIEW__=...` so
+Module Setup can download the workstation review artifact with the rest of the
+readiness package.
 
 ## Create A Support Bundle
 

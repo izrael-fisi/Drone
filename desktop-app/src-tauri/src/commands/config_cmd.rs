@@ -424,6 +424,7 @@ pub struct AutonomyReadinessSummary {
     pub feature_method_benchmark_status: Option<String>,
     pub threshold_tuning_status: Option<String>,
     pub rosbag_export_validation_status: Option<String>,
+    pub rosbag2_cli_review_status: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -2626,6 +2627,7 @@ fn autonomy_readiness_report_from_json(
             feature_method_benchmark_status: check_status("feature_method_benchmark"),
             threshold_tuning_status: check_status("threshold_tuning"),
             rosbag_export_validation_status: check_status("rosbag_export_validation"),
+            rosbag2_cli_review_status: check_status("rosbag2_cli_review"),
         },
         checks,
         next_actions,
@@ -3846,7 +3848,8 @@ mod tests {
                     {"name": "field_evidence_proof", "status": "degraded", "message": "Needs more logs."},
                     {"name": "feature_method_benchmark", "status": "passed", "message": "Benchmark present."},
                     {"name": "threshold_tuning", "status": "passed", "message": "Threshold report present."},
-                    {"name": "rosbag_export_validation", "status": "passed", "message": "ROS bag validation present."}
+                    {"name": "rosbag_export_validation", "status": "passed", "message": "ROS bag validation present."},
+                    {"name": "rosbag2_cli_review", "status": "failed", "message": "Native rosbag2 CLI review missing."}
                 ],
                 "next_actions": [
                     {
@@ -4202,7 +4205,11 @@ mod tests {
                 .as_deref(),
             Some("passed")
         );
-        assert_eq!(reports[0].checks.len(), 7);
+        assert_eq!(
+            reports[0].summary.rosbag2_cli_review_status.as_deref(),
+            Some("failed")
+        );
+        assert_eq!(reports[0].checks.len(), 8);
         assert_eq!(reports[0].next_actions.len(), 3);
         assert_eq!(
             reports[0].next_actions[0].desktop_action.as_deref(),

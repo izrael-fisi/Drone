@@ -40,6 +40,7 @@ EXTERNAL_PROOF_CHECKS = {
     "feature_method_benchmark",
     "threshold_tuning",
     "rosbag_export_validation",
+    "rosbag2_cli_review",
 }
 
 
@@ -90,6 +91,10 @@ def parse_args() -> argparse.Namespace:
         help="ROS bag export validation report proving replay artifacts are structurally usable.",
     )
     parser.add_argument(
+        "--rosbag2-cli-review",
+        help="Native rosbag2 CLI review report proving the export is readable by standard ROS 2 tooling.",
+    )
+    parser.add_argument(
         "--evidence-workflow-report",
         help="Optional autonomy evidence workflow report to reference in readiness handoff/packages.",
     )
@@ -118,6 +123,7 @@ def evaluate_autonomy_readiness(
     feature_method_benchmark_report_path: str | Path | None = None,
     threshold_tuning_report_path: str | Path | None = None,
     rosbag_export_validation_path: str | Path | None = None,
+    rosbag2_cli_review_path: str | Path | None = None,
     evidence_workflow_report_path: str | Path | None = None,
     evidence_workflow_validation_report_path: str | Path | None = None,
     evidence_workflow_log_archive_path: str | Path | None = None,
@@ -149,6 +155,7 @@ def evaluate_autonomy_readiness(
         check_feature_method_proof(feature_method_benchmark_report_path, support_checks),
         check_threshold_tuning(threshold_tuning_report_path, support_manifest=support_manifest),
         check_rosbag_export_validation(rosbag_export_validation_path, support_manifest=support_manifest),
+        check_rosbag2_cli_review(rosbag2_cli_review_path, support_checks),
     ]
     status = readiness_status(checks)
     next_actions = next_actions_for_checks(checks)
@@ -179,6 +186,7 @@ def evaluate_autonomy_readiness(
         "rosbag_export_validation": (
             str(Path(rosbag_export_validation_path).expanduser()) if rosbag_export_validation_path else None
         ),
+        "rosbag2_cli_review": str(Path(rosbag2_cli_review_path).expanduser()) if rosbag2_cli_review_path else None,
         "evidence_workflow_report": (
             str(Path(evidence_workflow_report_path).expanduser()) if evidence_workflow_report_path else None
         ),
@@ -344,6 +352,7 @@ def evidence_source_for_check(name: str, details: dict[str, Any], inputs: dict[s
         "feature_method_benchmark": "feature_method_benchmark_report",
         "threshold_tuning": "threshold_tuning_report",
         "rosbag_export_validation": "rosbag_export_validation",
+        "rosbag2_cli_review": "rosbag2_cli_review",
     }
     for key in ("source", "support_bundle_path", "report_path", "session_dir", "path"):
         value = details.get(key)
@@ -405,6 +414,12 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "desktop_action": "Module Setup > ROS Bag Validation",
             "command": "./scripts/pi/run_rosbag_export_validation.sh",
             "notes": "Run after a terrain runtime/replay log exists. The final readiness package must include a passed ROS replay export validation with odometry and diagnostics topics.",
+        },
+        "rosbag2_cli_review": {
+            "title": "Review the native rosbag2 export with ROS 2 CLI tools.",
+            "desktop_action": "Sourced ROS 2 workstation > rosbag2 CLI Review, then Local Readiness Re-Audit",
+            "command": "vision-nav-review-rosbag2-cli --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag2-native --output ~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json --require-ros2",
+            "notes": "Run on a sourced ROS 2 workstation after native rosbag2 export. The review must include a passing validator result and successful ros2 bag info output.",
         },
     }
     next_actions: list[dict[str, Any]] = []
@@ -524,6 +539,12 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
             "desktop_action": "Module Setup > ROS Bag Validation, then Bench Report",
             "command": "./scripts/pi/run_rosbag_export_validation.sh && ./scripts/pi/create_support_bundle.sh",
             "notes": "Support bundles should include a passed ROS replay export validation summary.",
+        },
+        "rosbag2_cli_reviews": {
+            "title": "Review the native rosbag2 export with ROS 2 CLI tools.",
+            "desktop_action": "Sourced ROS 2 workstation > rosbag2 CLI Review, then Bench Report",
+            "command": "vision-nav-review-rosbag2-cli --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag2-native --output ~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json --require-ros2",
+            "notes": "Support bundles should include a passed native rosbag2 CLI review summary when native rosbag2 export is part of the evidence package.",
         },
         "ardupilot_params": {
             "title": "Review ArduPilot ExternalNav parameters.",
@@ -1102,6 +1123,82 @@ def rosbag_export_validation_check_from_report(report: dict[str, Any], *, source
     return failed("rosbag_export_validation", f"ROS replay export validation is {status or 'missing'}.", details)
 
 
+def check_rosbag2_cli_review(
+    path: str | Path | None,
+    support_checks: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    if path is not None:
+        source = Path(path).expanduser()
+        try:
+            report = json.loads(source.read_text())
+        except Exception as exc:
+            return failed(
+                "rosbag2_cli_review",
+                f"Could not read native rosbag2 CLI review report: {exc}",
+                {"path": str(source)},
+            )
+        return rosbag2_cli_review_check_from_report(report, source=str(source))
+
+    support_check = support_checks.get("rosbag2_cli_reviews")
+    if support_check and support_check.get("status") == "passed":
+        return passed(
+            "rosbag2_cli_review",
+            "Native rosbag2 CLI review proof is present in the support bundle.",
+            {"source": "support_bundle", **(support_check.get("details") or {})},
+        )
+    if support_check and support_check.get("status") == "degraded":
+        return degraded(
+            "rosbag2_cli_review",
+            "Native rosbag2 CLI review proof in the support bundle is degraded.",
+            {"source": "support_bundle", **(support_check.get("details") or {})},
+        )
+    if support_check:
+        return failed(
+            "rosbag2_cli_review",
+            "Native rosbag2 CLI review proof in the support bundle failed.",
+            {"source": "support_bundle", **(support_check.get("details") or {})},
+        )
+    return failed(
+        "rosbag2_cli_review",
+        "Native rosbag2 CLI review proof is required for final readiness.",
+        {"required_format": "vision_nav_rosbag2_v1", "required_cli": "ros2 bag info"},
+    )
+
+
+def rosbag2_cli_review_check_from_report(report: dict[str, Any], *, source: str) -> dict[str, Any]:
+    status = normalize_status(report.get("status"))
+    cli = report.get("ros2_cli") if isinstance(report.get("ros2_cli"), dict) else {}
+    validation = report.get("validation_report") if isinstance(report.get("validation_report"), dict) else {}
+    details = {
+        "source": source,
+        "artifact_path": report.get("artifact_path"),
+        "bag_dir": report.get("bag_dir"),
+        "validation_status": report.get("validation_status"),
+        "validation_format": report.get("validation_format"),
+        "validation_message_count": validation.get("message_count"),
+        "validation_topic_count": validation.get("topic_count"),
+        "ros2_cli_status": cli.get("status"),
+        "ros2_cli_exit_code": cli.get("exit_code"),
+    }
+    if report.get("schema_version") != "vision_nav_rosbag2_cli_review_v1":
+        return failed(
+            "rosbag2_cli_review",
+            "Native rosbag2 CLI review report has an unexpected schema.",
+            details,
+        )
+    if (
+        status == "passed"
+        and normalize_status(report.get("validation_status")) == "passed"
+        and report.get("validation_format") == "vision_nav_rosbag2_v1"
+        and normalize_status(cli.get("status")) == "passed"
+        and cli.get("exit_code") == 0
+    ):
+        return passed("rosbag2_cli_review", "Native rosbag2 CLI review passed.", details)
+    if status == "degraded":
+        return degraded("rosbag2_cli_review", "Native rosbag2 CLI review is degraded.", details)
+    return failed("rosbag2_cli_review", f"Native rosbag2 CLI review is {status or 'missing'}.", details)
+
+
 def rosbag_report_topics(report: dict[str, Any]) -> list[str]:
     raw_topics = report.get("topics")
     if not isinstance(raw_topics, list):
@@ -1167,6 +1264,7 @@ def main() -> None:
         feature_method_benchmark_report_path=args.feature_method_benchmark_report,
         threshold_tuning_report_path=args.threshold_tuning_report,
         rosbag_export_validation_path=args.rosbag_export_validation,
+        rosbag2_cli_review_path=args.rosbag2_cli_review,
         evidence_workflow_report_path=args.evidence_workflow_report,
         evidence_workflow_validation_report_path=args.evidence_workflow_validation_report,
         evidence_workflow_log_archive_path=args.evidence_workflow_log_archive,

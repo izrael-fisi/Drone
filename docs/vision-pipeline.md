@@ -317,7 +317,9 @@ vision-nav-review-rosbag2-cli \
 ```
 
 That review wraps the strict validator and captures `ros2 bag info` output so
-support can confirm the bag is readable by standard ROS 2 tooling.
+support can confirm the bag is readable by standard ROS 2 tooling. The final
+autonomy-readiness audit treats this review as its own proof gate, either from
+the standalone JSON report or from the same report packaged in a support bundle.
 When a validation report exists at the normal Pi transfer path,
 `scripts/pi/create_support_bundle.sh` packages it, and it also packages
 `rosbag2-cli-review.json` when that native workstation review exists. Desktop

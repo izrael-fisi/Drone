@@ -2334,6 +2334,21 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             }
                         ],
                     },
+                    "rosbag2_cli_reviews": {
+                        "status": "passed",
+                        "report_count": 1,
+                        "reports": [
+                            {
+                                "status": "passed",
+                                "artifact_path": str(root / "rosbag2-native"),
+                                "bag_dir": str(root / "rosbag2-native"),
+                                "validation_status": "passed",
+                                "validation_format": "vision_nav_rosbag2_v1",
+                                "ros2_cli_status": "passed",
+                                "ros2_cli_exit_code": 0,
+                            }
+                        ],
+                    },
                 }
             )
         )
@@ -2462,6 +2477,34 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 }
             )
         )
+        rosbag2_cli_review = root / "rosbag2-cli-review.json"
+        rosbag2_cli_review.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_rosbag2_cli_review_v1",
+                    "status": "passed",
+                    "artifact_path": str(root / "rosbag2-native"),
+                    "bag_dir": str(root / "rosbag2-native"),
+                    "validation_status": "passed",
+                    "validation_format": "vision_nav_rosbag2_v1",
+                    "validation_report": {
+                        "schema_version": "vision_nav_rosbag_export_validation_v1",
+                        "status": "passed",
+                        "format": "vision_nav_rosbag2_v1",
+                        "message_count": 4,
+                        "topic_count": 3,
+                    },
+                    "ros2_cli": {
+                        "status": "passed",
+                        "command": ["ros2", "bag", "info", str(root / "rosbag2-native")],
+                        "stdout": "Files: rosbag2_0.db3\n",
+                        "stderr": "",
+                        "exit_code": 0,
+                    },
+                    "issues": [],
+                }
+            )
+        )
         workflow_report = root / "autonomy_evidence_workflow.json"
         workflow_report.write_text(
             json.dumps(
@@ -2571,6 +2614,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(ready_checks["feature_method_benchmark"], "passed", "autonomy readiness feature benchmark")
         assert_equal(ready_checks["threshold_tuning"], "passed", "autonomy readiness threshold tuning")
         assert_equal(ready_checks["rosbag_export_validation"], "passed", "autonomy readiness rosbag validation")
+        assert_equal(ready_checks["rosbag2_cli_review"], "passed", "autonomy readiness rosbag2 cli review")
         assert_equal(len(ready["next_actions"]), 0, "autonomy readiness passing report next actions")
         assert_equal(
             ready["evidence_manifest"]["ready_for_goal_completion"],
@@ -2699,6 +2743,53 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             direct_rosbag_checks["rosbag_export_validation"],
             "passed",
             "autonomy readiness direct rosbag validation check",
+        )
+
+        missing_rosbag2_manifest = root / "support_manifest_without_rosbag2_cli_review.json"
+        missing_rosbag2_data = json.loads(direct_report_support_manifest.read_text())
+        missing_rosbag2_data.pop("rosbag2_cli_reviews", None)
+        missing_rosbag2_manifest.write_text(json.dumps(missing_rosbag2_data))
+        missing_rosbag2_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=missing_rosbag2_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+        )
+        missing_rosbag2_checks = {check["name"]: check["status"] for check in missing_rosbag2_ready["checks"]}
+        assert_equal(missing_rosbag2_ready["status"], "failed", "autonomy readiness missing rosbag2 cli review")
+        assert_equal(
+            missing_rosbag2_checks["rosbag2_cli_review"],
+            "failed",
+            "autonomy readiness rosbag2 cli review fail closed",
+        )
+        rosbag2_actions = [
+            action
+            for action in missing_rosbag2_ready["next_actions"]
+            if action.get("check") == "rosbag2_cli_review"
+        ]
+        assert_equal(len(rosbag2_actions), 1, "autonomy readiness rosbag2 cli review next action")
+        if "vision-nav-review-rosbag2-cli" not in rosbag2_actions[0]["command"]:
+            raise AssertionError("autonomy readiness rosbag2 action should use the rosbag2 CLI review command")
+
+        direct_rosbag2_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=missing_rosbag2_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+            rosbag2_cli_review_path=rosbag2_cli_review,
+        )
+        direct_rosbag2_checks = {check["name"]: check["status"] for check in direct_rosbag2_ready["checks"]}
+        assert_equal(direct_rosbag2_ready["status"], "passed", "autonomy readiness direct rosbag2 cli review")
+        assert_equal(
+            direct_rosbag2_checks["rosbag2_cli_review"],
+            "passed",
+            "autonomy readiness direct rosbag2 cli review check",
         )
 
         missing_runtime_status_manifest = root / "support_manifest_without_runtime_status.json"
