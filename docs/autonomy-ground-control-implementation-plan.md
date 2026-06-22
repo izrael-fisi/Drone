@@ -81,6 +81,9 @@ Status:
   type, send rate, latency, covariance warnings, and skip reasons.
 - Done: `ODOMETRY` output includes reset-counter tracking for estimator reset
   epochs, map changes, and backward timestamps.
+- Done: accepted local-ENU runtime results with explicit velocity fields now
+  populate MAVLink `ODOMETRY` north/east/down velocity fields, while missing or
+  non-local velocity frames remain unset.
 - Done: PX4 SITL receiver evidence now computes observed receive rate from
   `vehicle_visual_odometry` listener timestamps, compares it with the smoke
   session `rate_hz`, and surfaces the rate in desktop receiver/support-bundle

@@ -868,6 +868,12 @@ def test_external_position_payloads() -> None:
                 "y_m": 7.0,
                 "z_m": 3.0,
                 "yaw_rad": 0.0,
+                "velocity": {
+                    "frame": "local_enu",
+                    "x_mps": 1.5,
+                    "y_mps": -2.5,
+                    "z_mps": 0.75,
+                },
                 "covariance": {"x_m2": 9.0, "y_m2": 16.0, "z_m2": 25.0, "yaw_rad2": 0.2},
             },
         }
@@ -877,6 +883,9 @@ def test_external_position_payloads() -> None:
     assert_equal(ned.north_m, 7.0, "external position north")
     assert_equal(ned.east_m, 4.0, "external position east")
     assert_equal(ned.down_m, -3.0, "external position down")
+    assert_equal(ned.velocity_north_mps, -2.5, "external position north velocity")
+    assert_equal(ned.velocity_east_mps, 1.5, "external position east velocity")
+    assert_equal(ned.velocity_down_mps, -0.75, "external position down velocity")
     if not math.isclose(ned.yaw_rad, math.pi / 2.0):
         raise AssertionError("Expected ENU yaw 0 to map to NED yaw pi/2")
     if not math.isclose(yaw_enu_to_ned(math.pi / 2.0), 0.0):
@@ -893,7 +902,26 @@ def test_external_position_payloads() -> None:
     odometry_payload = build_odometry_payload(estimate, time_usec=999, reset_counter=4)
     assert_equal(odometry_payload.frame_id, "MAV_FRAME_LOCAL_FRD", "odometry frame")
     assert_equal(odometry_payload.child_frame_id, "MAV_FRAME_BODY_FRD", "odometry child frame")
+    assert_equal(odometry_payload.vx_mps, -2.5, "odometry north velocity")
+    assert_equal(odometry_payload.vy_mps, 1.5, "odometry east velocity")
+    assert_equal(odometry_payload.vz_mps, -0.75, "odometry down velocity")
     assert_equal(odometry_payload.quality, 73, "odometry quality")
+
+    body_velocity_estimate, body_velocity_reason = external_position_from_match_result(
+        {
+            "status": "accepted",
+            "measurement": {
+                "frame": "local_enu",
+                "x_m": 1.0,
+                "y_m": 2.0,
+                "velocity": {"frame": "body_frd", "x_mps": 9.0, "y_mps": 8.0, "z_mps": 7.0},
+            },
+        }
+    )
+    assert_equal(body_velocity_reason, None, "external position body velocity parse reason")
+    body_velocity_payload = build_odometry_payload(body_velocity_estimate, time_usec=1000)
+    if not math.isnan(body_velocity_payload.vx_mps) or not math.isnan(body_velocity_payload.vy_mps):
+        raise AssertionError("Expected non-local velocity frame to be ignored")
 
     tracker = OdometryResetTracker()
     assert_equal(

@@ -192,6 +192,9 @@ def external_position_from_match_result(result: dict[str, Any]) -> tuple[Externa
     yaw_enu_rad = _optional_float(measurement.get("yaw_rad"))
     confidence = _optional_float(result.get("position_confidence", result.get("confidence")))
     timestamp_us = _optional_int(result.get("timestamp_us"))
+    velocity_east_mps = _local_enu_velocity_component(result, "east")
+    velocity_north_mps = _local_enu_velocity_component(result, "north")
+    velocity_up_mps = _local_enu_velocity_component(result, "up")
     return (
         ExternalPositionEstimate(
             timestamp_us=timestamp_us,
@@ -200,6 +203,9 @@ def external_position_from_match_result(result: dict[str, Any]) -> tuple[Externa
             up_m=up_m,
             yaw_enu_rad=yaw_enu_rad,
             covariance=ExternalPositionCovariance.from_local_enu_mapping(measurement.get("covariance")),
+            velocity_east_mps=velocity_east_mps,
+            velocity_north_mps=velocity_north_mps,
+            velocity_up_mps=velocity_up_mps,
             confidence=confidence,
             source=str(measurement.get("source") or result.get("source") or "terrain_vision"),
         ),
@@ -305,6 +311,40 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _local_enu_velocity_component(result: dict[str, Any], component: str) -> float | None:
+    direct_keys = {
+        "east": ("velocity_east_mps", "east_velocity_mps", "ve_mps", "vx_mps"),
+        "north": ("velocity_north_mps", "north_velocity_mps", "vn_mps", "vy_mps"),
+        "up": ("velocity_up_mps", "up_velocity_mps", "vu_mps", "vz_mps"),
+    }[component]
+    nested_keys = {
+        "east": ("east_mps", "velocity_east_mps", "vx_mps", "x_mps", "ve_mps"),
+        "north": ("north_mps", "velocity_north_mps", "vy_mps", "y_mps", "vn_mps"),
+        "up": ("up_mps", "velocity_up_mps", "vz_mps", "z_mps", "vu_mps"),
+    }[component]
+    measurement = result.get("measurement") if isinstance(result.get("measurement"), dict) else {}
+    position = result.get("estimated_position") if isinstance(result.get("estimated_position"), dict) else {}
+    for source in (measurement, position, result):
+        if not isinstance(source, dict):
+            continue
+        for key in direct_keys:
+            value = _optional_float(source.get(key))
+            if value is not None:
+                return value
+        for nested_key in ("velocity", "linear_velocity", "twist_linear"):
+            nested = source.get(nested_key)
+            if not isinstance(nested, dict):
+                continue
+            frame = _optional_str(nested.get("frame"))
+            if frame is not None and frame != "local_enu":
+                continue
+            for key in nested_keys:
+                value = _optional_float(nested.get(key))
+                if value is not None:
+                    return value
+    return None
 
 
 def _reset_epoch_from_result(result: dict[str, Any]) -> int | None:
