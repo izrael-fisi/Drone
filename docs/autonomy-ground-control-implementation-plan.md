@@ -429,6 +429,10 @@ Status:
 - Done: Module Setup, readiness report cards, support-bundle details, and
   handoff summaries preserve and copy field-capture preflight commands beside
   capture, metadata-update, and registration commands.
+- Done: Module Setup now exposes a direct Field Capture Preflight action that
+  runs `scripts/pi/preflight_field_capture.sh` over SSH for the selected or next
+  field condition, downloads `field_capture_preflight.json`, and keeps the JSON
+  available for support bundles and local readiness re-audits.
 - Done: readiness reports, support-bundle summaries, Markdown handoffs, and the
   desktop parser normalize older field collection plans so stale capture-only
   commands are shown with the required runtime-status read step.

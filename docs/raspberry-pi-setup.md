@@ -462,7 +462,9 @@ instead of the plan's next pending one. The preflight writes
 `~/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json`, prints
 `ready_for_capture` and `ready_for_registration` status, and fails only when a
 blocking capture prerequisite such as the mission bundle, output path, or Pi
-runtime wrapper is missing. When the selected mission bundle is missing, the
+runtime wrapper is missing. In the desktop app, Module Setup > Field Evidence
+Case > Preflight runs this wrapper over SSH and downloads the JSON report into
+the replay-cases folder. When the selected mission bundle is missing, the
 JSON report includes `bundle_path`, `bundle_validation_command`, and a desktop
 action hint so the operator can return to Mission Planner, build/upload the
 bundle, then rerun preflight. The same report includes ordered `next_actions`

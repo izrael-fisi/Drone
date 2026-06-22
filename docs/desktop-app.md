@@ -393,7 +393,10 @@ plan list can load that next condition directly into the Field Evidence Case
 form. The preflight command runs `scripts/pi/preflight_field_capture.sh`; it
 does not create evidence, but it checks that the selected mission bundle,
 condition output folder, runtime wrappers, metadata command, and registration
-inputs are ready or clearly marked as still missing.
+inputs are ready or clearly marked as still missing. The Field Evidence Case
+`Preflight` button runs that same check on the connected Pi, downloads
+`field_capture_preflight.json` into the desktop replay-cases folder, and leaves
+the report available for support bundles and local readiness re-audits.
 The local-only `Load Next Field Condition` setup action performs the same load
 from the newest downloaded plan, so the operator can move from `Create Plan` to
 metadata entry without scrolling through the plan list. Loading a condition only

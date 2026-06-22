@@ -345,6 +345,22 @@ function parseFieldEvidenceReport(output: string) {
     ?.replace("__VISION_NAV_FIELD_EVIDENCE_REPORT__=", "");
 }
 
+function parseFieldCapturePreflightReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__="))
+    ?.replace("__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__=", "");
+}
+
+function parseFieldCaptureReady(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_FIELD_CAPTURE_READY__="))
+    ?.replace("__VISION_NAV_FIELD_CAPTURE_READY__=", "") === "1";
+}
+
 function parseFieldEvidenceTemplate(output: string) {
   return output
     .split(/\r?\n/)
@@ -632,6 +648,12 @@ function fieldEvidenceCommand(remoteProject: string, remoteBundle: string, field
     fieldCase.strict ? "VISION_NAV_FIELD_GATE_STRICT=1" : "",
   ].filter(Boolean).join(" ");
   return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/register_field_replay_case.sh`;
+}
+
+function fieldCapturePreflightCommand(remoteProject: string, fieldCase: FieldCaseForm) {
+  const condition = firstFieldCondition(fieldCase.conditions);
+  const env = condition ? `VISION_NAV_FIELD_CONDITION=${shellQuote(condition)} ` : "";
+  return `cd ${shellQuote(remoteProject)} && ${env}./scripts/pi/preflight_field_capture.sh`;
 }
 
 function fieldEvidenceTemplateCommand(remoteProject: string, remoteBundle: string, siteName: string) {
@@ -3506,6 +3528,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [fieldManifestLocalPath, setFieldManifestLocalPath] = useState<string | null>(null);
   const [fieldCollectionPlanLocalPath, setFieldCollectionPlanLocalPath] = useState<string | null>(null);
   const [fieldCollectionPlanMarkdownLocalPath, setFieldCollectionPlanMarkdownLocalPath] = useState<string | null>(null);
+  const [fieldCapturePreflightLocalPath, setFieldCapturePreflightLocalPath] = useState<string | null>(null);
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
   const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
   const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => loadFieldCaseForm());
@@ -3541,6 +3564,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       setFieldManifestLocalPath(null);
       setFieldCollectionPlanLocalPath(null);
       setFieldCollectionPlanMarkdownLocalPath(null);
+      setFieldCapturePreflightLocalPath(null);
       setError(null);
     }
   }, [selectedDeviceId]);
@@ -4103,6 +4127,60 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       });
     } catch (err) {
       setResult("field-log-capture", { status: "failed", output: `$ field log capture\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
+  const runFieldCapturePreflight = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before running field capture preflight.");
+      return;
+    }
+    setRunningStep("field-capture-preflight");
+    setError(null);
+    setResult("field-capture-preflight", { status: "running", output: "$ field capture preflight\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        fieldCapturePreflightCommand(remoteProject, fieldCase),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteReport = parseFieldCapturePreflightReport(output);
+      const readyForCapture = parseFieldCaptureReady(output);
+      if (!remoteReport) {
+        setResult("field-capture-preflight", {
+          status: result.exit_code === 0 && readyForCapture ? "passed" : "failed",
+          output: `$ field capture preflight\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      setResult("field-capture-preflight", {
+        status: "running",
+        output: `$ field capture preflight\n${output}\n\n$ download field capture preflight\nDownloading ${remoteReport}...`,
+      });
+      const downloaded = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remoteReport,
+        AUTONOMY_REPORT_DOWNLOAD_DIR,
+      );
+      setFieldCapturePreflightLocalPath(downloaded.local_path);
+      setResult("field-capture-preflight", {
+        status: result.exit_code === 0 && readyForCapture ? "passed" : "failed",
+        output: `$ field capture preflight\n${output}\n\n$ download field capture preflight\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+    } catch (err) {
+      setResult("field-capture-preflight", { status: "failed", output: `$ field capture preflight\nERROR: ${err}` });
     } finally {
       setRunningStep(null);
     }
@@ -5476,6 +5554,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       localOnly: true,
     },
     {
+      id: "field-capture-preflight",
+      title: "Field Capture Preflight",
+      detail: "Checks the selected field condition before terrain capture and downloads the preflight report.",
+    },
+    {
       id: "feature-benchmark",
       title: "Feature Benchmark",
       detail: "Compares ORB, AKAZE, SIFT, and neural placeholders on the latest field replay log.",
@@ -5562,6 +5645,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     if (step.id === "field-next-condition") {
       loadNextFieldCollectionCondition();
+      return;
+    }
+    if (step.id === "field-capture-preflight") {
+      await runFieldCapturePreflight();
       return;
     }
     if (step.id === "autonomy-evidence-workflow") {
@@ -5661,6 +5748,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         field_manifest_local_path: fieldManifestLocalPath,
         field_collection_plan_local_path: fieldCollectionPlanLocalPath,
         field_collection_plan_markdown_local_path: fieldCollectionPlanMarkdownLocalPath,
+        field_capture_preflight_local_path: fieldCapturePreflightLocalPath,
         feature_benchmark_download_dir: FEATURE_BENCH_DOWNLOAD_DIR,
         px4_receiver_download_dir: PX4_RECEIVER_DOWNLOAD_DIR,
         rosbag_validation_download_dir: ROSBAG_VALIDATION_DOWNLOAD_DIR,
@@ -6257,6 +6345,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                     Create Plan
                   </button>
                   <button
+                    onClick={runFieldCapturePreflight}
+                    disabled={!connectionReady || !!runningStep}
+                    className="btn-secondary text-xs py-1 px-3"
+                  >
+                    {runningStep === "field-capture-preflight" ? <Loader2 size={11} className="animate-spin" /> : <TestTube2 size={11} />}
+                    Preflight
+                  </button>
+                  <button
                     onClick={registerFieldEvidenceCase}
                     disabled={!connectionReady || !!runningStep || !fieldCase.caseName.trim() || !fieldCase.conditions.trim() || !fieldMetadataReady}
                     className="btn-secondary text-xs py-1 px-3"
@@ -6669,6 +6765,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   onClick={() => navigator.clipboard.writeText(fieldCollectionPlanMarkdownLocalPath)}
                   className="btn-secondary text-xs py-1 px-2 shrink-0"
                   title="Copy field collection checklist path"
+                >
+                  <Copy size={11} />
+                </button>
+              </div>
+            )}
+            {fieldCapturePreflightLocalPath && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
+                <span className="min-w-0">
+                  Field capture preflight saved to{" "}
+                  <span className="font-mono break-all">{fieldCapturePreflightLocalPath}</span>
+                </span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(fieldCapturePreflightLocalPath)}
+                  className="btn-secondary text-xs py-1 px-2 shrink-0"
+                  title="Copy field capture preflight path"
                 >
                   <Copy size={11} />
                 </button>
