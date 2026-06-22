@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import shutil
+import shlex
 import sqlite3
 import struct
 import sys
@@ -2887,8 +2888,20 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         capture_blocked_report = json.loads(report_path.read_text())
         capture_blocked_report["markers"].pop("__VISION_NAV_TERRAIN_LOG__", None)
         capture_blocked_report["markers"].pop("__VISION_NAV_RUNTIME_STATUS__", None)
+        missing_bundle_path = root / "missing_mission_bundle"
+        capture_output_dir = root / "field-captures" / "good_texture"
+        capture_command = (
+            f"VISION_NAV_BUNDLE={missing_bundle_path} "
+            f"VISION_NAV_OUTPUT_DIR={capture_output_dir} "
+            "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
+        )
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CONDITION__"] = "good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CASE__"] = "dronecompute-test-area-good_texture"
+        capture_blocked_report["markers"]["__VISION_NAV_EXPECTED_TERRAIN_LOG__"] = str(capture_output_dir / "terrain_matches.jsonl")
+        capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE__"] = str(missing_bundle_path)
+        capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE_STATUS__"] = "missing"
+        capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"] = str(capture_output_dir)
+        capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"] = capture_command
         for step in capture_blocked_report["steps"]:
             if step.get("name") == "select_field_collection_condition":
                 step["status"] = "degraded"
@@ -2909,8 +2922,18 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             capture_blocked_validation["next_required_step"]["desktop_action"],
-            "Module Setup > Field Log Capture",
-            "workflow validation selected-condition defer keeps capture desktop action",
+            "Mission Planner > Build Bundle, Upload Bundle, then Module Setup > Field Log Capture",
+            "workflow validation missing-bundle capture guidance routes through Mission Planner",
+        )
+        assert_equal(
+            capture_blocked_validation["next_required_step"]["command"],
+            f"VISION_NAV_BUNDLE={shlex.quote(str(missing_bundle_path))} ./scripts/pi/validate_terrain_bundle.sh",
+            "workflow validation missing-bundle capture guidance validates selected bundle path",
+        )
+        assert_equal(
+            capture_blocked_validation["next_required_step"]["capture_command_after_bundle"],
+            capture_command,
+            "workflow validation preserves capture command after missing-bundle fix",
         )
         capture_blocked_checks = {check["name"]: check for check in capture_blocked_validation["checks"]}
         assert_equal(

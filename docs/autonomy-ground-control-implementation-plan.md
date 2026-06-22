@@ -1158,6 +1158,10 @@ Status:
   condition as satisfied for next-action guidance, so a degraded selected
   condition no longer masks the actionable field-log capture or registration
   step that operators need to run next.
+- Done: the evidence workflow now records expected terrain-log, capture-output,
+  selected-bundle, and capture-command markers; workflow validation uses those
+  markers to route missing-bundle captures through Mission Planner bundle
+  build/upload/validation before telling operators to run field-log capture.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

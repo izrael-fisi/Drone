@@ -523,14 +523,27 @@ field_case_vars_present() {
   [[ -n "${VISION_NAV_FIELD_CASE_NAME:-}" && -n "${VISION_NAV_FIELD_EXPECTED:-}" && -n "${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}" ]]
 }
 
+terrain_capture_command_marker() {
+  printf 'VISION_NAV_BUNDLE=%s VISION_NAV_OUTPUT_DIR=%s VISION_NAV_COUNT=%s %s' \
+    "$bundle" \
+    "$field_capture_output_dir" \
+    "$field_capture_count" \
+    "$terrain_capture_command"
+}
+
 load_field_collection_condition() {
   if field_case_vars_present; then
     explicit_condition="${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}"
+    capture_command_marker="$(terrain_capture_command_marker)"
     pass_step "select_field_collection_condition" \
       "Using explicit field replay case environment from the operator." \
       "__VISION_NAV_FIELD_SELECTED_CONDITION__=$explicit_condition" \
       "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_CASE_NAME:-}" \
-      "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log"
+      "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log" \
+      "__VISION_NAV_EXPECTED_TERRAIN_LOG__=$field_log" \
+      "__VISION_NAV_TERRAIN_BUNDLE__=$bundle" \
+      "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__=$field_capture_output_dir" \
+      "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__=$capture_command_marker"
     return 0
   fi
 
@@ -569,11 +582,16 @@ load_field_collection_condition() {
       "Field collection plan has no pending condition to auto-load." \
       "__VISION_NAV_FIELD_COLLECTION_PLAN__=$field_collection_plan"
   elif [[ "${VISION_NAV_FIELD_AUTO_SELECTED:-0}" == "1" ]]; then
+    capture_command_marker="$(terrain_capture_command_marker)"
     marker_lines=(
       "__VISION_NAV_FIELD_COLLECTION_PLAN__=$field_collection_plan"
       "__VISION_NAV_FIELD_SELECTED_CONDITION__=${VISION_NAV_FIELD_AUTO_SELECTED_CONDITION:-}"
       "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_AUTO_SELECTED_CASE:-}"
       "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log"
+      "__VISION_NAV_EXPECTED_TERRAIN_LOG__=$field_log"
+      "__VISION_NAV_TERRAIN_BUNDLE__=$bundle"
+      "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__=$field_capture_output_dir"
+      "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__=$capture_command_marker"
     )
     if [[ -n "${VISION_NAV_FIELD_METADATA_UPDATE_COMMAND:-}" ]]; then
       marker_lines+=("__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__=${VISION_NAV_FIELD_METADATA_UPDATE_COMMAND:-}")
@@ -674,7 +692,12 @@ load_field_collection_condition
 
 runtime_status="$(dirname "$field_log")/runtime_status.json"
 if [[ -f "$field_log" ]]; then
-  marker_lines=("__VISION_NAV_TERRAIN_LOG__=$field_log")
+  marker_lines=(
+    "__VISION_NAV_TERRAIN_LOG__=$field_log"
+    "__VISION_NAV_EXPECTED_TERRAIN_LOG__=$field_log"
+    "__VISION_NAV_TERRAIN_BUNDLE__=$bundle"
+    "__VISION_NAV_TERRAIN_BUNDLE_STATUS__=available"
+  )
   runtime_status_eval="degraded|Runtime status snapshot is missing; fetch or generate runtime_status.json before final bench evidence."
   if [[ -f "$runtime_status" ]]; then
     marker_lines+=("__VISION_NAV_RUNTIME_STATUS__=$runtime_status")
@@ -698,6 +721,14 @@ if [[ -f "$field_log" ]]; then
   fi
 elif [[ -e "$bundle" ]]; then
   capture_log_path="$log_dir/capture_field_terrain_log.log"
+  capture_command_marker="$(terrain_capture_command_marker)"
+  capture_context_lines=(
+    "__VISION_NAV_EXPECTED_TERRAIN_LOG__=$field_capture_output_dir/terrain_matches.jsonl"
+    "__VISION_NAV_TERRAIN_BUNDLE__=$bundle"
+    "__VISION_NAV_TERRAIN_BUNDLE_STATUS__=available"
+    "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__=$field_capture_output_dir"
+    "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__=$capture_command_marker"
+  )
   echo
   echo "== capture_field_terrain_log =="
   echo "$ $terrain_capture_command"
@@ -705,11 +736,19 @@ elif [[ -e "$bundle" ]]; then
   (
     export VISION_NAV_COUNT="$field_capture_count"
     export VISION_NAV_OUTPUT_DIR="$field_capture_output_dir"
+    export VISION_NAV_BUNDLE="$bundle"
     "$terrain_capture_command"
   ) >"$capture_log_path" 2>&1
   capture_exit=$?
   set -e
   cat "$capture_log_path"
+  {
+    echo
+    echo "Capture context:"
+    for line in "${capture_context_lines[@]}"; do
+      echo "$line"
+    done
+  } >>"$capture_log_path"
   captured_field_log="$field_capture_output_dir/terrain_matches.jsonl"
   if [[ "$capture_exit" -ne 0 ]]; then
     record_step \
@@ -733,7 +772,10 @@ elif [[ -e "$bundle" ]]; then
     field_log="$captured_field_log"
     export VISION_NAV_FIELD_LOG="$field_log"
     captured_runtime_status="$field_capture_output_dir/runtime_status.json"
-    captured_marker_lines=("__VISION_NAV_TERRAIN_LOG__=$field_log")
+    captured_marker_lines=(
+      "__VISION_NAV_TERRAIN_LOG__=$field_log"
+      "${capture_context_lines[@]}"
+    )
     captured_runtime_status_eval="degraded|Runtime status snapshot is missing; fetch or generate runtime_status.json before final bench evidence."
     if [[ -f "$captured_runtime_status" ]]; then
       captured_marker_lines+=("__VISION_NAV_RUNTIME_STATUS__=$captured_runtime_status")
@@ -779,7 +821,14 @@ elif [[ -e "$bundle" ]]; then
     fi
   fi
 else
-  skip_step "capture_field_terrain_log" "Missing terrain replay log and bundle. Expected log: $field_log ; bundle: $bundle"
+  capture_command_marker="$(terrain_capture_command_marker)"
+  skip_step "capture_field_terrain_log" \
+    "Missing terrain replay log and bundle. Expected log: $field_log ; bundle: $bundle" \
+    "__VISION_NAV_EXPECTED_TERRAIN_LOG__=$field_log" \
+    "__VISION_NAV_TERRAIN_BUNDLE__=$bundle" \
+    "__VISION_NAV_TERRAIN_BUNDLE_STATUS__=missing" \
+    "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__=$field_capture_output_dir" \
+    "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__=$capture_command_marker"
 fi
 
 if [[ "$field_log_ready" != "1" ]]; then

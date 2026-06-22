@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shlex
 import tarfile
 from typing import Any
 
@@ -112,6 +113,11 @@ FINAL_PROOF_MARKERS = [
 ]
 FINAL_PROOF_MARKER_ALTERNATIVES: list[tuple[str, ...]] = []
 FIELD_METADATA_UPDATE_COMMAND_MARKER = "__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__"
+TERRAIN_BUNDLE_MARKER = "__VISION_NAV_TERRAIN_BUNDLE__"
+TERRAIN_BUNDLE_STATUS_MARKER = "__VISION_NAV_TERRAIN_BUNDLE_STATUS__"
+TERRAIN_CAPTURE_COMMAND_MARKER = "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"
+TERRAIN_CAPTURE_OUTPUT_DIR_MARKER = "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"
+EXPECTED_TERRAIN_LOG_MARKER = "__VISION_NAV_EXPECTED_TERRAIN_LOG__"
 
 
 def parse_args() -> argparse.Namespace:
@@ -564,7 +570,14 @@ def workflow_step_summary(
 
 
 def apply_marker_guidance(summary: dict[str, Any], markers: dict[str, Any] | None) -> None:
-    if summary.get("name") != "register_field_replay_case" or not isinstance(markers, dict):
+    if not isinstance(markers, dict):
+        return
+    apply_registration_marker_guidance(summary, markers)
+    apply_capture_marker_guidance(summary, markers)
+
+
+def apply_registration_marker_guidance(summary: dict[str, Any], markers: dict[str, Any]) -> None:
+    if summary.get("name") != "register_field_replay_case":
         return
     metadata_update_command = markers.get(FIELD_METADATA_UPDATE_COMMAND_MARKER)
     if not isinstance(metadata_update_command, str) or not metadata_update_command.strip():
@@ -575,6 +588,45 @@ def apply_marker_guidance(summary: dict[str, Any], markers: dict[str, Any] | Non
     existing_notes = str(summary.get("notes") or "").strip()
     guidance = "Capture metadata is incomplete; run the metadata update command before registration."
     summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
+
+
+def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, Any]) -> None:
+    if summary.get("name") != "capture_field_terrain_log":
+        return
+    capture_command = marker_string(markers, TERRAIN_CAPTURE_COMMAND_MARKER)
+    bundle_path = marker_string(markers, TERRAIN_BUNDLE_MARKER)
+    bundle_status = marker_string(markers, TERRAIN_BUNDLE_STATUS_MARKER)
+    expected_log = marker_string(markers, EXPECTED_TERRAIN_LOG_MARKER)
+    output_dir = marker_string(markers, TERRAIN_CAPTURE_OUTPUT_DIR_MARKER)
+    if capture_command:
+        summary["command"] = capture_command
+    if expected_log:
+        summary["expected_log"] = expected_log
+    if output_dir:
+        summary["output_dir"] = output_dir
+    if bundle_path:
+        summary["bundle_path"] = bundle_path
+    if bundle_status == "missing":
+        summary["desktop_action"] = "Mission Planner > Build Bundle, Upload Bundle, then Module Setup > Field Log Capture"
+        summary["command"] = bundle_validation_command(bundle_path)
+        if capture_command:
+            summary["capture_command_after_bundle"] = capture_command
+        existing_notes = str(summary.get("notes") or "").strip()
+        guidance = "Terrain bundle is missing; build/upload the selected mission bundle and validate it before field-log capture."
+        summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
+
+
+def marker_string(markers: dict[str, Any], name: str) -> str | None:
+    value = markers.get(name)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def bundle_validation_command(bundle_path: str | None) -> str:
+    if bundle_path:
+        return f"VISION_NAV_BUNDLE={shlex.quote(bundle_path)} ./scripts/pi/validate_terrain_bundle.sh"
+    return "./scripts/pi/validate_terrain_bundle.sh"
 
 
 def marker_presence(
