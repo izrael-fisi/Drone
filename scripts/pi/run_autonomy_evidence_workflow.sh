@@ -524,11 +524,22 @@ field_case_vars_present() {
 }
 
 terrain_capture_command_marker() {
-  printf 'VISION_NAV_BUNDLE=%s VISION_NAV_OUTPUT_DIR=%s VISION_NAV_COUNT=%s %s' \
+  local raw_command
+  raw_command="$(printf 'VISION_NAV_BUNDLE=%s VISION_NAV_OUTPUT_DIR=%s VISION_NAV_COUNT=%s %s' \
     "$bundle" \
     "$field_capture_output_dir" \
     "$field_capture_count" \
-    "$terrain_capture_command"
+    "$terrain_capture_command")"
+  command_with_runtime_status_read "$raw_command"
+}
+
+command_with_runtime_status_read() {
+  local command="$1"
+  if [[ "$command" == *"read_runtime_status.sh"* ]]; then
+    printf '%s' "$command"
+  else
+    printf '%s && ./scripts/pi/read_runtime_status.sh' "$command"
+  fi
 }
 
 load_field_collection_condition() {

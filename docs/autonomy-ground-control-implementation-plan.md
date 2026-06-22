@@ -398,6 +398,9 @@ Status:
 - Done: readiness reports, support-bundle summaries, Markdown handoffs, and the
   desktop parser normalize older field collection plans so stale capture-only
   commands are shown with the required runtime-status read step.
+- Done: the guided evidence workflow now records
+  `__VISION_NAV_TERRAIN_CAPTURE_COMMAND__` with the runtime-status read step
+  included, so raw workflow markers match the operator handoff command.
 
 Tasks:
 

@@ -395,12 +395,15 @@ steps = {step["name"]: step for step in report["steps"]}
 assert "select_field_collection_condition" in steps
 assert "validate_captured_field_terrain_log" not in steps
 assert steps["select_field_collection_condition"]["status"] in {"passed", "degraded"}
+selected_capture_command = steps["select_field_collection_condition"]["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"]
+assert "read_runtime_status.sh" in selected_capture_command
 capture = steps["capture_field_terrain_log"]
 assert capture["status"] == "passed"
 assert "parseable with" in capture["notes"]
 assert "Runtime status snapshot is usable" in capture["notes"]
 assert "__VISION_NAV_TERRAIN_LOG__" in capture["markers"]
 assert "__VISION_NAV_RUNTIME_STATUS__" in capture["markers"]
+assert "read_runtime_status.sh" in capture["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"]
 assert Path(capture["markers"]["__VISION_NAV_TERRAIN_LOG__"]).exists()
 assert Path(capture["markers"]["__VISION_NAV_RUNTIME_STATUS__"]).exists()
 assert "Stub terrain capture wrote" in "\n".join(capture["tail"])
