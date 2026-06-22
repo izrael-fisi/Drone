@@ -732,6 +732,8 @@ grep -q "Module Setup > Load Next Field Condition" "$goal_status_output"
 grep -q "./scripts/pi/run_autonomy_evidence_workflow.sh" "$goal_status_output"
 grep -q "Next commands:" "$goal_status_output"
 grep -q "Blocked follow-up commands:" "$goal_status_output"
+grep -q "notes: The final report must show the MAVLink ODOMETRY path arriving as fresh vehicle_visual_odometry samples" "$goal_status_output"
+grep -q "notes: Use the same field replay log to compare ORB, AKAZE, SIFT, and the neural placeholder path." "$goal_status_output"
 grep -q "support_bundle_bench_readiness" "$goal_status_output"
 grep -q "./scripts/pi/run_rosbag_export_validation.sh" "$goal_status_output"
 grep -q "./scripts/dev/run_rosbag2_cli_review.sh" "$goal_status_output"
@@ -957,6 +959,7 @@ grep -q "expected log: /tmp/field-captures/good_texture/terrain_matches.jsonl" "
 grep -q "output: /tmp/field-captures/good_texture" "$scanned_goal_status_output"
 grep -q "runtime status: /tmp/field-captures/good_texture/runtime_status.json" "$scanned_goal_status_output"
 grep -q "after bundle: VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh" "$scanned_goal_status_output"
+grep -q "notes: The guided workflow creates or loads the field collection plan, captures the next pending condition" "$scanned_goal_status_output"
 python3 - "$scanned_goal_status_output" <<'PY'
 from pathlib import Path
 import sys

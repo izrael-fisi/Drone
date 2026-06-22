@@ -941,6 +941,7 @@ if phases:
                     "field_runtime_status_path",
                     "field_metadata_update_command",
                     "field_register_command",
+                    "notes",
                 )
                 if action.get(key)
             }
@@ -989,6 +990,9 @@ if next_actions:
         if desktop_action:
             print(f"   app: {desktop_action}")
         print(f"   {command}")
+        notes = action.get("notes")
+        if notes:
+            print(f"   notes: {notes}")
         for label, key in (
             ("field", "field_condition"),
             ("bundle", "field_bundle"),
@@ -1021,6 +1025,9 @@ if blocked_phase_commands:
         if waiting_on:
             print(f"   waiting on: {waiting_on}")
         print(f"   {command}")
+        notes = action.get("notes")
+        if notes:
+            print(f"   notes: {notes}")
         if count >= 8:
             break
 PY

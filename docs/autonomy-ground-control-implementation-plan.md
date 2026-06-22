@@ -980,6 +980,10 @@ Status:
   matching Module Setup actions (`Field Log Capture`,
   `Field Evidence Case > Update Metadata`, and
   `Field Evidence Case > Register`) directly above each command.
+- Done: `scripts/dev/autonomy_goal_status.sh` now prints proof-runbook action
+  notes under immediate and blocked commands, so terminal operators see export,
+  evidence ordering, field-condition, and downstream proof prerequisites without
+  opening the readiness JSON or desktop app.
 - Done: missing support-bundle readiness now records the strict bench and
   support-review inputs the bundle is expected to contain, and
   `scripts/dev/autonomy_goal_status.sh` renders those as a bench evidence
