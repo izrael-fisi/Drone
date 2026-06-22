@@ -628,7 +628,7 @@ if field_conditions or next_field_condition:
         if len(remaining) > 12:
             print(f"  - ... {len(remaining) - 12} more")
     if not next_field_condition or not next_field_condition.get("capture_command"):
-        print("- create or refresh the Pi field collection plan to get condition-specific capture/register commands.")
+        print("- create or refresh the Pi field collection plan to get condition-specific capture, metadata-update, and registration commands.")
 
 px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
 if isinstance(px4_prereqs, dict):

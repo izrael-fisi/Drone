@@ -571,13 +571,14 @@ Status:
   plan JSON under `summaries/field_collection_plans/`, and preserve the
   intended field-coverage plan for support review.
 - Done: support-bundle field-collection summaries now preserve capture root,
-  per-condition source-log/capture-output/runtime-status paths, capture/register
-  command presence, and pending command counts so offline support review can
-  trace each required real-world condition to its intended log capture.
+  per-condition source-log/capture-output/runtime-status paths,
+  capture/metadata-update/register command presence, and pending command counts
+  so offline support review can trace each required real-world condition to its
+  intended log capture.
 - Done: field collection plans, support-bundle summaries, readiness reports, and
-  handoffs now promote the next pending field condition with its capture/register
-  commands, so operators can advance the eight-condition real-field dataset
-  without scanning the full checklist.
+  handoffs now promote the next pending field condition with its capture,
+  metadata-update, and registration commands, so operators can advance the
+  eight-condition real-field dataset without scanning the full checklist.
 - Done: field collection plans, support-bundle summaries, readiness reports, and
   `autonomy_goal_status.sh` now preserve the next pending condition's
   `update_field_capture_metadata.sh` command between capture and registration,
@@ -589,6 +590,10 @@ Status:
   metadata-update commands as their own copyable command group between capture
   and registration, so proof-grade field metadata is no longer hidden in the
   registration command blob.
+- Done: field collection plans and support-bundle summaries now count pending
+  metadata-update commands alongside pending capture and registration commands,
+  making the capture -> metadata -> registration handoff auditable in summary
+  cards and parsed support ZIPs.
 - Done: support-bundle summary cards now surface field-plan source-log counts
   next to capture-output and runtime-status counts, matching the final
   autonomy-readiness traceability gate.
@@ -707,8 +712,9 @@ Status:
   bootstrap command, while field-evidence proof remains on the full Evidence
   Workflow.
 - Done: Module Setup renders the field plan's `next_condition` in downloaded
-  field-plan and autonomy-readiness cards, including direct capture/register copy
-  controls and a one-click `Load` action in the field-plan list.
+  field-plan and autonomy-readiness cards, including direct
+  capture/metadata-update/register copy controls and a one-click `Load` action
+  in the field-plan list.
 - Done: Module Setup also exposes a top-level local-only `Load Next Field
   Condition` action that loads the newest downloaded plan's next condition into
   the Field Evidence Case form before registration.
@@ -852,8 +858,9 @@ Status:
 - Done: `scripts/dev/autonomy_goal_status.sh` also shows
   `./scripts/pi/run_autonomy_evidence_workflow.sh` as the guided all-in-one
   workflow option, while keeping the exact proof-runbook and per-condition
-  capture/register commands available in generated handoffs and command bundles
-  for operators who want to inspect or run each prerequisite manually.
+  capture/metadata-update/register commands available in generated handoffs and
+  command bundles for operators who want to inspect or run each prerequisite
+  manually.
 - Done: `scripts/dev/autonomy_goal_status.sh` now includes a field collection
   preview that translates missing required conditions into operator-readable
   labels, expected outcomes, and the next condition to capture before the

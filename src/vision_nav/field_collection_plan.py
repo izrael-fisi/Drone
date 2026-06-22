@@ -110,6 +110,9 @@ def create_field_collection_plan(
         "source_log": source_log,
         "capture_root": capture_root,
         "pending_capture_command_count": sum(1 for item in pending_conditions if item.get("capture_command")),
+        "pending_metadata_update_command_count": sum(
+            1 for item in pending_conditions if item.get("metadata_update_command")
+        ),
         "pending_registration_command_count": sum(1 for item in pending_conditions if item.get("register_command")),
         "capture_output_dir_count": sum(1 for item in conditions if item.get("capture_output_dir")),
         "runtime_status_path_count": sum(1 for item in conditions if item.get("runtime_status_path")),

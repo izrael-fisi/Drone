@@ -2052,6 +2052,7 @@ RC8_OPTION,90
                     "bundle": str(bundle),
                     "source_log": str(log),
                     "capture_root": str(root / "field-captures"),
+                    "pending_metadata_update_command_count": 0,
                     "summary": {
                         "required_count": len(REQUIRED_FIELD_CONDITIONS),
                         "registered_count": len(REQUIRED_FIELD_CONDITIONS),
@@ -2071,6 +2072,7 @@ RC8_OPTION,90
                             "capture_output_dir": str(root / "field-captures" / condition),
                             "runtime_status_path": str(root / "field-captures" / condition / "runtime_status.json"),
                             "capture_command": f"VISION_NAV_OUTPUT_DIR={root / 'field-captures' / condition} ./scripts/pi/run_terrain_nav_loop.sh",
+                            "metadata_update_command": f"VISION_NAV_FIELD_CONDITION={condition} ./scripts/pi/update_field_capture_metadata.sh",
                             "register_command": f"VISION_NAV_FIELD_CONDITION={condition} ./scripts/pi/register_field_replay_case.sh",
                         }
                         for condition in REQUIRED_FIELD_CONDITIONS
@@ -2262,9 +2264,19 @@ RC8_OPTION,90
             "support field collection source log count",
         )
         assert_equal(
+            manifest["field_collection_plans"]["pending_metadata_update_command_count"],
+            0,
+            "support field collection pending metadata update command count",
+        )
+        assert_equal(
             manifest["field_collection_plans"]["reports"][0]["conditions"][0]["has_capture_command"],
             True,
             "support field collection condition capture command flag",
+        )
+        assert_equal(
+            manifest["field_collection_plans"]["reports"][0]["conditions"][0]["has_metadata_update_command"],
+            True,
+            "support field collection condition metadata update command flag",
         )
         assert_equal(
             manifest["logs"]["runtime_statuses"][0]["schema_version"],
@@ -2941,6 +2953,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                     "site_name": "unit-field",
                     "capture_root": str(root / "field-captures"),
                     "pending_capture_command_count": 0,
+                    "pending_metadata_update_command_count": 0,
                     "pending_registration_command_count": 0,
                     "capture_output_dir_count": len(REQUIRED_FIELD_CONDITIONS),
                     "runtime_status_path_count": len(REQUIRED_FIELD_CONDITIONS),
@@ -2962,6 +2975,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "capture_output_dir": str(root / "field-captures" / condition),
                             "runtime_status_path": str(root / "field-captures" / condition / "runtime_status.json"),
                             "capture_command": f"./scripts/pi/run_terrain_nav_loop.sh --condition {condition}",
+                            "metadata_update_command": f"./scripts/pi/update_field_capture_metadata.sh --condition {condition}",
                             "register_command": f"./scripts/pi/register_field_replay_case.sh --condition {condition}",
                         }
                         for condition in REQUIRED_FIELD_CONDITIONS
@@ -4820,6 +4834,11 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "field collection pending capture command count",
         )
         assert_equal(
+            plan["pending_metadata_update_command_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "field collection pending metadata update command count",
+        )
+        assert_equal(
             plan["next_condition"]["condition"],
             "good_texture",
             "field collection next condition starts with first required condition",
@@ -4962,6 +4981,11 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             updated["next_condition"]["condition"],
             "low_texture",
             "field collection next condition advances after registration",
+        )
+        assert_equal(
+            updated["pending_metadata_update_command_count"],
+            len(REQUIRED_FIELD_CONDITIONS) - 1,
+            "field collection updated pending metadata update command count",
         )
         updated["next_condition"]["capture_metadata"] = field_capture_metadata_fixture(
             "low_texture",

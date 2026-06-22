@@ -587,14 +587,13 @@ This writes
 Markdown checklist at
 `~/DroneTransfer/outgoing/replay-cases/field_collection_plan.md`. The plan marks
 each required condition as placeholder, missing, registered-missing-log, or
-registered, and includes the exact `VISION_NAV_FIELD_*` registration command to
-run after each captured terrain log. It also promotes the next pending condition
-with its condition-specific capture and registration commands, so the operator
+registered, and includes the exact condition-specific capture, metadata-update,
+and `VISION_NAV_FIELD_*` registration commands to run for each terrain log. It
+also promotes the next pending condition with those commands, so the operator
 has an immediate next field task without scanning the full checklist. The
-generated plan also prints a metadata
-JSON block and checklist for each condition; when copied into
-`VISION_NAV_FIELD_CAPTURE_METADATA`, that JSON is stored with the replay case
-for later support and readiness review. It also emits
+generated plan also prints a metadata JSON block and checklist for each
+condition; when copied into `VISION_NAV_FIELD_CAPTURE_METADATA`, that JSON is
+stored with the replay case for later support and readiness review. It also emits
 `__VISION_NAV_FIELD_COLLECTION_PLAN__=...` and
 `__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=...` markers.
 From the desktop app, Module Setup exposes the same step as `Create Plan`,
@@ -1071,9 +1070,9 @@ metadata is complete.
 Downloaded field collection plans expose a `Load` action per pending condition,
 which pre-fills the Field Evidence Case form before registration so the plan
 condition, expected behavior, and capture metadata stay in sync.
-Support-bundle details also preserve field collection capture root, per-condition
-terrain log paths, runtime-status paths, and pending capture/register command
-counts for offline review.
+Support-bundle details also preserve field collection capture root,
+per-condition terrain log paths, runtime-status paths, and pending
+capture/metadata-update/register command counts for offline review.
 The downloaded workflow JSON remains visible after app restart in Module Setup's
 Evidence Workflow Reports list, including per-step status and emitted artifact
 markers. Each artifact marker chip copies the emitted Pi-side path for support
@@ -1247,9 +1246,9 @@ downloaded sibling `field_collection_plan.json` beside the report. The local
 Markdown handoff renderer and evidence ZIP packager use the same fallback, so
 support packages can still include the downloaded JSON/Markdown checklist. The
 pending field-collection condition pills and command buttons in Module Setup
-copy individual or batched generated replay-case capture and registration
-commands when the plan includes them. The next pending condition is also shown
-separately in downloaded field-plan and autonomy-readiness cards. The
+copy individual or batched generated replay-case capture, metadata-update, and
+registration commands when the plan includes them. The next pending condition is
+also shown separately in downloaded field-plan and autonomy-readiness cards. The
 autonomy-readiness list detects the sibling Markdown handoff and evidence ZIP
 package beside each JSON report and exposes copy/reveal controls for support
 review. When the evidence ZIP contains the expected package manifest, the list

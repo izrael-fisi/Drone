@@ -378,8 +378,8 @@ expected behavior, notes, site, and any non-placeholder capture metadata. This
 keeps the generated checklist and the registration form aligned while still
 letting the operator complete site-specific metadata before registering the log.
 The plan and readiness cards also promote the next pending condition with its
-capture/register command buttons, and the plan list can load that next condition
-directly into the Field Evidence Case form.
+capture, metadata-update, and registration command buttons, and the plan list
+can load that next condition directly into the Field Evidence Case form.
 The local-only `Load Next Field Condition` setup action performs the same load
 from the newest downloaded plan, so the operator can move from `Create Plan` to
 metadata entry without scrolling through the plan list. Loading a condition only
@@ -656,8 +656,8 @@ handoff renderer and evidence ZIP packager use the same fallback, so support
 packages can still include the downloaded JSON/Markdown checklist.
 Downloaded support-bundle details also surface bundled field collection plans:
 the card shows plan pass/degraded state, registered-vs-required condition
-counts, capture-command/runtime-status path coverage, per-condition
-placeholder/missing/registered status, and lets support extract the
+counts, capture-command/metadata-command/runtime-status path coverage,
+per-condition placeholder/missing/registered status, and lets support extract the
 JSON/Markdown plan artifacts from the ZIP.
 Pending field-collection condition pills and command buttons in Module Setup
 copy individual or batched generated capture, metadata update, and registration

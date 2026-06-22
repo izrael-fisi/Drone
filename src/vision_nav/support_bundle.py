@@ -974,6 +974,9 @@ def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path
         "placeholder_count": summary.get("placeholder_count"),
         "missing_count": summary.get("missing_count"),
         "pending_capture_command_count": sum(1 for item in pending_conditions if item.get("has_capture_command")),
+        "pending_metadata_update_command_count": sum(
+            1 for item in pending_conditions if item.get("has_metadata_update_command")
+        ),
         "pending_registration_command_count": sum(1 for item in pending_conditions if item.get("has_register_command")),
         "capture_output_dir_count": sum(1 for item in conditions if item.get("capture_output_dir")),
         "runtime_status_path_count": sum(1 for item in conditions if item.get("runtime_status_path")),
@@ -1040,6 +1043,9 @@ def copy_field_collection_plans(paths: list[str], support_dir: Path) -> dict[str
         "registered_count": max((int(report.get("registered_count") or 0) for report in reports), default=0),
         "required_count": max((int(report.get("required_count") or 0) for report in reports), default=0),
         "pending_capture_command_count": sum(int(report.get("pending_capture_command_count") or 0) for report in reports),
+        "pending_metadata_update_command_count": sum(
+            int(report.get("pending_metadata_update_command_count") or 0) for report in reports
+        ),
         "pending_registration_command_count": sum(
             int(report.get("pending_registration_command_count") or 0) for report in reports
         ),

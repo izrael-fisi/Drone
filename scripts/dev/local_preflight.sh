@@ -88,6 +88,7 @@ assert plan["schema_version"] == "vision_nav_field_collection_plan_v1"
 assert plan["summary"]["required_count"] == 8
 assert plan["summary"]["placeholder_count"] == 8
 assert plan["summary"]["registered_count"] == 0
+assert plan["pending_metadata_update_command_count"] == 8
 PY
 PYTHONPATH=src python3 -m vision_nav.replay_case_manifest \
   --manifest "$field_smoke_dir/field_manifest.template.json" \
@@ -695,6 +696,7 @@ cat >"$local_audit_dir/replay-cases/field_collection_plan.json" <<'EOF'
     "placeholder_count": 8,
     "missing_count": 0
   },
+  "pending_metadata_update_command_count": 8,
   "conditions": []
 }
 EOF
@@ -783,6 +785,7 @@ cat >"$outgoing_fallback_root/replay-cases/field_collection_plan.json" <<'EOF'
     "placeholder_count": 8,
     "missing_count": 0
   },
+  "pending_metadata_update_command_count": 1,
   "next_condition": {
     "condition": "good_texture",
     "label": "Good texture, matching map",

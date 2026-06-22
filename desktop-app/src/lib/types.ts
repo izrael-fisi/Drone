@@ -177,6 +177,7 @@ export interface SupportBundleFile {
     field_collection_plan_required_count?: number;
     field_collection_plan_report_count?: number;
     field_collection_plan_pending_capture_command_count?: number;
+    field_collection_plan_pending_metadata_update_command_count?: number;
     field_collection_plan_pending_registration_command_count?: number;
     field_collection_plan_capture_output_dir_count?: number;
     field_collection_plan_runtime_status_path_count?: number;
@@ -352,6 +353,7 @@ export interface SupportBundleDetails {
     source_log?: string;
     capture_root?: string;
     pending_capture_command_count?: number;
+    pending_metadata_update_command_count?: number;
     pending_registration_command_count?: number;
     capture_output_dir_count?: number;
     runtime_status_path_count?: number;
@@ -856,6 +858,7 @@ export interface FieldCollectionPlanFile {
   bundle?: string;
   capture_root?: string;
   pending_capture_command_count?: number;
+  pending_metadata_update_command_count?: number;
   pending_registration_command_count?: number;
   capture_output_dir_count?: number;
   runtime_status_path_count?: number;

@@ -53,6 +53,7 @@ pub struct SupportBundleSummary {
     pub field_collection_plan_required_count: Option<u64>,
     pub field_collection_plan_report_count: Option<u64>,
     pub field_collection_plan_pending_capture_command_count: Option<u64>,
+    pub field_collection_plan_pending_metadata_update_command_count: Option<u64>,
     pub field_collection_plan_pending_registration_command_count: Option<u64>,
     pub field_collection_plan_capture_output_dir_count: Option<u64>,
     pub field_collection_plan_runtime_status_path_count: Option<u64>,
@@ -313,6 +314,7 @@ pub struct FieldCollectionPlanFile {
     pub bundle: Option<String>,
     pub capture_root: Option<String>,
     pub pending_capture_command_count: Option<u64>,
+    pub pending_metadata_update_command_count: Option<u64>,
     pub pending_registration_command_count: Option<u64>,
     pub capture_output_dir_count: Option<u64>,
     pub runtime_status_path_count: Option<u64>,
@@ -331,6 +333,7 @@ pub struct SupportBundleFieldCollectionPlanReport {
     pub source_log: Option<String>,
     pub capture_root: Option<String>,
     pub pending_capture_command_count: Option<u64>,
+    pub pending_metadata_update_command_count: Option<u64>,
     pub pending_registration_command_count: Option<u64>,
     pub capture_output_dir_count: Option<u64>,
     pub runtime_status_path_count: Option<u64>,
@@ -3803,6 +3806,9 @@ fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCol
         pending_capture_command_count: value
             .get("pending_capture_command_count")
             .and_then(|value| value.as_u64()),
+        pending_metadata_update_command_count: value
+            .get("pending_metadata_update_command_count")
+            .and_then(|value| value.as_u64()),
         pending_registration_command_count: value
             .get("pending_registration_command_count")
             .and_then(|value| value.as_u64()),
@@ -3865,7 +3871,9 @@ fn field_collection_plan_condition_from_json(
         has_metadata_update_command: item
             .get("has_metadata_update_command")
             .and_then(|value| value.as_bool())
-            .or_else(|| json_string(item.get("metadata_update_command")).map(|value| !value.is_empty())),
+            .or_else(|| {
+                json_string(item.get("metadata_update_command")).map(|value| !value.is_empty())
+            }),
         has_register_command: item
             .get("has_register_command")
             .and_then(|value| value.as_bool())
@@ -3890,6 +3898,7 @@ fn field_collection_plan_report_from_json(
         source_log: json_string(value.get("source_log")),
         capture_root: plan.capture_root,
         pending_capture_command_count: plan.pending_capture_command_count,
+        pending_metadata_update_command_count: plan.pending_metadata_update_command_count,
         pending_registration_command_count: plan.pending_registration_command_count,
         capture_output_dir_count: plan.capture_output_dir_count,
         runtime_status_path_count: plan.runtime_status_path_count,
@@ -4388,6 +4397,9 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         field_collection_plan_pending_capture_command_count: manifest
             .pointer("/field_collection_plans/pending_capture_command_count")
             .and_then(|value| value.as_u64()),
+        field_collection_plan_pending_metadata_update_command_count: manifest
+            .pointer("/field_collection_plans/pending_metadata_update_command_count")
+            .and_then(|value| value.as_u64()),
         field_collection_plan_pending_registration_command_count: manifest
             .pointer("/field_collection_plans/pending_registration_command_count")
             .and_then(|value| value.as_u64()),
@@ -4700,6 +4712,7 @@ mod tests {
                 "registered_count": 3,
                 "required_count": 8,
                 "pending_capture_command_count": 5,
+                "pending_metadata_update_command_count": 4,
                 "pending_registration_command_count": 5,
                 "capture_output_dir_count": 8,
                 "runtime_status_path_count": 8,
@@ -4780,6 +4793,10 @@ mod tests {
         assert_eq!(
             summary.field_collection_plan_pending_capture_command_count,
             Some(5)
+        );
+        assert_eq!(
+            summary.field_collection_plan_pending_metadata_update_command_count,
+            Some(4)
         );
         assert_eq!(
             summary.field_collection_plan_runtime_status_path_count,
@@ -6347,13 +6364,14 @@ mod tests {
                 "site_name": "site-a",
                 "manifest_path": "/home/user/DroneTransfer/outgoing/replay-cases/field_manifest.json",
                 "bundle": "/home/user/drone-data/map_bundles/mission_bundle",
-                    "summary": {
-                        "required_count": 8,
-                        "registered_count": 1,
-                        "registered_missing_log_count": 1,
-                        "placeholder_count": 6,
-                        "missing_count": 0
-                    },
+                "pending_metadata_update_command_count": 1,
+                "summary": {
+                    "required_count": 8,
+                    "registered_count": 1,
+                    "registered_missing_log_count": 1,
+                    "placeholder_count": 6,
+                    "missing_count": 0
+                },
                     "next_condition": {
                         "condition": "low_texture",
                         "label": "Low texture",
@@ -6363,6 +6381,7 @@ mod tests {
                         "manifest_log_exists": false,
                         "source_log": "/home/user/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
                         "capture_command": "VISION_NAV_OUTPUT_DIR=/tmp/field-captures/low_texture ./scripts/pi/run_terrain_nav_loop.sh",
+                        "metadata_update_command": "VISION_NAV_FIELD_CONDITION=low_texture ./scripts/pi/update_field_capture_metadata.sh",
                         "register_command": "VISION_NAV_FIELD_CASE_NAME=site-a-low-texture ./scripts/pi/register_field_replay_case.sh"
                     },
                     "conditions": [
@@ -6419,6 +6438,7 @@ mod tests {
         assert_eq!(plans[0].summary.required_count, Some(8));
         assert_eq!(plans[0].summary.registered_count, Some(1));
         assert_eq!(plans[0].summary.placeholder_count, Some(6));
+        assert_eq!(plans[0].pending_metadata_update_command_count, Some(1));
         let next_condition = plans[0]
             .next_condition
             .as_ref()
@@ -6428,6 +6448,10 @@ mod tests {
                 next_condition.capture_command.as_deref(),
                 Some("VISION_NAV_OUTPUT_DIR=/tmp/field-captures/low_texture ./scripts/pi/run_terrain_nav_loop.sh")
             );
+        assert_eq!(
+            next_condition.metadata_update_command.as_deref(),
+            Some("VISION_NAV_FIELD_CONDITION=low_texture ./scripts/pi/update_field_capture_metadata.sh")
+        );
         assert_eq!(plans[0].conditions.len(), 2);
         assert_eq!(
             plans[0].conditions[0].condition.as_deref(),
@@ -6959,6 +6983,7 @@ mod tests {
                     "source_log": "terrain_matches.jsonl",
                     "capture_root": "field-captures",
                     "pending_capture_command_count": 1,
+                    "pending_metadata_update_command_count": 1,
                     "pending_registration_command_count": 1,
                     "capture_output_dir_count": 2,
                     "runtime_status_path_count": 2,
@@ -6981,11 +7006,12 @@ mod tests {
                             "capture_output_dir": "field-captures/blur",
                             "runtime_status_path": "field-captures/blur/runtime_status.json",
                             "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
+                            "metadata_update_command": "./scripts/pi/update_field_capture_metadata.sh --condition blur",
                             "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur"
                         },
                         "conditions": [
-                        {"condition": "good_texture", "label": "Good texture", "expected": "good_map", "status": "registered", "case_name": "unit-good", "manifest_log_exists": true, "source_log": "field-captures/good/terrain_matches.jsonl", "capture_output_dir": "field-captures/good", "runtime_status_path": "field-captures/good/runtime_status.json", "has_capture_command": true, "has_register_command": true},
-                        {"condition": "blur", "label": "Blur", "expected": "degraded", "status": "placeholder", "case_name": "unit-blur", "manifest_log_exists": false, "source_log": "field-captures/blur/terrain_matches.jsonl", "capture_output_dir": "field-captures/blur", "runtime_status_path": "field-captures/blur/runtime_status.json", "has_capture_command": true, "has_register_command": true}
+                        {"condition": "good_texture", "label": "Good texture", "expected": "good_map", "status": "registered", "case_name": "unit-good", "manifest_log_exists": true, "source_log": "field-captures/good/terrain_matches.jsonl", "capture_output_dir": "field-captures/good", "runtime_status_path": "field-captures/good/runtime_status.json", "has_capture_command": true, "has_metadata_update_command": true, "has_register_command": true},
+                        {"condition": "blur", "label": "Blur", "expected": "degraded", "status": "placeholder", "case_name": "unit-blur", "manifest_log_exists": false, "source_log": "field-captures/blur/terrain_matches.jsonl", "capture_output_dir": "field-captures/blur", "runtime_status_path": "field-captures/blur/runtime_status.json", "has_capture_command": true, "has_metadata_update_command": true, "has_register_command": true}
                     ]
                 })
                 .to_string()
@@ -7279,6 +7305,10 @@ mod tests {
         );
         assert_eq!(
             details.field_collection_plan_reports[0].pending_capture_command_count,
+            Some(1)
+        );
+        assert_eq!(
+            details.field_collection_plan_reports[0].pending_metadata_update_command_count,
             Some(1)
         );
         assert_eq!(
