@@ -698,6 +698,10 @@ export interface AutonomyEvidenceWorkflowValidationNextStep {
   command?: string;
   desktop_action?: string;
   metadata_update_command?: string;
+  bundle_path?: string;
+  expected_log?: string;
+  output_dir?: string;
+  capture_command_after_bundle?: string;
 }
 
 export interface AutonomyEvidenceWorkflowReportFile {

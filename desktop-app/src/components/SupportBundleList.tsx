@@ -184,6 +184,7 @@ function SupportBundleDetailPanel({
   const workflowProvenanceCheck = workflowValidation?.checks.find((check) => check.name === "workflow_provenance");
   const workflowNextStep = workflowValidation?.next_required_step;
   const workflowNextCommand = workflowNextStep?.command || workflowNextStep?.metadata_update_command;
+  const workflowCaptureAfterBundleCommand = workflowNextStep?.capture_command_after_bundle;
   const workflowBlockingChecks = (workflowValidation?.checks ?? []).filter((check) => check.status && check.status !== "passed");
   const workflowMissingSteps = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_steps));
   const workflowMissingMarkers = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_markers));
@@ -275,6 +276,9 @@ function SupportBundleDetailPanel({
                     {formatLabel(workflowNextStep.status)}
                   </span>
                   {workflowNextStep.desktop_action && <span className="truncate">app {workflowNextStep.desktop_action}</span>}
+                  {workflowNextStep.bundle_path && <span className="truncate">bundle {workflowNextStep.bundle_path}</span>}
+                  {workflowNextStep.expected_log && <span className="truncate">log {workflowNextStep.expected_log}</span>}
+                  {workflowNextStep.output_dir && <span className="truncate">output {workflowNextStep.output_dir}</span>}
                 </div>
                 {workflowNextCommand && (
                   <button
@@ -286,6 +290,18 @@ function SupportBundleDetailPanel({
                     <Clipboard size={9} className="shrink-0" />
                     <span className="shrink-0 text-slate-500">copy next</span>
                     <span className="truncate whitespace-pre">{workflowNextCommand}</span>
+                  </button>
+                )}
+                {workflowCaptureAfterBundleCommand && (
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(workflowCaptureAfterBundleCommand)}
+                    className="flex w-full min-w-0 items-center gap-1.5 rounded border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-left font-mono text-[10px] text-cyan-100 hover:border-cyan-400/50"
+                    title={workflowCaptureAfterBundleCommand}
+                  >
+                    <Clipboard size={9} className="shrink-0" />
+                    <span className="shrink-0 text-cyan-200/80">copy capture after bundle</span>
+                    <span className="truncate whitespace-pre">{workflowCaptureAfterBundleCommand}</span>
                   </button>
                 )}
               </div>

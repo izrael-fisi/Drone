@@ -739,6 +739,10 @@ pub struct AutonomyEvidenceWorkflowValidationNextStep {
     pub command: Option<String>,
     pub desktop_action: Option<String>,
     pub metadata_update_command: Option<String>,
+    pub bundle_path: Option<String>,
+    pub expected_log: Option<String>,
+    pub output_dir: Option<String>,
+    pub capture_command_after_bundle: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -3815,6 +3819,10 @@ fn workflow_validation_next_step_from_json(
         command: json_string(value.get("command")),
         desktop_action: json_string(value.get("desktop_action")),
         metadata_update_command: json_string(value.get("metadata_update_command")),
+        bundle_path: json_string(value.get("bundle_path")),
+        expected_log: json_string(value.get("expected_log")),
+        output_dir: json_string(value.get("output_dir")),
+        capture_command_after_bundle: json_string(value.get("capture_command_after_bundle")),
     })
 }
 
@@ -6143,7 +6151,11 @@ mod tests {
                     "exit_code": 0,
                     "notes": "Set field case variables.",
                     "command": "./scripts/pi/register_field_replay_case.sh",
-                    "desktop_action": "Module Setup > Field Evidence Case > Register"
+                    "desktop_action": "Module Setup > Field Evidence Case > Register",
+                    "bundle_path": "/home/user/drone-data/map_bundles/mission_bundle",
+                    "expected_log": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/terrain_matches.jsonl",
+                    "output_dir": "/home/user/DroneTransfer/outgoing/field-captures/good_texture",
+                    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
                 },
                 "checks": [
                     {
@@ -6293,6 +6305,22 @@ mod tests {
         assert_eq!(
             next_step.desktop_action.as_deref(),
             Some("Module Setup > Field Evidence Case > Register")
+        );
+        assert_eq!(
+            next_step.bundle_path.as_deref(),
+            Some("/home/user/drone-data/map_bundles/mission_bundle")
+        );
+        assert_eq!(
+            next_step.expected_log.as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/field-captures/good_texture/terrain_matches.jsonl")
+        );
+        assert_eq!(
+            next_step.output_dir.as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/field-captures/good_texture")
+        );
+        assert_eq!(
+            next_step.capture_command_after_bundle.as_deref(),
+            Some("VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh")
         );
         assert_eq!(validation.checks.len(), 3);
         assert_eq!(

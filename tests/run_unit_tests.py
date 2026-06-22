@@ -3513,6 +3513,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "notes": "No field case variables supplied.",
                         "command": "./scripts/pi/register_field_replay_case.sh",
                         "desktop_action": "Module Setup > Field Evidence Case > Register",
+                        "bundle_path": str(root / "mission_bundle"),
+                        "expected_log": str(root / "field-captures/good_texture/terrain_matches.jsonl"),
+                        "output_dir": str(root / "field-captures/good_texture"),
+                        "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
                     },
                     "checks": [
                         {
@@ -4915,6 +4919,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 workflow_validation_summary["next_required_step"]["command"],
                 "./scripts/pi/register_field_replay_case.sh",
                 "autonomy evidence package workflow validation next command",
+            )
+            assert_equal(
+                workflow_validation_summary["next_required_step"]["capture_command_after_bundle"],
+                "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+                "autonomy evidence package workflow validation capture-after-bundle command",
+            )
+            assert_equal(
+                workflow_validation_summary["next_required_step"]["bundle_path"],
+                str(root / "mission_bundle"),
+                "autonomy evidence package workflow validation bundle path",
             )
             required_step_check = next(
                 item

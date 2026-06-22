@@ -857,6 +857,22 @@ function validationCheckDetail(check: WorkflowValidationCheck) {
   return "";
 }
 
+function workflowNextStepTitle(nextStep: WorkflowValidationSummary["next_required_step"]) {
+  if (!nextStep) return undefined;
+  return [
+    nextStep.desktop_action,
+    nextStep.command,
+    nextStep.capture_command_after_bundle ? `after bundle: ${nextStep.capture_command_after_bundle}` : null,
+    nextStep.bundle_path ? `bundle: ${nextStep.bundle_path}` : null,
+    nextStep.expected_log ? `expected log: ${nextStep.expected_log}` : null,
+    nextStep.output_dir ? `output: ${nextStep.output_dir}` : null,
+    nextStep.metadata_update_command,
+    nextStep.notes,
+  ]
+    .filter(Boolean)
+    .join("\n") || undefined;
+}
+
 function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidationSummary }) {
   const highlightedChecks = summary.checks
     .filter((check) => check.status && check.status !== "passed")
@@ -876,18 +892,29 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
       {nextStep && (
         <span
           className="inline-flex max-w-full items-center gap-1 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-amber-200"
-          title={[nextStep.desktop_action, nextStep.command, nextStep.metadata_update_command, nextStep.notes]
-            .filter(Boolean)
-            .join("\n") || undefined}
+          title={workflowNextStepTitle(nextStep)}
         >
           <span className={cn(readinessBadgeClass(nextStep.status), "text-[9px] px-1 py-0")}>next</span>
           <span className="truncate font-mono">{formatReadinessLabel(nextStep.name)}</span>
+          {nextStep.bundle_path && (
+            <span className="max-w-[18rem] truncate font-mono text-amber-100/80">bundle {nextStep.bundle_path}</span>
+          )}
           {nextStep.command && (
             <button
               type="button"
               onClick={() => navigator.clipboard.writeText(nextStep.command ?? "")}
               className="inline-flex h-4 w-4 items-center justify-center rounded border border-amber-400/20 text-amber-200 hover:border-amber-300"
               title="Copy next workflow command"
+            >
+              <Copy size={9} />
+            </button>
+          )}
+          {nextStep.capture_command_after_bundle && (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(nextStep.capture_command_after_bundle ?? "")}
+              className="inline-flex h-4 w-4 items-center justify-center rounded border border-cyan-400/20 text-cyan-200 hover:border-cyan-300"
+              title="Copy field capture command to run after bundle validation"
             >
               <Copy size={9} />
             </button>

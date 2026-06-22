@@ -1162,6 +1162,9 @@ Status:
   selected-bundle, and capture-command markers; workflow validation uses those
   markers to route missing-bundle captures through Mission Planner bundle
   build/upload/validation before telling operators to run field-log capture.
+- Done: Tauri parsers, evidence-package summaries, Module Setup workflow cards,
+  and support-bundle detail views now preserve and expose those bundle-aware
+  next-step fields, including the post-bundle field-capture command.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

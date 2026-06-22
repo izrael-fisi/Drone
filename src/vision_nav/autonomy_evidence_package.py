@@ -425,7 +425,18 @@ def compact_workflow_next_step(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
     compact: dict[str, Any] = {}
-    for key in ("name", "status", "notes", "command", "desktop_action"):
+    for key in (
+        "name",
+        "status",
+        "notes",
+        "command",
+        "desktop_action",
+        "metadata_update_command",
+        "bundle_path",
+        "expected_log",
+        "output_dir",
+        "capture_command_after_bundle",
+    ):
         item = value.get(key)
         if isinstance(item, str) and item:
             compact[key] = item
