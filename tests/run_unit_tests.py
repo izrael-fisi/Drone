@@ -2789,6 +2789,15 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         assert_equal(ready["status"], "passed", "autonomy readiness full proof status")
         assert_equal(
+            ready["metadata"]["schema_version"],
+            "vision_nav_autonomy_readiness_audit_metadata_v1",
+            "autonomy readiness audit metadata schema",
+        )
+        if not ready["metadata"]["generated_at_utc"]:
+            raise AssertionError("autonomy readiness audit metadata timestamp missing")
+        if not isinstance(ready["metadata"].get("repo"), dict):
+            raise AssertionError("autonomy readiness audit metadata repo section missing")
+        assert_equal(
             ready["inputs"]["field_collection_plan_markdown"],
             str(field_collection_plan.with_suffix(".md")),
             "autonomy readiness field collection markdown input",
@@ -3534,6 +3543,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff waiting state")
         if "Proof items:" not in handoff:
             raise AssertionError("autonomy handoff proof item summary")
+        if "## Audit Metadata" not in handoff:
+            raise AssertionError("autonomy handoff audit metadata section")
+        if "vision_nav_autonomy_readiness_audit_metadata_v1" not in handoff:
+            raise AssertionError("autonomy handoff audit metadata schema")
         if "## Goal Proof Items" not in handoff:
             raise AssertionError("autonomy handoff proof item section")
         if "## Completion Blockers" not in handoff:
@@ -3596,6 +3609,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package proof runbook summary should show pending action")
             manifest = json.loads(archive.read("manifest.json"))
             assert_equal(manifest["readiness_status"], "failed", "autonomy evidence package status")
+            assert_equal(
+                manifest["readiness_report_metadata"]["schema_version"],
+                "vision_nav_autonomy_readiness_audit_metadata_v1",
+                "autonomy evidence package report metadata schema",
+            )
             assert_equal(
                 manifest["plan_snapshot"]["schema_version"],
                 "vision_nav_autonomy_plan_snapshot_v1",

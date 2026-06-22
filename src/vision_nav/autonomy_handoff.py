@@ -34,6 +34,12 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         lines.append(f"- Completion blockers: {len(completion_blockers)}")
     if blockers:
         lines.append(f"- External blockers: {len(blockers)}")
+
+    metadata = report.get("metadata") if isinstance(report.get("metadata"), dict) else {}
+    if metadata:
+        lines.extend(["", "## Audit Metadata", ""])
+        lines.extend(audit_metadata_lines(metadata))
+
     lines.extend(["", "## Inputs", ""])
     inputs = report.get("inputs") if isinstance(report.get("inputs"), dict) else {}
     if inputs:
@@ -606,6 +612,26 @@ def plan_snapshot_lines(snapshot: dict[str, Any]) -> list[str]:
     if not rows:
         return ["No plan snapshot was recorded."]
     return table(["Source", "Path", "Present", "Markers", "Missing", "SHA256", "Summary"], rows)
+
+
+def audit_metadata_lines(metadata: dict[str, Any]) -> list[str]:
+    repo = metadata.get("repo") if isinstance(metadata.get("repo"), dict) else {}
+    rows = [
+        ["Schema", metadata.get("schema_version")],
+        ["Generated UTC", metadata.get("generated_at_utc")],
+    ]
+    if repo:
+        rows.extend(
+            [
+                ["Repo detected", repo.get("detected")],
+                ["Repo root", repo.get("root") or repo.get("path")],
+                ["Branch", repo.get("branch")],
+                ["Commit", short_hash(repo.get("commit"))],
+                ["Dirty", repo.get("dirty")],
+                ["Remote", repo.get("remote")],
+            ]
+        )
+    return table(["Field", "Value"], rows)
 
 
 def short_hash(value: Any) -> str:

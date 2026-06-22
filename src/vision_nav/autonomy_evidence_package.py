@@ -101,6 +101,7 @@ def create_evidence_package(
             "ready_for_goal_completion": (report.get("evidence_manifest") or {}).get("ready_for_goal_completion")
             if isinstance(report.get("evidence_manifest"), dict)
             else None,
+            "readiness_report_metadata": report.get("metadata") if isinstance(report.get("metadata"), dict) else None,
             "plan_snapshot": report.get("plan_snapshot") if isinstance(report.get("plan_snapshot"), dict) else None,
             "proof_summary": build_proof_summary(report),
             "proof_runbook_summary": build_proof_runbook_summary(report),

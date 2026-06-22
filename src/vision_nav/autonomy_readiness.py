@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 from typing import Any
@@ -253,6 +255,7 @@ def evaluate_autonomy_readiness(
     }
     evidence_manifest = build_evidence_manifest(status, checks, inputs, next_actions)
     report = {
+        "metadata": build_audit_metadata(),
         "status": status,
         "checks": checks,
         "next_actions": next_actions,
@@ -273,6 +276,53 @@ def evaluate_autonomy_readiness(
     if support_report.get("report") is not None:
         report["bench_readiness"] = support_report["report"]
     return report
+
+
+def build_audit_metadata(*, repo_dir: str | Path | None = None) -> dict[str, Any]:
+    return {
+        "schema_version": "vision_nav_autonomy_readiness_audit_metadata_v1",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "repo": build_repo_metadata(repo_dir or Path.cwd()),
+    }
+
+
+def build_repo_metadata(repo_dir: str | Path) -> dict[str, Any]:
+    root = Path(repo_dir).expanduser()
+    inside = git_output(root, ["rev-parse", "--is-inside-work-tree"])
+    if inside != "true":
+        return {
+            "detected": False,
+            "path": str(root),
+        }
+    top_level = git_output(root, ["rev-parse", "--show-toplevel"])
+    git_root = Path(top_level).expanduser() if top_level else root
+    branch = git_output(git_root, ["branch", "--show-current"])
+    status = git_output(git_root, ["status", "--porcelain"])
+    remote = git_output(git_root, ["remote", "get-url", "origin"])
+    return {
+        "detected": True,
+        "root": str(git_root),
+        "branch": branch or git_output(git_root, ["rev-parse", "--abbrev-ref", "HEAD"]),
+        "commit": git_output(git_root, ["rev-parse", "HEAD"]),
+        "dirty": bool(status),
+        "remote": remote,
+    }
+
+
+def git_output(repo_dir: Path, args: list[str]) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_dir), *args],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
 
 
 def build_command_bundle(
