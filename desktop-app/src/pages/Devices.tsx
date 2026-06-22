@@ -694,7 +694,7 @@ export function Devices() {
                           <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "status", "systemctl --user is-active drone-vision-nav.service 2>/dev/null || true; pgrep -af 'vision_nav.run_bundle_match_loop|vision_nav.run_terrain_loop|vision-nav-run-bundle-loop|vision-nav-run-terrain-loop' || true")} className="btn-secondary text-xs py-1 px-3">
                             {cmdRunning === d.id ? <Loader2 size={11} className="animate-spin" /> : <Wifi size={11} />}Status
                           </button>
-                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "run 30-frame terrain loop", `cd ${shellQuote(remotePath)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh`)} className="btn-secondary text-xs py-1 px-3 text-emerald-400 border-emerald-500/20">
+                          <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "run 30-frame terrain loop", `cd ${shellQuote(remotePath)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh`)} className="btn-secondary text-xs py-1 px-3 text-emerald-400 border-emerald-500/20">
                             <Play size={11} />Run Loop
                           </button>
                           <button disabled={!!cmdRunning} onClick={() => runPiCommand(d, "stop loop", "pkill -f 'vision_nav.run_bundle_match_loop|vision_nav.run_terrain_loop|vision-nav-run-bundle-loop|vision-nav-run-terrain-loop' && echo 'Loop stopped' || echo 'No loop running'")} className="btn-secondary text-xs py-1 px-3 text-red-400 border-red-500/20">

@@ -1303,6 +1303,16 @@ if grep -q 'VISION_POSITION_ESTIMATE` by default' docs/desktop-app.md; then
   echo "desktop app docs should not document VISION_POSITION_ESTIMATE as the default MAVLink output." >&2
   exit 1
 fi
+for app_runtime_file in \
+  desktop-app/src/pages/PiSetup.tsx \
+  desktop-app/src/pages/MissionPlanner.tsx \
+  desktop-app/src/pages/Devices.tsx
+do
+  if ! grep -q './scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh' "$app_runtime_file"; then
+    echo "desktop runtime actions must read runtime_status.json after bounded terrain captures: $app_runtime_file" >&2
+    exit 1
+  fi
+done
 scope_pattern="M""CP|L""LM|Chat""GPT"
 if rg -n "$scope_pattern" .; then
   echo "Found unrelated agent/chatbot scope text. Remove it before committing." >&2

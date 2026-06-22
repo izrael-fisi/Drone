@@ -265,7 +265,7 @@ It then runs the existing Pi scripts:
 
 ```bash
 ./scripts/pi/validate_terrain_bundle.sh
-./scripts/pi/run_terrain_nav_loop.sh
+./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh
 ```
 
 Module Setup can fetch the latest Pi-side runtime snapshot with
@@ -275,14 +275,16 @@ health, frame sequence, and accepted/rejected counts, then downloads the raw
 `runtime_status.json` to `~/DroneTransfer/from-pi/runtime-status/` for the
 setup report.
 Module Setup can also run `Field Log Capture`, a bounded 30-frame
-`scripts/pi/run_terrain_nav_loop.sh` pass against the selected mission bundle.
-It uses the configured MAVLink endpoint when present, downloads
-`terrain_matches.jsonl` to `~/DroneTransfer/from-pi/terrain-match/`, and
-downloads the companion `runtime_status.json` for support review. That synced
-log can feed Field Evidence registration, ROS Bag Validation, Native rosbag2
-Review, feature-method benchmarking, and threshold tuning. Evidence workflow
-checks parse existing synced logs before accepting them: the JSONL must be
-nonempty and include accepted, rejected, or degraded match statuses. If the log
+`scripts/pi/run_terrain_nav_loop.sh` pass against the selected mission bundle,
+then immediately runs `scripts/pi/read_runtime_status.sh` so the app receives
+the same bounded status preview used by readiness handoffs. It uses the
+configured MAVLink endpoint when present, downloads `terrain_matches.jsonl` to
+`~/DroneTransfer/from-pi/terrain-match/`, and downloads the companion
+`runtime_status.json` for support review. That synced log can feed Field
+Evidence registration, ROS Bag Validation, Native rosbag2 Review,
+feature-method benchmarking, and threshold tuning. Evidence workflow checks
+parse existing synced logs before accepting them: the JSONL must be nonempty
+and include accepted, rejected, or degraded match statuses. If the log
 is valid but `runtime_status.json` is missing, the capture evidence is reported
 as degraded until the runtime snapshot is refreshed.
 

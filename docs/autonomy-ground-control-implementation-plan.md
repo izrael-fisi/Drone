@@ -401,6 +401,10 @@ Status:
 - Done: readiness reports, support-bundle summaries, Markdown handoffs, and the
   desktop parser normalize older field collection plans so stale capture-only
   commands are shown with the required runtime-status read step.
+- Done: Mission Planner, Devices, and Module Setup runtime buttons now run the
+  bounded terrain loop and then `read_runtime_status.sh`, so app-driven field
+  captures produce the same terrain-log plus runtime-status proof markers as
+  the generated field collection plan.
 - Done: the guided evidence workflow now records
   `__VISION_NAV_TERRAIN_CAPTURE_COMMAND__` with the runtime-status read step
   included, so raw workflow markers match the operator handoff command.

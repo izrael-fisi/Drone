@@ -2364,7 +2364,7 @@ export function MissionPlanner() {
                 disabled={activeDevice.kind !== "pi5" || cmdRunning}
                 onClick={() => runPiCommand(
                   enableMavlink ? "run loop with mavlink" : "run loop",
-                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh`,
+                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh`,
                 )}
                 className="btn-secondary justify-center text-emerald-400 border-emerald-500/20"
               >

@@ -435,7 +435,7 @@ function fieldLogCaptureCommand(remoteProject: string, remoteBundle: string, mav
     mavlinkEndpoint.trim() ? `VISION_NAV_MAVLINK_ENDPOINT=${shellQuote(mavlinkEndpoint.trim())}` : "",
     "VISION_NAV_MAVLINK_MESSAGE=odometry",
   ].filter(Boolean).join(" ");
-  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_terrain_nav_loop.sh`;
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh`;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -3939,7 +3939,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteLog = parseTerrainRuntimeLog(output);
       const remoteStatus = parseRuntimeStatusPath(output);
+      const parsedStatus = parseRuntimeStatusJson(output);
       let downloadText = "";
+      if (parsedStatus) {
+        setRuntimeStatus(parsedStatus);
+        setRuntimeStatusRemotePath(remoteStatus ?? null);
+      }
       if (remoteLog) {
         setResult("field-log-capture", {
           status: "running",
@@ -3973,7 +3978,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         downloadText += `\n\n$ download runtime status\nSaved to ${downloadedStatus.local_path}\n[${downloadedStatus.bytes_received} bytes]`;
       }
       setResult("field-log-capture", {
-        status: result.exit_code === 0 && remoteLog ? "passed" : "failed",
+        status: result.exit_code === 0 && remoteLog && remoteStatus ? "passed" : "failed",
         output: `$ field log capture\n${output || "(no output)"}${downloadText}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
