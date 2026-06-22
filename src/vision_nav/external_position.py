@@ -54,6 +54,43 @@ class ExternalPositionCovariance:
 
 
 @dataclass(frozen=True)
+class ExternalVelocityCovariance:
+    east_m2ps2: float | None = None
+    north_m2ps2: float | None = None
+    up_m2ps2: float | None = None
+
+    @classmethod
+    def from_local_enu_mapping(cls, covariance: dict[str, Any] | None) -> "ExternalVelocityCovariance":
+        covariance = covariance or {}
+        return cls(
+            east_m2ps2=_optional_variance(
+                _first_present_keys(covariance, "x_m2", "east_m2", "vx_m2ps2", "east_m2ps2")
+            ),
+            north_m2ps2=_optional_variance(
+                _first_present_keys(covariance, "y_m2", "north_m2", "vy_m2ps2", "north_m2ps2")
+            ),
+            up_m2ps2=_optional_variance(
+                _first_present_keys(covariance, "z_m2", "up_m2", "vz_m2ps2", "up_m2ps2")
+            ),
+        )
+
+    def has_any(self) -> bool:
+        return self.east_m2ps2 is not None or self.north_m2ps2 is not None or self.up_m2ps2 is not None
+
+    def to_mavlink_velocity_covariance_urt(self) -> list[float]:
+        """Return MAVLink velocity covariance for local NED/FRD axes, preserving unknowns as NaN."""
+
+        output = [math.nan] * 21
+        if self.north_m2ps2 is not None:
+            output[0] = float(self.north_m2ps2)
+        if self.east_m2ps2 is not None:
+            output[6] = float(self.east_m2ps2)
+        if self.up_m2ps2 is not None:
+            output[11] = float(self.up_m2ps2)
+        return output
+
+
+@dataclass(frozen=True)
 class LocalNedEstimate:
     north_m: float
     east_m: float
@@ -63,6 +100,7 @@ class LocalNedEstimate:
     velocity_north_mps: float | None = None
     velocity_east_mps: float | None = None
     velocity_down_mps: float | None = None
+    velocity_covariance: ExternalVelocityCovariance = ExternalVelocityCovariance()
 
 
 @dataclass(frozen=True)
@@ -76,6 +114,7 @@ class ExternalPositionEstimate:
     velocity_east_mps: float | None = None
     velocity_north_mps: float | None = None
     velocity_up_mps: float | None = None
+    velocity_covariance: ExternalVelocityCovariance = ExternalVelocityCovariance()
     confidence: float | None = None
     source: str = "terrain_vision"
 
@@ -89,6 +128,7 @@ class ExternalPositionEstimate:
             velocity_north_mps=self.velocity_north_mps,
             velocity_east_mps=self.velocity_east_mps,
             velocity_down_mps=None if self.velocity_up_mps is None else -self.velocity_up_mps,
+            velocity_covariance=self.velocity_covariance,
         )
 
 
@@ -195,6 +235,7 @@ def external_position_from_match_result(result: dict[str, Any]) -> tuple[Externa
     velocity_east_mps = _local_enu_velocity_component(result, "east")
     velocity_north_mps = _local_enu_velocity_component(result, "north")
     velocity_up_mps = _local_enu_velocity_component(result, "up")
+    velocity_covariance = _local_enu_velocity_covariance(result)
     return (
         ExternalPositionEstimate(
             timestamp_us=timestamp_us,
@@ -206,6 +247,7 @@ def external_position_from_match_result(result: dict[str, Any]) -> tuple[Externa
             velocity_east_mps=velocity_east_mps,
             velocity_north_mps=velocity_north_mps,
             velocity_up_mps=velocity_up_mps,
+            velocity_covariance=velocity_covariance,
             confidence=confidence,
             source=str(measurement.get("source") or result.get("source") or "terrain_vision"),
         ),
@@ -255,7 +297,7 @@ def build_odometry_payload(
         pitchspeed_radps=math.nan,
         yawspeed_radps=math.nan,
         pose_covariance_urt=ned.covariance.to_mavlink_pose_covariance_urt(),
-        velocity_covariance_urt=[math.nan] * 21,
+        velocity_covariance_urt=ned.velocity_covariance.to_mavlink_velocity_covariance_urt(),
         reset_counter=int(reset_counter),
         estimator_type="MAV_ESTIMATOR_TYPE_VISION",
         quality=quality,
@@ -287,6 +329,13 @@ def _first_present(primary: dict[str, Any], fallback: dict[str, Any], primary_ke
     return fallback.get(fallback_key)
 
 
+def _first_present_keys(mapping: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in mapping:
+            return mapping.get(key)
+    return None
+
+
 def _optional_float(value: Any) -> float | None:
     try:
         if value is None:
@@ -311,6 +360,13 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _optional_variance(value: Any) -> float | None:
+    output = _optional_float(value)
+    if output is None or output < 0.0:
+        return None
+    return output
 
 
 def _local_enu_velocity_component(result: dict[str, Any], component: str) -> float | None:
@@ -345,6 +401,37 @@ def _local_enu_velocity_component(result: dict[str, Any], component: str) -> flo
                 if value is not None:
                     return value
     return None
+
+
+def _local_enu_velocity_covariance(result: dict[str, Any]) -> ExternalVelocityCovariance:
+    measurement = result.get("measurement") if isinstance(result.get("measurement"), dict) else {}
+    position = result.get("estimated_position") if isinstance(result.get("estimated_position"), dict) else {}
+    for source in (measurement, position, result):
+        if not isinstance(source, dict):
+            continue
+        direct = source.get("velocity_covariance")
+        if isinstance(direct, dict):
+            frame = _optional_str(direct.get("frame"))
+            if frame is None or frame == "local_enu":
+                covariance = ExternalVelocityCovariance.from_local_enu_mapping(direct)
+                if covariance.has_any():
+                    return covariance
+        for nested_key in ("velocity", "linear_velocity", "twist_linear"):
+            nested = source.get(nested_key)
+            if not isinstance(nested, dict):
+                continue
+            frame = _optional_str(nested.get("frame"))
+            if frame is not None and frame != "local_enu":
+                continue
+            covariance = nested.get("covariance")
+            if isinstance(covariance, dict):
+                frame = _optional_str(covariance.get("frame"))
+                if frame is not None and frame != "local_enu":
+                    continue
+                parsed = ExternalVelocityCovariance.from_local_enu_mapping(covariance)
+                if parsed.has_any():
+                    return parsed
+    return ExternalVelocityCovariance()
 
 
 def _reset_epoch_from_result(result: dict[str, Any]) -> int | None:

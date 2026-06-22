@@ -873,6 +873,7 @@ def test_external_position_payloads() -> None:
                     "x_mps": 1.5,
                     "y_mps": -2.5,
                     "z_mps": 0.75,
+                    "covariance": {"x_m2": 0.25, "y_m2": 0.36, "z_m2": 0.49},
                 },
                 "covariance": {"x_m2": 9.0, "y_m2": 16.0, "z_m2": 25.0, "yaw_rad2": 0.2},
             },
@@ -905,6 +906,9 @@ def test_external_position_payloads() -> None:
     assert_equal(odometry_payload.vx_mps, -2.5, "odometry north velocity")
     assert_equal(odometry_payload.vy_mps, 1.5, "odometry east velocity")
     assert_equal(odometry_payload.vz_mps, -0.75, "odometry down velocity")
+    assert_equal(odometry_payload.velocity_covariance_urt[0], 0.36, "odometry north velocity covariance")
+    assert_equal(odometry_payload.velocity_covariance_urt[6], 0.25, "odometry east velocity covariance")
+    assert_equal(odometry_payload.velocity_covariance_urt[11], 0.49, "odometry down velocity covariance")
     assert_equal(odometry_payload.quality, 73, "odometry quality")
 
     body_velocity_estimate, body_velocity_reason = external_position_from_match_result(
@@ -922,6 +926,8 @@ def test_external_position_payloads() -> None:
     body_velocity_payload = build_odometry_payload(body_velocity_estimate, time_usec=1000)
     if not math.isnan(body_velocity_payload.vx_mps) or not math.isnan(body_velocity_payload.vy_mps):
         raise AssertionError("Expected non-local velocity frame to be ignored")
+    if not math.isnan(body_velocity_payload.velocity_covariance_urt[0]):
+        raise AssertionError("Expected non-local velocity covariance frame to be ignored")
 
     tracker = OdometryResetTracker()
     assert_equal(

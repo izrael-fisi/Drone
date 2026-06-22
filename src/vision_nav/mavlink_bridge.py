@@ -253,7 +253,15 @@ class MavlinkVisionBridge:
             _mavlink_enum_value(payload.estimator_type),
             payload.quality,
         )
-        return MavlinkSendResult(True, message="ODOMETRY", details={"reset_counter": reset_counter})
+        return MavlinkSendResult(
+            True,
+            message="ODOMETRY",
+            details={
+                "reset_counter": reset_counter,
+                "has_velocity": any(math.isfinite(value) for value in (payload.vx_mps, payload.vy_mps, payload.vz_mps)),
+                "has_velocity_covariance": any(math.isfinite(value) for value in payload.velocity_covariance_urt),
+            },
+        )
 
 def _as_optional_float(value: Any) -> float | None:
     try:

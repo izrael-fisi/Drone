@@ -84,6 +84,9 @@ Status:
 - Done: accepted local-ENU runtime results with explicit velocity fields now
   populate MAVLink `ODOMETRY` north/east/down velocity fields, while missing or
   non-local velocity frames remain unset.
+- Done: explicit local-ENU velocity covariance now maps into the MAVLink
+  `ODOMETRY` velocity covariance array, and MAVLink send details record whether
+  velocity and velocity covariance were present.
 - Done: PX4 SITL receiver evidence now computes observed receive rate from
   `vehicle_visual_odometry` listener timestamps, compares it with the smoke
   session `rate_hz`, and surfaces the rate in desktop receiver/support-bundle

@@ -117,7 +117,13 @@ def test_send_odometry_match_result_uses_payload_for_px4_path():
                 "x_m": 1.0,
                 "y_m": 2.0,
                 "z_m": 3.0,
-                "velocity": {"frame": "local_enu", "x_mps": 1.25, "y_mps": -2.5, "z_mps": 0.5},
+                "velocity": {
+                    "frame": "local_enu",
+                    "x_mps": 1.25,
+                    "y_mps": -2.5,
+                    "z_mps": 0.5,
+                    "covariance": {"x_m2": 0.2, "y_m2": 0.3, "z_m2": 0.4},
+                },
                 "covariance": {"x_m2": 4.0, "y_m2": 5.0, "z_m2": 6.0, "yaw_rad2": 0.1},
             },
         }
@@ -125,7 +131,24 @@ def test_send_odometry_match_result_uses_payload_for_px4_path():
 
     assert result.sent is True
     assert calls
-    _, frame_id, child_frame_id, x_north, y_east, z_down, _q, vx_north, vy_east, vz_down, *_rest = calls[0]
+    (
+        _,
+        frame_id,
+        child_frame_id,
+        x_north,
+        y_east,
+        z_down,
+        _q,
+        vx_north,
+        vy_east,
+        vz_down,
+        _rollspeed,
+        _pitchspeed,
+        _yawspeed,
+        _pose_covariance,
+        velocity_covariance,
+        *_rest,
+    ) = calls[0]
     assert frame_id == 20
     assert child_frame_id == 12
     assert x_north == 2.0
@@ -134,6 +157,11 @@ def test_send_odometry_match_result_uses_payload_for_px4_path():
     assert vx_north == -2.5
     assert vy_east == 1.25
     assert vz_down == -0.5
+    assert velocity_covariance[0] == 0.3
+    assert velocity_covariance[6] == 0.2
+    assert velocity_covariance[11] == 0.4
+    assert result.details["has_velocity"] is True
+    assert result.details["has_velocity_covariance"] is True
 
 
 def test_send_odometry_match_result_increments_reset_counter():

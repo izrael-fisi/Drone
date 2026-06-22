@@ -32,6 +32,13 @@ def test_enu_to_ned_axes_and_yaw_conversion():
                 "y_m": 7.0,
                 "z_m": 3.0,
                 "yaw_rad": 0.0,
+                "velocity": {
+                    "frame": "local_enu",
+                    "east_mps": 1.0,
+                    "north_mps": -2.0,
+                    "up_mps": 0.5,
+                    "covariance": {"east_m2": 0.2, "north_m2": 0.3, "up_m2": 0.4},
+                },
                 "covariance": {"x_m2": 9.0, "y_m2": 16.0, "z_m2": 25.0, "yaw_rad2": 0.2},
             },
         }
@@ -41,8 +48,15 @@ def test_enu_to_ned_axes_and_yaw_conversion():
     assert ned.north_m == 7.0
     assert ned.east_m == 4.0
     assert ned.down_m == -3.0
+    assert ned.velocity_north_mps == -2.0
+    assert ned.velocity_east_mps == 1.0
+    assert ned.velocity_down_mps == -0.5
     assert math.isclose(ned.yaw_rad, math.pi / 2.0)
     assert math.isclose(yaw_enu_to_ned(math.pi / 2.0), 0.0)
+    payload = build_odometry_payload(estimate, time_usec=1000)
+    assert payload.velocity_covariance_urt[0] == 0.3
+    assert payload.velocity_covariance_urt[6] == 0.2
+    assert payload.velocity_covariance_urt[11] == 0.4
 
 
 def test_vision_position_payload_maps_covariance_to_mavlink_urt():
@@ -82,6 +96,7 @@ def test_odometry_payload_is_ready_for_px4_external_vision_path():
     assert payload.reset_counter == 4
     assert payload.estimator_type == "MAV_ESTIMATOR_TYPE_VISION"
     assert payload.quality == 73
+    assert math.isnan(payload.velocity_covariance_urt[0])
     assert math.isclose(payload.q[0], math.cos(math.pi / 4.0))
     assert math.isclose(payload.q[3], math.sin(math.pi / 4.0))
 
