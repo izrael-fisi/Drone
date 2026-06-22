@@ -682,6 +682,9 @@ Status:
 - Done: Module Setup renders the field plan's `next_condition` in downloaded
   field-plan and autonomy-readiness cards, including direct capture/register copy
   controls and a one-click `Load` action in the field-plan list.
+- Done: Module Setup also exposes a top-level local-only `Load Next Field
+  Condition` action that loads the newest downloaded plan's next condition into
+  the Field Evidence Case form before registration.
 - Done: autonomy-readiness reports now preserve failed/degraded
   bench-readiness subchecks and expand them into specific next actions, so a
   missing `runtime_status.json` points to Module Setup > Runtime Status instead

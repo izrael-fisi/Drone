@@ -3378,6 +3378,22 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     });
   };
 
+  const loadNextFieldCollectionCondition = () => {
+    const plan = [...fieldCollectionPlans]
+      .sort((a, b) => (b.modified_unix_ms ?? 0) - (a.modified_unix_ms ?? 0))
+      .find((candidate) => candidate.next_condition);
+    if (!plan?.next_condition) {
+      setResult("field-next-condition", {
+        status: "failed",
+        output:
+          "$ Load Next Field Condition\nNo downloaded field collection plan has a pending next condition yet.\n\nRun Create Plan, then load the next condition after the plan downloads.",
+      });
+      return;
+    }
+    loadFieldCollectionCondition(plan, plan.next_condition);
+    setSelectedOutputId("field-evidence");
+  };
+
   const browseForKey = async () => {
     const path = await openDialog({
       title: "Select SSH private key",
@@ -5065,6 +5081,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       detail: "Creates and downloads a JSON/Markdown checklist for the remaining real-world replay cases.",
     },
     {
+      id: "field-next-condition",
+      title: "Load Next Field Condition",
+      detail: "Loads the newest downloaded plan's next pending condition into the Field Evidence Case form.",
+      localOnly: true,
+    },
+    {
       id: "feature-benchmark",
       title: "Feature Benchmark",
       detail: "Compares ORB, AKAZE, SIFT, and neural placeholders on the latest field replay log.",
@@ -5143,6 +5165,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     if (step.id === "field-collection-plan") {
       await createFieldCollectionPlan();
+      return;
+    }
+    if (step.id === "field-next-condition") {
+      loadNextFieldCollectionCondition();
       return;
     }
     if (step.id === "autonomy-evidence-workflow") {

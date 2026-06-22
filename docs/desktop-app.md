@@ -380,6 +380,11 @@ letting the operator complete site-specific metadata before registering the log.
 The plan and readiness cards also promote the next pending condition with its
 capture/register command buttons, and the plan list can load that next condition
 directly into the Field Evidence Case form.
+The local-only `Load Next Field Condition` setup action performs the same load
+from the newest downloaded plan, so the operator can move from `Create Plan` to
+metadata entry without scrolling through the plan list. Loading a condition only
+prepares the form; proof is created after the field case is captured and
+registered.
 When the all-in-one Evidence Workflow runs without an explicit field case, it
 also auto-loads the plan's next pending condition, captures into that
 condition-specific output folder, and uses the matching terrain log path for
