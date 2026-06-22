@@ -132,6 +132,9 @@ Implementation tasks:
   8. import/build map bundle,
   9. run bench localization,
   10. export readiness report.
+- Keep field-evidence case metadata as a local app draft until registration so
+  the operator does not lose site, lighting, weather, camera, IMU/PX4, or
+  safety context while moving between setup checks.
 - Add QGC-style plan state:
   - unsaved changes,
   - not uploaded,

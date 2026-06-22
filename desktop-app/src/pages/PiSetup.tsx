@@ -69,6 +69,7 @@ const ROSBAG_VALIDATION_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/terrain-match";
 const RUNTIME_STATUS_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/runtime-status";
 const DESKTOP_TRANSFER_FROM_PI_DIR = "~/DroneTransfer/from-pi";
 const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
+const FIELD_CASE_FORM_STORAGE_KEY = "drone_field_case_form";
 const SUPPORT_EVIDENCE_ENV =
   'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
 
@@ -599,6 +600,32 @@ function defaultFieldCaseForm(): FieldCaseForm {
     replace: false,
     strict: false,
   };
+}
+
+function loadFieldCaseForm(): FieldCaseForm {
+  const fallback = defaultFieldCaseForm();
+  if (typeof localStorage === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(FIELD_CASE_FORM_STORAGE_KEY);
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw) as Partial<FieldCaseForm>;
+    return {
+      ...fallback,
+      ...saved,
+      expected:
+        saved.expected === "good_map" || saved.expected === "degraded" || saved.expected === "wrong_map"
+          ? saved.expected
+          : fallback.expected,
+      captureDateUtc:
+        typeof saved.captureDateUtc === "string" && saved.captureDateUtc.trim()
+          ? saved.captureDateUtc
+          : fallback.captureDateUtc,
+      replace: Boolean(saved.replace),
+      strict: Boolean(saved.strict),
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 function formFromDevice(device: Device): PiForm {
@@ -2540,7 +2567,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [fieldCollectionPlanMarkdownLocalPath, setFieldCollectionPlanMarkdownLocalPath] = useState<string | null>(null);
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
   const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
-  const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => defaultFieldCaseForm());
+  const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => loadFieldCaseForm());
   const [discovering, setDiscovering] = useState(false);
   const [discoveryCandidates, setDiscoveryCandidates] = useState<PiDiscoveryCandidate[]>(() => loadDiscoveryHistory());
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
@@ -2553,6 +2580,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     () => piDevices.find((device) => device.id === selectedDeviceId),
     [piDevices, selectedDeviceId],
   );
+
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(FIELD_CASE_FORM_STORAGE_KEY, JSON.stringify(fieldCase));
+  }, [fieldCase]);
 
   useEffect(() => {
     if (selectedDevice) {
@@ -4912,7 +4944,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 </span>
                 <span className="text-slate-500">condition {firstFieldCondition(fieldCase.conditions) || "n/a"}</span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <div>
                   <label className="label">Case name</label>
                   <input
@@ -4958,7 +4990,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               </div>
               <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-wide text-slate-500">Capture Metadata</div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
                   <div>
                     <label className="label">Site name</label>
                     <input
@@ -5071,7 +5103,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                       onChange={(event) => setFieldCase((value) => ({ ...value, imuPx4StateNotes: event.target.value }))}
                     />
                   </div>
-                  <div className="col-span-3">
+                  <div className="xl:col-span-3">
                     <label className="label">Safety notes</label>
                     <input
                       className="input-field text-xs"

@@ -382,6 +382,9 @@ The Field Evidence Case form sends `VISION_NAV_FIELD_CAPTURE_METADATA` during
 registration. The Evidence Workflow only includes the optional registration
 step when that metadata is complete, so it does not create field cases that are
 known to fail the proof gate.
+The form draft is also saved in local desktop app storage, so operators can
+switch pages or restart the app without losing the field-capture context they
+need for the next proof registration.
 
 Module Setup can run `Threshold Tuning` after enough field cases are registered.
 The action runs `scripts/pi/run_threshold_tuning_report.sh` over SSH, writes the
