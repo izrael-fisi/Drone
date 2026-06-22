@@ -18,17 +18,31 @@ px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 px4_params="${VISION_NAV_PX4_PARAMS:-}"
 ardupilot_params="${VISION_NAV_ARDUPILOT_PARAMS:-}"
 replay_case_manifest="${VISION_NAV_REPLAY_CASE_MANIFEST:-}"
+home_px4_sitl_dir="$HOME/px4-sitl-evidence"
+repo_px4_sitl_dir="$repo_root/px4-sitl-evidence"
 
-if [[ -z "$px4_sitl_session" && -f "$HOME/px4-sitl-evidence/px4_sitl_evidence_session.json" ]]; then
-  px4_sitl_session="$HOME/px4-sitl-evidence"
+if [[ -z "$px4_sitl_session" && -f "$home_px4_sitl_dir/px4_sitl_evidence_session.json" ]]; then
+  px4_sitl_session="$home_px4_sitl_dir"
 fi
 
-if [[ -z "$px4_sitl_report" && -f "$HOME/px4-sitl-evidence/receiver_evidence.json" ]]; then
-  px4_sitl_report="$HOME/px4-sitl-evidence/receiver_evidence.json"
+if [[ -z "$px4_sitl_session" && ! -f "$home_px4_sitl_dir/receiver_evidence.json" && ! -f "$home_px4_sitl_dir/px4_sitl_capture_prereqs.json" && -f "$repo_px4_sitl_dir/px4_sitl_evidence_session.json" ]]; then
+  px4_sitl_session="$repo_px4_sitl_dir"
 fi
 
-if [[ -z "$px4_sitl_prereqs" && -f "$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json" ]]; then
-  px4_sitl_prereqs="$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+if [[ -z "$px4_sitl_report" && -f "$home_px4_sitl_dir/receiver_evidence.json" ]]; then
+  px4_sitl_report="$home_px4_sitl_dir/receiver_evidence.json"
+fi
+
+if [[ -z "$px4_sitl_report" && -f "$repo_px4_sitl_dir/receiver_evidence.json" ]]; then
+  px4_sitl_report="$repo_px4_sitl_dir/receiver_evidence.json"
+fi
+
+if [[ -z "$px4_sitl_prereqs" && -f "$home_px4_sitl_dir/px4_sitl_capture_prereqs.json" ]]; then
+  px4_sitl_prereqs="$home_px4_sitl_dir/px4_sitl_capture_prereqs.json"
+fi
+
+if [[ -z "$px4_sitl_prereqs" && -f "$repo_px4_sitl_dir/px4_sitl_capture_prereqs.json" ]]; then
+  px4_sitl_prereqs="$repo_px4_sitl_dir/px4_sitl_capture_prereqs.json"
 fi
 
 if [[ -z "$px4_params" && -f "$HOME/px4.params" ]]; then

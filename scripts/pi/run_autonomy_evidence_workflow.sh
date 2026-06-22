@@ -28,9 +28,38 @@ rosbag_export_dir="${VISION_NAV_ROSBAG_EXPORT_DIR:-$HOME/DroneTransfer/outgoing/
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
 rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json}"
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
-px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-$HOME/px4-sitl-evidence}"
-px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-$px4_sitl_session/receiver_evidence.json}"
-px4_sitl_prereqs="${VISION_NAV_PX4_SITL_PREREQS:-$px4_sitl_session/px4_sitl_capture_prereqs.json}"
+home_px4_sitl_dir="$HOME/px4-sitl-evidence"
+repo_px4_sitl_dir="$repo_root/px4-sitl-evidence"
+px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
+if [[ -z "$px4_sitl_session" && -f "$home_px4_sitl_dir/px4_sitl_evidence_session.json" ]]; then
+  px4_sitl_session="$home_px4_sitl_dir"
+fi
+if [[ -z "$px4_sitl_session" && ( -f "$home_px4_sitl_dir/receiver_evidence.json" || -f "$home_px4_sitl_dir/px4_sitl_capture_prereqs.json" ) ]]; then
+  px4_sitl_session="$home_px4_sitl_dir"
+fi
+if [[ -z "$px4_sitl_session" && -f "$repo_px4_sitl_dir/px4_sitl_evidence_session.json" ]]; then
+  px4_sitl_session="$repo_px4_sitl_dir"
+fi
+if [[ -z "$px4_sitl_session" && ( -f "$repo_px4_sitl_dir/receiver_evidence.json" || -f "$repo_px4_sitl_dir/px4_sitl_capture_prereqs.json" ) ]]; then
+  px4_sitl_session="$repo_px4_sitl_dir"
+fi
+if [[ -z "$px4_sitl_session" ]]; then
+  px4_sitl_session="$home_px4_sitl_dir"
+fi
+px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
+if [[ -z "$px4_sitl_report" && -f "$px4_sitl_session/receiver_evidence.json" ]]; then
+  px4_sitl_report="$px4_sitl_session/receiver_evidence.json"
+fi
+if [[ -z "$px4_sitl_report" ]]; then
+  px4_sitl_report="$px4_sitl_session/receiver_evidence.json"
+fi
+px4_sitl_prereqs="${VISION_NAV_PX4_SITL_PREREQS:-}"
+if [[ -z "$px4_sitl_prereqs" && -f "$px4_sitl_session/px4_sitl_capture_prereqs.json" ]]; then
+  px4_sitl_prereqs="$px4_sitl_session/px4_sitl_capture_prereqs.json"
+fi
+if [[ -z "$px4_sitl_prereqs" ]]; then
+  px4_sitl_prereqs="$px4_sitl_session/px4_sitl_capture_prereqs.json"
+fi
 autonomy_readiness_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json}"
 steps_jsonl=""
 field_log_ready=0

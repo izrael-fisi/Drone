@@ -89,6 +89,10 @@ Status:
   `~/px4-sitl-evidence/receiver_evidence.json`, so the runbook's support-bundle
   command picks up the conventional PX4 capture output without requiring the
   operator to re-enter marker environment variables.
+- Done: desktop-local support-bundle and evidence-workflow runs also fall back
+  to repo-local `px4-sitl-evidence/` when the conventional home-directory
+  evidence folder is absent, so local PX4 receiver proof is not dropped when
+  refreshing a support bundle from the repo checkout.
 - Done: the final readiness audit accepts standalone PX4 receiver-evidence
   reports through `--px4-sitl-report` / `VISION_NAV_PX4_SITL_REPORT`, so
   already evaluated receiver proof can be reused without rebuilding the support

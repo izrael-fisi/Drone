@@ -400,8 +400,11 @@ bundle or final readiness commands. Use `VISION_NAV_SITL_CAPTURE_DRY_RUN=1` to
 verify the folder scaffold without starting PX4 or sending MAVLink.
 
 Support bundles include the combined bench-readiness report automatically under
-`summaries/bench_readiness.json`. Re-run the same gate against an existing ZIP
-with:
+`summaries/bench_readiness.json`. When running from the desktop repo checkout,
+`scripts/pi/create_support_bundle.sh` and
+`scripts/pi/run_autonomy_evidence_workflow.sh` also reuse repo-local
+`px4-sitl-evidence/` if the usual `~/px4-sitl-evidence/` folder is absent.
+Re-run the same gate against an existing ZIP with:
 
 ```bash
 vision-nav-bench-readiness \
