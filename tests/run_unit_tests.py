@@ -2883,6 +2883,54 @@ RC8_OPTION,90
             "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
             "bench readiness runtime status next action command",
         )
+        field_next_condition = {
+            "condition": "good_texture",
+            "label": "Good Texture",
+            "expected": "good_map",
+            "capture_command": f"VISION_NAV_OUTPUT_DIR={root / 'field-captures' / 'good_texture'} ./scripts/pi/run_terrain_nav_loop.sh",
+            "metadata_update_command": "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh",
+            "register_command": "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/register_field_replay_case.sh",
+            "capture_output_dir": str(root / "field-captures" / "good_texture"),
+            "source_log": str(root / "field-captures" / "good_texture" / "terrain_matches.jsonl"),
+            "runtime_status_path": str(root / "field-captures" / "good_texture" / "runtime_status.json"),
+        }
+        missing_runtime_status_with_field = json.loads(json.dumps(missing_runtime_status))
+        missing_runtime_status_with_field["field_collection_plans"]["reports"][0]["next_condition"] = field_next_condition
+        runtime_field_degraded = evaluate_bench_readiness(missing_runtime_status_with_field)
+        runtime_field_actions = {action["check"]: action for action in runtime_field_degraded["next_actions"]}
+        expected_field_capture_command = (
+            f"VISION_NAV_OUTPUT_DIR={root / 'field-captures' / 'good_texture'} "
+            "./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh"
+        )
+        assert_equal(
+            runtime_field_actions["runtime_status"]["command"],
+            expected_field_capture_command,
+            "bench readiness runtime status next action uses field capture command",
+        )
+        assert_equal(
+            runtime_field_actions["runtime_status"]["field_runtime_status_path"],
+            str(root / "field-captures" / "good_texture" / "runtime_status.json"),
+            "bench readiness runtime status next action includes field runtime status path",
+        )
+        missing_bundle_with_field = json.loads(json.dumps(manifest))
+        missing_bundle_with_field.pop("bundle", None)
+        missing_bundle_with_field["field_collection_plans"]["reports"][0]["next_condition"] = field_next_condition
+        bundle_field_failed = evaluate_bench_readiness(missing_bundle_with_field)
+        bundle_field_actions = {action["check"]: action for action in bundle_field_failed["next_actions"]}
+        expected_bundle_command = (
+            f"VISION_NAV_BUNDLE={shlex.quote(str(bundle))} \\\n"
+            "  ./scripts/pi/validate_terrain_bundle.sh"
+        )
+        assert_equal(
+            bundle_field_actions["bundle_health"]["command"],
+            expected_bundle_command,
+            "bench readiness bundle next action validates field plan bundle",
+        )
+        assert_equal(
+            bundle_field_actions["bundle_health"]["field_bundle"],
+            str(bundle),
+            "bench readiness bundle next action includes field bundle",
+        )
 
         degraded_external = json.loads(json.dumps(manifest))
         degraded_external["logs"]["runtime_statuses"][-1]["external_position"] = {

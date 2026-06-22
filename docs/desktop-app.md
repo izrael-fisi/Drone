@@ -303,10 +303,12 @@ checks, optional feature-method benchmarks, optional field-evidence gates, and
 optional threshold-tuning reports, and an automatic bench-readiness summary. The
 bench-readiness JSON includes copyable next actions for failed or degraded
 subchecks, so support ZIPs stay actionable even before a final autonomy
-readiness audit is generated. The panel lists recent downloaded support bundle
-ZIPs with parsed bench-readiness status, bundle health, checksum status, map
-source provenance, georeference confidence, replay-gate status, GNSS-denied
-mission-prep status, PX4 evidence
+readiness audit is generated. When a field collection plan is bundled, those
+actions include the next condition's selected bundle, terrain log, capture
+output, runtime-status path, and metadata/register commands. The panel lists
+recent downloaded support bundle ZIPs with parsed bench-readiness status,
+bundle health, checksum status, map source provenance, georeference
+confidence, replay-gate status, GNSS-denied mission-prep status, PX4 evidence
 status, PX4 parameter status, ArduPilot parameter status, feature-method
 benchmark status, field-evidence status, and threshold-tuning status so the
 operator can confirm what was captured without manually opening the archive.

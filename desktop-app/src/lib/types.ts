@@ -504,6 +504,15 @@ export interface SupportBundleDetails {
       command?: string;
       notes?: string;
       message?: string;
+      field_condition?: string;
+      field_label?: string;
+      field_expected?: string;
+      field_capture_output_dir?: string;
+      field_source_log?: string;
+      field_runtime_status_path?: string;
+      field_bundle?: string;
+      field_metadata_update_command?: string;
+      field_register_command?: string;
     }>;
   };
 }

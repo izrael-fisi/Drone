@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import shlex
 from typing import Any
 import zipfile
 
@@ -183,7 +184,10 @@ def evaluate_bench_readiness(
     if rosbag2_cli_check is not None:
         checks.append(rosbag2_cli_check)
     status = readiness_status(checks)
-    next_actions = next_actions_for_checks(checks)
+    next_actions = next_actions_for_checks(
+        checks,
+        field_next_condition=field_collection_next_condition(manifest),
+    )
     return {
         "status": status,
         "support_bundle": manifest.get("name"),
@@ -513,7 +517,11 @@ def readiness_status(checks: list[dict[str, Any]]) -> str:
     return "passed"
 
 
-def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def next_actions_for_checks(
+    checks: list[dict[str, Any]],
+    *,
+    field_next_condition: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     for check in checks:
         name = str(check.get("name") or "")
@@ -530,8 +538,99 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
         }
         if check.get("message"):
             action["message"] = str(check["message"])
+        if name in {"bundle_health", "gnss_denied_plan"}:
+            enrich_action_with_field_bundle(action, field_next_condition)
+        elif name == "runtime_logs":
+            enrich_action_with_field_capture(action, field_next_condition)
+        elif name == "runtime_status":
+            enrich_action_with_field_capture(action, field_next_condition, append_runtime_status_read=True)
         actions.append(action)
     return actions
+
+
+def field_collection_next_condition(manifest: dict[str, Any]) -> dict[str, Any] | None:
+    plans = manifest.get("field_collection_plans") if isinstance(manifest.get("field_collection_plans"), dict) else {}
+    reports = plans.get("reports") if isinstance(plans.get("reports"), list) else []
+    for report in reports:
+        if not isinstance(report, dict):
+            continue
+        raw_condition = report.get("next_condition") if isinstance(report.get("next_condition"), dict) else None
+        if raw_condition:
+            condition = dict(raw_condition)
+            if not condition.get("bundle") and isinstance(report.get("bundle"), str):
+                condition["bundle"] = report["bundle"]
+            return condition
+    raw_condition = plans.get("next_condition") if isinstance(plans.get("next_condition"), dict) else None
+    if raw_condition:
+        return dict(raw_condition)
+    return None
+
+
+def enrich_action_with_field_bundle(action: dict[str, Any], condition: dict[str, Any] | None) -> None:
+    if not condition:
+        return
+    bundle = condition.get("bundle")
+    if not isinstance(bundle, str) or not bundle.strip():
+        return
+    action["command"] = shell_command({"VISION_NAV_BUNDLE": bundle}, "./scripts/pi/validate_terrain_bundle.sh")
+    action["field_bundle"] = bundle
+    action["notes"] = " ".join([str(action.get("notes") or ""), f"Selected field-plan bundle: {bundle}."]).strip()
+
+
+def enrich_action_with_field_capture(
+    action: dict[str, Any],
+    condition: dict[str, Any] | None,
+    *,
+    append_runtime_status_read: bool = False,
+) -> None:
+    if not condition:
+        return
+    capture_command = condition.get("capture_command")
+    if isinstance(capture_command, str) and capture_command.strip():
+        action["command"] = command_with_runtime_status_read(capture_command) if append_runtime_status_read else capture_command
+
+    field_mappings = {
+        "field_condition": "condition",
+        "field_label": "label",
+        "field_expected": "expected",
+        "field_capture_output_dir": "capture_output_dir",
+        "field_source_log": "source_log",
+        "field_runtime_status_path": "runtime_status_path",
+        "field_bundle": "bundle",
+        "field_metadata_update_command": "metadata_update_command",
+        "field_register_command": "register_command",
+    }
+    for target_key, source_key in field_mappings.items():
+        value = condition.get(source_key)
+        if isinstance(value, str) and value.strip():
+            action[target_key] = value
+
+    detail_lines = []
+    label = condition.get("label") or condition.get("condition")
+    condition_name = condition.get("condition")
+    if label and condition_name:
+        detail_lines.append(f"Next pending field condition: {label} ({condition_name}).")
+    elif condition_name:
+        detail_lines.append(f"Next pending field condition: {condition_name}.")
+    if condition.get("source_log"):
+        detail_lines.append(f"Expected log: {condition['source_log']}.")
+    if condition.get("capture_output_dir"):
+        detail_lines.append(f"Output: {condition['capture_output_dir']}.")
+    if condition.get("runtime_status_path"):
+        detail_lines.append(f"Runtime status: {condition['runtime_status_path']}.")
+    if detail_lines:
+        action["notes"] = " ".join([str(action.get("notes") or ""), *detail_lines]).strip()
+
+
+def command_with_runtime_status_read(command: str) -> str:
+    if "read_runtime_status.sh" in command:
+        return command
+    return f"{command} && ./scripts/pi/read_runtime_status.sh"
+
+
+def shell_command(env: dict[str, str], command: str) -> str:
+    parts = [f"{key}={shlex.quote(str(value))}" for key, value in env.items() if str(value)]
+    return " \\\n  ".join(parts + [command])
 
 
 def normalize_status(value: Any) -> str | None:

@@ -534,6 +534,10 @@ Status:
   for failed/degraded bench subchecks, including the matching app action and
   copyable command, so support bundles stay actionable before a separate final
   autonomy-readiness audit is generated.
+- Done: bench-readiness next actions now reuse bundled field collection plans
+  when present, replacing generic bundle/runtime commands with the next
+  condition's selected bundle, capture command, expected log, output directory,
+  runtime-status path, and metadata/register handoff.
 - Done: bench-readiness now evaluates bundled `runtime_status.json` snapshots
   as evidence of active map, output/log path, estimator health, latest match
   status/reason, external-position health, and accepted/rejected counts. Missing
