@@ -191,11 +191,12 @@ quality, mission path, fence shape, and MAVLink endpoint.
 The plan editor also tracks mission state during the app session. It marks the
 plan as invalid when required inputs are missing, not built before a bundle has
 been created, stale when the map/mission/output settings change after a build,
-not uploaded when the current bundle exists only locally, and uploaded when the
-current plan fingerprint has been sent to the active Raspberry Pi. Local-only
-devices show a bundle-ready state instead of upload status. Build/upload
-fingerprints and timestamps are saved locally, so the Mission Planner can show
-the previous bundle state after the app restarts.
+not uploaded when the current bundle exists only locally, and uploaded only
+after the current plan fingerprint has been sent to the active Raspberry Pi and
+`scripts/pi/validate_terrain_bundle.sh` passes against the deployed bundle path.
+Local-only devices show a bundle-ready state instead of upload status.
+Build/upload fingerprints and timestamps are saved locally, so the Mission
+Planner can show the previous bundle state after the app restarts.
 
 Mission plans can be imported from the app's JSON format or QGroundControl-style
 `.plan` files. Export writes a `.plan` file with QGC mission, geofence, rally,
@@ -614,9 +615,9 @@ available yet, the local wrapper still writes the failed readiness report,
 handoff, and evidence package, and it names `support_bundle_bench_readiness` as
 the missing proof gate in terminal output and package metadata.
 
-After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
-`Open Preflight` and `Open Bench Report` actions open that device's setup tab
-with the uploaded bundle path already handed off. From there, the Mission Bundle
+After Mission Planner builds, uploads, and validates a bundle on a Raspberry Pi
+device, the `Open Preflight` and `Open Bench Report` actions open that device's
+setup tab with the uploaded bundle path already handed off. From there, the Mission Bundle
 Handoff card can diagnose the bundle, create or refresh the field collection
 plan, run field-capture preflight, run the guided evidence workflow, or create
 the bench report against the same deployed bundle. `Create Bench Report`

@@ -335,12 +335,16 @@ Goal: make the customer workflow guided, diagnosable, and hard to misuse.
 
 Status:
 
-- In progress: Mission Planner now tracks a session-local plan fingerprint and
-  shows invalid, not built, stale bundle, not uploaded, uploaded, or
-  bundle-ready state after build/upload actions.
-- In progress: plan-state checks include mission/map readiness, selected map
+- Done: Mission Planner now tracks a plan fingerprint and shows invalid, not
+  built, stale bundle, not uploaded, uploaded, or bundle-ready state after
+  build/upload actions.
+- Done: plan-state checks include mission/map readiness, selected map
   source, output bundle path, remote bundle path, QGC plan content, and desktop
   mission JSON content.
+- Done: Mission Planner now validates the uploaded Pi mission bundle with
+  `scripts/pi/validate_terrain_bundle.sh` before marking the bundle uploaded or
+  enabling proof handoffs, so missing or invalid remote bundles fail before
+  field-capture preflight.
 - Done: Mission Planner persists build/upload fingerprints and timestamps
   across app restarts and shows whether the active imported/exported `.plan`
   file has unsaved local changes.

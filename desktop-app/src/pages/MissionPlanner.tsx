@@ -224,6 +224,10 @@ function supportBundleCommand(remoteProject: string, remoteBundle: string, mavli
   ].join(" && ");
 }
 
+function validateUploadedBundleCommand(remoteProject: string, remoteBundle: string) {
+  return `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundle)} ./scripts/pi/validate_terrain_bundle.sh`;
+}
+
 function parseSupportBundleZip(output: string) {
   return output
     .split(/\r?\n/)
@@ -628,7 +632,7 @@ function missionPlanStateCopy(status: MissionPlanStateStatus, activeDevice?: Dev
   if (status === "not_built") return { label: "Not built", detail: "Build a mission bundle before running or uploading." };
   if (status === "stale_bundle") return { label: "Stale bundle", detail: "Plan, map, device, or pipeline settings changed after the last build." };
   if (status === "not_uploaded") return { label: "Not uploaded", detail: piDevice ? "Bundle is built locally but has not been uploaded to the Pi." : "Bundle is built locally." };
-  if (status === "uploaded") return { label: "Uploaded", detail: "Current bundle has been uploaded to the active Pi." };
+  if (status === "uploaded") return { label: "Uploaded", detail: "Current bundle has been uploaded and validated on the active Pi." };
   return { label: "Bundle ready", detail: "Current bundle is built for local validation." };
 }
 
@@ -1521,11 +1525,12 @@ export function MissionPlanner() {
     }
   };
 
-  const uploadBundle = async (bundle: BuildDroneBundleResult | null = bundleResult) => {
-    if (!activeDevice || activeDevice.kind !== "pi5" || !activeDevice.host || !activeDevice.auth || !bundle) return;
+  const uploadBundle = async (bundle: BuildDroneBundleResult | null = bundleResult): Promise<boolean> => {
+    if (!activeDevice || activeDevice.kind !== "pi5" || !activeDevice.host || !activeDevice.auth || !bundle) return false;
     setUploading(true);
     setError(null);
     setFileProgress({});
+    setCommandOutput("$ upload mission bundle\n");
     const unlisten = await listen<UploadPayload>("upload-progress", (e) => {
       setFileProgress((p) => ({ ...p, [e.payload.file]: e.payload.percent }));
     });
@@ -1538,10 +1543,34 @@ export function MissionPlanner() {
         bundle.bundle_dir,
         remoteBundleDir,
       );
+      setCommandOutput(`$ upload mission bundle\nUploaded ${bundle.bundle_dir} to ${remoteBundleDir}\n\n$ validate uploaded bundle\n`);
+      const validation = await cmd.sshRunCommand(
+        activeDevice.host,
+        activeDevice.port ?? 22,
+        activeDevice.username ?? "user",
+        activeDevice.auth,
+        validateUploadedBundleCommand(remoteProject, remoteBundleDir),
+      );
+      const validationOutput = [validation.stdout, validation.stderr].filter(Boolean).join("\n").trim();
+      if (validation.exit_code !== 0) {
+        setLastUploadedFingerprint(null);
+        setLastUploadedAt(null);
+        setError("Uploaded bundle did not pass Pi validation. Review the validation output before opening proof handoffs.");
+        setCommandOutput(
+          `$ upload mission bundle\nUploaded ${bundle.bundle_dir} to ${remoteBundleDir}\n\n$ validate uploaded bundle\n${validationOutput || "(no output)"}\n[exit ${validation.exit_code}]`,
+        );
+        return false;
+      }
       setLastUploadedFingerprint(planFingerprint);
       setLastUploadedAt(new Date().toISOString());
+      setPlanMessage(`Uploaded and validated mission bundle at ${remoteBundleDir}`);
+      setCommandOutput(
+        `$ upload mission bundle\nUploaded ${bundle.bundle_dir} to ${remoteBundleDir}\n\n$ validate uploaded bundle\n${validationOutput || "(no output)"}\n[exit ${validation.exit_code}]`,
+      );
+      return true;
     } catch (e) {
       setError(String(e));
+      return false;
     } finally {
       setUploading(false);
       unlisten();
