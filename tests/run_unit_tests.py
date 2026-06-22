@@ -3142,9 +3142,9 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         if missing_proof_next_commands.index(
             "./scripts/pi/run_rosbag_export_validation.sh"
         ) < missing_proof_next_commands.index(
-            "./scripts/pi/create_field_collection_plan.sh && VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/register_field_replay_case.sh"
+            "./scripts/pi/run_autonomy_evidence_workflow.sh"
         ):
-            raise AssertionError("autonomy command bundle should list blocked ROS replay after immediate field capture")
+            raise AssertionError("autonomy command bundle should list blocked ROS replay after the guided field workflow")
 
         ready = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
@@ -3545,13 +3545,14 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(missing_field_actions), 1, "autonomy readiness field evidence next action")
         assert_equal(
             missing_field_actions[0]["desktop_action"],
-            "Module Setup > Field Collection Plan > Load, Field Log Capture, then Field Evidence Case > Register",
+            "Module Setup > Evidence Workflow",
             "autonomy readiness field evidence desktop action",
         )
-        if "create_field_collection_plan.sh" not in missing_field_actions[0]["command"]:
-            raise AssertionError("autonomy readiness field evidence action should start with collection planning")
-        if "run_terrain_nav_loop.sh" not in missing_field_actions[0]["command"]:
-            raise AssertionError("autonomy readiness field evidence action should include field log capture")
+        assert_equal(
+            missing_field_actions[0]["command"],
+            "./scripts/pi/run_autonomy_evidence_workflow.sh",
+            "autonomy readiness field evidence guided workflow command",
+        )
         support_field_actions = [
             action
             for action in missing_field_direct["next_actions"]
@@ -3560,7 +3561,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(support_field_actions), 1, "autonomy readiness support field evidence subcheck action")
         assert_equal(
             support_field_actions[0]["desktop_action"],
-            "Module Setup > Field Collection Plan > Load, Field Log Capture, then Field Evidence Case > Register",
+            "Module Setup > Evidence Workflow",
             "autonomy readiness support field evidence desktop action",
         )
         missing_field_phases = {phase["id"]: phase for phase in missing_field_direct["proof_runbook"]["phases"]}
@@ -3666,7 +3667,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(field_plan_actions), 1, "autonomy readiness field collection plan next action")
         assert_equal(
             field_plan_actions[0]["desktop_action"],
-            "Module Setup > Field Collection Plan > capture, load, and register pending conditions",
+            "Module Setup > Evidence Workflow",
             "autonomy readiness field collection plan desktop action",
         )
         field_plan_bundle = incomplete_field_plan_ready["command_bundle"]

@@ -651,9 +651,10 @@ Status:
   reports, so Module Setup bulk-copy and saved setup reports retain the exact
   per-condition capture commands even when the sibling field collection plan is
   unavailable.
-- Done: field-evidence readiness next actions now point to the current
-  proof-collection flow: load a pending Field Collection Plan condition, run
-  `Field Log Capture`, then register the captured replay case.
+- Done: field-evidence readiness next actions now point to the guided Evidence
+  Workflow, which creates or refreshes the field collection plan, auto-loads
+  the next pending condition, captures into the condition-specific output
+  folder, and waits to register the replay case until metadata is complete.
 - Done: Module Setup renders the field plan's `next_condition` in downloaded
   field-plan and autonomy-readiness cards, including direct capture/register copy
   controls and a one-click `Load` action in the field-plan list.
@@ -784,8 +785,9 @@ Status:
   their field-dataset prerequisite is satisfied.
 - Done: `scripts/dev/autonomy_goal_status.sh` also shows
   `./scripts/pi/run_autonomy_evidence_workflow.sh` as the guided all-in-one
-  workflow option, while keeping the exact proof-runbook commands below it for
-  operators who want to run each prerequisite manually.
+  workflow option, while keeping the exact proof-runbook and per-condition
+  capture/register commands available in generated handoffs and command bundles
+  for operators who want to inspect or run each prerequisite manually.
 - Done: autonomy-readiness handoffs and Module Setup report cards now preserve
   that guided workflow command from `command_bundle.guided_workflow_commands`,
   so downloaded reports keep both the all-in-one workflow and the individual

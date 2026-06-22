@@ -49,6 +49,8 @@ EXTERNAL_PROOF_CHECKS = {
     "rosbag2_cli_review",
 }
 
+GUIDED_EVIDENCE_WORKFLOW_COMMAND = "./scripts/pi/run_autonomy_evidence_workflow.sh"
+
 PROOF_RUNBOOK_PHASES = [
     {
         "id": "plan_source",
@@ -352,7 +354,7 @@ def build_command_bundle(
     field_collection_plan_path: str | Path | None = None,
     proof_runbook: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    guided_workflow_commands = ["./scripts/pi/run_autonomy_evidence_workflow.sh"] if next_actions else []
+    guided_workflow_commands = [GUIDED_EVIDENCE_WORKFLOW_COMMAND] if next_actions else []
     raw_next_action_commands = unique_strings(
         action.get("command")
         for action in next_actions
@@ -741,16 +743,16 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "notes": "The final report must show the MAVLink ODOMETRY path arriving as fresh vehicle_visual_odometry samples with covariance/variance fields.",
         },
         "field_collection_plan": {
-            "title": "Complete the field collection plan with traceable captures.",
-            "desktop_action": "Module Setup > Field Collection Plan > capture, load, and register pending conditions",
-            "command": "./scripts/pi/create_field_collection_plan.sh",
-            "notes": "The final plan must show every required condition registered with condition-specific terrain log, capture output, and runtime status paths.",
+            "title": "Run the guided evidence workflow for field collection and replay proof.",
+            "desktop_action": "Module Setup > Evidence Workflow",
+            "command": GUIDED_EVIDENCE_WORKFLOW_COMMAND,
+            "notes": "The guided workflow creates or refreshes the field collection plan, auto-loads the next pending condition, and preserves condition-specific capture/register artifacts.",
         },
         "field_evidence_proof": {
-            "title": "Load field plan cases, capture logs, then register replay evidence.",
-            "desktop_action": "Module Setup > Field Collection Plan > Load, Field Log Capture, then Field Evidence Case > Register",
-            "command": "./scripts/pi/create_field_collection_plan.sh && VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/register_field_replay_case.sh",
-            "notes": "Create or load the field collection plan, capture a bounded terrain log for each required condition, then register real logs for good texture, low texture, blur, seasonal change, lighting change, altitude/scale change, repeated patterns, and wrong map.",
+            "title": "Run the guided evidence workflow for field replay proof.",
+            "desktop_action": "Module Setup > Evidence Workflow",
+            "command": GUIDED_EVIDENCE_WORKFLOW_COMMAND,
+            "notes": "The guided workflow creates or loads the field collection plan, captures the next pending condition, skips registration until capture metadata is complete, and then registers real logs for every required condition.",
         },
         "feature_method_benchmark": {
             "title": "Benchmark feature methods on field logs.",
@@ -878,10 +880,10 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
             "notes": "Use real field logs to choose the low-compute and high-compute feature methods.",
         },
         "field_evidence": {
-            "title": "Load field plan cases, capture logs, then register replay evidence.",
-            "desktop_action": "Module Setup > Field Collection Plan > Load, Field Log Capture, then Field Evidence Case > Register",
-            "command": "./scripts/pi/create_field_collection_plan.sh && VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/register_field_replay_case.sh",
-            "notes": "Field evidence must cover all required terrain conditions with real captured logs.",
+            "title": "Run the guided evidence workflow for field replay proof.",
+            "desktop_action": "Module Setup > Evidence Workflow",
+            "command": GUIDED_EVIDENCE_WORKFLOW_COMMAND,
+            "notes": "Field evidence must cover all required terrain conditions with real captured logs; the workflow auto-loads the next pending condition and preserves partial artifacts.",
         },
         "threshold_tuning": {
             "title": "Tune replay gates against field logs.",
