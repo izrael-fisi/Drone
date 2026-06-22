@@ -591,30 +591,34 @@ function fieldCaptureMetadata(remoteBundle: string, fieldCase: FieldCaseForm) {
   };
 }
 
-function fieldCaptureMetadataReady(fieldCase: FieldCaseForm) {
+function fieldCaptureMetadataIssues(fieldCase: FieldCaseForm) {
   const altitude = parseOptionalFloat(fieldCase.flightAltitudeAglM);
   const speed = parseOptionalFloat(fieldCase.speedMps);
-  const requiredText = [
-    fieldCase.siteName,
-    fieldCase.operator,
-    fieldCase.captureDateUtc,
-    fieldCase.locationLabel,
-    fieldCase.lighting,
-    fieldCase.weather,
-    fieldCase.terrainTexture,
-    fieldCase.mapAgeOrSeasonNotes,
-    fieldCase.cameraFocusExposureNotes,
-    fieldCase.imuPx4StateNotes,
-    fieldCase.safetyNotes,
+  const requiredText: Array<[string, string]> = [
+    ["site", fieldCase.siteName],
+    ["operator", fieldCase.operator],
+    ["capture UTC", fieldCase.captureDateUtc],
+    ["location", fieldCase.locationLabel],
+    ["lighting", fieldCase.lighting],
+    ["weather", fieldCase.weather],
+    ["terrain texture", fieldCase.terrainTexture],
+    ["map age", fieldCase.mapAgeOrSeasonNotes],
+    ["focus/exposure", fieldCase.cameraFocusExposureNotes],
+    ["IMU/PX4 state", fieldCase.imuPx4StateNotes],
+    ["safety", fieldCase.safetyNotes],
   ];
-  return (
-    Boolean(firstFieldCondition(fieldCase.conditions)) &&
-    requiredText.every((value) => value.trim() && !value.trim().toLowerCase().startsWith("todo")) &&
-    altitude !== null &&
-    altitude > 0 &&
-    speed !== null &&
-    speed >= 0
-  );
+  return [
+    firstFieldCondition(fieldCase.conditions) ? "" : "condition",
+    ...requiredText
+      .filter(([, value]) => !value.trim() || value.trim().toLowerCase().startsWith("todo"))
+      .map(([label]) => label),
+    altitude !== null && altitude > 0 ? "" : "altitude AGL",
+    speed !== null && speed >= 0 ? "" : "speed",
+  ].filter(Boolean);
+}
+
+function fieldCaptureMetadataReady(fieldCase: FieldCaseForm) {
+  return fieldCaptureMetadataIssues(fieldCase).length === 0;
 }
 
 function readModuleSetupHandoff(): ModuleSetupHandoff | null {
@@ -671,6 +675,16 @@ function fieldCapturePreflightCommand(remoteProject: string, fieldCase: FieldCas
   const condition = firstFieldCondition(fieldCase.conditions);
   const env = condition ? `VISION_NAV_FIELD_CONDITION=${shellQuote(condition)} ` : "";
   return `cd ${shellQuote(remoteProject)} && ${env}./scripts/pi/preflight_field_capture.sh`;
+}
+
+function fieldMetadataUpdateCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {
+  const condition = firstFieldCondition(fieldCase.conditions);
+  const captureMetadata = JSON.stringify(fieldCaptureMetadata(remoteBundle, fieldCase));
+  const env = [
+    `VISION_NAV_FIELD_CONDITION=${shellQuote(condition)}`,
+    `VISION_NAV_FIELD_CAPTURE_METADATA=${shellQuote(captureMetadata)}`,
+  ].join(" ");
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/update_field_capture_metadata.sh`;
 }
 
 function fieldEvidenceTemplateCommand(remoteProject: string, remoteBundle: string, siteName: string) {
@@ -3715,6 +3729,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const activeHandoff = setupHandoff?.device_id === selectedDeviceId ? setupHandoff : null;
   const remoteBundle = activeHandoff?.remote_bundle_dir || defaultRemoteBundle;
   const fieldMetadataReady = fieldCaptureMetadataReady(fieldCase);
+  const fieldMetadataIssues = fieldCaptureMetadataIssues(fieldCase);
 
   const setResult = (id: string, result: SetupResult) => {
     setResults((prev) => ({ ...prev, [id]: result }));
@@ -5124,13 +5139,101 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const updateFieldCaptureMetadata = async () => {
+    if (!firstFieldCondition(fieldCase.conditions)) {
+      setError("Select a field condition before updating capture metadata.");
+      return;
+    }
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before updating field capture metadata.");
+      return;
+    }
+    setRunningStep("field-metadata-update");
+    setError(null);
+    setResult("field-metadata-update", { status: "running", output: "$ Update Field Capture Metadata\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        fieldMetadataUpdateCommand(remoteProject, remoteBundle, fieldCase),
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteManifest = parseFieldEvidenceManifest(output);
+      const remotePlan = parseFieldCollectionPlan(output);
+      const remoteMarkdown = parseFieldCollectionPlanMarkdown(output);
+      let downloadText = "";
+      if (remoteManifest) {
+        setResult("field-metadata-update", {
+          status: "running",
+          output: `$ Update Field Capture Metadata\n${output}\n\n$ download active field manifest\nDownloading ${remoteManifest}...`,
+        });
+        const downloadedManifest = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteManifest,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldManifestLocalPath(downloadedManifest.local_path);
+        downloadText += `\n\n$ download active field manifest\nSaved to ${downloadedManifest.local_path}\n[${downloadedManifest.bytes_received} bytes]`;
+      }
+      if (remotePlan) {
+        setResult("field-metadata-update", {
+          status: "running",
+          output: `$ Update Field Capture Metadata\n${output}${downloadText}\n\n$ download field collection plan\nDownloading ${remotePlan}...`,
+        });
+        const downloadedPlan = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remotePlan,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldCollectionPlanLocalPath(downloadedPlan.local_path);
+        downloadText += `\n\n$ download field collection plan\nSaved to ${downloadedPlan.local_path}\n[${downloadedPlan.bytes_received} bytes]`;
+      }
+      if (remoteMarkdown) {
+        setResult("field-metadata-update", {
+          status: "running",
+          output: `$ Update Field Capture Metadata\n${output}${downloadText}\n\n$ download field checklist\nDownloading ${remoteMarkdown}...`,
+        });
+        const downloadedMarkdown = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteMarkdown,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldCollectionPlanMarkdownLocalPath(downloadedMarkdown.local_path);
+        downloadText += `\n\n$ download field checklist\nSaved to ${downloadedMarkdown.local_path}\n[${downloadedMarkdown.bytes_received} bytes]`;
+      }
+      setResult("field-metadata-update", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ Update Field Capture Metadata\n${output || "(no output)"}${downloadText}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+      await refreshFieldEvidenceTemplates();
+      await refreshFieldCollectionPlans();
+    } catch (err) {
+      setResult("field-metadata-update", { status: "failed", output: `$ Update Field Capture Metadata\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const registerFieldEvidenceCase = async () => {
     if (!fieldCase.caseName.trim() || !fieldCase.conditions.trim()) {
       setError("Field case name and condition tags are required.");
       return;
     }
     if (!fieldCaptureMetadataReady(fieldCase)) {
-      setError("Complete the field capture metadata before registering evidence.");
+      setError(`Complete field capture metadata before registering evidence: ${fieldCaptureMetadataIssues(fieldCase).join(", ")}.`);
       return;
     }
     const resolvedAuth = auth();
@@ -6388,6 +6491,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                     Preflight
                   </button>
                   <button
+                    onClick={updateFieldCaptureMetadata}
+                    disabled={!connectionReady || !!runningStep || !firstFieldCondition(fieldCase.conditions)}
+                    className="btn-secondary text-xs py-1 px-3"
+                  >
+                    {runningStep === "field-metadata-update" ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />}
+                    Update Metadata
+                  </button>
+                  <button
                     onClick={registerFieldEvidenceCase}
                     disabled={!connectionReady || !!runningStep || !fieldCase.caseName.trim() || !fieldCase.conditions.trim() || !fieldMetadataReady}
                     className="btn-secondary text-xs py-1 px-3"
@@ -6403,6 +6514,15 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 </span>
                 <span className="text-slate-500">condition {firstFieldCondition(fieldCase.conditions) || "n/a"}</span>
               </div>
+              {!fieldMetadataReady && (
+                <div className="flex flex-wrap gap-1.5 text-[10px]">
+                  {fieldMetadataIssues.map((issue) => (
+                    <span key={issue} className="rounded border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-amber-300">
+                      {issue}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <div>
                   <label className="label">Case name</label>
@@ -6620,6 +6740,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               {results["field-evidence"]?.output && selectedOutputId !== "field-evidence" && (
                 <button onClick={() => setSelectedOutputId("field-evidence")} className="text-[10px] text-cyan-400 hover:text-cyan-300">
                   Show field evidence output
+                </button>
+              )}
+              {results["field-metadata-update"]?.output && selectedOutputId !== "field-metadata-update" && (
+                <button onClick={() => setSelectedOutputId("field-metadata-update")} className="text-[10px] text-cyan-400 hover:text-cyan-300">
+                  Show metadata update output
                 </button>
               )}
               {results["field-template"]?.output && selectedOutputId !== "field-template" && (

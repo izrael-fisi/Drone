@@ -589,6 +589,10 @@ Status:
   metadata and passes it through `VISION_NAV_FIELD_CAPTURE_METADATA`; the full
   Evidence Workflow skips optional field registration until that metadata is
   complete.
+- Done: Module Setup's Field Evidence Case form now shows the exact missing
+  proof-grade metadata fields and provides an `Update Metadata` action that
+  writes the current form values to the Pi-side active manifest, regenerates the
+  field collection plan, and downloads the refreshed manifest/checklist.
 - Done: `scripts/pi/create_field_evidence_template.sh` wraps the template
   generator on the Pi, writes the starter manifest into the transfer folder,
   and emits a stable marker for desktop/support collection.

@@ -401,7 +401,11 @@ condition output folder, runtime wrappers, metadata command, and registration
 inputs are ready or clearly marked as still missing. The Field Evidence Case
 `Preflight` button runs that same check on the connected Pi, downloads
 `field_capture_preflight.json` into the desktop replay-cases folder, and leaves
-the report available for support bundles and local readiness re-audits.
+the report available for support bundles and local readiness re-audits. The
+same form lists the missing proof-grade metadata fields as chips and exposes an
+`Update Metadata` action that runs `scripts/pi/update_field_capture_metadata.sh`
+with the current form values, then downloads the refreshed active manifest and
+field collection checklist.
 The local-only `Load Next Field Condition` setup action performs the same load
 from the newest downloaded plan, so the operator can move from `Create Plan` to
 metadata entry without scrolling through the plan list. Loading a condition only
