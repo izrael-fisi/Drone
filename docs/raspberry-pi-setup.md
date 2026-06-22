@@ -992,12 +992,14 @@ logs chips for those referenced inputs so support can copy or reveal the local
 artifacts directly.
 
 The wrapper uses the latest Pi-side support bundle under
-`~/DroneTransfer/outgoing/support-bundles/` by default and writes
+`~/DroneTransfer/outgoing/support-bundles/` when one is available and writes
 `~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json` plus a
 human-readable
 `~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.md` handoff
 and `~/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.evidence.zip`
 support-review package.
+If no support bundle exists yet, the wrapper still writes those failed audit
+artifacts and records `support_bundle_bench_readiness` as a missing proof gate.
 If `field_collection_plan.json` and `field_collection_plan.md` are present next
 to the replay-case artifacts, the audit records them as inputs and the evidence
 ZIP includes both files.

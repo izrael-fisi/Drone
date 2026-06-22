@@ -313,6 +313,31 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     assert any(name.startswith("artifacts/input_field_collection_plan-") for name in names)
     assert any(name.startswith("artifacts/input_field_collection_plan_markdown-") for name in names)
 PY
+pi_audit_dir="$(mktemp -d "$preflight_tmp_dir/pi-audit.XXXXXX")"
+mkdir -p "$pi_audit_dir/support-bundles" "$pi_audit_dir/feature-method-bench" "$pi_audit_dir/replay-cases" "$pi_audit_dir/terrain-match"
+pi_autonomy_output="$preflight_tmp_dir/pi_autonomy_readiness_preflight.txt"
+VISION_NAV_PYTHON=python3 \
+VISION_NAV_SUPPORT_OUTPUT_DIR="$pi_audit_dir/support-bundles" \
+VISION_NAV_FEATURE_METHOD_BENCHMARK="$pi_audit_dir/feature-method-bench" \
+VISION_NAV_FIELD_EVIDENCE_REPORT="$pi_audit_dir/replay-cases/field_evidence_report.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN="$pi_audit_dir/replay-cases/field_collection_plan.json" \
+VISION_NAV_THRESHOLD_TUNING_REPORT="$pi_audit_dir/replay-cases/threshold_tuning_report.json" \
+VISION_NAV_ROSBAG_EXPORT_VALIDATION="$pi_audit_dir/terrain-match/rosbag-jsonl-validation.json" \
+VISION_NAV_ROSBAG2_CLI_REVIEW="$pi_audit_dir/terrain-match/rosbag2-cli-review.json" \
+VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$pi_audit_dir/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json" \
+VISION_NAV_AUTONOMY_READINESS_REPORT="$pi_audit_dir/replay-cases/autonomy_readiness_report.json" \
+VISION_NAV_AUTONOMY_ALLOW_FAILED=1 \
+./scripts/pi/run_autonomy_readiness_audit.sh >"$pi_autonomy_output" 2>&1
+grep -q "No support bundle ZIP found" "$pi_autonomy_output"
+grep -q "__VISION_NAV_AUTONOMY_REPORT__=" "$pi_autonomy_output"
+grep -q "__VISION_NAV_AUTONOMY_HANDOFF__=" "$pi_autonomy_output"
+grep -q "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=" "$pi_autonomy_output"
+grep -q "proof:support_bundle_bench_readiness" "$pi_autonomy_output"
+test -f "$pi_audit_dir/replay-cases/autonomy_readiness_report.json"
+test -f "$pi_audit_dir/replay-cases/autonomy_readiness_report.md"
+test -f "$pi_audit_dir/replay-cases/autonomy_readiness_report.evidence.zip"
+grep -q '"support_bundle_bench_readiness"' "$pi_audit_dir/replay-cases/autonomy_readiness_report.json"
+rm -rf "$pi_audit_dir"
 rm -rf "$local_audit_dir"
 
 echo "[7/8] Preparing PX4 SITL evidence session dry-run"

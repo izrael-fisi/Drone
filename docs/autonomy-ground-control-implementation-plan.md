@@ -669,8 +669,10 @@ Status:
   report, and refreshes the ROS Bag Validation evidence list without requiring
   the full evidence workflow.
 - Done: `scripts/pi/run_autonomy_readiness_audit.sh` runs the same final audit
-  on the Pi against the latest support bundle and writes
-  `autonomy_readiness_report.json` for transfer or support review.
+  on the Pi using the latest support bundle when available, and still writes a
+  failed `autonomy_readiness_report.json`, Markdown handoff, and evidence ZIP
+  when the support bundle is missing so the missing proof gate is preserved for
+  transfer or support review.
 - Done: `vision-nav-autonomy-handoff` renders
   `autonomy_readiness_report.json` into a Markdown handoff with status, inputs,
   plan source snapshot, checks, all goal proof items, completion blockers,

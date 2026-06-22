@@ -526,13 +526,16 @@ After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
 the uploaded bundle path already handed off. From there, `Create Bench Report`
 validates the deployed terrain bundle, creates the support bundle on the Pi, and
 downloads it to the desktop. The following `Autonomy Readiness` setup action
-runs `scripts/pi/run_autonomy_readiness_audit.sh` over SSH against the latest
-Pi-side support bundle, then downloads the strict final audit report to
+runs `scripts/pi/run_autonomy_readiness_audit.sh` over SSH using the latest
+Pi-side support bundle when available, then downloads the strict final audit report to
 `~/DroneTransfer/from-pi/replay-cases/` on the desktop. When the Pi emits a
 Markdown handoff marker, Module Setup downloads that handoff beside the JSON
 report. When the Pi emits the evidence-package marker, Module Setup also
 downloads `autonomy_readiness_report.evidence.zip` beside the JSON report and
 shows both local paths in the Latest Output panel for support review. If the
+support bundle is still missing, the Pi wrapper still emits a failed audit,
+handoff, and evidence package that name `support_bundle_bench_readiness` as the
+missing proof gate. When the
 readiness wrapper also emits evidence-workflow report, workflow-log archive,
 workflow-validation, field-evidence, feature-benchmark, threshold-tuning, or
 field-collection markers, the same action downloads those sibling artifacts and

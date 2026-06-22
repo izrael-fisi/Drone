@@ -50,21 +50,21 @@ if [[ -z "$px4_sitl_report" && -f "$HOME/px4-sitl-evidence/receiver_evidence.jso
   px4_sitl_report="$HOME/px4-sitl-evidence/receiver_evidence.json"
 fi
 
-if [[ -z "$support_bundle" || ! -f "$support_bundle" ]]; then
-  echo "Missing support bundle ZIP for autonomy readiness audit." >&2
-  echo "Run ./scripts/pi/create_support_bundle.sh first, or set VISION_NAV_AUTONOMY_SUPPORT_BUNDLE." >&2
-  exit 1
-fi
-
 mkdir -p "$(dirname "$output_report")"
 
 args=(
   -m vision_nav.autonomy_readiness
   --research-doc "$repo_root/docs/autonomy-ground-control-research.md"
   --implementation-plan "$repo_root/docs/autonomy-ground-control-implementation-plan.md"
-  --support-bundle "$support_bundle"
   --output "$output_report"
 )
+
+if [[ -n "$support_bundle" && -f "$support_bundle" ]]; then
+  args+=(--support-bundle "$support_bundle")
+else
+  echo "No support bundle ZIP found; the readiness audit will fail closed and record the missing proof gate." >&2
+  echo "Run ./scripts/pi/create_support_bundle.sh later, or set VISION_NAV_AUTONOMY_SUPPORT_BUNDLE." >&2
+fi
 
 if [[ -n "$px4_sitl_session" && -f "$px4_sitl_session/px4_sitl_evidence_session.json" ]]; then
   args+=(--px4-sitl-session "$px4_sitl_session")
@@ -126,7 +126,7 @@ fi
 cat <<EOF
 
 Autonomy readiness audit outputs:
-  support bundle:            $support_bundle
+  support bundle:            $([[ -f "$support_bundle" ]] && printf '%s' "$support_bundle" || printf 'not found')
   px4 sitl session:          ${px4_sitl_session:-not found}
   px4 sitl report:           $([[ -f "$px4_sitl_report" ]] && printf '%s' "$px4_sitl_report" || printf 'not found')
   field evidence report:     $([[ -f "$field_evidence_report" ]] && printf '%s' "$field_evidence_report" || printf 'not found')
