@@ -235,6 +235,14 @@ phases = runbook.get("phases") or []
 metadata = report.get("metadata") or {}
 repo = metadata.get("repo") or {}
 inputs = report.get("inputs") or {}
+command_bundle = report.get("command_bundle") if isinstance(report.get("command_bundle"), dict) else {}
+guided_workflow_commands = [
+    str(command)
+    for command in command_bundle.get("guided_workflow_commands") or []
+    if isinstance(command, str) and command
+]
+if external_blockers and not guided_workflow_commands:
+    guided_workflow_commands = ["./scripts/pi/run_autonomy_evidence_workflow.sh"]
 
 passed = sum(1 for item in proof_items if item.get("status") == "passed")
 print(f"Autonomy goal status: {report.get('status', 'unknown')}")
@@ -304,11 +312,15 @@ if external_blockers:
     if len(external_blockers) > 12:
         print(f"- ... {len(external_blockers) - 12} more")
 
-if external_blockers:
+if guided_workflow_commands:
     print()
     print("Guided workflow option:")
-    print("1. Run the ordered Pi evidence workflow and preserve partial artifacts.")
-    print("   ./scripts/pi/run_autonomy_evidence_workflow.sh")
+    for index, command in enumerate(guided_workflow_commands[:4], start=1):
+        if index == 1:
+            print(f"{index}. Run the ordered Pi evidence workflow and preserve partial artifacts.")
+        else:
+            print(f"{index}. Guided evidence workflow command.")
+        print(f"   {command}")
 
 phase_commands = []
 blocked_phase_commands = []
