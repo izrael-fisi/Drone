@@ -2784,6 +2784,18 @@ RC8_OPTION,90
         )
         readiness = evaluate_bench_readiness_file(zip_path)
         assert_equal(readiness["status"], "degraded", "bench readiness degraded on px4 param warning")
+        assert_equal(readiness["summary"]["next_actions"], 1, "bench readiness next action count")
+        readiness_actions = {action["check"]: action for action in readiness["next_actions"]}
+        assert_equal(
+            readiness_actions["px4_params"]["desktop_action"],
+            "Module Setup > PX4 parameter check, then Bench Report",
+            "bench readiness px4 params next action app",
+        )
+        assert_equal(
+            readiness_actions["px4_params"]["command"],
+            "./scripts/pi/check_px4_params.sh",
+            "bench readiness px4 params next action command",
+        )
         readiness_checks = {check["name"]: check["status"] for check in readiness["checks"]}
         readiness_check_details = {check["name"]: check.get("details") or {} for check in readiness["checks"]}
         assert_equal(readiness_checks["bundle_health"], "passed", "bench readiness bundle health")
@@ -2820,11 +2832,17 @@ RC8_OPTION,90
         }
         rosbag_failed = evaluate_bench_readiness(failed_rosbag_validation)
         rosbag_failed_checks = {check["name"]: check["status"] for check in rosbag_failed["checks"]}
+        rosbag_failed_actions = {action["check"]: action for action in rosbag_failed["next_actions"]}
         assert_equal(rosbag_failed["status"], "failed", "bench readiness failed rosbag validation")
         assert_equal(
             rosbag_failed_checks["rosbag_export_validations"],
             "failed",
             "failed rosbag validation check included",
+        )
+        assert_equal(
+            rosbag_failed_actions["rosbag_export_validations"]["desktop_action"],
+            "Module Setup > ROS Bag Validation, then Bench Report",
+            "failed rosbag validation next action app",
         )
 
         incomplete_gnss = json.loads(json.dumps(manifest))
@@ -2857,8 +2875,14 @@ RC8_OPTION,90
         missing_runtime_status["logs"]["runtime_statuses"] = []
         runtime_degraded = evaluate_bench_readiness(missing_runtime_status)
         runtime_checks = {check["name"]: check["status"] for check in runtime_degraded["checks"]}
+        runtime_actions = {action["check"]: action for action in runtime_degraded["next_actions"]}
         assert_equal(runtime_degraded["status"], "degraded", "bench readiness missing runtime status degrades")
         assert_equal(runtime_checks["runtime_status"], "degraded", "bench readiness runtime status degrade")
+        assert_equal(
+            runtime_actions["runtime_status"]["command"],
+            "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+            "bench readiness runtime status next action command",
+        )
 
         degraded_external = json.loads(json.dumps(manifest))
         degraded_external["logs"]["runtime_statuses"][-1]["external_position"] = {

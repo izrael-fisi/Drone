@@ -496,6 +496,15 @@ export interface SupportBundleDetails {
       status?: "passed" | "failed" | "degraded" | string;
       message?: string;
     }>;
+    next_actions?: Array<{
+      check?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      title?: string;
+      desktop_action?: string;
+      command?: string;
+      notes?: string;
+      message?: string;
+    }>;
   };
 }
 

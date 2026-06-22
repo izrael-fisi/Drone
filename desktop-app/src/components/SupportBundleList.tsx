@@ -7,7 +7,7 @@ type WorkflowValidationSummary = NonNullable<SupportBundleDetails["autonomy_evid
 type WorkflowValidationStep = WorkflowValidationSummary["checks"][number]["non_passed_steps"][number];
 type FieldCapturePreflightCheck = SupportBundleDetails["field_capture_preflight_reports"][number]["checks"][number];
 type BundleDiagnostic = NonNullable<FieldCapturePreflightCheck["bundle_diagnostic"]>;
-type BenchReadinessCheck = NonNullable<SupportBundleDetails["bench_readiness"]>["checks"][number];
+type BenchReadiness = NonNullable<SupportBundleDetails["bench_readiness"]>;
 
 function formatBundleSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -241,8 +241,21 @@ const BENCH_FOLLOW_UPS: Record<string, { title: string; desktopAction: string; c
   },
 };
 
-function benchReadinessFollowUps(checks: BenchReadinessCheck[]) {
-  return checks.flatMap((check) => {
+function benchReadinessFollowUps(readiness?: BenchReadiness) {
+  const reportActions = (readiness?.next_actions ?? []).flatMap((action) => {
+    if (!action.command) return [];
+    return [{
+      check: action.check ?? "bench_readiness",
+      status: action.status,
+      title: action.title ?? "Bench follow-up",
+      desktopAction: action.desktop_action ?? "Module Setup",
+      command: action.command,
+      notes: action.notes,
+      message: action.message,
+    }];
+  });
+  if (reportActions.length > 0) return reportActions;
+  return (readiness?.checks ?? []).flatMap((check) => {
     if (!check.name || check.status === "passed") return [];
     const spec = BENCH_FOLLOW_UPS[check.name];
     if (!spec) return [];
@@ -275,7 +288,7 @@ function SupportBundleDetailPanel({
   const px4SessionCommands = namedCommandRecords(px4SessionSummary?.operator_commands);
   const px4Prereqs = asRecord(details.manifest.px4_sitl_prereqs);
   const px4PrereqFixCommands = commandRecords(px4Prereqs?.fix_commands);
-  const benchFollowUps = benchReadinessFollowUps(details.bench_readiness?.checks ?? []);
+  const benchFollowUps = benchReadinessFollowUps(details.bench_readiness);
   const evidenceWorkflow = asRecord(details.manifest.autonomy_evidence_workflow);
   const workflowValidation = details.autonomy_evidence_workflow_validation;
   const workflowStatus = typeof evidenceWorkflow?.status === "string" ? evidenceWorkflow.status : undefined;

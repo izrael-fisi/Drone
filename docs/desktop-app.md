@@ -301,9 +301,12 @@ the configured MAVLink endpoint, optional replay-gate reports, optional PX4
 SITL receiver evidence and parameter checks, optional ArduPilot parameter
 checks, optional feature-method benchmarks, optional field-evidence gates, and
 optional threshold-tuning reports, and an automatic bench-readiness summary. The
-panel lists recent downloaded support bundle ZIPs with parsed bench-readiness
-status, bundle health, checksum status, map source provenance, georeference
-confidence, replay-gate status, GNSS-denied mission-prep status, PX4 evidence
+bench-readiness JSON includes copyable next actions for failed or degraded
+subchecks, so support ZIPs stay actionable even before a final autonomy
+readiness audit is generated. The panel lists recent downloaded support bundle
+ZIPs with parsed bench-readiness status, bundle health, checksum status, map
+source provenance, georeference confidence, replay-gate status, GNSS-denied
+mission-prep status, PX4 evidence
 status, PX4 parameter status, ArduPilot parameter status, feature-method
 benchmark status, field-evidence status, and threshold-tuning status so the
 operator can confirm what was captured without manually opening the archive.

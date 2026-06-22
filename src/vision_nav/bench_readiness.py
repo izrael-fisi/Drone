@@ -18,6 +18,86 @@ REQUIRED_GNSS_DENIED_CHECKS = {
     "estimator_health",
 }
 REQUIRED_PX4_RECEIVER_MESSAGE = "odometry"
+BENCH_NEXT_ACTIONS = {
+    "bundle_health": {
+        "title": "Rebuild or validate the terrain bundle.",
+        "desktop_action": "Mission Planner > Build Bundle, then Module Setup > Bench Report",
+        "command": "./scripts/pi/validate_terrain_bundle.sh",
+        "notes": "The support bundle must include passing terrain bundle health before bench readiness can pass.",
+    },
+    "gnss_denied_plan": {
+        "title": "Complete GNSS-denied mission prep before rebuilding the bundle.",
+        "desktop_action": "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
+        "command": "./scripts/pi/validate_terrain_bundle.sh",
+        "notes": "Rebuild the bundle after satellite source, map reset, home reset, heading, and estimator checks are ready.",
+    },
+    "runtime_logs": {
+        "title": "Capture a terrain runtime log.",
+        "desktop_action": "Module Setup > Field Log Capture, then Bench Report",
+        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+        "notes": "Create the support bundle after Field Log Capture produces terrain_matches.jsonl.",
+    },
+    "runtime_status": {
+        "title": "Capture runtime status with the terrain log.",
+        "desktop_action": "Module Setup > Field Log Capture, Runtime Status, then Bench Report",
+        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+        "notes": "Runtime status proves active map, output path, estimator health, and latest match state.",
+    },
+    "replay_gates": {
+        "title": "Run guided field replay evidence.",
+        "desktop_action": "Module Setup > Load Next Field Condition, then Evidence Workflow",
+        "command": "./scripts/pi/run_autonomy_evidence_workflow.sh",
+        "notes": "The workflow captures, validates, and registers condition-specific logs.",
+    },
+    "px4_sitl_evidence": {
+        "title": "Capture PX4 receiver proof.",
+        "desktop_action": "Module Setup > PX4 SITL Receiver Capture, then Bench Report",
+        "command": "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+        "notes": "Receiver proof must show the MAVLink ODOMETRY path arriving as vehicle_visual_odometry samples.",
+    },
+    "px4_params": {
+        "title": "Export and check PX4 external-vision parameters.",
+        "desktop_action": "Module Setup > PX4 parameter check, then Bench Report",
+        "command": "./scripts/pi/check_px4_params.sh",
+        "notes": "Export PX4 parameters from QGroundControl or the PX4 shell before creating the support bundle.",
+    },
+    "feature_method_benchmarks": {
+        "title": "Benchmark feature methods on field logs.",
+        "desktop_action": "Module Setup > Feature Benchmark",
+        "command": "./scripts/pi/run_feature_method_benchmark.sh",
+        "notes": "Use real field logs to compare ORB, AKAZE, SIFT, and neural descriptor options.",
+    },
+    "field_evidence": {
+        "title": "Collect and register field replay proof.",
+        "desktop_action": "Module Setup > Evidence Workflow",
+        "command": "./scripts/pi/run_autonomy_evidence_workflow.sh",
+        "notes": "Field evidence must cover all required terrain conditions with real captured logs.",
+    },
+    "threshold_tuning": {
+        "title": "Tune replay gates against field logs.",
+        "desktop_action": "Module Setup > Threshold Tuning",
+        "command": "./scripts/pi/run_threshold_tuning_report.sh",
+        "notes": "Threshold tuning should run after the field-evidence manifest passes.",
+    },
+    "rosbag_export_validations": {
+        "title": "Export and validate the ROS replay artifact.",
+        "desktop_action": "Module Setup > ROS Bag Validation, then Bench Report",
+        "command": "./scripts/pi/run_rosbag_export_validation.sh && ./scripts/pi/create_support_bundle.sh",
+        "notes": "Support bundles should include a passed ROS replay export validation summary.",
+    },
+    "rosbag2_cli_reviews": {
+        "title": "Review the native rosbag2 export.",
+        "desktop_action": "Module Setup > Native rosbag2 Review, then Bench Report",
+        "command": "./scripts/dev/run_rosbag2_cli_review.sh && ./scripts/pi/create_support_bundle.sh",
+        "notes": "Run on a sourced ROS 2 workstation when native rosbag2 export is part of the evidence package.",
+    },
+    "ardupilot_params": {
+        "title": "Review ArduPilot ExternalNav parameters.",
+        "desktop_action": "Module Setup > ArduPilot parameter check",
+        "command": "./scripts/pi/check_ardupilot_params.sh",
+        "notes": "ArduPilot remains optional for the PX4-first bench path unless explicitly required.",
+    },
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,15 +183,18 @@ def evaluate_bench_readiness(
     if rosbag2_cli_check is not None:
         checks.append(rosbag2_cli_check)
     status = readiness_status(checks)
+    next_actions = next_actions_for_checks(checks)
     return {
         "status": status,
         "support_bundle": manifest.get("name"),
         "generated_at": manifest.get("metadata", {}).get("generated_at"),
         "checks": checks,
+        "next_actions": next_actions,
         "summary": {
             "failed": sum(1 for check in checks if check["status"] == "failed"),
             "degraded": sum(1 for check in checks if check["status"] == "degraded"),
             "passed": sum(1 for check in checks if check["status"] == "passed"),
+            "next_actions": len(next_actions),
         },
     }
 
@@ -430,6 +513,27 @@ def readiness_status(checks: list[dict[str, Any]]) -> str:
     return "passed"
 
 
+def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    for check in checks:
+        name = str(check.get("name") or "")
+        status = normalize_status(check.get("status"))
+        if status == "passed":
+            continue
+        spec = BENCH_NEXT_ACTIONS.get(name)
+        if spec is None:
+            continue
+        action = {
+            "check": name,
+            "status": status or "unknown",
+            **spec,
+        }
+        if check.get("message"):
+            action["message"] = str(check["message"])
+        actions.append(action)
+    return actions
+
+
 def normalize_status(value: Any) -> str | None:
     if value is None:
         return None
@@ -466,6 +570,14 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"Status: {report['status']}")
     for check in report["checks"]:
         print(f"- {check['name']}: {check['status']} - {check['message']}")
+    if report.get("next_actions"):
+        print("Next actions:")
+        for action in report["next_actions"]:
+            print(f"- {action.get('title')} [{action.get('status')}]")
+            if action.get("desktop_action"):
+                print(f"  app: {action['desktop_action']}")
+            if action.get("command"):
+                print(f"  command: {action['command']}")
 
 
 def main() -> None:

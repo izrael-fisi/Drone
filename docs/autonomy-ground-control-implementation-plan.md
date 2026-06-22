@@ -530,6 +530,10 @@ Status:
 - Done: support bundles can be evaluated by `vision-nav-bench-readiness` to
   produce one pass/degraded/fail bench artifact status instead of relying on
   separate manual inspections.
+- Done: `vision-nav-bench-readiness` now emits machine-readable next actions
+  for failed/degraded bench subchecks, including the matching app action and
+  copyable command, so support bundles stay actionable before a separate final
+  autonomy-readiness audit is generated.
 - Done: bench-readiness now evaluates bundled `runtime_status.json` snapshots
   as evidence of active map, output/log path, estimator health, latest match
   status/reason, external-position health, and accepted/rejected counts. Missing
