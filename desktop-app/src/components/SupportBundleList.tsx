@@ -492,6 +492,7 @@ function SupportBundleDetailPanel({
                 <span className="font-mono text-slate-500">placeholder {report.summary.placeholder_count ?? 0}</span>
                 <span className="font-mono text-slate-500">missing {report.summary.missing_count ?? 0}</span>
                 <span className="font-mono text-slate-500">capture cmds {report.pending_capture_command_count ?? 0}</span>
+                <span className="font-mono text-slate-500">source logs {report.condition_source_log_count ?? 0}</span>
                 <span className="font-mono text-slate-500">runtime paths {report.runtime_status_path_count ?? 0}</span>
               </div>
               <div className="font-mono text-slate-500 truncate">
@@ -898,6 +899,7 @@ export function SupportBundleList({
                     {bundle.summary.field_collection_plan_required_count ?? 0}
                   </span>
                   <span>plan capture cmds {bundle.summary.field_collection_plan_pending_capture_command_count ?? 0}</span>
+                  <span>plan source logs {bundle.summary.field_collection_plan_condition_source_log_count ?? 0}</span>
                   <span>plan runtime paths {bundle.summary.field_collection_plan_runtime_status_path_count ?? 0}</span>
                   <span>thresholds {formatLabel(bundle.summary.threshold_tuning_status)}</span>
                   <span>threshold cases {bundle.summary.threshold_tuning_field_case_count ?? 0}</span>

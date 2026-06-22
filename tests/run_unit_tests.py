@@ -2074,6 +2074,11 @@ RC8_OPTION,90
             "support field collection runtime status path count",
         )
         assert_equal(
+            manifest["field_collection_plans"]["condition_source_log_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "support field collection source log count",
+        )
+        assert_equal(
             manifest["field_collection_plans"]["reports"][0]["conditions"][0]["has_capture_command"],
             True,
             "support field collection condition capture command flag",

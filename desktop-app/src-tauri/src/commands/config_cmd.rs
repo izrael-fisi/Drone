@@ -55,6 +55,7 @@ pub struct SupportBundleSummary {
     pub field_collection_plan_pending_registration_command_count: Option<u64>,
     pub field_collection_plan_capture_output_dir_count: Option<u64>,
     pub field_collection_plan_runtime_status_path_count: Option<u64>,
+    pub field_collection_plan_condition_source_log_count: Option<u64>,
     pub threshold_tuning_status: Option<String>,
     pub threshold_tuning_field_case_count: Option<u64>,
     pub threshold_tuning_capture_metadata_issue_count: Option<u64>,
@@ -3873,6 +3874,9 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         field_collection_plan_runtime_status_path_count: manifest
             .pointer("/field_collection_plans/runtime_status_path_count")
             .and_then(|value| value.as_u64()),
+        field_collection_plan_condition_source_log_count: manifest
+            .pointer("/field_collection_plans/condition_source_log_count")
+            .and_then(|value| value.as_u64()),
         threshold_tuning_status: json_string(manifest.pointer("/threshold_tuning/status")),
         threshold_tuning_field_case_count: manifest
             .pointer("/threshold_tuning/field_case_count")
@@ -4140,7 +4144,8 @@ mod tests {
                 "pending_capture_command_count": 5,
                 "pending_registration_command_count": 5,
                 "capture_output_dir_count": 8,
-                "runtime_status_path_count": 8
+                "runtime_status_path_count": 8,
+                "condition_source_log_count": 8
             },
             "threshold_tuning": {
                 "status": "passed",
@@ -4219,6 +4224,10 @@ mod tests {
         );
         assert_eq!(
             summary.field_collection_plan_runtime_status_path_count,
+            Some(8)
+        );
+        assert_eq!(
+            summary.field_collection_plan_condition_source_log_count,
             Some(8)
         );
         assert_eq!(summary.threshold_tuning_status.as_deref(), Some("passed"));

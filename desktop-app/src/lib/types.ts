@@ -156,6 +156,7 @@ export interface SupportBundleFile {
     field_collection_plan_pending_registration_command_count?: number;
     field_collection_plan_capture_output_dir_count?: number;
     field_collection_plan_runtime_status_path_count?: number;
+    field_collection_plan_condition_source_log_count?: number;
     threshold_tuning_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     threshold_tuning_field_case_count?: number;
     threshold_tuning_capture_metadata_issue_count?: number;

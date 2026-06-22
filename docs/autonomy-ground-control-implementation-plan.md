@@ -505,6 +505,9 @@ Status:
   per-condition source-log/capture-output/runtime-status paths, capture/register
   command presence, and pending command counts so offline support review can
   trace each required real-world condition to its intended log capture.
+- Done: support-bundle summary cards now surface field-plan source-log counts
+  next to capture-output and runtime-status counts, matching the final
+  autonomy-readiness traceability gate.
 - Done: downloaded support-bundle details show bundled field collection plan
   status, registered-vs-required counts, per-condition collection state, and
   extractable JSON/Markdown checklist artifacts.

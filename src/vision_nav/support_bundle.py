@@ -885,6 +885,7 @@ def copy_field_collection_plans(paths: list[str], support_dir: Path) -> dict[str
         ),
         "capture_output_dir_count": sum(int(report.get("capture_output_dir_count") or 0) for report in reports),
         "runtime_status_path_count": sum(int(report.get("runtime_status_path_count") or 0) for report in reports),
+        "condition_source_log_count": sum(int(report.get("condition_source_log_count") or 0) for report in reports),
         "copied": copied,
         "missing": missing,
         "issues": issues,
