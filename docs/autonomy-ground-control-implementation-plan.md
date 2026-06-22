@@ -574,6 +574,12 @@ Status:
   handoffs now promote the next pending field condition with its capture/register
   commands, so operators can advance the eight-condition real-field dataset
   without scanning the full checklist.
+- Done: field collection plans, support-bundle summaries, readiness reports, and
+  `autonomy_goal_status.sh` now preserve the next pending condition's
+  `update_field_capture_metadata.sh` command between capture and registration,
+  so proof-grade site, weather, camera, IMU/PX4, altitude, speed, and safety
+  metadata can be filled before registration instead of being buried in the
+  long registration command.
 - Done: support-bundle summary cards now surface field-plan source-log counts
   next to capture-output and runtime-status counts, matching the final
   autonomy-readiness traceability gate.

@@ -931,11 +931,16 @@ def summarize_field_collection_condition(item: dict[str, Any], *, include_comman
         "capture_output_dir": item.get("capture_output_dir"),
         "runtime_status_path": item.get("runtime_status_path"),
         "has_capture_command": bool(item.get("capture_command") or item.get("has_capture_command")),
+        "has_metadata_update_command": bool(
+            item.get("metadata_update_command") or item.get("has_metadata_update_command")
+        ),
         "has_register_command": bool(item.get("register_command") or item.get("has_register_command")),
     }
     if include_commands:
         if item.get("capture_command"):
             summary["capture_command"] = item.get("capture_command")
+        if item.get("metadata_update_command"):
+            summary["metadata_update_command"] = item.get("metadata_update_command")
         if item.get("register_command"):
             summary["register_command"] = item.get("register_command")
     return summary

@@ -206,6 +206,10 @@ def condition_plan(
         "VISION_NAV_OUTPUT_DIR": capture_output_dir,
         "VISION_NAV_COUNT": "30",
     }
+    metadata_update_env = {
+        "VISION_NAV_FIELD_MANIFEST": str(manifest_path),
+        "VISION_NAV_FIELD_CONDITION": condition,
+    }
     return {
         "condition": condition,
         "label": label_for_condition(condition),
@@ -224,6 +228,11 @@ def condition_plan(
         "capture_checklist": capture_checklist,
         "capture_env": capture_env,
         "capture_command": shell_command(capture_env, "./scripts/pi/run_terrain_nav_loop.sh"),
+        "metadata_update_env": metadata_update_env,
+        "metadata_update_command": shell_command(
+            metadata_update_env,
+            "./scripts/pi/update_field_capture_metadata.sh",
+        ),
         "register_env": register_env,
         "register_command": shell_command(register_env, "./scripts/pi/register_field_replay_case.sh"),
     }
@@ -317,6 +326,12 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 str(next_condition.get("capture_command") or ""),
                 "```",
                 "",
+                "Update capture metadata:",
+                "",
+                "```bash",
+                str(next_condition.get("metadata_update_command") or ""),
+                "```",
+                "",
                 "Register:",
                 "",
                 "```bash",
@@ -346,6 +361,12 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 "",
                 "```json",
                 json.dumps(item.get("capture_metadata") or {}, indent=2, sort_keys=True),
+                "```",
+                "",
+                "Update the capture metadata:",
+                "",
+                "```bash",
+                str(item.get("metadata_update_command") or ""),
                 "```",
                 "",
                 "Checklist:",

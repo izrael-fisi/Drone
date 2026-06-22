@@ -7,6 +7,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 import re
+import shlex
 from typing import Any
 
 from vision_nav.bench_readiness import (
@@ -1672,13 +1673,13 @@ def field_collection_plan_check_from_summary(summary: dict[str, Any]) -> dict[st
 def field_collection_next_condition(plan: dict[str, Any]) -> dict[str, Any] | None:
     raw_next = plan.get("next_condition")
     if isinstance(raw_next, dict):
-        return compact_field_collection_condition(raw_next)
+        return condition_with_metadata_update_command(compact_field_collection_condition(raw_next), plan)
     conditions = plan.get("conditions")
     if not isinstance(conditions, list):
         return None
     for item in conditions:
         if isinstance(item, dict) and item.get("status") != "registered":
-            return compact_field_collection_condition(item)
+            return condition_with_metadata_update_command(compact_field_collection_condition(item), plan)
     return None
 
 
@@ -1693,9 +1694,33 @@ def compact_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
         "capture_output_dir",
         "runtime_status_path",
         "capture_command",
+        "metadata_update_command",
         "register_command",
     )
     return {key: str(item[key]) for key in keys if item.get(key) is not None}
+
+
+def condition_with_metadata_update_command(condition: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+    if condition.get("metadata_update_command"):
+        return condition
+    condition_name = condition.get("condition")
+    manifest_path = plan.get("manifest_path")
+    if not condition_name or not manifest_path:
+        return condition
+    updated = dict(condition)
+    updated["metadata_update_command"] = shell_command(
+        {
+            "VISION_NAV_FIELD_MANIFEST": str(manifest_path),
+            "VISION_NAV_FIELD_CONDITION": str(condition_name),
+        },
+        "./scripts/pi/update_field_capture_metadata.sh",
+    )
+    return updated
+
+
+def shell_command(env: dict[str, str], command: str) -> str:
+    parts = [f"{key}={shlex.quote(str(value))}" for key, value in env.items() if str(value)]
+    return " \\\n  ".join(parts + [command])
 
 
 def field_collection_missing_traceability(conditions: list[dict[str, Any]]) -> list[str]:

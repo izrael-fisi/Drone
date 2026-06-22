@@ -3752,6 +3752,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "expected": "degraded",
                             "case_name": "unit-blur",
                             "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
+                            "metadata_update_command": "./scripts/pi/update_field_capture_metadata.sh --condition blur",
                             "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur",
                         },
                     ],
@@ -3789,6 +3790,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             next_condition["capture_command"],
             "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
             "autonomy readiness incomplete field collection next capture command",
+        )
+        assert_equal(
+            next_condition["metadata_update_command"],
+            "./scripts/pi/update_field_capture_metadata.sh --condition blur",
+            "autonomy readiness incomplete field collection next metadata command",
         )
         assert_equal(
             next_condition["register_command"],
@@ -4767,6 +4773,10 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected generated capture command to include output directory")
         if "VISION_NAV_COUNT=30" not in good_texture["capture_command"]:
             raise AssertionError("Expected generated capture command to be bounded")
+        if "update_field_capture_metadata.sh" not in good_texture["metadata_update_command"]:
+            raise AssertionError("Expected generated metadata update command")
+        if "VISION_NAV_FIELD_CONDITION=good_texture" not in good_texture["metadata_update_command"]:
+            raise AssertionError("Expected metadata update command to target the condition")
         capture_metadata = good_texture.get("capture_metadata") or {}
         assert_equal(
             capture_metadata.get("schema_version"),
@@ -4787,6 +4797,11 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected generated registration command to use the condition capture log")
         if not (base / "field_collection_plan.md").exists():
             raise AssertionError("Expected Markdown field collection plan")
+        markdown_text = (base / "field_collection_plan.md").read_text()
+        if "Update capture metadata:" not in markdown_text:
+            raise AssertionError("Expected Markdown plan to include the next metadata update command")
+        if "update_field_capture_metadata.sh" not in markdown_text:
+            raise AssertionError("Expected Markdown plan to include the metadata helper")
         selection = select_next_field_condition(base / "field_collection_plan.json")
         assert_equal(selection["status"], "selected", "field workflow selection status")
         assert_equal(selection["condition"], "good_texture", "field workflow selection condition")

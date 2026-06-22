@@ -775,6 +775,7 @@ cat >"$outgoing_fallback_root/replay-cases/field_collection_plan.json" <<'EOF'
     "expected": "good_map",
     "status": "placeholder",
     "capture_command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+    "metadata_update_command": "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh",
     "register_command": "./scripts/pi/register_field_replay_case.sh"
   },
   "conditions": [
@@ -784,6 +785,7 @@ cat >"$outgoing_fallback_root/replay-cases/field_collection_plan.json" <<'EOF'
       "expected": "good_map",
       "status": "placeholder",
       "capture_command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+      "metadata_update_command": "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh",
       "register_command": "./scripts/pi/register_field_replay_case.sh"
     }
   ]
@@ -804,6 +806,8 @@ grep -q "field_collection_plan: $outgoing_fallback_root/replay-cases/field_colle
 grep -q "feature_method_benchmark_report: $outgoing_fallback_root/feature-method-bench/outgoing_feature_benchmark.json" "$outgoing_fallback_goal_status"
 grep -q "capture command:" "$outgoing_fallback_goal_status"
 grep -q "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" "$outgoing_fallback_goal_status"
+grep -q "metadata update command:" "$outgoing_fallback_goal_status"
+grep -q "update_field_capture_metadata.sh" "$outgoing_fallback_goal_status"
 outgoing_fallback_audit_output="$preflight_tmp_dir/local_autonomy_readiness_outgoing_fallback.txt"
 VISION_NAV_DESKTOP_TRANSFER_FROM_PI="$outgoing_fallback_from_pi" \
 VISION_NAV_LOCAL_TRANSFER_OUTGOING="$outgoing_fallback_root" \

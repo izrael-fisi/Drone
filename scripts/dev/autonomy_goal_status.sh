@@ -597,6 +597,7 @@ if field_conditions or next_field_condition:
         if runtime_status_path:
             print(f"  runtime status: {runtime_status_path}")
         print_multiline_command("  capture command:", next_field_condition.get("capture_command"))
+        print_multiline_command("  metadata update command:", next_field_condition.get("metadata_update_command"))
         print_multiline_command("  register command:", next_field_condition.get("register_command"))
     remaining = [
         condition
