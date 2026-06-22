@@ -318,13 +318,14 @@ show a compact detail view, extract safe diagnostic artifacts, or delete stale
 ZIP files after a bench session. The detail view reads the ZIP archive directly
 and shows support metadata,
 git/app state, log status counts, accepted-rate summaries, bench-readiness
-checks, replay-gate case results, PX4 receiver sample counts, MAVLink
-version/link hints, PX4 external-vision parameter readiness, ArduPilot
-ExternalNav parameter readiness, feature-method benchmark recommendations,
-field-evidence case coverage, per-condition coverage status, threshold-tuning
-margins, compact per-record previews from bundled runtime/replay JSONL logs, and
-bounded frame timelines that show accepted-rate progression, dominant segment
-status, external-position health counts, sequence range, and average
+checks with copyable follow-up commands for failed/degraded subchecks,
+replay-gate case results, PX4 receiver sample counts, MAVLink version/link
+hints, PX4 external-vision parameter readiness, ArduPilot ExternalNav parameter
+readiness, feature-method benchmark recommendations, field-evidence case
+coverage, per-condition coverage status, threshold-tuning margins, compact
+per-record previews from bundled runtime/replay JSONL logs, and bounded frame
+timelines that show accepted-rate progression, dominant segment status,
+external-position health counts, sequence range, and average
 confidence/inlier/reprojection metrics across the log. When a terrain runtime
 `runtime_status.json` snapshot is present beside the log, support bundles copy
 it as `logs/<log-name>.runtime_status.json` and summarize the active map, output

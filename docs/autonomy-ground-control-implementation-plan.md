@@ -536,6 +536,10 @@ Status:
   snapshots degrade the gate; missing active-map or last-match state fails it.
 - In progress: downloaded support-bundle details now show the embedded
   bench-readiness status and per-check messages in the desktop app.
+- Done: downloaded support-bundle details now map failed/degraded
+  bench-readiness subchecks to copyable app follow-up commands, so offline ZIP
+  review can hand operators back to the exact Mission Planner or Module Setup
+  action without waiting for a separate final-readiness audit.
 - Done: Module Setup saved reports now include a bounded diagnostic snapshot
   for the newest downloaded support bundles, including bench-readiness checks,
   log summaries, frame timelines, extractable artifact inventories, image

@@ -7,6 +7,7 @@ type WorkflowValidationSummary = NonNullable<SupportBundleDetails["autonomy_evid
 type WorkflowValidationStep = WorkflowValidationSummary["checks"][number]["non_passed_steps"][number];
 type FieldCapturePreflightCheck = SupportBundleDetails["field_capture_preflight_reports"][number]["checks"][number];
 type BundleDiagnostic = NonNullable<FieldCapturePreflightCheck["bundle_diagnostic"]>;
+type BenchReadinessCheck = NonNullable<SupportBundleDetails["bench_readiness"]>["checks"][number];
 
 function formatBundleSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -159,6 +160,101 @@ function fieldConditionCommandRecords(conditions: FieldCollectionPlanCondition[]
   });
 }
 
+const BENCH_FOLLOW_UPS: Record<string, { title: string; desktopAction: string; command: string; notes: string }> = {
+  bundle_health: {
+    title: "Rebuild or validate the terrain bundle",
+    desktopAction: "Mission Planner > Build Bundle, then Module Setup > Bench Report",
+    command: "./scripts/pi/validate_terrain_bundle.sh",
+    notes: "The support bundle must include passing terrain bundle health before bench readiness can pass.",
+  },
+  gnss_denied_plan: {
+    title: "Complete GNSS-denied mission prep",
+    desktopAction: "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
+    command: "./scripts/pi/validate_terrain_bundle.sh",
+    notes: "Rebuild the bundle after satellite source, map reset, home reset, heading, and estimator checks are ready.",
+  },
+  runtime_logs: {
+    title: "Capture a terrain runtime log",
+    desktopAction: "Module Setup > Field Log Capture, then Bench Report",
+    command: "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+    notes: "Create the support bundle after Field Log Capture produces terrain_matches.jsonl.",
+  },
+  runtime_status: {
+    title: "Capture runtime status with the terrain log",
+    desktopAction: "Module Setup > Field Log Capture, Runtime Status, then Bench Report",
+    command: "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+    notes: "Runtime status proves active map, output path, estimator health, and latest match state.",
+  },
+  replay_gates: {
+    title: "Run guided field replay evidence",
+    desktopAction: "Module Setup > Load Next Field Condition, then Evidence Workflow",
+    command: "./scripts/pi/run_autonomy_evidence_workflow.sh",
+    notes: "The workflow captures, validates, and registers condition-specific logs.",
+  },
+  px4_sitl_evidence: {
+    title: "Capture PX4 receiver proof",
+    desktopAction: "Module Setup > PX4 SITL Receiver Capture, then Bench Report",
+    command: "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+    notes: "Receiver proof must show the MAVLink ODOMETRY path arriving as vehicle_visual_odometry samples.",
+  },
+  px4_params: {
+    title: "Export and check PX4 external-vision parameters",
+    desktopAction: "Module Setup > PX4 parameter check, then Bench Report",
+    command: "./scripts/pi/check_px4_params.sh",
+    notes: "Export PX4 parameters from QGroundControl or the PX4 shell before creating the support bundle.",
+  },
+  feature_method_benchmarks: {
+    title: "Benchmark feature methods on field logs",
+    desktopAction: "Module Setup > Feature Benchmark",
+    command: "./scripts/pi/run_feature_method_benchmark.sh",
+    notes: "Use real field logs to compare ORB, AKAZE, SIFT, and neural descriptor options.",
+  },
+  field_evidence: {
+    title: "Collect and register field replay proof",
+    desktopAction: "Module Setup > Evidence Workflow",
+    command: "./scripts/pi/run_autonomy_evidence_workflow.sh",
+    notes: "Field evidence must cover all required terrain conditions with real captured logs.",
+  },
+  threshold_tuning: {
+    title: "Tune replay gates against field logs",
+    desktopAction: "Module Setup > Threshold Tuning",
+    command: "./scripts/pi/run_threshold_tuning_report.sh",
+    notes: "Threshold tuning should run after the field-evidence manifest passes.",
+  },
+  rosbag_export_validations: {
+    title: "Export and validate the ROS replay artifact",
+    desktopAction: "Module Setup > ROS Bag Validation, then Bench Report",
+    command: "./scripts/pi/run_rosbag_export_validation.sh && ./scripts/pi/create_support_bundle.sh",
+    notes: "Support bundles should include a passed ROS replay export validation summary.",
+  },
+  rosbag2_cli_reviews: {
+    title: "Review the native rosbag2 export",
+    desktopAction: "Module Setup > Native rosbag2 Review, then Bench Report",
+    command: "./scripts/dev/run_rosbag2_cli_review.sh && ./scripts/pi/create_support_bundle.sh",
+    notes: "Run on a sourced ROS 2 workstation when native rosbag2 export is part of the evidence package.",
+  },
+  ardupilot_params: {
+    title: "Review ArduPilot ExternalNav parameters",
+    desktopAction: "Module Setup > ArduPilot parameter check",
+    command: "./scripts/pi/check_ardupilot_params.sh",
+    notes: "ArduPilot remains optional for the PX4-first bench path unless explicitly required.",
+  },
+};
+
+function benchReadinessFollowUps(checks: BenchReadinessCheck[]) {
+  return checks.flatMap((check) => {
+    if (!check.name || check.status === "passed") return [];
+    const spec = BENCH_FOLLOW_UPS[check.name];
+    if (!spec) return [];
+    return [{
+      check: check.name,
+      status: check.status,
+      message: check.message,
+      ...spec,
+    }];
+  });
+}
+
 function SupportBundleDetailPanel({
   details,
   onExtractArtifact,
@@ -179,6 +275,7 @@ function SupportBundleDetailPanel({
   const px4SessionCommands = namedCommandRecords(px4SessionSummary?.operator_commands);
   const px4Prereqs = asRecord(details.manifest.px4_sitl_prereqs);
   const px4PrereqFixCommands = commandRecords(px4Prereqs?.fix_commands);
+  const benchFollowUps = benchReadinessFollowUps(details.bench_readiness?.checks ?? []);
   const evidenceWorkflow = asRecord(details.manifest.autonomy_evidence_workflow);
   const workflowValidation = details.autonomy_evidence_workflow_validation;
   const workflowStatus = typeof evidenceWorkflow?.status === "string" ? evidenceWorkflow.status : undefined;
@@ -234,6 +331,52 @@ function SupportBundleDetailPanel({
                 {check.message && <span className="truncate text-slate-400">{check.message}</span>}
               </div>
             ))}
+            {benchFollowUps.length > 0 && (
+              <div className="space-y-1 rounded border border-border/50 bg-bg-base/50 px-2 py-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">Bench follow-up</div>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(benchFollowUps.map((item) => `# ${item.title}\n# ${item.desktopAction}\n${item.command}`).join("\n\n"))}
+                    className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                    title="Copy all bench follow-up commands"
+                  >
+                    <Clipboard size={9} />
+                    copy all
+                  </button>
+                </div>
+                {benchFollowUps.slice(0, 6).map((item) => (
+                  <div key={`${item.check}-${item.status ?? "status"}`} className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500">
+                      <span className={statusClass(item.status)}>
+                        {statusIcon(item.status)}
+                        {formatLabel(item.status)}
+                      </span>
+                      <span>{item.title}</span>
+                      <span className="truncate text-cyan-300">{item.desktopAction}</span>
+                    </div>
+                    {(item.message || item.notes) && (
+                      <div className="text-[10px] text-slate-400">
+                        {item.message || item.notes}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(item.command)}
+                      className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/60 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
+                      title={item.command}
+                    >
+                      <Clipboard size={9} className="shrink-0" />
+                      <span className="shrink-0 text-slate-500">copy command</span>
+                      <span className="truncate whitespace-pre">{item.command}</span>
+                    </button>
+                  </div>
+                ))}
+                {benchFollowUps.length > 6 && (
+                  <div className="font-mono text-slate-500">+{benchFollowUps.length - 6} more bench follow-up actions</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
