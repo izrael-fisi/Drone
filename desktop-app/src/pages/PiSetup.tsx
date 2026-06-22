@@ -1216,6 +1216,20 @@ function AutonomyReadinessReportList({
             const primaryNextActionCommands =
               immediateNextActionCommands.length > 0 ? immediateNextActionCommands : nextActionCommands;
             const guidedWorkflowCommands = uniqueCommands(commandBundle?.guided_workflow_commands ?? []);
+            const supportBenchBlocker = [
+              ...(report.evidence_manifest?.external_blockers ?? []),
+              ...(report.evidence_manifest?.completion_blockers ?? []),
+              ...(report.evidence_manifest?.proof_items ?? []),
+              ...(report.evidence_package_summary?.proof_items ?? []),
+            ].find(
+              (blocker) =>
+                blocker.name === "support_bundle_bench_readiness" &&
+                ((blocker.expected_bench_inputs?.length ?? 0) > 0 ||
+                  Boolean(blocker.support_bundle_command) ||
+                  (blocker.bench_evidence_actions?.length ?? 0) > 0)
+            );
+            const benchExpectedInputs = supportBenchBlocker?.expected_bench_inputs ?? [];
+            const benchEvidenceActions = supportBenchBlocker?.bench_evidence_actions ?? [];
             const readinessWorkflowArtifacts = [
               {
                 label: "workflow",
@@ -1640,6 +1654,62 @@ function AutonomyReadinessReportList({
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+              {(benchExpectedInputs.length > 0 ||
+                Boolean(supportBenchBlocker?.support_bundle_command) ||
+                benchEvidenceActions.length > 0) && (
+                <div className="rounded-md border border-cyan-500/20 bg-cyan-500/5 px-2 py-1.5 space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-cyan-300">
+                      Bench evidence order
+                    </span>
+                    {supportBenchBlocker?.support_bundle_command && (
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(supportBenchBlocker.support_bundle_command ?? "")}
+                        className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                        title="Copy support bundle command"
+                      >
+                        <Copy size={9} />
+                        bundle
+                      </button>
+                    )}
+                  </div>
+                  {benchExpectedInputs.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {benchExpectedInputs.slice(0, 8).map((input) => (
+                        <span key={`${report.path}-bench-input-${input}`} className="font-mono text-[10px] text-slate-500">
+                          {input}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {benchEvidenceActions.slice(0, 6).map((action, index) => (
+                    <div key={`${report.path}-bench-action-${action.label ?? action.command ?? index}`} className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-1 text-[10px]">
+                      <span className="font-mono text-cyan-400">{index + 1}</span>
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <span className="text-slate-300">{action.label ?? action.desktop_action ?? "Bench evidence step"}</span>
+                        {action.desktop_action && (
+                          <span className="font-mono text-slate-500">{action.desktop_action}</span>
+                        )}
+                        {action.blocked_by && (
+                          <span className="text-slate-500">waits on {formatReadinessLabel(action.blocked_by)}</span>
+                        )}
+                        {action.command && (
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(action.command ?? "")}
+                            className="font-mono text-[10px] text-cyan-400 hover:text-cyan-300 truncate max-w-full"
+                            title="Copy bench evidence command"
+                          >
+                            {action.command}
+                          </button>
+                        )}
+                        {action.notes && <span className="text-slate-500">{action.notes}</span>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
               {report.checks.slice(0, 5).map((check) => (

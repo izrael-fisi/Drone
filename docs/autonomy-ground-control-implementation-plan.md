@@ -823,6 +823,9 @@ Status:
   order with app locations and wrapper commands for mission prep, runtime log
   capture, PX4 receiver proof, PX4 parameter checks, field evidence,
   feature benchmarking, and support-bundle creation.
+- Done: Module Setup's Autonomy Readiness report cards now render that strict
+  bench evidence order, including expected inputs, copyable support-bundle and
+  per-step commands, Module Setup action labels, and step dependencies.
 - Done: `scripts/dev/autonomy_goal_status.sh` now promotes prerequisite fix
   commands from `command_bundle.prerequisite_fix_commands` ahead of the guided
   workflow and proof-capture command list, so missing PX4/tmux setup is fixed

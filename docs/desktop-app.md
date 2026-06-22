@@ -547,6 +547,10 @@ work into source-plan, bench, field dataset, method/threshold, ROS replay, and
 final-audit phases. This keeps downstream support tooling from treating all
 missing evidence as parallel work when some gates depend on real field logs
 first.
+When the support-bundle proof is still missing, the same report card also shows
+the strict bench evidence order from the final audit: expected inputs, the
+support-bundle command, Module Setup action names, copyable wrapper commands,
+and any dependency that must be completed before the bundle is recreated.
 The Autonomy Readiness Reports card renders that runbook as phase counts,
 per-phase status chips, upstream dependency status, proof checks, and copyable
 phase commands, falling back to the evidence package's bounded runbook summary

@@ -426,6 +426,15 @@ pub struct AutonomyReadinessBenchSubcheck {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyReadinessBenchEvidenceAction {
+    pub label: Option<String>,
+    pub desktop_action: Option<String>,
+    pub command: Option<String>,
+    pub blocked_by: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyReadinessNextAction {
     pub check: Option<String>,
     pub status: Option<String>,
@@ -446,6 +455,9 @@ pub struct AutonomyReadinessEvidenceBlocker {
     pub message: Option<String>,
     pub missing_conditions: Vec<String>,
     pub bench_subchecks: Vec<AutonomyReadinessBenchSubcheck>,
+    pub expected_bench_inputs: Vec<String>,
+    pub support_bundle_command: Option<String>,
+    pub bench_evidence_actions: Vec<AutonomyReadinessBenchEvidenceAction>,
 }
 
 #[derive(Serialize)]
@@ -3841,6 +3853,32 @@ fn autonomy_evidence_blockers_from_value(
                     bench_subchecks: autonomy_bench_subchecks_from_value(
                         item.get("bench_subchecks"),
                     ),
+                    expected_bench_inputs: json_string_array(item.get("expected_bench_inputs")),
+                    support_bundle_command: json_string(item.get("support_bundle_command")),
+                    bench_evidence_actions: autonomy_bench_evidence_actions_from_value(
+                        item.get("bench_evidence_actions"),
+                    ),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn autonomy_bench_evidence_actions_from_value(
+    value: Option<&serde_json::Value>,
+) -> Vec<AutonomyReadinessBenchEvidenceAction> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| AutonomyReadinessBenchEvidenceAction {
+                    label: json_string(item.get("label")),
+                    desktop_action: json_string(item.get("desktop_action")),
+                    command: json_string(item.get("command")),
+                    blocked_by: json_string(item.get("blocked_by")),
+                    notes: json_string(item.get("notes")),
                 })
                 .collect::<Vec<_>>()
         })
@@ -4872,6 +4910,25 @@ mod tests {
                                         "status": "degraded",
                                         "message": "Runtime status snapshot was not provided."
                                     }
+                                ],
+                                "expected_bench_inputs": [
+                                    "runtime_status.json"
+                                ],
+                                "support_bundle_command": "./scripts/pi/create_support_bundle.sh",
+                                "bench_evidence_actions": [
+                                    {
+                                        "label": "Capture runtime status",
+                                        "desktop_action": "Module Setup > Runtime Status",
+                                        "command": "./scripts/pi/read_runtime_status.sh",
+                                        "notes": "Collect the status snapshot before the support bundle."
+                                    },
+                                    {
+                                        "label": "Create bench report",
+                                        "desktop_action": "Module Setup > Bench Report",
+                                        "command": "./scripts/pi/create_support_bundle.sh",
+                                        "blocked_by": "runtime_status",
+                                        "notes": "Package the bench evidence after required inputs exist."
+                                    }
                                 ]
                             },
                             {
@@ -4892,6 +4949,25 @@ mod tests {
                                     "status": "degraded",
                                     "message": "Runtime status snapshot was not provided."
                                 }
+                            ],
+                            "expected_bench_inputs": [
+                                "runtime_status.json"
+                            ],
+                            "support_bundle_command": "./scripts/pi/create_support_bundle.sh",
+                            "bench_evidence_actions": [
+                                {
+                                    "label": "Capture runtime status",
+                                    "desktop_action": "Module Setup > Runtime Status",
+                                    "command": "./scripts/pi/read_runtime_status.sh",
+                                    "notes": "Collect the status snapshot before the support bundle."
+                                },
+                                {
+                                    "label": "Create bench report",
+                                    "desktop_action": "Module Setup > Bench Report",
+                                    "command": "./scripts/pi/create_support_bundle.sh",
+                                    "blocked_by": "runtime_status",
+                                    "notes": "Package the bench evidence after required inputs exist."
+                                }
                             ]
                         },
                         {
@@ -4910,6 +4986,25 @@ mod tests {
                                     "name": "runtime_status",
                                     "status": "degraded",
                                     "message": "Runtime status snapshot was not provided."
+                                }
+                            ],
+                            "expected_bench_inputs": [
+                                "runtime_status.json"
+                            ],
+                            "support_bundle_command": "./scripts/pi/create_support_bundle.sh",
+                            "bench_evidence_actions": [
+                                {
+                                    "label": "Capture runtime status",
+                                    "desktop_action": "Module Setup > Runtime Status",
+                                    "command": "./scripts/pi/read_runtime_status.sh",
+                                    "notes": "Collect the status snapshot before the support bundle."
+                                },
+                                {
+                                    "label": "Create bench report",
+                                    "desktop_action": "Module Setup > Bench Report",
+                                    "command": "./scripts/pi/create_support_bundle.sh",
+                                    "blocked_by": "runtime_status",
+                                    "notes": "Package the bench evidence after required inputs exist."
                                 }
                             ]
                         },
@@ -5050,6 +5145,25 @@ mod tests {
                                         "name": "runtime_status",
                                         "status": "degraded",
                                         "message": "Runtime status snapshot was not provided."
+                                    }
+                                ],
+                                "expected_bench_inputs": [
+                                    "runtime_status.json"
+                                ],
+                                "support_bundle_command": "./scripts/pi/create_support_bundle.sh",
+                                "bench_evidence_actions": [
+                                    {
+                                        "label": "Capture runtime status",
+                                        "desktop_action": "Module Setup > Runtime Status",
+                                        "command": "./scripts/pi/read_runtime_status.sh",
+                                        "notes": "Collect the status snapshot before the support bundle."
+                                    },
+                                    {
+                                        "label": "Create bench report",
+                                        "desktop_action": "Module Setup > Bench Report",
+                                        "command": "./scripts/pi/create_support_bundle.sh",
+                                        "blocked_by": "runtime_status",
+                                        "notes": "Package the bench evidence after required inputs exist."
                                     }
                                 ]
                             },
@@ -5338,6 +5452,22 @@ mod tests {
             package_summary.proof_items[2].missing_conditions,
             vec!["good_texture".to_string(), "wrong_map".to_string()]
         );
+        assert_eq!(
+            package_summary.proof_items[1].expected_bench_inputs,
+            vec!["runtime_status.json".to_string()]
+        );
+        assert_eq!(
+            package_summary.proof_items[1]
+                .support_bundle_command
+                .as_deref(),
+            Some("./scripts/pi/create_support_bundle.sh")
+        );
+        assert_eq!(
+            package_summary.proof_items[1].bench_evidence_actions[0]
+                .desktop_action
+                .as_deref(),
+            Some("Module Setup > Runtime Status")
+        );
         let package_runbook = package_summary
             .proof_runbook_summary
             .as_ref()
@@ -5578,6 +5708,16 @@ mod tests {
         assert_eq!(
             evidence.external_blockers[0].bench_subchecks[0]
                 .name
+                .as_deref(),
+            Some("runtime_status")
+        );
+        assert_eq!(
+            evidence.external_blockers[0].expected_bench_inputs,
+            vec!["runtime_status.json".to_string()]
+        );
+        assert_eq!(
+            evidence.external_blockers[0].bench_evidence_actions[1]
+                .blocked_by
                 .as_deref(),
             Some("runtime_status")
         );

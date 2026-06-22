@@ -458,6 +458,31 @@ export interface AutonomyReadinessAuditMetadata {
   };
 }
 
+export interface AutonomyReadinessBenchSubcheck {
+  name?: string;
+  status?: "passed" | "failed" | "degraded" | string;
+  message?: string;
+}
+
+export interface AutonomyReadinessBenchEvidenceAction {
+  label?: string;
+  desktop_action?: string;
+  command?: string;
+  blocked_by?: string;
+  notes?: string;
+}
+
+export interface AutonomyReadinessEvidenceBlocker {
+  name?: string;
+  status?: "passed" | "failed" | "degraded" | string;
+  message?: string;
+  missing_conditions: string[];
+  bench_subchecks: AutonomyReadinessBenchSubcheck[];
+  expected_bench_inputs?: string[];
+  support_bundle_command?: string;
+  bench_evidence_actions?: AutonomyReadinessBenchEvidenceAction[];
+}
+
 export interface AutonomyReadinessProofRunbook {
   schema_version?: string;
   ready_for_goal_completion?: boolean;
@@ -489,11 +514,7 @@ export interface AutonomyReadinessProofRunbook {
       missing_conditions: string[];
       bench_subcheck?: string;
       bench_message?: string;
-      bench_subchecks: Array<{
-        name?: string;
-        status?: "passed" | "failed" | "degraded" | string;
-        message?: string;
-      }>;
+      bench_subchecks: AutonomyReadinessBenchSubcheck[];
     }>;
     actions_truncated?: boolean;
     commands: string[];
@@ -537,17 +558,7 @@ export interface AutonomyReadinessReportFile {
       command_count?: number;
     };
     workflow_validation_summary?: AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"];
-    proof_items: Array<{
-      name?: string;
-      status?: "passed" | "failed" | "degraded" | string;
-      message?: string;
-      missing_conditions: string[];
-      bench_subchecks: Array<{
-        name?: string;
-        status?: "passed" | "failed" | "degraded" | string;
-        message?: string;
-      }>;
-    }>;
+    proof_items: AutonomyReadinessEvidenceBlocker[];
     included_artifacts: Array<{
       label?: string;
       path?: string;
@@ -632,39 +643,9 @@ export interface AutonomyReadinessReportFile {
   evidence_manifest?: {
     schema_version?: string;
     ready_for_goal_completion?: boolean;
-    proof_items: Array<{
-      name?: string;
-      status?: "passed" | "failed" | "degraded" | string;
-      message?: string;
-      missing_conditions: string[];
-      bench_subchecks: Array<{
-        name?: string;
-        status?: "passed" | "failed" | "degraded" | string;
-        message?: string;
-      }>;
-    }>;
-    completion_blockers: Array<{
-      name?: string;
-      status?: "passed" | "failed" | "degraded" | string;
-      message?: string;
-      missing_conditions: string[];
-      bench_subchecks: Array<{
-        name?: string;
-        status?: "passed" | "failed" | "degraded" | string;
-        message?: string;
-      }>;
-    }>;
-    external_blockers: Array<{
-      name?: string;
-      status?: "passed" | "failed" | "degraded" | string;
-      message?: string;
-      missing_conditions: string[];
-      bench_subchecks: Array<{
-        name?: string;
-        status?: "passed" | "failed" | "degraded" | string;
-        message?: string;
-      }>;
-    }>;
+    proof_items: AutonomyReadinessEvidenceBlocker[];
+    completion_blockers: AutonomyReadinessEvidenceBlocker[];
+    external_blockers: AutonomyReadinessEvidenceBlocker[];
   };
       field_collection_plan?: {
         path: string;
