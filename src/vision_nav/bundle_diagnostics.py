@@ -142,6 +142,7 @@ def default_search_roots(bundle: Path, extra_roots: list[str | Path] | None = No
         [
             bundle.parent,
             home / "drone-data" / "map_bundles",
+            home / "DroneVisionNav" / "maps",
             home / "DroneTransfer" / "to-pi",
             home / "DroneTransfer" / "outgoing",
             home / "DroneTransfer" / "from-pi",

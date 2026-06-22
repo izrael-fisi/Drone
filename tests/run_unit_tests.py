@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 import shlex
@@ -1750,7 +1751,7 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
         raw_source_summary = next(item for item in report["map_source_candidates"] if item["path"] == str(raw_geotiff))
         assert_equal(raw_source_summary["requires_import"], True, "raw map source requires import")
         assert_equal(raw_source_summary["source_format"], "geotiff_or_cog", "raw geotiff source format")
-        compact = compact_bundle_diagnostic(report)
+        compact = compact_bundle_diagnostic(report, max_items=8)
         if compact["bundle_candidate_count"] < 1:
             raise AssertionError("Expected compact diagnostic to count bundle candidates")
         if compact["map_source_candidate_count"] < 4:
@@ -1759,10 +1760,51 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
             raise AssertionError("Expected compact diagnostic to preserve raw map import hint")
         if compact["recommended_actions"][0]["id"] != "build_or_upload_selected_bundle":
             raise AssertionError("Expected bundle build/upload to remain the first diagnostic action")
-        raw_only_report = diagnose_bundle_inputs(expected_bundle, search_roots=[raw_sources])
+        old_cwd = Path.cwd()
+        old_home_for_raw = os.environ.get("HOME")
+        try:
+            os.chdir(raw_sources)
+            os.environ["HOME"] = str(raw_sources)
+            raw_only_report = diagnose_bundle_inputs(expected_bundle, search_roots=[raw_sources])
+        finally:
+            if old_home_for_raw is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = old_home_for_raw
+            os.chdir(old_cwd)
         action_ids = [action["id"] for action in raw_only_report["recommended_actions"]]
         if "import_detected_map_source" not in action_ids:
             raise AssertionError(f"Expected raw-source import action, got {action_ids}")
+
+        desktop_map_source = root / "DroneVisionNav" / "maps" / "desktop-field-area"
+        desktop_map_source.mkdir(parents=True)
+        write_minimal_png(desktop_map_source / "satellite.png", 48, 48)
+        (desktop_map_source / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "id": "desktop-field-area",
+                    "name": "Desktop Field Area",
+                    "source": "uploaded",
+                    "origin_lat": 40.0,
+                    "origin_lon": -75.0,
+                    "gsd_m_per_px": 0.2,
+                    "width_px": 48,
+                    "height_px": 48,
+                }
+            )
+        )
+        old_home = os.environ.get("HOME")
+        try:
+            os.environ["HOME"] = str(root)
+            default_root_report = diagnose_bundle_inputs(expected_bundle)
+        finally:
+            if old_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = old_home
+        default_source_paths = {item["path"] for item in default_root_report["map_source_candidates"]}
+        if str(desktop_map_source) not in default_source_paths:
+            raise AssertionError(f"Expected default search roots to include desktop map library, got {default_source_paths}")
 
 
 def test_geospatial_health_report_validates_stac_tiles_and_bounds() -> None:

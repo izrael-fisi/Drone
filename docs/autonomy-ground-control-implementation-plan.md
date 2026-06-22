@@ -314,6 +314,10 @@ Status:
   app map folders, including TIFF/GeoTIFF/COG candidates, STAC JSON
   item/catalog metadata, and image files with matching worldfiles, then route
   those candidates toward Maps import before Mission Planner bundle build.
+- Done: bundle diagnostics now include the desktop app's default
+  `~/DroneVisionNav/maps` library in their automatic search roots, so maps
+  imported through the Maps page appear in field-preflight and goal-status
+  missing-bundle guidance without extra environment variables.
 - Done: downloaded support-bundle browsing shows parsed checksum status, map
   source provenance, georeference confidence, and replay-gate state.
 - Done: `vision-nav-benchmark-retrieval` benchmarks both the lightweight
