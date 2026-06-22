@@ -1018,6 +1018,9 @@ vision-nav-validate-evidence-workflow \
   --output ~/DroneTransfer/from-pi/replay-cases/autonomy_evidence_workflow.validation.json
 ```
 
+When the generated readiness report is available beside the workflow artifacts,
+the validator also checks that the `run_autonomy_readiness_audit` step status
+matches `autonomy_readiness_report.json`.
 The validator exits nonzero only when the workflow report/archive pair is
 structurally failed. A `degraded` validation can still be a usable support
 artifact when final readiness is waiting on real field logs or PX4 receiver

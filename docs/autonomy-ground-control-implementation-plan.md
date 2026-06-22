@@ -817,9 +817,11 @@ Status:
 - Done: `vision-nav-validate-evidence-workflow` validates downloaded workflow
   reports offline, confirms required step records, verifies the log archive is
   readable, checks that every recorded step has a matching `logs/*.log` member,
-  and reports missing final-proof artifact markers for support bundle, PX4
-  receiver, field evidence, feature benchmark, threshold tuning, ROS bag,
-  native rosbag2 review, final audit, handoff, and evidence package outputs.
+  verifies the final audit step status against the generated
+  `autonomy_readiness_report.json` when it is locally available, and reports
+  missing final-proof artifact markers for support bundle, PX4 receiver, field
+  evidence, feature benchmark, threshold tuning, ROS bag, native rosbag2
+  review, final audit, handoff, and evidence package outputs.
   PX4 receiver proof accepts either the evidence-session marker or the evaluated
   receiver-report marker so session-only support handoffs are not mislabeled as
   missing PX4 proof.

@@ -2400,6 +2400,16 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         archive_path = root / "autonomy_evidence_workflow.logs.tar.gz"
         with tarfile.open(archive_path, "w:gz") as archive:
             archive.add(log_dir, arcname="logs")
+        readiness_report_path = root / "autonomy_readiness_report.json"
+        readiness_report_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_autonomy_readiness_v1",
+                    "status": "failed",
+                    "summary": {"passed": 2, "failed": 8, "degraded": 0},
+                }
+            )
+        )
         report_path = root / "autonomy_evidence_workflow.json"
         report_path.write_text(
             json.dumps(
@@ -2413,6 +2423,9 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                         {
                             "name": step_name,
                             "status": "passed" if step_name != "run_autonomy_readiness_audit" else "failed",
+                            "readiness_report_status": (
+                                "failed" if step_name == "run_autonomy_readiness_audit" else None
+                            ),
                             "exit_code": 0 if step_name != "run_autonomy_readiness_audit" else 1,
                             "log_path": str(log_dir / f"{step_name}.log"),
                             "markers": {},
@@ -2446,7 +2459,29 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         assert_equal(checks["log_archive"], "passed", "workflow validation log archive")
         assert_equal(checks["important_markers"], "passed", "workflow validation important markers")
         assert_equal(checks["final_proof_markers"], "passed", "workflow validation final proof markers")
+        assert_equal(checks["final_readiness_status"], "passed", "workflow validation final readiness status")
         assert_equal(validation["step_count"], len(REQUIRED_WORKFLOW_STEPS), "workflow validation step count")
+
+        mismatched_readiness_report = json.loads(report_path.read_text())
+        for step in mismatched_readiness_report["steps"]:
+            if step.get("name") == "run_autonomy_readiness_audit":
+                step["status"] = "passed"
+                step.pop("readiness_report_status", None)
+        mismatched_readiness_report["status"] = "passed"
+        mismatched_readiness_path = root / "mismatched_readiness_autonomy_evidence_workflow.json"
+        mismatched_readiness_path.write_text(json.dumps(mismatched_readiness_report))
+        mismatched_readiness_validation = validate_workflow_report(mismatched_readiness_path)
+        mismatched_readiness_checks = {check["name"]: check for check in mismatched_readiness_validation["checks"]}
+        assert_equal(
+            mismatched_readiness_validation["status"],
+            "failed",
+            "workflow validation fails mismatched final readiness status",
+        )
+        assert_equal(
+            mismatched_readiness_checks["final_readiness_status"]["status"],
+            "failed",
+            "workflow validation final readiness mismatch check",
+        )
 
         session_only_report = json.loads(report_path.read_text())
         session_only_report["markers"].pop("__VISION_NAV_PX4_SITL_REPORT__")

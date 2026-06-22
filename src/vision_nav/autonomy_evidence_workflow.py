@@ -189,6 +189,14 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
     checks.append(archive_result)
 
     workflow_status = str(report.get("status") or "unknown")
+    checks.append(
+        validate_final_readiness_status(
+            markers,
+            steps,
+            workflow_status=workflow_status,
+            report_path=path,
+        )
+    )
     if workflow_status == "passed":
         checks.append(passed("workflow_status", "Workflow completed without failed or skipped steps."))
     elif workflow_status in {"failed", "degraded"}:
@@ -216,6 +224,96 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
         "checks": checks,
         "issues": issues,
     }
+
+
+def validate_final_readiness_status(
+    markers: dict[str, Any],
+    steps: list[Any],
+    *,
+    workflow_status: str,
+    report_path: Path,
+) -> dict[str, Any]:
+    raw_path = markers.get("__VISION_NAV_AUTONOMY_REPORT__")
+    if not raw_path:
+        return degraded(
+            "final_readiness_status",
+            "Workflow report does not reference a final autonomy-readiness report.",
+        )
+
+    readiness_path = resolve_artifact_path(str(raw_path), report_path.parent)
+    details: dict[str, Any] = {"path": str(readiness_path)}
+    if not readiness_path.exists():
+        return degraded(
+            "final_readiness_status",
+            f"Final autonomy-readiness report is not available locally: {readiness_path}",
+            details,
+        )
+    if not readiness_path.is_file():
+        return failed(
+            "final_readiness_status",
+            f"Final autonomy-readiness report path is not a file: {readiness_path}",
+            details,
+        )
+    try:
+        readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return failed(
+            "final_readiness_status",
+            f"Could not parse final autonomy-readiness report JSON: {exc}",
+            details,
+        )
+
+    readiness_status = str(readiness.get("status") or "unknown")
+    details["readiness_status"] = readiness_status
+    audit_step = last_workflow_step(steps, "run_autonomy_readiness_audit")
+    if audit_step is None:
+        return failed(
+            "final_readiness_status",
+            "Workflow report is missing the run_autonomy_readiness_audit step.",
+            details,
+        )
+    step_status = str(audit_step.get("status") or "unknown")
+    step_readiness_status = str(audit_step.get("readiness_report_status") or step_status)
+    details["step_status"] = step_status
+    details["step_readiness_status"] = step_readiness_status
+    details["workflow_status"] = workflow_status
+
+    if readiness_status not in {"passed", "degraded", "failed"}:
+        return failed(
+            "final_readiness_status",
+            f"Final autonomy-readiness report status is invalid: {readiness_status!r}.",
+            details,
+        )
+    if step_readiness_status != readiness_status or step_status != readiness_status:
+        return failed(
+            "final_readiness_status",
+            "Workflow final-audit step does not match the generated autonomy-readiness report status.",
+            details,
+        )
+    if readiness_status == "failed" and workflow_status != "failed":
+        return failed(
+            "final_readiness_status",
+            "Workflow status must be failed when the final autonomy-readiness report is failed.",
+            details,
+        )
+    if readiness_status == "degraded" and workflow_status not in {"failed", "degraded"}:
+        return failed(
+            "final_readiness_status",
+            "Workflow status must be degraded or failed when the final autonomy-readiness report is degraded.",
+            details,
+        )
+    return passed(
+        "final_readiness_status",
+        "Workflow final-audit step matches the generated autonomy-readiness report status.",
+        details,
+    )
+
+
+def last_workflow_step(steps: list[Any], name: str) -> dict[str, Any] | None:
+    for step in reversed(steps):
+        if isinstance(step, dict) and step.get("name") == name:
+            return step
+    return None
 
 
 def marker_presence(
