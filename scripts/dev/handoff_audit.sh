@@ -185,6 +185,7 @@ done
 echo
 echo "== Required Dev Scripts =="
 required_dev_scripts=(
+  "scripts/dev/autonomy_goal_status.sh"
   "scripts/dev/run_rosbag2_cli_review.sh"
 )
 for path in "${required_dev_scripts[@]}"; do

@@ -237,6 +237,15 @@ if PYTHONPATH=src python3 -m vision_nav.autonomy_readiness --json >"$autonomy_re
   exit 1
 fi
 tail -n 18 "$autonomy_readiness_output"
+goal_status_output="$preflight_tmp_dir/autonomy_goal_status_preflight.txt"
+if ./scripts/dev/autonomy_goal_status.sh >"$goal_status_output" 2>&1; then
+  echo "Expected autonomy goal status to fail before final proof evidence exists." >&2
+  exit 1
+fi
+grep -q "Autonomy goal status: failed" "$goal_status_output"
+grep -q "External proof blockers:" "$goal_status_output"
+grep -q "Next commands:" "$goal_status_output"
+grep -q "support_bundle_bench_readiness" "$goal_status_output"
 local_autonomy_output="$preflight_tmp_dir/local_autonomy_readiness_preflight.txt"
 local_audit_dir="$(mktemp -d "$preflight_tmp_dir/local-audit.XXXXXX")"
 mkdir -p "$local_audit_dir/feature-method-bench"

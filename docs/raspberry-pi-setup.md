@@ -896,7 +896,18 @@ real bench evidence exists.
 For the full autonomy/ground-control implementation goal, use the stricter
 audit after the downloaded support bundle, field-evidence report, feature-method
 benchmark evidence, threshold-tuning report, and ROS bag export validation
-report exist. Generate the threshold report from the real field manifest with:
+report exist. To see the current strict proof blockers without creating a new
+support package, run:
+
+```bash
+./scripts/dev/autonomy_goal_status.sh
+```
+
+That local status helper summarizes proof-item counts, external blockers,
+proof-runbook phase counts, and next commands from
+`vision-nav-autonomy-readiness`, then exits nonzero until the final evidence
+package is complete. Generate the threshold report from the real field manifest
+with:
 
 ```bash
 ./scripts/pi/run_threshold_tuning_report.sh

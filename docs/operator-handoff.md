@@ -156,6 +156,20 @@ is needed:
 
 ## Autonomy Readiness Handoff
 
+To see a quick local summary of the full autonomy goal without writing a new
+handoff package, run:
+
+```bash
+./scripts/dev/autonomy_goal_status.sh
+```
+
+It runs the strict readiness audit with the repo-local Python path, prints the
+current proof-item counts, external blockers, proof-runbook phase counts, and
+the next commands needed to collect missing evidence. It exits nonzero until
+the full final proof package is ready. Set
+`VISION_NAV_AUTONOMY_GOAL_STATUS_JSON=/path/to/report.json` to keep the raw
+JSON snapshot from that check.
+
 After bench artifacts and field replay evidence have been downloaded, run:
 
 ```bash
