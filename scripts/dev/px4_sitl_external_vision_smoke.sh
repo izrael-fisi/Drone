@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python_bin="${VISION_NAV_PYTHON:-python3}"
-endpoint="${VISION_NAV_SITL_MAVLINK_ENDPOINT:-udp:14550}"
+endpoint="${VISION_NAV_SITL_MAVLINK_ENDPOINT:-udp:14580}"
 message_type="${VISION_NAV_SITL_MAVLINK_MESSAGE:-odometry}"
 rate_hz="${VISION_NAV_SITL_RATE_HZ:-5.0}"
 repeat_count="${VISION_NAV_SITL_REPEAT:-6}"
@@ -90,7 +90,7 @@ Start PX4 SITL separately:
 
 \`\`\`bash
 cd ~/PX4-Autopilot
-make px4_sitl gz_x500
+make px4_sitl_default sihsim_quadx
 \`\`\`
 
 Send the synthetic stream from this repo:
@@ -105,7 +105,8 @@ VISION_NAV_SITL_MAVLINK_MESSAGE="$message_type" \\
 In the PX4 shell or QGroundControl MAVLink console, capture:
 
 \`\`\`text
-listener vehicle_visual_odometry 5
+listener vehicle_visual_odometry
+listener vehicle_visual_odometry
 mavlink status
 \`\`\`
 
@@ -169,10 +170,11 @@ PX4 external-vision SITL smoke
 
 Start PX4 SITL separately, for example:
   cd ~/PX4-Autopilot
-  make px4_sitl gz_x500
+  make px4_sitl_default sihsim_quadx
 
 In the PX4 shell or QGroundControl MAVLink console, watch:
-  listener vehicle_visual_odometry 5
+  listener vehicle_visual_odometry
+  listener vehicle_visual_odometry
   mavlink status
 
 Sending synthetic accepted records now. The rejected record should be skipped.

@@ -21,7 +21,7 @@ class Px4SitlEvidenceConfig:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate captured PX4 SITL external-vision receiver evidence.")
-    parser.add_argument("--listener", required=True, help="Text captured from `listener vehicle_visual_odometry 5`.")
+    parser.add_argument("--listener", required=True, help="Text captured from repeated `listener vehicle_visual_odometry` commands.")
     parser.add_argument("--mavlink-status", help="Optional text captured from `mavlink status`.")
     parser.add_argument(
         "--expected-message",

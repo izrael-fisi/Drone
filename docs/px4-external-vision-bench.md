@@ -193,7 +193,7 @@ terminal:
 
 ```bash
 cd ~/PX4-Autopilot
-make px4_sitl gz_x500
+make px4_sitl_default sihsim_quadx
 ```
 
 Then send a synthetic external-vision stream from this repo:
@@ -212,14 +212,14 @@ ros2 launch ros2/launch/terrain_nav_live.launch.py \
   pythonpath:=$(pwd)/src \
   bundle:=mission_bundle \
   output_dir:=terrain-run \
-  mavlink_endpoint:=udp:14550 \
+  mavlink_endpoint:=udp:14580 \
   mavlink_message:=odometry
 ```
 
 Defaults:
 
 ```text
-VISION_NAV_SITL_MAVLINK_ENDPOINT=udp:14550
+VISION_NAV_SITL_MAVLINK_ENDPOINT=udp:14580
 VISION_NAV_SITL_MAVLINK_MESSAGE=odometry
 VISION_NAV_SITL_RATE_HZ=5.0
 VISION_NAV_SITL_REPEAT=6
@@ -263,7 +263,8 @@ the SITL endpoint. It does not, by itself, prove EKF2 fusion. Confirm reception
 from the PX4 shell or QGroundControl MAVLink console:
 
 ```bash
-listener vehicle_visual_odometry 5
+listener vehicle_visual_odometry
+listener vehicle_visual_odometry
 mavlink status
 ```
 
@@ -374,14 +375,21 @@ Useful overrides:
 
 ```text
 VISION_NAV_PX4_AUTOPILOT_DIR=$HOME/PX4-Autopilot
-VISION_NAV_PX4_SITL_TARGET="px4_sitl gz_x500"
+VISION_NAV_PX4_SITL_TARGET="px4_sitl_default sihsim_quadx"
 VISION_NAV_PX4_TMUX_SESSION=vision-nav-px4-sitl
 VISION_NAV_PX4_BOOT_WAIT_S=45
-VISION_NAV_PX4_LISTENER_ARM_WAIT_S=1
+VISION_NAV_PX4_LISTENER_ARM_WAIT_S=2
+VISION_NAV_PX4_LISTENER_SAMPLE_COUNT=5
+VISION_NAV_PX4_LISTENER_SAMPLE_WAIT_S=0.2
 VISION_NAV_PX4_CAPTURE_WAIT_S=4
 VISION_NAV_PX4_KEEP_TMUX=1
 VISION_NAV_SITL_MAVLINK_MESSAGE=odometry
 ```
+
+The default capture target uses PX4's built-in SIH quad simulator so the
+receiver proof can run without Gazebo. In that profile PX4's onboard MAVLink
+instance listens on local UDP port `14580`; `14550` is the QGroundControl-side
+remote port and should not be used as the sender endpoint for this proof.
 
 The harness is intentionally a bench helper, not proof by itself. The proof
 artifact is still the generated `receiver_evidence.json` plus raw captures in

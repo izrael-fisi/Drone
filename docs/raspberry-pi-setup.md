@@ -810,7 +810,7 @@ under `extras/field_collection_plans/`, then publishes parsed JSON under
 `summaries/field_collection_plans/`.
 
 To include PX4 SITL receiver evidence, save the PX4 console outputs from
-`listener vehicle_visual_odometry 5` and `mavlink status`, then pass those files
+repeated `listener vehicle_visual_odometry` commands and `mavlink status`, then pass those files
 to the wrapper:
 
 ```bash

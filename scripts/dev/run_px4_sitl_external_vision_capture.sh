@@ -4,11 +4,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python_bin="${VISION_NAV_PYTHON:-python3}"
 px4_dir="${VISION_NAV_PX4_AUTOPILOT_DIR:-$HOME/PX4-Autopilot}"
-px4_target="${VISION_NAV_PX4_SITL_TARGET:-px4_sitl gz_x500}"
+px4_target="${VISION_NAV_PX4_SITL_TARGET:-px4_sitl_default sihsim_quadx}"
 session_dir="${VISION_NAV_SITL_SMOKE_DIR:-$PWD/px4-sitl-evidence}"
 tmux_session="${VISION_NAV_PX4_TMUX_SESSION:-vision-nav-px4-sitl}"
 boot_wait_s="${VISION_NAV_PX4_BOOT_WAIT_S:-45}"
-listener_arm_wait_s="${VISION_NAV_PX4_LISTENER_ARM_WAIT_S:-1}"
+listener_arm_wait_s="${VISION_NAV_PX4_LISTENER_ARM_WAIT_S:-2}"
+listener_sample_count="${VISION_NAV_PX4_LISTENER_SAMPLE_COUNT:-5}"
+listener_sample_wait_s="${VISION_NAV_PX4_LISTENER_SAMPLE_WAIT_S:-0.2}"
 capture_wait_s="${VISION_NAV_PX4_CAPTURE_WAIT_S:-4}"
 keep_tmux="${VISION_NAV_PX4_KEEP_TMUX:-0}"
 dry_run="${VISION_NAV_SITL_CAPTURE_DRY_RUN:-0}"
@@ -418,13 +420,24 @@ VISION_NAV_SITL_DRY_RUN=1 \
 VISION_NAV_SITL_SMOKE_DIR="$session_dir" \
 "$repo_root/scripts/dev/px4_sitl_external_vision_smoke.sh" >/dev/null
 
-tmux_send_keys_checked "listener clear" C-l
-tmux_send_keys_checked "listener command" "listener vehicle_visual_odometry 5" C-m
-sleep "$listener_arm_wait_s"
-
+sender_status=0
 VISION_NAV_SITL_EVALUATE_RECEIVER=0 \
 VISION_NAV_SITL_SMOKE_DIR="$session_dir" \
-"$repo_root/scripts/dev/px4_sitl_external_vision_smoke.sh"
+"$repo_root/scripts/dev/px4_sitl_external_vision_smoke.sh" &
+sender_pid=$!
+
+sleep "$listener_arm_wait_s"
+tmux_send_keys_checked "listener clear" C-l
+for ((sample_index = 1; sample_index <= listener_sample_count; sample_index += 1)); do
+  tmux_send_keys_checked "listener sample $sample_index" "listener vehicle_visual_odometry" C-m
+  sleep "$listener_sample_wait_s"
+done
+
+wait "$sender_pid" || sender_status=$?
+if [[ "$sender_status" -ne 0 ]]; then
+  echo "Synthetic external-vision sender failed with status $sender_status." >&2
+  exit "$sender_status"
+fi
 
 if ! tmux has-session -t "$tmux_session" 2>/dev/null; then
   fail_px4_session_unavailable "synthetic sender"

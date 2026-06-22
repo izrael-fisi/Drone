@@ -15,7 +15,8 @@ Usage:
   $0 /path/to/vehicle_visual_odometry.txt [/path/to/mavlink_status.txt]
 
 Capture the first file from PX4 SITL or QGroundControl MAVLink console:
-  listener vehicle_visual_odometry 5
+  listener vehicle_visual_odometry
+  listener vehicle_visual_odometry
 
 Optionally capture the second file from:
   mavlink status
