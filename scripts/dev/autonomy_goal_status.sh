@@ -4,9 +4,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python_bin="${VISION_NAV_PYTHON:-python3}"
 download_root="${VISION_NAV_DESKTOP_TRANSFER_FROM_PI:-$HOME/DroneTransfer/from-pi}"
+local_output_root="${VISION_NAV_LOCAL_TRANSFER_OUTGOING:-$HOME/DroneTransfer/outgoing}"
 support_dir="${VISION_NAV_LOCAL_SUPPORT_DIR:-$download_root/support-bundles}"
 replay_dir="${VISION_NAV_LOCAL_REPLAY_DIR:-$download_root/replay-cases}"
 feature_benchmark_dir="${VISION_NAV_LOCAL_FEATURE_BENCH_DIR:-$download_root/feature-method-bench}"
+local_support_dir="$local_output_root/support-bundles"
+local_replay_dir="$local_output_root/replay-cases"
+local_feature_benchmark_dir="$local_output_root/feature-method-bench"
 support_bundle="${VISION_NAV_AUTONOMY_SUPPORT_BUNDLE:-}"
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$replay_dir/field_evidence_report.json}"
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$replay_dir/field_collection_plan.json}"
@@ -48,6 +52,7 @@ first_existing_px4_session() {
     "$PWD/px4-sitl-evidence"
     "$HOME/px4-sitl-evidence"
     "$download_root/px4-sitl-evidence"
+    "$local_output_root/px4-sitl-evidence"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
@@ -67,6 +72,7 @@ first_existing_px4_report() {
     "$PWD/px4-sitl-evidence/receiver_evidence.json"
     "$HOME/px4-sitl-evidence/receiver_evidence.json"
     "$download_root/px4-sitl-evidence/receiver_evidence.json"
+    "$local_output_root/px4-sitl-evidence/receiver_evidence.json"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
@@ -91,6 +97,7 @@ first_existing_px4_prereqs() {
       "$PWD/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
       "$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
       "$download_root/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+      "$local_output_root/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
     )
   fi
   if ((${#candidates[@]} == 0)); then
@@ -111,6 +118,8 @@ first_existing_workflow_report() {
     "$replay_dir/autonomy-evidence-workflow/autonomy_evidence_workflow.json"
     "$download_root/replay-cases/autonomy_evidence_workflow.json"
     "$download_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json"
+    "$local_output_root/replay-cases/autonomy_evidence_workflow.json"
+    "$local_output_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
@@ -131,6 +140,8 @@ first_existing_workflow_validation_report() {
     "$replay_dir/autonomy-evidence-workflow/autonomy_evidence_workflow.validation.json"
     "$download_root/replay-cases/autonomy_evidence_workflow.validation.json"
     "$download_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.validation.json"
+    "$local_output_root/replay-cases/autonomy_evidence_workflow.validation.json"
+    "$local_output_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.validation.json"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
@@ -151,6 +162,8 @@ first_existing_workflow_log_archive() {
     "$replay_dir/autonomy-evidence-workflow/autonomy_evidence_workflow.logs.tar.gz"
     "$download_root/replay-cases/autonomy_evidence_workflow.logs.tar.gz"
     "$download_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.logs.tar.gz"
+    "$local_output_root/replay-cases/autonomy_evidence_workflow.logs.tar.gz"
+    "$local_output_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.logs.tar.gz"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
@@ -163,10 +176,36 @@ first_existing_workflow_log_archive() {
 
 if [[ -z "$support_bundle" ]]; then
   support_bundle="$(latest_glob "$support_dir/*.zip")"
+  if [[ -z "$support_bundle" ]]; then
+    support_bundle="$(latest_glob "$local_support_dir/*.zip")"
+  fi
 fi
 
 if [[ -z "$feature_method_benchmark_report" ]]; then
   feature_method_benchmark_report="$(latest_glob "$feature_benchmark_dir/*.json")"
+  if [[ -z "$feature_method_benchmark_report" ]]; then
+    feature_method_benchmark_report="$(latest_glob "$local_feature_benchmark_dir/*.json")"
+  fi
+fi
+
+if [[ -z "${VISION_NAV_FIELD_EVIDENCE_REPORT:-}" && ! -f "$field_evidence_report" && -f "$local_replay_dir/field_evidence_report.json" ]]; then
+  field_evidence_report="$local_replay_dir/field_evidence_report.json"
+fi
+
+if [[ -z "${VISION_NAV_FIELD_COLLECTION_PLAN:-}" && ! -f "$field_collection_plan" && -f "$local_replay_dir/field_collection_plan.json" ]]; then
+  field_collection_plan="$local_replay_dir/field_collection_plan.json"
+fi
+
+if [[ -z "${VISION_NAV_THRESHOLD_TUNING_REPORT:-}" && ! -f "$threshold_tuning_report" && -f "$local_replay_dir/threshold_tuning_report.json" ]]; then
+  threshold_tuning_report="$local_replay_dir/threshold_tuning_report.json"
+fi
+
+if [[ -z "${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-}" && ! -f "$rosbag_export_validation" && -f "$local_output_root/terrain-match/rosbag-jsonl-validation.json" ]]; then
+  rosbag_export_validation="$local_output_root/terrain-match/rosbag-jsonl-validation.json"
+fi
+
+if [[ -z "${VISION_NAV_ROSBAG2_CLI_REVIEW:-}" && ! -f "$rosbag2_cli_review" && -f "$local_output_root/terrain-match/rosbag2-cli-review.json" ]]; then
+  rosbag2_cli_review="$local_output_root/terrain-match/rosbag2-cli-review.json"
 fi
 
 if [[ -z "$px4_sitl_session" ]]; then

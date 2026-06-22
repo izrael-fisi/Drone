@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 preflight_tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-local-preflight.XXXXXX")"
+preflight_tmp_dir="$(cd "$preflight_tmp_dir" && pwd -P)"
 
 cleanup() {
   local exit_code=$?
@@ -548,7 +549,10 @@ if PYTHONPATH=src python3 -m vision_nav.autonomy_readiness --json >"$autonomy_re
 fi
 tail -n 18 "$autonomy_readiness_output"
 goal_status_output="$preflight_tmp_dir/autonomy_goal_status_preflight.txt"
-if VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL=1 ./scripts/dev/autonomy_goal_status.sh >"$goal_status_output" 2>&1; then
+if VISION_NAV_DESKTOP_TRANSFER_FROM_PI="$preflight_tmp_dir/no-from-pi" \
+VISION_NAV_LOCAL_TRANSFER_OUTGOING="$preflight_tmp_dir/no-outgoing" \
+VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL=1 \
+./scripts/dev/autonomy_goal_status.sh >"$goal_status_output" 2>&1; then
   echo "Expected autonomy goal status to fail before final proof evidence exists." >&2
   exit 1
 fi
@@ -674,6 +678,7 @@ scanned_goal_status_output="$preflight_tmp_dir/autonomy_goal_status_scanned_pref
 if VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
+VISION_NAV_LOCAL_TRANSFER_OUTGOING="$preflight_tmp_dir/no-outgoing" \
 VISION_NAV_PX4_SITL_REPORT="$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" \
 VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL=1 \
 VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT=1 \
@@ -722,9 +727,83 @@ assert px4_prereq_app < px4_capture_app
 assert create_plan_app < load_next_app < evidence_workflow_app
 assert field_plan < workflow
 PY
+outgoing_fallback_dir="$(mktemp -d "$preflight_tmp_dir/outgoing-fallback.XXXXXX")"
+outgoing_fallback_from_pi="$outgoing_fallback_dir/from-pi-empty"
+outgoing_fallback_root="$outgoing_fallback_dir/outgoing"
+mkdir -p "$outgoing_fallback_root/feature-method-bench"
+mkdir -p "$outgoing_fallback_root/replay-cases"
+cat >"$outgoing_fallback_root/feature-method-bench/outgoing_feature_benchmark.json" <<'EOF'
+{
+  "status": "passed",
+  "case_name": "preflight-outgoing-feature-method",
+  "expected": "good_map",
+  "recommended_method": "orb",
+  "methods": [
+    {"method": "orb", "status": "passed", "record_count": 2}
+  ]
+}
+EOF
+cat >"$outgoing_fallback_root/replay-cases/field_collection_plan.json" <<'EOF'
+{
+  "schema_version": "vision_nav_field_collection_plan_v1",
+  "status": "degraded",
+  "summary": {
+    "required_count": 8,
+    "registered_count": 0,
+    "registered_missing_log_count": 0,
+    "placeholder_count": 8,
+    "missing_count": 0
+  },
+  "next_condition": {
+    "condition": "good_texture",
+    "label": "Good texture, matching map",
+    "expected": "good_map",
+    "status": "placeholder",
+    "capture_command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+    "register_command": "./scripts/pi/register_field_replay_case.sh"
+  },
+  "conditions": [
+    {
+      "condition": "good_texture",
+      "label": "Good texture, matching map",
+      "expected": "good_map",
+      "status": "placeholder",
+      "capture_command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+      "register_command": "./scripts/pi/register_field_replay_case.sh"
+    }
+  ]
+}
+EOF
+cat >"$outgoing_fallback_root/replay-cases/field_collection_plan.md" <<'EOF'
+# Field Evidence Collection Plan
+EOF
+outgoing_fallback_goal_status="$preflight_tmp_dir/autonomy_goal_status_outgoing_fallback.txt"
+if VISION_NAV_DESKTOP_TRANSFER_FROM_PI="$outgoing_fallback_from_pi" \
+VISION_NAV_LOCAL_TRANSFER_OUTGOING="$outgoing_fallback_root" \
+VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT=1 \
+./scripts/dev/autonomy_goal_status.sh >"$outgoing_fallback_goal_status" 2>&1; then
+  echo "Expected outgoing-fallback autonomy goal status to fail before final proof evidence exists." >&2
+  exit 1
+fi
+grep -q "field_collection_plan: $outgoing_fallback_root/replay-cases/field_collection_plan.json" "$outgoing_fallback_goal_status"
+grep -q "feature_method_benchmark_report: $outgoing_fallback_root/feature-method-bench/outgoing_feature_benchmark.json" "$outgoing_fallback_goal_status"
+grep -q "capture command:" "$outgoing_fallback_goal_status"
+grep -q "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" "$outgoing_fallback_goal_status"
+outgoing_fallback_audit_output="$preflight_tmp_dir/local_autonomy_readiness_outgoing_fallback.txt"
+VISION_NAV_DESKTOP_TRANSFER_FROM_PI="$outgoing_fallback_from_pi" \
+VISION_NAV_LOCAL_TRANSFER_OUTGOING="$outgoing_fallback_root" \
+VISION_NAV_AUTONOMY_ALLOW_FAILED=1 \
+./scripts/dev/run_local_autonomy_readiness_audit.sh >"$outgoing_fallback_audit_output" 2>&1
+grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN__=$outgoing_fallback_root/replay-cases/field_collection_plan.json" "$outgoing_fallback_audit_output"
+grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=$outgoing_fallback_root/replay-cases/field_collection_plan.md" "$outgoing_fallback_audit_output"
+grep -q "__VISION_NAV_FEATURE_METHOD_REPORT__=$outgoing_fallback_root/feature-method-bench/outgoing_feature_benchmark.json" "$outgoing_fallback_audit_output"
+test -f "$outgoing_fallback_from_pi/replay-cases/autonomy_readiness_report.json"
+test -f "$outgoing_fallback_from_pi/replay-cases/autonomy_readiness_report.md"
+test -f "$outgoing_fallback_from_pi/replay-cases/autonomy_readiness_report.evidence.zip"
 VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
+VISION_NAV_LOCAL_TRANSFER_OUTGOING="$preflight_tmp_dir/no-outgoing" \
 VISION_NAV_PX4_SITL_REPORT="$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" \
 VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL=1 \
 VISION_NAV_AUTONOMY_ALLOW_FAILED=1 \
