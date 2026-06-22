@@ -1037,6 +1037,9 @@ even when the audit fails, so the missing proof artifacts are visible in both a
 machine-readable report, a support handoff, and a package manifest with the
 plan source snapshot, compact goal-proof counts, and a bounded proof-runbook
 summary.
+The evidence-package command also prints the first missing package artifact
+labels, including failed `proof:<check>` gates and their missing condition
+summary, so terminal logs show which final proof artifacts are still absent.
 Failed or degraded gates include `next_actions` entries with the matching
 Module Setup action or shell command to run next. Field-evidence and
 threshold-tuning next actions include the missing real-world condition keys.

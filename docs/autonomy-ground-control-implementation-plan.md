@@ -693,6 +693,9 @@ Status:
   missing `proof:<check>` entries even when no artifact path exists yet, so an
   incomplete package cannot appear artifact-complete just because PX4, field,
   feature, threshold, or ROS proof has not been produced.
+- Done: the evidence-package CLI now prints a compact missing-artifact summary
+  after package creation, including proof-gate labels and first missing condition
+  keys, so Pi/local readiness logs identify absent proof without opening the ZIP.
 - Done: Module Setup preserves and renders evidence-package missing proof-gate
   metadata, including status, reason, message, source hints, and missing
   condition keys, so the operator sees why each package proof placeholder is

@@ -17,7 +17,7 @@ import numpy as np
 
 from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
 from vision_nav.ardupilot_params import check_ardupilot_external_nav_params, params_from_text as ardupilot_params_from_text
-from vision_nav.autonomy_evidence_package import create_evidence_package
+from vision_nav.autonomy_evidence_package import create_evidence_package, missing_artifact_lines
 from vision_nav.autonomy_evidence_workflow import REQUIRED_WORKFLOW_STEPS, validate_workflow_report, validation_exit_code
 from vision_nav.autonomy_handoff import render_handoff_markdown
 from vision_nav.autonomy_readiness import REQUIRED_FIELD_CONDITIONS, evaluate_autonomy_readiness
@@ -3694,6 +3694,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 REQUIRED_FIELD_CONDITIONS,
                 "autonomy evidence package proof-gate missing conditions",
             )
+            missing_lines = missing_artifact_lines(manifest, limit=20)
+            threshold_lines = [line for line in missing_lines if "proof:threshold_tuning" in line]
+            if not threshold_lines:
+                raise AssertionError("autonomy evidence package missing CLI proof-gate summary")
+            if "missing=good_texture, low_texture, blur +5" not in threshold_lines[0]:
+                raise AssertionError("autonomy evidence package CLI summary missing condition detail")
             if not any(item["label"] == "input:support_bundle" for item in manifest["included"]):
                 raise AssertionError("autonomy evidence package did not include support manifest artifact")
             if not any(item["label"] == "input:field_collection_plan" for item in manifest["included"]):

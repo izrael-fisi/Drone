@@ -551,6 +551,9 @@ Missing entries include not-yet-passed required proof gates, even when no
 concrete artifact path has been produced yet. For those proof gates, the card
 preserves and displays status, reason, message, source, and the first missing
 condition keys when available.
+The evidence-package command prints the same first missing package artifact
+labels to terminal logs, so CLI-only support reviews can identify absent proof
+gates without opening the ZIP manifest.
 Readiness report cards also provide a bulk command copy action for all
 machine-readable next-action shell commands, while preserving each row's
 individual command copy control. The underlying JSON report includes the same

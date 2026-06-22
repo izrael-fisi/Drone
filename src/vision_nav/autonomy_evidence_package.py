@@ -322,6 +322,35 @@ def safe_name(value: str) -> str:
     return sanitized or "artifact"
 
 
+def missing_artifact_lines(manifest: dict[str, Any], *, limit: int = 8) -> list[str]:
+    missing = dict_items(manifest.get("missing"))
+    lines = [format_missing_artifact(item) for item in missing[:limit]]
+    if len(missing) > limit:
+        lines.append(f"... {len(missing) - limit} more missing artifacts")
+    return lines
+
+
+def format_missing_artifact(item: dict[str, Any]) -> str:
+    label = str(item.get("label") or item.get("path") or "artifact")
+    details: list[str] = []
+    for key in ("status", "reason"):
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            details.append(value)
+    source = item.get("source")
+    if isinstance(source, str) and source:
+        details.append(f"source={source}")
+    missing_conditions = string_list(item.get("missing_conditions"))
+    if missing_conditions:
+        visible = ", ".join(missing_conditions[:3])
+        if len(missing_conditions) > 3:
+            visible = f"{visible} +{len(missing_conditions) - 3}"
+        details.append(f"missing={visible}")
+    message = item.get("message")
+    suffix = f": {message}" if isinstance(message, str) and message else ""
+    return f"{label} ({', '.join(details)}){suffix}" if details else f"{label}{suffix}"
+
+
 def same_file(left: Path, right: Path) -> bool:
     try:
         return left.exists() and right.exists() and left.resolve() == right.resolve()
@@ -339,6 +368,11 @@ def main() -> None:
     )
     print(f"Autonomy evidence package: {result['zip_path']}")
     print(f"Included: {result['included_count']} Missing: {result['missing_count']} Skipped: {result['skipped_count']}")
+    missing_lines = missing_artifact_lines(result["manifest"])
+    if missing_lines:
+        print("Missing package artifacts:")
+        for line in missing_lines:
+            print(f"- {line}")
     print(f"__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__={result['zip_path']}")
 
 
