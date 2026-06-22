@@ -505,6 +505,9 @@ load_field_collection_condition() {
       "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_AUTO_SELECTED_CASE:-}"
       "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log"
     )
+    if [[ -n "${VISION_NAV_FIELD_METADATA_UPDATE_COMMAND:-}" ]]; then
+      marker_lines+=("__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__=${VISION_NAV_FIELD_METADATA_UPDATE_COMMAND:-}")
+    fi
     if [[ "${VISION_NAV_FIELD_CAPTURE_METADATA_READY:-failed}" == "passed" ]]; then
       pass_step "select_field_collection_condition" \
         "Loaded next field collection condition ${VISION_NAV_FIELD_AUTO_SELECTED_CONDITION:-unknown}; capture metadata is complete." \
@@ -637,11 +640,17 @@ elif [[ -n "${VISION_NAV_FIELD_CASE_NAME:-}" && -n "${VISION_NAV_FIELD_EXPECTED:
   if [[ "$metadata_status" == "passed" ]]; then
     VISION_NAV_FIELD_GATE_STRICT=0 run_step "register_field_replay_case" ./scripts/pi/register_field_replay_case.sh
   else
-    skip_step "register_field_replay_case" \
-      "$metadata_message Complete the Field Evidence Case metadata in Module Setup, then rerun the workflow or registration step." \
-      "__VISION_NAV_FIELD_SELECTED_CONDITION__=$selected_conditions" \
-      "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_CASE_NAME:-}" \
+    metadata_marker_lines=(
+      "__VISION_NAV_FIELD_SELECTED_CONDITION__=$selected_conditions"
+      "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_CASE_NAME:-}"
       "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log"
+    )
+    if [[ -n "${VISION_NAV_FIELD_METADATA_UPDATE_COMMAND:-}" ]]; then
+      metadata_marker_lines+=("__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__=${VISION_NAV_FIELD_METADATA_UPDATE_COMMAND:-}")
+    fi
+    skip_step "register_field_replay_case" \
+      "$metadata_message Complete the Field Evidence Case metadata in Module Setup, or run scripts/pi/update_field_capture_metadata.sh, then rerun the workflow or registration step." \
+      "${metadata_marker_lines[@]}"
   fi
 else
   skip_step "register_field_replay_case" "Set VISION_NAV_FIELD_CASE_NAME, VISION_NAV_FIELD_EXPECTED, and VISION_NAV_FIELD_CONDITION(S) after a real field log exists to register evidence."

@@ -570,7 +570,10 @@ VISION_NAV_FIELD_SAFETY_NOTES="spotter present" \
 
 That helper updates `field_manifest.json`, then regenerates
 `field_collection_plan.json` and `.md` so the next workflow run can see whether
-registration is allowed.
+registration is allowed. When the Evidence Workflow auto-selects a pending
+condition and metadata is still incomplete, the workflow report also emits
+`__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__=...` with the condition-specific
+helper command.
 
 Generate a field-collection checklist from the active manifest before going
 outside:

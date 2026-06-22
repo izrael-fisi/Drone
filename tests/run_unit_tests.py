@@ -4650,9 +4650,15 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "failed",
             "field workflow selection detects incomplete placeholder metadata",
         )
+        if "update_field_capture_metadata.sh" not in selection["metadata_update_command"]:
+            raise AssertionError("Expected selected field condition to include metadata update command")
+        if "VISION_NAV_FIELD_CONDITION=good_texture" not in selection["metadata_update_command"]:
+            raise AssertionError("Expected metadata update command to target selected condition")
         selection_shell = shell_assignments(selection)
         if "VISION_NAV_FIELD_AUTO_SELECTED=1" not in selection_shell:
             raise AssertionError("Expected shell assignments to mark the selected field condition")
+        if "VISION_NAV_FIELD_METADATA_UPDATE_COMMAND" not in selection_shell:
+            raise AssertionError("Expected shell assignments to export metadata update command")
 
         log_dir = base / "captures"
         log_dir.mkdir()

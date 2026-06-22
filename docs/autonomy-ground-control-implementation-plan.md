@@ -937,6 +937,10 @@ Status:
   pending condition when no explicit field case is supplied, redirects capture
   to the condition-specific output folder, and skips registration until the
   matching capture metadata is complete.
+- Done: the selected field-condition workflow now exports a
+  `__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__` marker when capture metadata is
+  incomplete, so workflow reports can point terminal operators at the exact
+  metadata helper command for the pending condition.
 - Done: Module Setup renders the compact workflow-validation summary embedded in
   downloaded evidence-package manifests, so readiness report cards still surface
   failed workflow steps even when support is reviewing the ZIP summary.

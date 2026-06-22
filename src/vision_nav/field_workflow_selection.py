@@ -59,6 +59,13 @@ def select_next_field_condition(plan_path: str | Path) -> dict[str, Any]:
         expected=expected or None,
     )
     env = workflow_environment_for_condition(condition)
+    metadata_update_command = shell_command(
+        {
+            "VISION_NAV_FIELD_MANIFEST": str(plan.get("manifest_path") or ""),
+            "VISION_NAV_FIELD_CONDITION": condition_key,
+        },
+        "./scripts/pi/update_field_capture_metadata.sh",
+    )
     return {
         "status": "selected",
         "plan_path": str(path),
@@ -73,6 +80,7 @@ def select_next_field_condition(plan_path: str | Path) -> dict[str, Any]:
         "capture_metadata_status": "passed" if not metadata_issues else "failed",
         "capture_metadata_issue_count": len(metadata_issues),
         "capture_metadata_issues": metadata_issues,
+        "metadata_update_command": metadata_update_command,
         "environment": env,
     }
 
@@ -124,6 +132,10 @@ def shell_assignments(selection: dict[str, Any]) -> str:
                     "VISION_NAV_FIELD_CAPTURE_METADATA_ISSUE_COUNT",
                     str(selection.get("capture_metadata_issue_count") or 0),
                 ),
+                shell_assignment(
+                    "VISION_NAV_FIELD_METADATA_UPDATE_COMMAND",
+                    str(selection.get("metadata_update_command") or ""),
+                ),
             ]
         )
         for key, value in (selection.get("environment") or {}).items():
@@ -138,6 +150,11 @@ def shell_assignments(selection: dict[str, Any]) -> str:
 
 def shell_assignment(key: str, value: str) -> str:
     return f"export {key}={shlex.quote(value)}"
+
+
+def shell_command(env: dict[str, str], command: str) -> str:
+    parts = [f"{key}={shlex.quote(str(value))}" for key, value in env.items() if str(value)]
+    return " ".join(parts + [command])
 
 
 def main() -> None:

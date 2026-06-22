@@ -397,7 +397,9 @@ altitude/speed context keep the final readiness proof failed. Operators using
 the Pi terminal instead of the desktop form can run
 `scripts/pi/update_field_capture_metadata.sh` to patch the active manifest for a
 condition and regenerate the collection plan before running the Evidence
-Workflow again.
+Workflow again. When the Evidence Workflow skips registration for incomplete
+metadata, its report markers include the condition-specific metadata update
+command for support review.
 
 Module Setup can also register the latest Pi terrain runtime log as a field
 evidence case after capture. The operator selects expected behavior, condition
