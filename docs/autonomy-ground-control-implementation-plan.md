@@ -398,6 +398,10 @@ Status:
 - Done: field collection plans now append `read_runtime_status.sh` to generated
   terrain capture commands and show the expected `runtime_status.json` path for
   the next pending condition, so checklist captures produce both proof files.
+- Done: field collection plans now generate explicit capture-metadata update
+  commands with operator-editable `TODO_...` placeholders for required field
+  notes, while preserving filled values in refreshed plans and avoiding fake
+  passing metadata.
 - Done: readiness reports, support-bundle summaries, Markdown handoffs, and the
   desktop parser normalize older field collection plans so stale capture-only
   commands are shown with the required runtime-status read step.

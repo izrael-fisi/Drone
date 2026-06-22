@@ -7,7 +7,11 @@ from pathlib import Path
 import shlex
 from typing import Any
 
-from vision_nav.field_capture_metadata import capture_checklist_template, capture_metadata_template
+from vision_nav.field_capture_metadata import (
+    capture_checklist_template,
+    capture_metadata_template,
+    is_filled_text,
+)
 from vision_nav.field_conditions import (
     REQUIRED_FIELD_CONDITIONS,
     expected_behavior_for_condition,
@@ -19,6 +23,21 @@ from vision_nav.replay_case_registry import normalize_conditions
 
 
 SCHEMA_VERSION = "vision_nav_field_collection_plan_v1"
+METADATA_UPDATE_TEXT_ENV_FIELDS = (
+    ("VISION_NAV_FIELD_OPERATOR", "operator", "TODO_operator"),
+    ("VISION_NAV_FIELD_LOCATION_LABEL", "location_label", "TODO_location_label"),
+    ("VISION_NAV_FIELD_LIGHTING", "lighting", "TODO_lighting"),
+    ("VISION_NAV_FIELD_WEATHER", "weather", "TODO_weather"),
+    ("VISION_NAV_FIELD_TERRAIN_TEXTURE", "terrain_texture", "TODO_terrain_texture"),
+    ("VISION_NAV_FIELD_MAP_AGE_OR_SEASON_NOTES", "map_age_or_season_notes", "TODO_map_age_or_season_notes"),
+    ("VISION_NAV_FIELD_CAMERA_FOCUS_EXPOSURE_NOTES", "camera_focus_exposure_notes", "TODO_camera_focus_exposure_notes"),
+    ("VISION_NAV_FIELD_IMU_PX4_STATE_NOTES", "imu_px4_state_notes", "TODO_imu_px4_state_notes"),
+    ("VISION_NAV_FIELD_SAFETY_NOTES", "safety_notes", "TODO_safety_notes"),
+)
+METADATA_UPDATE_NUMERIC_ENV_FIELDS = (
+    ("VISION_NAV_FIELD_ALTITUDE_AGL_M", "flight_altitude_agl_m", "TODO_altitude_agl_m"),
+    ("VISION_NAV_FIELD_SPEED_MPS", "speed_mps", "TODO_speed_mps"),
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -209,10 +228,12 @@ def condition_plan(
         "VISION_NAV_OUTPUT_DIR": capture_output_dir,
         "VISION_NAV_COUNT": "30",
     }
-    metadata_update_env = {
-        "VISION_NAV_FIELD_MANIFEST": str(manifest_path),
-        "VISION_NAV_FIELD_CONDITION": condition,
-    }
+    metadata_update_env = metadata_update_env_for_condition(
+        manifest_path=manifest_path,
+        condition=condition,
+        capture_metadata=capture_metadata,
+    )
+    metadata_update_command = shell_command(metadata_update_env, "./scripts/pi/update_field_capture_metadata.sh")
     capture_command = shell_command(capture_env, "./scripts/pi/run_terrain_nav_loop.sh")
     return {
         "condition": condition,
@@ -233,13 +254,52 @@ def condition_plan(
         "capture_env": capture_env,
         "capture_command": command_with_runtime_status_read(capture_command),
         "metadata_update_env": metadata_update_env,
-        "metadata_update_command": shell_command(
-            metadata_update_env,
-            "./scripts/pi/update_field_capture_metadata.sh",
-        ),
+        "metadata_update_command": metadata_update_command,
         "register_env": register_env,
         "register_command": shell_command(register_env, "./scripts/pi/register_field_replay_case.sh"),
     }
+
+
+def metadata_update_command_for_condition(
+    *,
+    manifest_path: str | Path,
+    condition: str,
+    capture_metadata: dict[str, Any] | None = None,
+) -> str:
+    return shell_command(
+        metadata_update_env_for_condition(
+            manifest_path=manifest_path,
+            condition=condition,
+            capture_metadata=capture_metadata,
+        ),
+        "./scripts/pi/update_field_capture_metadata.sh",
+    )
+
+
+def metadata_update_env_for_condition(
+    *,
+    manifest_path: str | Path,
+    condition: str,
+    capture_metadata: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    metadata = capture_metadata if isinstance(capture_metadata, dict) else {}
+    env = {
+        "VISION_NAV_FIELD_MANIFEST": str(manifest_path),
+        "VISION_NAV_FIELD_CONDITION": str(condition),
+    }
+    capture_date = metadata.get("capture_date_utc")
+    if is_filled_text(capture_date):
+        env["VISION_NAV_FIELD_CAPTURE_DATE_UTC"] = str(capture_date)
+    for env_key, metadata_key, placeholder in METADATA_UPDATE_TEXT_ENV_FIELDS:
+        value = metadata.get(metadata_key)
+        env[env_key] = str(value) if is_filled_text(value) else placeholder
+    for env_key, metadata_key, placeholder in METADATA_UPDATE_NUMERIC_ENV_FIELDS:
+        value = metadata.get(metadata_key)
+        env[env_key] = str(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else placeholder
+    notes = metadata.get("notes")
+    if is_filled_text(notes):
+        env["VISION_NAV_FIELD_NOTES"] = str(notes)
+    return env
 
 
 def select_best_case(cases: list[dict[str, Any]], manifest_path: Path) -> dict[str, Any] | None:

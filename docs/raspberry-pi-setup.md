@@ -573,7 +573,10 @@ That helper updates `field_manifest.json`, then regenerates
 registration is allowed. When the Evidence Workflow auto-selects a pending
 condition and metadata is still incomplete, the workflow report also emits
 `__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__=...` with the condition-specific
-helper command.
+metadata update command. Generated field collection plans include explicit
+`TODO_...` placeholders for every operator-supplied field, so copy the command,
+replace those values with real capture notes, then rerun it. Unedited numeric
+placeholders fail fast instead of producing proof-grade metadata.
 
 Generate a field-collection checklist from the active manifest before going
 outside:

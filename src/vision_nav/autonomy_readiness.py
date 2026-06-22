@@ -22,6 +22,7 @@ from vision_nav.bench_readiness import (
 )
 from vision_nav.autonomy_evidence_workflow import REQUIRED_WORKFLOW_STEPS, validate_workflow_report
 from vision_nav.field_conditions import REQUIRED_FIELD_CONDITIONS
+from vision_nav.field_collection_plan import metadata_update_command_for_condition
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 
 
@@ -2042,14 +2043,34 @@ def condition_with_metadata_update_command(condition: dict[str, Any], plan: dict
     manifest_path = plan.get("manifest_path")
     if not condition_name or not manifest_path:
         return updated
-    updated["metadata_update_command"] = shell_command(
-        {
-            "VISION_NAV_FIELD_MANIFEST": str(manifest_path),
-            "VISION_NAV_FIELD_CONDITION": str(condition_name),
-        },
-        "./scripts/pi/update_field_capture_metadata.sh",
+    capture_metadata = item_capture_metadata(condition, plan)
+    updated["metadata_update_command"] = metadata_update_command_for_condition(
+        manifest_path=str(manifest_path),
+        condition=str(condition_name),
+        capture_metadata=capture_metadata,
     )
     return updated
+
+
+def item_capture_metadata(condition: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any] | None:
+    metadata = condition.get("capture_metadata")
+    if isinstance(metadata, dict):
+        return metadata
+    condition_name = condition.get("condition")
+    if not condition_name:
+        return None
+    raw_next = plan.get("next_condition")
+    if isinstance(raw_next, dict) and raw_next.get("condition") == condition_name:
+        raw_metadata = raw_next.get("capture_metadata")
+        return raw_metadata if isinstance(raw_metadata, dict) else None
+    conditions = plan.get("conditions")
+    if not isinstance(conditions, list):
+        return None
+    for item in conditions:
+        if isinstance(item, dict) and item.get("condition") == condition_name:
+            raw_metadata = item.get("capture_metadata")
+            return raw_metadata if isinstance(raw_metadata, dict) else None
+    return None
 
 
 def shell_command(env: dict[str, str], command: str) -> str:

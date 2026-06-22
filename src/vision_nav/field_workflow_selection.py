@@ -7,6 +7,7 @@ import shlex
 from typing import Any
 
 from vision_nav.field_capture_metadata import audit_capture_metadata
+from vision_nav.field_collection_plan import metadata_update_command_for_condition
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,13 +60,13 @@ def select_next_field_condition(plan_path: str | Path) -> dict[str, Any]:
         expected=expected or None,
     )
     env = workflow_environment_for_condition(condition)
-    metadata_update_command = shell_command(
-        {
-            "VISION_NAV_FIELD_MANIFEST": str(plan.get("manifest_path") or ""),
-            "VISION_NAV_FIELD_CONDITION": condition_key,
-        },
-        "./scripts/pi/update_field_capture_metadata.sh",
-    )
+    metadata_update_command = str(condition.get("metadata_update_command") or "").strip()
+    if not metadata_update_command:
+        metadata_update_command = metadata_update_command_for_condition(
+            manifest_path=str(plan.get("manifest_path") or ""),
+            condition=condition_key,
+            capture_metadata=metadata if isinstance(metadata, dict) else None,
+        )
     return {
         "status": "selected",
         "plan_path": str(path),

@@ -5627,6 +5627,12 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected generated metadata update command")
         if "VISION_NAV_FIELD_CONDITION=good_texture" not in good_texture["metadata_update_command"]:
             raise AssertionError("Expected metadata update command to target the condition")
+        if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in good_texture["metadata_update_command"]:
+            raise AssertionError("Expected metadata update command to show the missing operator field")
+        if "VISION_NAV_FIELD_ALTITUDE_AGL_M=TODO_altitude_agl_m" not in good_texture["metadata_update_command"]:
+            raise AssertionError("Expected metadata update command to show the missing altitude field")
+        if "VISION_NAV_FIELD_CAMERA_FOCUS_EXPOSURE_NOTES=TODO_camera_focus_exposure_notes" not in good_texture["metadata_update_command"]:
+            raise AssertionError("Expected metadata update command to show camera focus/exposure notes")
         human_output = io.StringIO()
         with contextlib.redirect_stdout(human_output):
             print_field_collection_human(plan)
@@ -5696,6 +5702,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected selected field condition to include metadata update command")
         if "VISION_NAV_FIELD_CONDITION=good_texture" not in selection["metadata_update_command"]:
             raise AssertionError("Expected metadata update command to target selected condition")
+        if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in selection["metadata_update_command"]:
+            raise AssertionError("Expected selected metadata update command to preserve required field prompts")
         selection_shell = shell_assignments(selection)
         if "VISION_NAV_FIELD_AUTO_SELECTED=1" not in selection_shell:
             raise AssertionError("Expected shell assignments to mark the selected field condition")
@@ -5823,6 +5831,11 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             site_name="Site A",
             bundle="field-bundles/site-a/mission_bundle",
         )
+        refreshed_low_texture = next(item for item in refreshed["conditions"] if item["condition"] == "low_texture")
+        if "VISION_NAV_FIELD_OPERATOR=unit-operator" not in refreshed_low_texture["metadata_update_command"]:
+            raise AssertionError("Expected refreshed metadata update command to preserve filled operator")
+        if "VISION_NAV_FIELD_ALTITUDE_AGL_M=35" not in refreshed_low_texture["metadata_update_command"]:
+            raise AssertionError("Expected refreshed metadata update command to preserve filled altitude")
         refreshed_selection = select_next_field_condition(base / "field_collection_plan_metadata_updated.json")
         assert_equal(
             refreshed_selection["condition"],
