@@ -936,6 +936,10 @@ Status:
   preview that translates missing required conditions into operator-readable
   labels, expected outcomes, and the next condition to capture before the
   guided workflow or generated collection plan is run.
+- Done: `scripts/dev/autonomy_goal_status.sh` now turns non-passing workflow
+  validation into an explicit remediation block with the Module Setup Evidence
+  Workflow action, command, and non-passing validation checks before the general
+  next-command list.
 - Done: when the next field condition already has generated capture,
   metadata-update, and registration commands, that preview now prints the
   matching Module Setup actions (`Field Log Capture`,

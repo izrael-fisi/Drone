@@ -637,6 +637,17 @@ if workflow_validation:
                 print(f"  command: {next_step.get('command')}")
         for issue in issues[:4]:
             print(f"- issue: {issue}")
+        workflow_checks = [
+            str(check.get("name") or "unknown")
+            for check in workflow_validation.get("checks") or []
+            if isinstance(check, dict) and check.get("status") != "passed"
+        ]
+        if validation_status != "passed" or workflow_status != "passed" or workflow_checks:
+            print("- remediation: refresh the guided workflow proof after collecting or repairing the missing evidence.")
+            print("  app: Module Setup > Evidence Workflow")
+            print("  command: ./scripts/pi/run_autonomy_evidence_workflow.sh")
+            if workflow_checks:
+                print(f"  non-passing checks: {', '.join(workflow_checks[:6])}")
 
 if phases:
     print()

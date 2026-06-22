@@ -303,6 +303,35 @@ assert checks["log_archive"] == "passed"
 assert checks["required_step_results"] == "degraded"
 assert details["required_step_results"]["non_passed_count"] > 0
 PY
+workflow_goal_status_output="$workflow_smoke_dir/workflow/autonomy_goal_status.txt"
+if VISION_NAV_DESKTOP_TRANSFER_FROM_PI="$workflow_smoke_dir/no-from-pi" \
+VISION_NAV_LOCAL_TRANSFER_OUTGOING="$workflow_smoke_dir/no-outgoing" \
+VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" \
+VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.validation.json" \
+VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.logs.tar.gz" \
+VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL=1 \
+VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT=1 \
+./scripts/dev/autonomy_goal_status.sh >"$workflow_goal_status_output" 2>&1; then
+  echo "Expected workflow-backed autonomy goal status to fail before final proof evidence exists." >&2
+  exit 1
+fi
+grep -q "Workflow validation:" "$workflow_goal_status_output"
+grep -q "remediation: refresh the guided workflow proof" "$workflow_goal_status_output"
+grep -q "app: Module Setup > Evidence Workflow" "$workflow_goal_status_output"
+grep -q "command: ./scripts/pi/run_autonomy_evidence_workflow.sh" "$workflow_goal_status_output"
+grep -q "non-passing checks:" "$workflow_goal_status_output"
+python3 - "$workflow_goal_status_output" <<'PY'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+workflow = text.index("Workflow validation:")
+remediation = text.index("remediation: refresh the guided workflow proof", workflow)
+app = text.index("app: Module Setup > Evidence Workflow", remediation)
+command = text.index("command: ./scripts/pi/run_autonomy_evidence_workflow.sh", app)
+next_commands = text.index("Next commands:")
+assert workflow < remediation < app < command < next_commands
+PY
 active_capture_workflow_dir="$field_smoke_dir/workflow-active-capture"
 mkdir -p "$active_capture_workflow_dir/bundle" "$active_capture_workflow_dir/px4-sitl-session"
 cat >"$active_capture_workflow_dir/run_terrain_stub.sh" <<'EOF'
