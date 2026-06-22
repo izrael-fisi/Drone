@@ -537,6 +537,9 @@ Status:
   by the autonomy-readiness path, including replay registration, field-evidence
   gates, feature/retrieval benchmarks, threshold tuning, PX4 receiver evidence,
   MAVLink replay send, ROS replay export, and evidence-workflow validation.
+- Done: `scripts/dev/local_preflight.sh` uses an isolated per-run temporary
+  workspace and preserves it only on failure, so local preflight and handoff
+  audits can run concurrently without clobbering each other's evidence logs.
 - Done: autonomy-readiness reports include a `plan_snapshot` with source-doc
   marker coverage, research reference/near-term item counts, implementation
   track counts, status-line counts, task counts, and acceptance-check counts so
