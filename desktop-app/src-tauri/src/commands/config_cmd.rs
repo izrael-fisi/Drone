@@ -236,9 +236,13 @@ pub struct FieldCollectionPlanCondition {
     pub label: Option<String>,
     pub expected: Option<String>,
     pub status: Option<String>,
+    pub notes: Option<String>,
     pub case_name: Option<String>,
     pub manifest_log_path: Option<String>,
     pub manifest_log_exists: Option<bool>,
+    pub source_log: Option<String>,
+    pub bundle: Option<String>,
+    pub capture_metadata: Option<serde_json::Value>,
     pub register_command: Option<String>,
 }
 
@@ -3281,11 +3285,15 @@ fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCol
                     label: json_string(item.get("label")),
                     expected: json_string(item.get("expected")),
                     status: json_string(item.get("status")),
+                    notes: json_string(item.get("notes")),
                     case_name: json_string(item.get("case_name")),
                     manifest_log_path: json_string(item.get("manifest_log_path")),
                     manifest_log_exists: item
                         .get("manifest_log_exists")
                         .and_then(|value| value.as_bool()),
+                    source_log: json_string(item.get("source_log")),
+                    bundle: json_string(item.get("bundle")),
+                    capture_metadata: item.get("capture_metadata").cloned(),
                     register_command: json_string(item.get("register_command")),
                 })
                 .collect::<Vec<_>>()
@@ -5171,7 +5179,16 @@ mod tests {
                         "expected": "degraded",
                         "status": "placeholder",
                         "case_name": "site-a-low-texture",
-                        "manifest_log_exists": false
+                        "manifest_log_exists": false,
+                        "source_log": "/home/user/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
+                        "bundle": "/home/user/drone-data/map_bundles/mission_bundle",
+                        "notes": "low texture validation pass",
+                        "capture_metadata": {
+                            "site_name": "site-a",
+                            "condition": "low_texture",
+                            "expected_behavior": "degraded",
+                            "operator": "Ada"
+                        }
                     }
                 ]
             })
@@ -5207,6 +5224,22 @@ mod tests {
         assert_eq!(plans[0].conditions[0].status.as_deref(), Some("registered"));
         assert_eq!(plans[0].conditions[0].manifest_log_exists, Some(true));
         assert!(plans[0].conditions[0].register_command.is_some());
+        assert_eq!(
+            plans[0].conditions[1].notes.as_deref(),
+            Some("low texture validation pass")
+        );
+        assert_eq!(
+            plans[0].conditions[1].source_log.as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl")
+        );
+        assert_eq!(
+            plans[0].conditions[1]
+                .capture_metadata
+                .as_ref()
+                .and_then(|value| value.get("operator"))
+                .and_then(|value| value.as_str()),
+            Some("Ada")
+        );
         assert_eq!(
             plans[0]
                 .markdown_path

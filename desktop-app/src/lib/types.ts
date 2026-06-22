@@ -757,9 +757,13 @@ export interface FieldCollectionPlanFile {
     label?: string;
     expected?: "good_map" | "degraded" | "wrong_map" | string;
     status?: "registered" | "registered_missing_log" | "placeholder" | "missing" | string;
+    notes?: string;
     case_name?: string;
     manifest_log_path?: string;
     manifest_log_exists?: boolean;
+    source_log?: string;
+    bundle?: string;
+    capture_metadata?: Record<string, unknown>;
     register_command?: string;
   }>;
 }

@@ -140,6 +140,9 @@ Implementation tasks:
 - Keep field-evidence case metadata as a local app draft until registration so
   the operator does not lose site, lighting, weather, camera, IMU/PX4, or
   safety context while moving between setup checks.
+- Let operators load pending field collection plan conditions into the field
+  evidence registration form so required condition tags, expected behavior, and
+  capture metadata stay consistent with the checklist.
 - Add QGC-style plan state:
   - unsaved changes,
   - not uploaded,

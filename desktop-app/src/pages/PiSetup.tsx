@@ -429,6 +429,62 @@ function parseOptionalFloat(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function fieldExpected(value?: string): FieldExpected | undefined {
+  if (value === "good_map" || value === "degraded" || value === "wrong_map") return value;
+  return undefined;
+}
+
+function usableFieldText(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase().startsWith("todo")) return undefined;
+  return trimmed;
+}
+
+function keepOrUse(current: string, next: unknown) {
+  return usableFieldText(current) ?? usableFieldText(next) ?? current;
+}
+
+function metadataNumberText(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : undefined;
+}
+
+function fieldCaseFromCollectionPlanCondition(
+  current: FieldCaseForm,
+  plan: FieldCollectionPlanFile,
+  condition: FieldCollectionPlanFile["conditions"][number],
+): FieldCaseForm {
+  const metadata = asRecord(condition.capture_metadata);
+  const conditionKey =
+    usableFieldText(condition.condition) ??
+    usableFieldText(metadata?.condition) ??
+    firstFieldCondition(current.conditions);
+  const expected =
+    fieldExpected(condition.expected) ??
+    fieldExpected(stringField(metadata?.expected_behavior)) ??
+    current.expected;
+  return {
+    ...current,
+    caseName: usableFieldText(condition.case_name) ?? current.caseName,
+    expected,
+    conditions: conditionKey || current.conditions,
+    siteName: keepOrUse(current.siteName, metadata?.site_name ?? plan.site_name),
+    operator: keepOrUse(current.operator, metadata?.operator),
+    captureDateUtc: keepOrUse(current.captureDateUtc, metadata?.capture_date_utc),
+    locationLabel: keepOrUse(current.locationLabel, metadata?.location_label),
+    flightAltitudeAglM: current.flightAltitudeAglM || metadataNumberText(metadata?.flight_altitude_agl_m) || "",
+    speedMps: current.speedMps || metadataNumberText(metadata?.speed_mps) || "",
+    lighting: keepOrUse(current.lighting, metadata?.lighting),
+    weather: keepOrUse(current.weather, metadata?.weather),
+    terrainTexture: keepOrUse(current.terrainTexture, metadata?.terrain_texture),
+    mapAgeOrSeasonNotes: keepOrUse(current.mapAgeOrSeasonNotes, metadata?.map_age_or_season_notes),
+    cameraFocusExposureNotes: keepOrUse(current.cameraFocusExposureNotes, metadata?.camera_focus_exposure_notes),
+    imuPx4StateNotes: keepOrUse(current.imuPx4StateNotes, metadata?.imu_px4_state_notes),
+    safetyNotes: keepOrUse(current.safetyNotes, metadata?.safety_notes),
+    notes: usableFieldText(condition.notes) ?? usableFieldText(metadata?.notes) ?? current.notes,
+  };
+}
+
 function fieldCaptureMetadata(remoteBundle: string, fieldCase: FieldCaseForm) {
   return {
     schema_version: "vision_nav_field_capture_metadata_v1",
@@ -1925,10 +1981,12 @@ function FieldCollectionPlanList({
   plans,
   downloadDir,
   onRefresh,
+  onLoadCondition,
 }: {
   plans: FieldCollectionPlanFile[];
   downloadDir: string;
   onRefresh: () => void;
+  onLoadCondition: (plan: FieldCollectionPlanFile, condition: FieldCollectionPlanFile["conditions"][number]) => void;
 }) {
   const [busyPath, setBusyPath] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -2042,8 +2100,18 @@ function FieldCollectionPlanList({
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {file.conditions.slice(0, 8).map((condition) => (
-                    <div key={`${file.path}-${condition.condition}`} className="flex min-w-0">
+                    <div key={`${file.path}-${condition.condition}`} className="flex min-w-0 items-center gap-1">
                       <FieldCollectionConditionBadge condition={condition} idPrefix={file.path} />
+                      {condition.status !== "registered" && (
+                        <button
+                          type="button"
+                          onClick={() => onLoadCondition(file, condition)}
+                          className="btn-secondary px-1.5 py-0.5 text-[10px] shrink-0"
+                          title="Load this condition into Field Evidence Case"
+                        >
+                          Load
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2734,6 +2802,17 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const setResult = (id: string, result: SetupResult) => {
     setResults((prev) => ({ ...prev, [id]: result }));
     setSelectedOutputId(id);
+  };
+
+  const loadFieldCollectionCondition = (
+    plan: FieldCollectionPlanFile,
+    condition: FieldCollectionPlanFile["conditions"][number],
+  ) => {
+    setFieldCase((value) => fieldCaseFromCollectionPlanCondition(value, plan, condition));
+    setResult("field-evidence", {
+      status: "idle",
+      output: `$ Load Field Collection Condition\ncase: ${condition.case_name ?? "n/a"}\ncondition: ${condition.condition ?? "n/a"}\nexpected: ${condition.expected ?? "n/a"}\nplan: ${plan.path}\n\nReview capture metadata, fill any missing values, then register the field evidence case.`,
+    });
   };
 
   const browseForKey = async () => {
@@ -5466,6 +5545,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               plans={fieldCollectionPlans}
               downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
               onRefresh={refreshFieldCollectionPlans}
+              onLoadCondition={loadFieldCollectionCondition}
             />
             <AutonomyEvidenceWorkflowReportList
               reports={autonomyWorkflowReports}

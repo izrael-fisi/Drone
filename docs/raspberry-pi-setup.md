@@ -942,6 +942,9 @@ folder, downloads the workflow-log archive and validation JSON, and downloads
 any support bundle, field-evidence report, feature-method benchmark,
 threshold-tuning report, readiness report, handoff, evidence package,
 field-collection plan/checklist, or PX4 receiver marker emitted by the wrapper.
+Downloaded field collection plans expose a `Load` action per pending condition,
+which pre-fills the Field Evidence Case form before registration so the plan
+condition, expected behavior, and capture metadata stay in sync.
 The downloaded workflow JSON remains visible after app restart in Module Setup's
 Evidence Workflow Reports list, including per-step status and emitted artifact
 markers. Each artifact marker chip copies the emitted Pi-side path for support

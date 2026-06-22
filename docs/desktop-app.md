@@ -358,6 +358,11 @@ checklist step, downloads the emitted plan artifacts, and records the emitted
 plan markers in the workflow report. Support bundles copy the JSON checklist
 and sibling Markdown file when present, and the final autonomy evidence package
 includes the plan/checklist paths recorded by the readiness audit.
+In the Field Collection Plans list, each pending condition has a `Load` action
+that fills the Field Evidence Case form with the plan case name, condition,
+expected behavior, notes, site, and any non-placeholder capture metadata. This
+keeps the generated checklist and the registration form aligned while still
+letting the operator complete site-specific metadata before registering the log.
 Each placeholder condition in the template and plan also carries a
 `capture_metadata` object plus a capture checklist. The metadata covers
 operator/date, location label, flight altitude, speed, lighting, weather,
