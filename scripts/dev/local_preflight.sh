@@ -840,9 +840,32 @@ fi
 grep -q "field_collection_plan: $outgoing_fallback_root/replay-cases/field_collection_plan.json" "$outgoing_fallback_goal_status"
 grep -q "feature_method_benchmark_report: $outgoing_fallback_root/feature-method-bench/outgoing_feature_benchmark.json" "$outgoing_fallback_goal_status"
 grep -q "capture command:" "$outgoing_fallback_goal_status"
+grep -q "app: Module Setup > Field Log Capture" "$outgoing_fallback_goal_status"
 grep -q "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" "$outgoing_fallback_goal_status"
 grep -q "metadata update command:" "$outgoing_fallback_goal_status"
+grep -q "app: Module Setup > Field Evidence Case > Update Metadata" "$outgoing_fallback_goal_status"
 grep -q "update_field_capture_metadata.sh" "$outgoing_fallback_goal_status"
+grep -q "register command:" "$outgoing_fallback_goal_status"
+grep -q "app: Module Setup > Field Evidence Case > Register" "$outgoing_fallback_goal_status"
+python3 - "$outgoing_fallback_goal_status" <<'PY'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+field_preview = text.index("Field collection preview:")
+capture_label = text.index("capture command:", field_preview)
+capture_app = text.index("app: Module Setup > Field Log Capture", capture_label)
+capture_command = text.index("VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh", capture_app)
+metadata_label = text.index("metadata update command:", capture_command)
+metadata_app = text.index("app: Module Setup > Field Evidence Case > Update Metadata", metadata_label)
+metadata_command = text.index("./scripts/pi/update_field_capture_metadata.sh", metadata_app)
+register_label = text.index("register command:", metadata_command)
+register_app = text.index("app: Module Setup > Field Evidence Case > Register", register_label)
+register_command = text.index("./scripts/pi/register_field_replay_case.sh", register_app)
+assert capture_label < capture_app < capture_command
+assert metadata_label < metadata_app < metadata_command
+assert register_label < register_app < register_command
+PY
 outgoing_fallback_audit_output="$preflight_tmp_dir/local_autonomy_readiness_outgoing_fallback.txt"
 VISION_NAV_DESKTOP_TRANSFER_FROM_PI="$outgoing_fallback_from_pi" \
 VISION_NAV_LOCAL_TRANSFER_OUTGOING="$outgoing_fallback_root" \

@@ -330,6 +330,11 @@ except Exception:  # pragma: no cover - keeps this formatter useful from partial
 
 FIELD_COLLECTION_CHECKS = {"field_collection_plan", "field_evidence_proof", "threshold_tuning"}
 SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
+FIELD_COLLECTION_COMMAND_APP_ACTIONS = {
+    "capture": "Module Setup > Field Log Capture",
+    "metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
+    "registration": "Module Setup > Field Evidence Case > Register",
+}
 
 
 def unique_ordered(values):
@@ -401,10 +406,12 @@ def check_details(report, name):
     return {}
 
 
-def print_multiline_command(prefix, command):
+def print_multiline_command(prefix, command, desktop_action=None):
     if not command:
         return
     print(prefix)
+    if desktop_action:
+        print(f"  app: {desktop_action}")
     for line in str(command).splitlines():
         print(f"  {line}")
 
@@ -613,9 +620,21 @@ if field_conditions or next_field_condition:
             print(f"  terrain log: {source_log}")
         if runtime_status_path:
             print(f"  runtime status: {runtime_status_path}")
-        print_multiline_command("  capture command:", next_field_condition.get("capture_command"))
-        print_multiline_command("  metadata update command:", next_field_condition.get("metadata_update_command"))
-        print_multiline_command("  register command:", next_field_condition.get("register_command"))
+        print_multiline_command(
+            "  capture command:",
+            next_field_condition.get("capture_command"),
+            FIELD_COLLECTION_COMMAND_APP_ACTIONS["capture"],
+        )
+        print_multiline_command(
+            "  metadata update command:",
+            next_field_condition.get("metadata_update_command"),
+            FIELD_COLLECTION_COMMAND_APP_ACTIONS["metadata_update"],
+        )
+        print_multiline_command(
+            "  register command:",
+            next_field_condition.get("register_command"),
+            FIELD_COLLECTION_COMMAND_APP_ACTIONS["registration"],
+        )
     remaining = [
         condition
         for condition in field_conditions

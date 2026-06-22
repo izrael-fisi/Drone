@@ -880,6 +880,11 @@ Status:
   preview that translates missing required conditions into operator-readable
   labels, expected outcomes, and the next condition to capture before the
   guided workflow or generated collection plan is run.
+- Done: when the next field condition already has generated capture,
+  metadata-update, and registration commands, that preview now prints the
+  matching Module Setup actions (`Field Log Capture`,
+  `Field Evidence Case > Update Metadata`, and
+  `Field Evidence Case > Register`) directly above each command.
 - Done: missing support-bundle readiness now records the strict bench and
   support-review inputs the bundle is expected to contain, and
   `scripts/dev/autonomy_goal_status.sh` renders those as a bench evidence
