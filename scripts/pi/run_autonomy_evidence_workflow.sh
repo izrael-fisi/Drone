@@ -177,10 +177,14 @@ write_report() {
   PYTHONPATH="$repo_root/src" "$venv_python" - "$steps_jsonl" "$report" "$final_status" "$repo_root" "$workflow_dir" <<'PY'
 from __future__ import annotations
 
+import hashlib
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+from vision_nav.autonomy_evidence_workflow import REQUIRED_WORKFLOW_STEPS
 
 steps_path, report_path, status, repo_root, workflow_dir = sys.argv[1:6]
 steps = []
@@ -197,6 +201,39 @@ summary = {
     "failed": sum(1 for step in steps if step.get("status") == "failed"),
     "skipped": sum(1 for step in steps if step.get("status") == "skipped"),
 }
+repo_path = Path(repo_root)
+script_path = repo_path / "scripts/pi/run_autonomy_evidence_workflow.sh"
+
+
+def git_value(*args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), *args],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value or None
+
+
+script_sha256 = None
+if script_path.is_file():
+    script_sha256 = hashlib.sha256(script_path.read_bytes()).hexdigest()
+dirty_raw = git_value("status", "--porcelain")
+workflow_provenance = {
+    "repo_commit": git_value("rev-parse", "HEAD"),
+    "repo_dirty": bool(dirty_raw),
+    "script_path": str(script_path),
+    "script_sha256": script_sha256,
+    "required_steps": list(REQUIRED_WORKFLOW_STEPS),
+    "required_step_count": len(REQUIRED_WORKFLOW_STEPS),
+}
 report = {
     "schema_version": "vision_nav_autonomy_evidence_workflow_v1",
     "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -204,6 +241,7 @@ report = {
     "summary": summary,
     "repo_root": repo_root,
     "workflow_dir": workflow_dir,
+    "workflow_provenance": workflow_provenance,
     "steps": steps,
     "markers": markers,
 }

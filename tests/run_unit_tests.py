@@ -2680,6 +2680,14 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                     "status": "failed",
                     "summary": {"passed": 4, "failed": 1, "skipped": 2},
                     "workflow_dir": str(root),
+                    "workflow_provenance": {
+                        "repo_commit": "unit-test",
+                        "repo_dirty": False,
+                        "script_path": str(root / "scripts/pi/run_autonomy_evidence_workflow.sh"),
+                        "script_sha256": "0" * 64,
+                        "required_steps": list(REQUIRED_WORKFLOW_STEPS),
+                        "required_step_count": len(REQUIRED_WORKFLOW_STEPS),
+                    },
                     "steps": [
                         {
                             "name": step_name,
@@ -2719,6 +2727,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         assert_equal(validation_exit_code(validation), 0, "workflow validation degraded exit code")
         checks = {check["name"]: check["status"] for check in validation["checks"]}
         assert_equal(checks["log_archive"], "passed", "workflow validation log archive")
+        assert_equal(checks["workflow_provenance"], "passed", "workflow validation provenance")
         assert_equal(checks["important_markers"], "passed", "workflow validation important markers")
         assert_equal(checks["final_proof_markers"], "passed", "workflow validation final proof markers")
         assert_equal(checks["required_step_results"], "degraded", "workflow validation required step results")
@@ -2749,6 +2758,20 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation should list PX4 prereqs as an important diagnostic marker")
         if "__VISION_NAV_PX4_SITL_PREREQS__" in detailed_checks["final_proof_markers"]["details"]["present_markers"]:
             raise AssertionError("PX4 prereq diagnostics should not satisfy final proof markers")
+
+        old_format_report = json.loads(report_path.read_text())
+        old_format_report.pop("workflow_provenance", None)
+        old_format_path = root / "old_format_autonomy_evidence_workflow.json"
+        old_format_path.write_text(json.dumps(old_format_report))
+        old_format_validation = validate_workflow_report(old_format_path)
+        old_format_checks = {check["name"]: check for check in old_format_validation["checks"]}
+        assert_equal(
+            old_format_checks["workflow_provenance"]["status"],
+            "degraded",
+            "workflow validation flags old reports without provenance",
+        )
+        if "rerun the evidence workflow" not in old_format_checks["workflow_provenance"]["message"]:
+            raise AssertionError("workflow provenance diagnostic should tell operators to rerun the workflow")
 
         metadata_blocked_report = json.loads(report_path.read_text())
         metadata_command = (
@@ -3367,6 +3390,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "name": "schema",
                             "status": "passed",
                             "message": "Workflow report schema is valid.",
+                        },
+                        {
+                            "name": "workflow_provenance",
+                            "status": "passed",
+                            "message": "Workflow report includes repo/script provenance and the current required-step contract.",
                         },
                         {
                             "name": "required_steps",

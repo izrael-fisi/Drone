@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import tarfile
@@ -154,6 +155,8 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
             )
         )
 
+    checks.append(validate_workflow_provenance(report))
+
     steps = report.get("steps") if isinstance(report.get("steps"), list) else []
     step_names = [str(step.get("name")) for step in steps if isinstance(step, dict) and step.get("name")]
     missing_steps = [name for name in REQUIRED_WORKFLOW_STEPS if name not in step_names]
@@ -273,6 +276,9 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
         "report_path": str(path),
         "workflow_status": workflow_status,
         "workflow_generated_at": report.get("generated_at"),
+        "workflow_provenance": report.get("workflow_provenance")
+        if isinstance(report.get("workflow_provenance"), dict)
+        else None,
         "summary": report.get("summary") if isinstance(report.get("summary"), dict) else status_counts,
         "step_count": len(step_names),
         "marker_count": len(markers),
@@ -281,6 +287,65 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
         "checks": checks,
         "issues": issues,
     }
+
+
+def workflow_script_sha256(repo_root: str | Path) -> str | None:
+    script_path = Path(repo_root) / "scripts/pi/run_autonomy_evidence_workflow.sh"
+    if not script_path.is_file():
+        return None
+    return hashlib.sha256(script_path.read_bytes()).hexdigest()
+
+
+def validate_workflow_provenance(report: dict[str, Any]) -> dict[str, Any]:
+    provenance = report.get("workflow_provenance")
+    expected_step_count = len(REQUIRED_WORKFLOW_STEPS)
+    expected_steps = list(REQUIRED_WORKFLOW_STEPS)
+    if not isinstance(provenance, dict):
+        return degraded(
+            "workflow_provenance",
+            "Workflow report has no provenance metadata; rerun the evidence workflow to stamp the current script and required-step contract.",
+            {
+                "expected_required_steps": expected_steps,
+                "expected_required_step_count": expected_step_count,
+            },
+        )
+
+    reported_steps = provenance.get("required_steps")
+    details: dict[str, Any] = {
+        "repo_commit": provenance.get("repo_commit"),
+        "repo_dirty": provenance.get("repo_dirty"),
+        "script_path": provenance.get("script_path"),
+        "script_sha256": provenance.get("script_sha256"),
+        "reported_required_step_count": len(reported_steps) if isinstance(reported_steps, list) else None,
+        "expected_required_step_count": expected_step_count,
+    }
+    if reported_steps != expected_steps:
+        details["reported_required_steps"] = reported_steps
+        details["expected_required_steps"] = expected_steps
+        return failed(
+            "workflow_provenance",
+            "Workflow report was produced with a different required-step contract; rerun the evidence workflow with the current repo.",
+            details,
+        )
+
+    missing_fields = [
+        field
+        for field in ("repo_commit", "script_path", "script_sha256")
+        if not isinstance(provenance.get(field), str) or not str(provenance.get(field)).strip()
+    ]
+    if missing_fields:
+        details["missing_fields"] = missing_fields
+        return degraded(
+            "workflow_provenance",
+            "Workflow report provenance is incomplete; rerun the evidence workflow before using it as final proof.",
+            details,
+        )
+
+    return passed(
+        "workflow_provenance",
+        "Workflow report includes repo/script provenance and the current required-step contract.",
+        details,
+    )
 
 
 def validate_final_readiness_status(

@@ -2283,6 +2283,7 @@ def rosbag2_cli_review_check_from_report(report: dict[str, Any], *, source: str)
 
 REQUIRED_WORKFLOW_VALIDATION_CHECKS = [
     "schema",
+    "workflow_provenance",
     "required_steps",
     "step_statuses",
     "required_step_results",

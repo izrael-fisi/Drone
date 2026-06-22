@@ -298,6 +298,7 @@ assert validation["schema_version"] == "vision_nav_autonomy_evidence_workflow_va
 assert validation["status"] in {"passed", "degraded"}
 checks = {check["name"]: check["status"] for check in validation["checks"]}
 details = {check["name"]: check.get("details") or {} for check in validation["checks"]}
+assert checks["workflow_provenance"] == "passed"
 assert checks["log_archive"] == "passed"
 assert checks["required_step_results"] == "degraded"
 assert details["required_step_results"]["non_passed_count"] > 0
