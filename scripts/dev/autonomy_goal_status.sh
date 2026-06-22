@@ -383,6 +383,11 @@ guided_workflow_commands = [
     for command in command_bundle.get("guided_workflow_commands") or []
     if isinstance(command, str) and command
 ]
+prerequisite_fix_commands = [
+    str(command)
+    for command in command_bundle.get("prerequisite_fix_commands") or []
+    if isinstance(command, str) and command
+]
 if external_blockers and not guided_workflow_commands:
     guided_workflow_commands = ["./scripts/pi/run_autonomy_evidence_workflow.sh"]
 
@@ -534,6 +539,15 @@ if isinstance(px4_prereqs, dict):
             label = command.get("label") or command.get("condition") or "fix command"
             print(f"  fix command ({label}): {command.get('command')}")
 
+if prerequisite_fix_commands:
+    print()
+    print("Immediate prerequisite fixes:")
+    print("- Run the applicable setup fixes before PX4 receiver capture or support-bundle creation.")
+    for index, command in enumerate(prerequisite_fix_commands[:8], start=1):
+        print(f"{index}. {command}")
+    if len(prerequisite_fix_commands) > 8:
+        print(f"- ... {len(prerequisite_fix_commands) - 8} more")
+
 if guided_workflow_commands:
     print()
     print("Guided workflow option:")
@@ -626,7 +640,7 @@ PY
 if [[ "$audit_status" -ne 0 ]]; then
   if [[ "$quiet_exit" != "1" && "$quiet_exit" != "true" ]]; then
     echo
-    echo "Autonomy goal is not complete yet; run the immediate next commands first, then the blocked follow-ups after their prerequisites clear." >&2
+    echo "Autonomy goal is not complete yet; run prerequisite fixes if shown, then the immediate next commands, then blocked follow-ups after their prerequisites clear." >&2
   fi
   exit "$audit_status"
 fi

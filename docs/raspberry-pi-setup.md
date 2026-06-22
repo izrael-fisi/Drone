@@ -968,8 +968,11 @@ ordered `./scripts/pi/run_autonomy_evidence_workflow.sh` as a guided workflow
 option that preserves partial artifacts while prerequisites are collected. Its
 field collection preview lists the next required condition, the remaining
 operator-readable conditions, and their expected `good_map`, `degraded`, or
-`wrong_map` behavior before real logs are registered. Its
-command list follows the proof runbook, so blocked method/threshold or
+`wrong_map` behavior before real logs are registered. When PX4/tmux setup
+diagnostics provide fix commands, its `Immediate prerequisite fixes` section
+appears before the guided workflow and next proof commands, so
+operators can resolve workstation/SITL setup before attempting receiver proof.
+Its command list follows the proof runbook, so blocked method/threshold or
 final-audit work is shown as waiting on upstream phases instead of mixed into
 the runnable command list. It also prints a separate blocked follow-up command
 list for planned method/threshold and ROS replay work, with the upstream phase

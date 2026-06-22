@@ -811,6 +811,10 @@ Status:
   preview that translates missing required conditions into operator-readable
   labels, expected outcomes, and the next condition to capture before the
   guided workflow or generated collection plan is run.
+- Done: `scripts/dev/autonomy_goal_status.sh` now promotes prerequisite fix
+  commands from `command_bundle.prerequisite_fix_commands` ahead of the guided
+  workflow and proof-capture command list, so missing PX4/tmux setup is fixed
+  before operators try to collect receiver proof.
 - Done: autonomy-readiness handoffs and Module Setup report cards now preserve
   that guided workflow command from `command_bundle.guided_workflow_commands`,
   so downloaded reports keep both the all-in-one workflow and the individual
