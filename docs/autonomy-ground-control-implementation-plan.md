@@ -698,9 +698,9 @@ Status:
   plan source snapshot, checks, all goal proof items, completion blockers,
   external proof blockers, missing field conditions, bench subchecks, and next
   actions.
-- Done: the Markdown handoff includes a copy-friendly command bundle for
-  next-action shell commands plus pending field replay capture and registration
-  commands.
+- Done: the Markdown handoff includes a copy-friendly command bundle for the
+  guided workflow, immediate next-action commands, blocked follow-up commands,
+  and pending field replay capture/registration commands.
 - Done: the Markdown handoff renders the proof runbook so support can follow
   the correct proof collection order from the generated handoff instead of
   opening the raw JSON report.
@@ -708,9 +708,10 @@ Status:
   containing the strict readiness JSON, Markdown handoff, package manifest, and
   small referenced evidence artifacts that exist locally while listing missing
   or oversized artifacts in the manifest. The package manifest also carries a
-  plan source snapshot plus a bounded goal-proof summary and proof-runbook
-  summary with proof pass counts, first proof items, completion-blocker count,
-  external-blocker count, and ordered phase state.
+  plan source snapshot, the machine-readable command bundle, plus a bounded
+  goal-proof summary and proof-runbook summary with proof pass counts, first
+  proof items, completion-blocker count, external-blocker count, and ordered
+  phase state.
 - Done: evidence-package manifests now list failed required proof gates as
   missing `proof:<check>` entries even when no artifact path exists yet, so an
   incomplete package cannot appear artifact-complete just because PX4, field,

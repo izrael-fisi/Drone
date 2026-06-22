@@ -106,6 +106,7 @@ def create_evidence_package(
             "plan_snapshot": report.get("plan_snapshot") if isinstance(report.get("plan_snapshot"), dict) else None,
             "proof_summary": build_proof_summary(report),
             "proof_runbook_summary": build_proof_runbook_summary(report),
+            "command_bundle": build_command_bundle_summary(report),
             "max_artifact_bytes": max_artifact_bytes,
             "included": included,
             "missing": missing,
@@ -186,6 +187,26 @@ def build_proof_runbook_summary(report: dict[str, Any]) -> dict[str, Any] | None
         "phases_truncated": len(phases) > MAX_MANIFEST_RUNBOOK_PHASES,
         "phases": [compact_runbook_phase(phase) for phase in phases[:MAX_MANIFEST_RUNBOOK_PHASES]],
     }
+
+
+def build_command_bundle_summary(report: dict[str, Any]) -> dict[str, Any] | None:
+    bundle = report.get("command_bundle") if isinstance(report.get("command_bundle"), dict) else {}
+    if not bundle:
+        return None
+    summary = {
+        "guided_workflow_commands": string_list(bundle.get("guided_workflow_commands")),
+        "next_action_commands": string_list(bundle.get("next_action_commands")),
+        "immediate_next_action_commands": string_list(bundle.get("immediate_next_action_commands")),
+        "blocked_follow_up_commands": string_list(bundle.get("blocked_follow_up_commands")),
+        "field_collection_capture_commands": string_list(bundle.get("field_collection_capture_commands")),
+        "field_collection_registration_commands": string_list(bundle.get("field_collection_registration_commands")),
+    }
+    command_count = bundle.get("command_count")
+    if isinstance(command_count, int):
+        summary["command_count"] = command_count
+    if not any(value for value in summary.values() if isinstance(value, list)):
+        return None
+    return summary
 
 
 def compact_runbook_phase(phase: dict[str, Any]) -> dict[str, Any]:

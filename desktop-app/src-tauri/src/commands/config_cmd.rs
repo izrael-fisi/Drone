@@ -539,6 +539,7 @@ pub struct AutonomyEvidencePackageSummary {
     pub missing_count: Option<u64>,
     pub skipped_count: Option<u64>,
     pub proof_runbook_summary: Option<AutonomyReadinessProofRunbook>,
+    pub command_bundle: Option<AutonomyReadinessCommandBundle>,
     pub proof_items: Vec<AutonomyReadinessEvidenceBlocker>,
     pub included_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
     pub missing_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
@@ -595,7 +596,10 @@ pub struct AutonomyReadinessReportFile {
 
 #[derive(Serialize)]
 pub struct AutonomyReadinessCommandBundle {
+    pub guided_workflow_commands: Vec<String>,
     pub next_action_commands: Vec<String>,
+    pub immediate_next_action_commands: Vec<String>,
+    pub blocked_follow_up_commands: Vec<String>,
     pub field_collection_capture_commands: Vec<String>,
     pub field_collection_registration_commands: Vec<String>,
     pub command_count: Option<u64>,
@@ -1946,6 +1950,9 @@ fn read_autonomy_evidence_package_summary(path: &Path) -> Option<AutonomyEvidenc
         proof_runbook_summary: autonomy_readiness_proof_runbook_from_json(
             manifest.get("proof_runbook_summary"),
         ),
+        command_bundle: autonomy_readiness_command_bundle_from_bundle_json(
+            manifest.get("command_bundle"),
+        ),
         proof_items: autonomy_evidence_blockers_from_value(
             proof_summary.and_then(|value| value.get("proof_items")),
         ),
@@ -2932,11 +2939,23 @@ fn autonomy_readiness_command_bundle_from_json(
     value: &serde_json::Value,
 ) -> Option<AutonomyReadinessCommandBundle> {
     let bundle = value.get("command_bundle")?;
+    autonomy_readiness_command_bundle_from_bundle_json(Some(bundle))
+}
+
+fn autonomy_readiness_command_bundle_from_bundle_json(
+    bundle: Option<&serde_json::Value>,
+) -> Option<AutonomyReadinessCommandBundle> {
+    let bundle = bundle?;
     if !bundle.is_object() {
         return None;
     }
     Some(AutonomyReadinessCommandBundle {
+        guided_workflow_commands: json_string_array(bundle.get("guided_workflow_commands")),
         next_action_commands: json_string_array(bundle.get("next_action_commands")),
+        immediate_next_action_commands: json_string_array(
+            bundle.get("immediate_next_action_commands"),
+        ),
+        blocked_follow_up_commands: json_string_array(bundle.get("blocked_follow_up_commands")),
         field_collection_capture_commands: json_string_array(
             bundle.get("field_collection_capture_commands"),
         ),
@@ -4507,8 +4526,19 @@ mod tests {
                     }
                 ],
                 "command_bundle": {
+                    "guided_workflow_commands": [
+                        "./scripts/pi/run_autonomy_evidence_workflow.sh"
+                    ],
                     "next_action_commands": [
+                        "./scripts/dev/run_px4_sitl_external_vision_capture.sh",
                         "./scripts/pi/create_support_bundle.sh",
+                        "./scripts/pi/run_threshold_tuning_report.sh"
+                    ],
+                    "immediate_next_action_commands": [
+                        "./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+                        "./scripts/pi/create_support_bundle.sh"
+                    ],
+                    "blocked_follow_up_commands": [
                         "./scripts/pi/run_threshold_tuning_report.sh"
                     ],
                     "field_collection_capture_commands": [
@@ -4517,7 +4547,7 @@ mod tests {
                     "field_collection_registration_commands": [
                         "./scripts/pi/register_field_replay_case.sh --condition blur"
                     ],
-                    "command_count": 4
+                    "command_count": 6
                 },
                 "plan_snapshot": {
                     "schema_version": "vision_nav_autonomy_plan_snapshot_v1",
@@ -4789,6 +4819,30 @@ mod tests {
                             }
                         ]
                     },
+                    "command_bundle": {
+                        "guided_workflow_commands": [
+                            "./scripts/pi/run_autonomy_evidence_workflow.sh"
+                        ],
+                        "next_action_commands": [
+                            "./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+                            "./scripts/pi/create_support_bundle.sh",
+                            "./scripts/pi/run_threshold_tuning_report.sh"
+                        ],
+                        "immediate_next_action_commands": [
+                            "./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+                            "./scripts/pi/create_support_bundle.sh"
+                        ],
+                        "blocked_follow_up_commands": [
+                            "./scripts/pi/run_threshold_tuning_report.sh"
+                        ],
+                        "field_collection_capture_commands": [
+                            "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
+                        ],
+                        "field_collection_registration_commands": [
+                            "./scripts/pi/register_field_replay_case.sh --condition blur"
+                        ],
+                        "command_count": 6
+                    },
                     "included": [
                         {"label": "autonomy_report"},
                         {"label": "autonomy_handoff"},
@@ -4962,6 +5016,23 @@ mod tests {
             package_runbook.phases[1].actions[0].command.as_deref(),
             Some("./scripts/pi/create_support_bundle.sh")
         );
+        let package_command_bundle = package_summary
+            .command_bundle
+            .as_ref()
+            .expect("package command bundle");
+        assert_eq!(
+            package_command_bundle.guided_workflow_commands[0],
+            "./scripts/pi/run_autonomy_evidence_workflow.sh"
+        );
+        assert_eq!(
+            package_command_bundle.immediate_next_action_commands[0],
+            "./scripts/dev/run_px4_sitl_external_vision_capture.sh"
+        );
+        assert_eq!(
+            package_command_bundle.blocked_follow_up_commands[0],
+            "./scripts/pi/run_threshold_tuning_report.sh"
+        );
+        assert_eq!(package_command_bundle.command_count, Some(6));
         assert_eq!(package_summary.included_count, Some(3));
         assert_eq!(package_summary.missing_count, Some(1));
         assert_eq!(package_summary.skipped_count, Some(1));
@@ -5047,9 +5118,25 @@ mod tests {
         );
         assert_eq!(reports[0].next_actions[2].missing_conditions.len(), 2);
         let command_bundle = reports[0].command_bundle.as_ref().expect("command bundle");
-        assert_eq!(command_bundle.next_action_commands.len(), 2);
         assert_eq!(
-            command_bundle.next_action_commands[1],
+            command_bundle.guided_workflow_commands[0],
+            "./scripts/pi/run_autonomy_evidence_workflow.sh"
+        );
+        assert_eq!(command_bundle.next_action_commands.len(), 3);
+        assert_eq!(
+            command_bundle.next_action_commands[0],
+            "./scripts/dev/run_px4_sitl_external_vision_capture.sh"
+        );
+        assert_eq!(
+            command_bundle.next_action_commands[2],
+            "./scripts/pi/run_threshold_tuning_report.sh"
+        );
+        assert_eq!(
+            command_bundle.immediate_next_action_commands[0],
+            "./scripts/dev/run_px4_sitl_external_vision_capture.sh"
+        );
+        assert_eq!(
+            command_bundle.blocked_follow_up_commands[0],
             "./scripts/pi/run_threshold_tuning_report.sh"
         );
         assert_eq!(
@@ -5060,7 +5147,7 @@ mod tests {
             command_bundle.field_collection_registration_commands[0],
             "./scripts/pi/register_field_replay_case.sh --condition blur"
         );
-        assert_eq!(command_bundle.command_count, Some(4));
+        assert_eq!(command_bundle.command_count, Some(6));
         let field_collection_plan = reports[0]
             .field_collection_plan
             .as_ref()

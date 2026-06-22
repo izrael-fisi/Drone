@@ -1134,25 +1134,26 @@ function AutonomyReadinessReportList({
       ) : (
         <div className="space-y-2">
           {reports.slice(0, 4).map((report) => {
+            const commandBundle = report.command_bundle ?? report.evidence_package_summary?.command_bundle;
             const fieldPlanCaptureCommands = uniqueCommands([
               ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "capture_command"),
-              ...(report.command_bundle?.field_collection_capture_commands ?? []),
+              ...(commandBundle?.field_collection_capture_commands ?? []),
             ]);
             const fieldPlanRegisterCommands = uniqueCommands([
               ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "register_command"),
-              ...(report.command_bundle?.field_collection_registration_commands ?? []),
+              ...(commandBundle?.field_collection_registration_commands ?? []),
             ]);
             const nextActionCommands = uniqueCommands([
               ...uniqueActionCommands(report.next_actions),
-              ...(report.command_bundle?.next_action_commands ?? []),
+              ...(commandBundle?.next_action_commands ?? []),
             ]);
             const immediateNextActionCommands = uniqueCommands(
-              report.command_bundle?.immediate_next_action_commands ?? [],
+              commandBundle?.immediate_next_action_commands ?? [],
             );
-            const blockedFollowUpCommands = uniqueCommands(report.command_bundle?.blocked_follow_up_commands ?? []);
+            const blockedFollowUpCommands = uniqueCommands(commandBundle?.blocked_follow_up_commands ?? []);
             const primaryNextActionCommands =
               immediateNextActionCommands.length > 0 ? immediateNextActionCommands : nextActionCommands;
-            const guidedWorkflowCommands = uniqueCommands(report.command_bundle?.guided_workflow_commands ?? []);
+            const guidedWorkflowCommands = uniqueCommands(commandBundle?.guided_workflow_commands ?? []);
             const readinessWorkflowArtifacts = [
               {
                 label: "workflow",
@@ -4933,7 +4934,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             external_blockers: latestExternalBlockers.slice(0, 8),
             next_action_count: latestAutonomyReport.next_actions.length,
             next_actions: latestAutonomyReport.next_actions.slice(0, 8),
-            command_bundle: latestAutonomyReport.command_bundle ?? null,
+            command_bundle:
+              latestAutonomyReport.command_bundle ?? latestAutonomyReport.evidence_package_summary?.command_bundle ?? null,
             field_collection_plan: latestAutonomyReport.field_collection_plan
               ? {
                   path: latestAutonomyReport.field_collection_plan.path,

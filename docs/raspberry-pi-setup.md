@@ -1136,9 +1136,10 @@ field-evidence coverage summaries, downloaded autonomy-readiness report
 summaries, downloaded autonomy-workflow reports, and a compact latest-readiness
 snapshot with handoff path, evidence package path, goal-completion flag,
 plan source snapshot, external blockers, next actions, the readiness
-`command_bundle`, and the referenced field collection plan summary when it is
-available locally. The same Module
-Setup panel lists the latest downloaded feature-method benchmark JSON reports
+`command_bundle` or evidence-package command-bundle fallback, and the
+referenced field collection plan summary when it is available locally.
+The same Module Setup panel lists the latest downloaded feature-method
+benchmark JSON reports
 with recommended method and accepted rates, lists field-evidence JSON reports
 with per-condition coverage, then lists autonomy-readiness JSON reports with
 pass, degraded, and fail counts plus the support-bundle, PX4 receiver,

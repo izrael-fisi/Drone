@@ -3767,6 +3767,15 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package missing proof runbook summary")
             if package_manifest["proof_runbook_summary"]["summary"]["action_required"] < 1:
                 raise AssertionError("autonomy evidence package proof runbook summary should show pending action")
+            package_command_bundle = package_manifest.get("command_bundle")
+            if not isinstance(package_command_bundle, dict):
+                raise AssertionError("autonomy evidence package missing command bundle")
+            if "./scripts/pi/run_autonomy_evidence_workflow.sh" not in package_command_bundle["guided_workflow_commands"]:
+                raise AssertionError("autonomy evidence package missing guided workflow command")
+            if "./scripts/pi/run_threshold_tuning_report.sh" not in package_command_bundle["immediate_next_action_commands"]:
+                raise AssertionError("autonomy evidence package missing immediate threshold command")
+            if "./scripts/pi/run_threshold_tuning_report.sh" in package_command_bundle["blocked_follow_up_commands"]:
+                raise AssertionError("autonomy evidence package should not block immediate threshold command")
             manifest = json.loads(archive.read("manifest.json"))
             assert_equal(manifest["readiness_status"], "failed", "autonomy evidence package status")
             assert_equal(

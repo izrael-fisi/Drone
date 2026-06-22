@@ -570,8 +570,9 @@ report includes the same split command bundle for downstream support tooling,
 with its compatibility `next_action_commands` list ordered by proof-runbook
 dependencies. Module Setup reads that bundle directly so bulk copy still works
 when the referenced Pi-side field plan is only available as downloaded report
-metadata. Saved setup reports also include the latest readiness report's
-`command_bundle`.
+metadata or the direct report JSON is older than the evidence package. Saved
+setup reports also include the latest readiness report's `command_bundle`,
+falling back to the command bundle preserved in the evidence ZIP manifest.
 If the readiness report points to a local field collection plan, the same card
 shows the plan status, registered-vs-required count, pending condition count,
 and first pending collection conditions. For Pi-generated reports that still
@@ -601,8 +602,9 @@ log archives are available, the local/Pi readiness audit records them as
 non-gating inputs so the handoff can show availability and the evidence ZIP can
 carry them with the rest of the review package when they are under the artifact
 size limit. The evidence ZIP manifest also includes the plan snapshot, bounded
-proof counts, a bounded proof-runbook summary, and the first proof items, and
-the Autonomy Readiness Reports card shows those package proof counts beside
+proof counts, a bounded proof-runbook summary, a preserved command bundle, and
+the first proof items, and the Autonomy Readiness Reports card shows those
+package proof counts beside
 compact workflow, validation, and logs chips for referenced inputs, with
 copy/reveal actions when the downloaded local artifact exists.
 
