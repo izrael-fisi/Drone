@@ -5797,6 +5797,33 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected preflight to select next field condition")
         if not any(check["name"] == "registration_inputs" and check["status"] == "degraded" for check in ready_preflight["checks"]):
             raise AssertionError("Expected preflight to flag missing registration inputs")
+        nested_output_plan = json.loads(json.dumps(ready_plan))
+        nested_output = base / "field-captures-missing-parent" / "nested" / "Site-A-good_texture"
+        nested_output_plan["next_condition"]["capture_output_dir"] = str(nested_output)
+        nested_output_plan["next_condition"]["source_log"] = str(nested_output / "terrain_matches.jsonl")
+        nested_output_plan["next_condition"]["runtime_status_path"] = str(nested_output / "runtime_status.json")
+        for item in nested_output_plan["conditions"]:
+            if item["condition"] == "good_texture":
+                item["capture_output_dir"] = str(nested_output)
+                item["source_log"] = str(nested_output / "terrain_matches.jsonl")
+                item["runtime_status_path"] = str(nested_output / "runtime_status.json")
+        nested_output_plan_path = base / "field_collection_plan_nested_output.json"
+        nested_output_plan_path.write_text(json.dumps(nested_output_plan))
+        nested_output_preflight = evaluate_field_capture_preflight(
+            plan_path=nested_output_plan_path,
+            repo_root=Path.cwd(),
+        )
+        nested_output_checks = {item["name"]: item["status"] for item in nested_output_preflight["checks"]}
+        assert_equal(
+            nested_output_checks["capture_output_parent"],
+            "passed",
+            "field preflight allows runtime-created nested output dirs",
+        )
+        assert_equal(
+            nested_output_preflight["ready_for_capture"],
+            True,
+            "field preflight does not block capture when output ancestor is writable",
+        )
         missing_bundle_plan = json.loads(json.dumps(ready_plan))
         missing_bundle_plan["next_condition"]["bundle"] = str(base / "missing_bundle")
         for item in missing_bundle_plan["conditions"]:

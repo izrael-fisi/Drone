@@ -214,9 +214,14 @@ def capture_output_parent_check(value: Any) -> dict[str, Any]:
             {"path": str(path), "parent": str(parent)},
         )
     ancestor = first_existing_ancestor(path)
-    status = "degraded" if ancestor and os.access(ancestor, os.W_OK) else "failed"
-    message = "Capture output path parent is missing; create or verify it before field capture."
-    return check(status, "capture_output_parent", message, {"path": str(path), "nearest_existing": str(ancestor) if ancestor else None})
+    if ancestor and os.access(ancestor, os.W_OK):
+        return passed(
+            "capture_output_parent",
+            "Capture output path can be created by the terrain runtime.",
+            {"path": str(path), "nearest_existing": str(ancestor)},
+        )
+    message = "Capture output path parent is missing and no writable ancestor was found."
+    return failed("capture_output_parent", message, {"path": str(path), "nearest_existing": str(ancestor) if ancestor else None})
 
 
 def script_check(repo: Path, name: str, relative_path: str) -> dict[str, Any]:

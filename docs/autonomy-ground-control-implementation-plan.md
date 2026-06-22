@@ -417,6 +417,9 @@ Status:
   before evaluating them, backfilling the runtime-status read step, proof-grade
   metadata prompts, and condition preflight command so stale plans surface true
   blockers such as a missing bundle instead of stale command formatting.
+- Done: field-capture preflight now matches `run_terrain_nav_loop.sh` output
+  directory behavior by allowing missing nested capture directories when a
+  writable ancestor exists, while still blocking unwritable output paths.
 - Done: Module Setup, readiness report cards, support-bundle details, and
   handoff summaries preserve and copy field-capture preflight commands beside
   capture, metadata-update, and registration commands.
