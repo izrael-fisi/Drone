@@ -4625,6 +4625,35 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "Module Setup > Field Log Capture, then Runtime Status and Bench Report",
             "autonomy readiness runtime status desktop action",
         )
+        missing_runtime_status_with_next_field = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=missing_runtime_status_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            field_collection_plan_path=incomplete_field_collection_plan,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_ready_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
+        )
+        field_runtime_status_actions = [
+            action
+            for action in missing_runtime_status_with_next_field["next_actions"]
+            if action.get("check") == "support_bundle_bench_readiness.runtime_status"
+        ]
+        assert_equal(len(field_runtime_status_actions), 1, "autonomy readiness field runtime-status next action")
+        assert_equal(
+            field_runtime_status_actions[0]["command"],
+            "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh",
+            "autonomy readiness runtime-status action should capture then read status",
+        )
+        assert_equal(
+            field_runtime_status_actions[0]["field_condition"],
+            "blur",
+            "autonomy readiness runtime-status action should name next field condition",
+        )
         generic_support_actions = [
             action
             for action in missing_runtime_status_ready["next_actions"]

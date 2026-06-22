@@ -1168,6 +1168,10 @@ Status:
 - Done: CLI workflow-validation summaries now print bundle path, expected log,
   capture output, metadata update, and post-bundle capture commands, keeping
   terminal audits aligned with Module Setup guidance.
+- Done: autonomy-readiness next actions now use the active field collection
+  plan's pending capture command for runtime-log/runtime-status bench evidence
+  and show the matching field, bundle, log, output, and metadata update details
+  in `autonomy_goal_status.sh`.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

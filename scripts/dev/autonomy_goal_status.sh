@@ -915,13 +915,24 @@ if phases:
             if not command:
                 continue
             phase_command_values.add(command)
-            phase_items.append(
-                {
-                    "title": action.get("title") or phase.get("title") or phase.get("id") or "next action",
-                    "desktop_action": action.get("desktop_action"),
-                    "command": command,
-                }
-            )
+            item = {
+                key: action.get(key)
+                for key in (
+                    "title",
+                    "desktop_action",
+                    "command",
+                    "field_condition",
+                    "field_bundle",
+                    "field_source_log",
+                    "field_capture_output_dir",
+                    "field_runtime_status_path",
+                    "field_metadata_update_command",
+                    "field_register_command",
+                )
+                if action.get(key)
+            }
+            item["title"] = item.get("title") or phase.get("title") or phase.get("id") or "next action"
+            phase_items.append(item)
         for command in phase.get("commands") or []:
             if command in phase_command_values:
                 continue
@@ -965,6 +976,17 @@ if next_actions:
         if desktop_action:
             print(f"   app: {desktop_action}")
         print(f"   {command}")
+        for label, key in (
+            ("field", "field_condition"),
+            ("bundle", "field_bundle"),
+            ("expected log", "field_source_log"),
+            ("output", "field_capture_output_dir"),
+            ("runtime status", "field_runtime_status_path"),
+            ("metadata update", "field_metadata_update_command"),
+        ):
+            value = action.get(key)
+            if value:
+                print(f"   {label}: {value}")
         if count >= 8:
             break
 if blocked_phase_commands:

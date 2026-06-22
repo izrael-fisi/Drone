@@ -356,7 +356,10 @@ def evaluate_autonomy_readiness(
         ),
     ]
     status = readiness_status(checks)
-    next_actions = next_actions_for_checks(checks)
+    next_actions = next_actions_for_checks(
+        checks,
+        field_collection_plan_path=field_collection_plan_path,
+    )
     plan_snapshot = build_plan_snapshot(
         research_doc_path=research_doc_path,
         implementation_plan_path=implementation_plan_path,
@@ -894,6 +897,15 @@ def compact_proof_runbook_action(action: dict[str, Any]) -> dict[str, Any]:
         "notes",
         "bench_subcheck",
         "bench_message",
+        "field_condition",
+        "field_label",
+        "field_expected",
+        "field_capture_output_dir",
+        "field_source_log",
+        "field_runtime_status_path",
+        "field_bundle",
+        "field_metadata_update_command",
+        "field_register_command",
     ):
         value = action.get(key)
         if isinstance(value, str) and value:
@@ -998,7 +1010,11 @@ def blocker_summary(item: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
-def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def next_actions_for_checks(
+    checks: list[dict[str, Any]],
+    *,
+    field_collection_plan_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
     actions = {
         "research_doc": {
             "title": "Restore the autonomy ground-control research source document.",
@@ -1067,6 +1083,7 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "notes": "The final readiness gate requires a passed workflow validation report, including every ordered step and final proof marker.",
         },
     }
+    field_next_condition = field_collection_next_condition_from_path(field_collection_plan_path)
     next_actions: list[dict[str, Any]] = []
     for check in checks:
         name = str(check.get("name") or "")
@@ -1092,7 +1109,12 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             action["notes"] = f"{action['notes']} Missing conditions: {', '.join(missing_conditions)}."
         next_actions.append(action)
         if name == "support_bundle_bench_readiness":
-            next_actions.extend(next_actions_for_bench_subchecks(details))
+            next_actions.extend(
+                next_actions_for_bench_subchecks(
+                    details,
+                    field_next_condition=field_next_condition,
+                )
+            )
     return next_actions
 
 
@@ -1117,7 +1139,11 @@ def normalize_bench_subchecks(raw: Any) -> list[dict[str, str]]:
     return subchecks
 
 
-def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, Any]]:
+def next_actions_for_bench_subchecks(
+    details: dict[str, Any],
+    *,
+    field_next_condition: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     actions = {
         "bundle_health": {
             "title": "Rebuild or validate the terrain bundle.",
@@ -1203,16 +1229,86 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
         spec = actions.get(subcheck["name"])
         if not spec:
             continue
-        next_actions.append(
-            {
-                "check": f"support_bundle_bench_readiness.{subcheck['name']}",
-                "status": subcheck["status"],
-                "bench_subcheck": subcheck["name"],
-                "bench_message": subcheck["message"],
-                **spec,
-            }
-        )
+        action = {
+            "check": f"support_bundle_bench_readiness.{subcheck['name']}",
+            "status": subcheck["status"],
+            "bench_subcheck": subcheck["name"],
+            "bench_message": subcheck["message"],
+            **spec,
+        }
+        if subcheck["name"] == "runtime_logs":
+            enrich_action_with_field_capture(action, field_next_condition)
+        elif subcheck["name"] == "runtime_status":
+            enrich_action_with_field_capture(
+                action,
+                field_next_condition,
+                append_runtime_status_read=True,
+            )
+        next_actions.append(action)
     return next_actions
+
+
+def field_collection_next_condition_from_path(path: str | Path | None) -> dict[str, Any] | None:
+    if not path:
+        return None
+    source = Path(path).expanduser()
+    if not source.is_file():
+        return None
+    try:
+        plan = json.loads(source.read_text())
+    except Exception:
+        return None
+    if not isinstance(plan, dict):
+        return None
+    return field_collection_next_condition(plan)
+
+
+def enrich_action_with_field_capture(
+    action: dict[str, Any],
+    condition: dict[str, Any] | None,
+    *,
+    append_runtime_status_read: bool = False,
+) -> None:
+    if not condition:
+        return
+    capture_command = condition.get("capture_command")
+    if isinstance(capture_command, str) and capture_command.strip():
+        if append_runtime_status_read:
+            action["command"] = f"{capture_command} && ./scripts/pi/read_runtime_status.sh"
+        else:
+            action["command"] = capture_command
+
+    field_mappings = {
+        "field_condition": "condition",
+        "field_label": "label",
+        "field_expected": "expected",
+        "field_capture_output_dir": "capture_output_dir",
+        "field_source_log": "source_log",
+        "field_runtime_status_path": "runtime_status_path",
+        "field_bundle": "bundle",
+        "field_metadata_update_command": "metadata_update_command",
+        "field_register_command": "register_command",
+    }
+    for target_key, source_key in field_mappings.items():
+        value = condition.get(source_key)
+        if isinstance(value, str) and value.strip():
+            action[target_key] = value
+
+    detail_lines = []
+    label = condition.get("label") or condition.get("condition")
+    condition_name = condition.get("condition")
+    if label and condition_name:
+        detail_lines.append(f"Next pending field condition: {label} ({condition_name}).")
+    elif condition_name:
+        detail_lines.append(f"Next pending field condition: {condition_name}.")
+    if condition.get("source_log"):
+        detail_lines.append(f"Expected log: {condition['source_log']}.")
+    if condition.get("capture_output_dir"):
+        detail_lines.append(f"Output: {condition['capture_output_dir']}.")
+    if condition.get("runtime_status_path"):
+        detail_lines.append(f"Runtime status: {condition['runtime_status_path']}.")
+    if detail_lines:
+        action["notes"] = " ".join([str(action.get("notes") or ""), *detail_lines]).strip()
 
 
 def next_action_missing_conditions(name: str, details: dict[str, Any]) -> list[str]:
@@ -1864,6 +1960,7 @@ def compact_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
         "source_log",
         "capture_output_dir",
         "runtime_status_path",
+        "bundle",
         "capture_command",
         "metadata_update_command",
         "register_command",
