@@ -41,7 +41,7 @@ WORKFLOW_STEP_GUIDANCE = {
         "desktop_action": "Module Setup > Load Next Field Condition",
     },
     "capture_field_terrain_log": {
-        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
         "desktop_action": "Module Setup > Field Log Capture",
     },
     "register_field_replay_case": {

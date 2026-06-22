@@ -1313,6 +1313,7 @@ do
     exit 1
   fi
 done
+grep -q '"command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh"' src/vision_nav/autonomy_evidence_workflow.py
 scope_pattern="M""CP|L""LM|Chat""GPT"
 if rg -n "$scope_pattern" .; then
   echo "Found unrelated agent/chatbot scope text. Remove it before committing." >&2

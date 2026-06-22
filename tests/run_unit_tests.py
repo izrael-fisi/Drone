@@ -3041,6 +3041,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             "missing",
             "workflow validation missing next required step status",
         )
+        assert_equal(
+            missing_required_step_validation["next_required_step"]["command"],
+            "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+            "workflow validation missing capture guidance should include runtime status read",
+        )
         missing_step_output = io.StringIO()
         with contextlib.redirect_stdout(missing_step_output):
             print_workflow_validation_human(missing_required_step_validation)

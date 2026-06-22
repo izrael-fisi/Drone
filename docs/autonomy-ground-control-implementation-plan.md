@@ -1213,6 +1213,10 @@ Status:
 - Done: workflow-validation next-step summaries now carry the expected sibling
   `runtime_status.json` path through CLI output, support bundles, desktop
   workflow cards, and evidence-package manifests.
+- Done: workflow-validation built-in guidance for missing
+  `capture_field_terrain_log` steps now tells operators to run the bounded
+  terrain capture and `read_runtime_status.sh`, keeping missing-step reports
+  aligned with the same two-artifact proof contract.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.
