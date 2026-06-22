@@ -723,7 +723,8 @@ first pending condition is shown separately as the next field-capture target in
 downloaded plan and readiness cards.
 The Markdown handoff mirrors that workflow with a copy-friendly command bundle
 for guided workflow, immediate next-action, blocked follow-up, and pending
-field replay capture/metadata-update/registration commands. It also
+field replay preflight, preflight-plus-capture, capture, metadata-update, and
+registration commands. It also
 summarizes the research/implementation source-doc snapshot that the final audit
 used, including required marker coverage and implementation track/task counts.
 It also renders the readiness report's proof runbook so support can see which

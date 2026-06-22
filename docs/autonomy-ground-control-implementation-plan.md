@@ -739,9 +739,10 @@ Status:
   so offline support review can trace each required real-world condition to its
   intended log capture.
 - Done: field collection plans, support-bundle summaries, readiness reports, and
-  handoffs now promote the next pending field condition with its capture,
-  metadata-update, and registration commands, so operators can advance the
-  eight-condition real-field dataset without scanning the full checklist.
+  handoffs now promote the next pending field condition with its preflight,
+  preflight-plus-capture, capture, metadata-update, and registration commands,
+  so operators can advance the eight-condition real-field dataset without
+  scanning the full checklist.
 - Done: field collection plans, support-bundle summaries, readiness reports, and
   `autonomy_goal_status.sh` now preserve the next pending condition's
   `update_field_capture_metadata.sh` command between capture and registration,
@@ -1004,7 +1005,8 @@ Status:
   actions.
 - Done: the Markdown handoff includes a copy-friendly command bundle for the
   guided workflow, immediate next-action commands, blocked follow-up commands,
-  and pending field replay capture/registration commands.
+  and pending field replay preflight, preflight-plus-capture, capture,
+  metadata-update, and registration commands.
 - Done: the Markdown handoff renders the proof runbook so support can follow
   the correct proof collection order from the generated handoff instead of
   opening the raw JSON report.
@@ -1123,10 +1125,11 @@ Status:
   validation into an explicit remediation block with the Module Setup Evidence
   Workflow action, command, and non-passing validation checks before the general
   next-command list.
-- Done: when the next field condition already has generated capture,
-  metadata-update, and registration commands, that preview now prints the
-  matching Module Setup actions (`Field Log Capture`,
-  `Field Evidence Case > Update Metadata`, and
+- Done: when the next field condition already has generated preflight,
+  preflight-plus-capture, capture, metadata-update, and registration commands,
+  that preview now prints the matching Module Setup actions
+  (`Field Capture Preflight`, `Field Capture Preflight, then Field Log Capture`,
+  `Field Log Capture`, `Field Evidence Case > Update Metadata`, and
   `Field Evidence Case > Register`) directly above each command.
 - Done: `scripts/dev/autonomy_goal_status.sh` now prints proof-runbook action
   notes under immediate and blocked commands, so terminal operators see export,
