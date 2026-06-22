@@ -456,9 +456,13 @@ For offline support review, run
 `vision-nav-validate-evidence-workflow --report <autonomy_evidence_workflow.json>`
 against a downloaded workflow report. The validator confirms the required
 ordered steps are present and that the workflow-log archive contains a
-`logs/*.log` member for every recorded step. It exits nonzero only when the
-workflow report/archive pair is structurally failed; a `degraded` validation
-can still mean the artifact is usable but field or PX4 proof is incomplete.
+`logs/*.log` member for every recorded step. It also reports missing
+final-proof artifact markers for support bundle, PX4 receiver, field evidence,
+feature benchmark, threshold tuning, ROS bag validation, native rosbag2 review,
+final audit, handoff, and evidence package outputs. It exits nonzero only when
+the workflow report/archive pair is structurally failed; a `degraded`
+validation can still mean the artifact is usable but field or PX4 proof is
+incomplete.
 
 Module Setup can also run `Feature Benchmark` against the latest field replay
 log and active runtime bundle. The action runs

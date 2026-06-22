@@ -936,8 +936,9 @@ and any emitted `__VISION_NAV_*__` markers. The archive preserves the full step
 outputs under `logs/*.log`. The wrapper also writes
 `autonomy_evidence_workflow.validation.json` and emits
 `__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=...` after checking that the
-workflow report and log archive are internally consistent. By default it exits
-successfully after writing the report even when evidence is still incomplete; set
+workflow report and log archive are internally consistent and reporting any
+missing final-proof artifact markers. By default it exits successfully after
+writing the report even when evidence is still incomplete; set
 `VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED=0` when you want a CI-style nonzero
 exit on missing proof.
 From the desktop app, Module Setup exposes the same sequence as `Evidence

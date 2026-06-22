@@ -742,9 +742,12 @@ Status:
   review.
 - Done: `vision-nav-validate-evidence-workflow` validates downloaded workflow
   reports offline, confirms required step records, verifies the log archive is
-  readable, and checks that every recorded step has a matching `logs/*.log`
-  member. The Pi evidence workflow now writes this validation JSON beside the
-  workflow report and emits `__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=...`.
+  readable, checks that every recorded step has a matching `logs/*.log` member,
+  and reports missing final-proof artifact markers for support bundle, PX4
+  receiver, field evidence, feature benchmark, threshold tuning, ROS bag,
+  native rosbag2 review, final audit, handoff, and evidence package outputs.
+  The Pi evidence workflow now writes this validation JSON beside the workflow
+  report and emits `__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=...`.
   The validator exits nonzero only for structurally failed report/archive
   validation, while degraded-but-usable workflows can still pass script checks
   when readiness proof is merely incomplete.

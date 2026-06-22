@@ -32,6 +32,20 @@ IMPORTANT_MARKERS = [
     "__VISION_NAV_AUTONOMY_REPORT__",
 ]
 
+FINAL_PROOF_MARKERS = [
+    "__VISION_NAV_SUPPORT_ZIP__",
+    "__VISION_NAV_PX4_SITL_REPORT__",
+    "__VISION_NAV_FIELD_COLLECTION_PLAN__",
+    "__VISION_NAV_FIELD_EVIDENCE_REPORT__",
+    "__VISION_NAV_FEATURE_METHOD_REPORT__",
+    "__VISION_NAV_THRESHOLD_REPORT__",
+    "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__",
+    "__VISION_NAV_ROSBAG2_CLI_REVIEW__",
+    "__VISION_NAV_AUTONOMY_REPORT__",
+    "__VISION_NAV_AUTONOMY_HANDOFF__",
+    "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__",
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -118,6 +132,28 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
         )
     else:
         checks.append(passed("important_markers", "Workflow report includes the high-value artifact markers.", {"marker_count": len(markers)}))
+
+    missing_final_proof_markers = [marker for marker in FINAL_PROOF_MARKERS if not markers.get(marker)]
+    if missing_final_proof_markers:
+        checks.append(
+            degraded(
+                "final_proof_markers",
+                "Workflow report is missing final-readiness proof artifact markers.",
+                {
+                    "missing_markers": missing_final_proof_markers,
+                    "present_markers": [marker for marker in FINAL_PROOF_MARKERS if markers.get(marker)],
+                    "marker_count": len(markers),
+                },
+            )
+        )
+    else:
+        checks.append(
+            passed(
+                "final_proof_markers",
+                "Workflow report includes every final-readiness proof artifact marker.",
+                {"marker_count": len(markers)},
+            )
+        )
 
     log_archive_raw = markers.get("__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__") or report.get("log_archive")
     archive_result = validate_log_archive(log_archive_raw, report_path=path, step_names=step_names)

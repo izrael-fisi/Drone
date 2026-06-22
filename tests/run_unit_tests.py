@@ -2383,12 +2383,19 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                     "markers": {
                         "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__": str(archive_path),
                         "__VISION_NAV_SUPPORT_ZIP__": str(root / "support.zip"),
+                        "__VISION_NAV_PX4_SITL_REPORT__": str(root / "receiver_evidence.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN__": str(root / "field_collection_plan.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__": str(root / "field_collection_plan.md"),
+                        "__VISION_NAV_FIELD_EVIDENCE_REPORT__": str(root / "field_evidence_report.json"),
+                        "__VISION_NAV_FEATURE_METHOD_REPORT__": str(root / "feature_method_benchmark.json"),
+                        "__VISION_NAV_THRESHOLD_REPORT__": str(root / "threshold_tuning_report.json"),
                         "__VISION_NAV_TERRAIN_LOG__": str(root / "terrain_matches.jsonl"),
                         "__VISION_NAV_RUNTIME_STATUS__": str(root / "runtime_status.json"),
                         "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__": str(root / "rosbag-jsonl-validation.json"),
+                        "__VISION_NAV_ROSBAG2_CLI_REVIEW__": str(root / "rosbag2-cli-review.json"),
                         "__VISION_NAV_AUTONOMY_REPORT__": str(root / "autonomy_readiness_report.json"),
+                        "__VISION_NAV_AUTONOMY_HANDOFF__": str(root / "autonomy_readiness_report.md"),
+                        "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__": str(root / "autonomy_readiness_report.evidence.zip"),
                     },
                 }
             )
@@ -2398,7 +2405,26 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         assert_equal(validation_exit_code(validation), 0, "workflow validation degraded exit code")
         checks = {check["name"]: check["status"] for check in validation["checks"]}
         assert_equal(checks["log_archive"], "passed", "workflow validation log archive")
+        assert_equal(checks["final_proof_markers"], "passed", "workflow validation final proof markers")
         assert_equal(validation["step_count"], len(REQUIRED_WORKFLOW_STEPS), "workflow validation step count")
+
+        incomplete_marker_report = json.loads(report_path.read_text())
+        incomplete_marker_report["markers"].pop("__VISION_NAV_THRESHOLD_REPORT__")
+        incomplete_marker_report["markers"].pop("__VISION_NAV_ROSBAG2_CLI_REVIEW__")
+        incomplete_marker_path = root / "incomplete_marker_autonomy_evidence_workflow.json"
+        incomplete_marker_path.write_text(json.dumps(incomplete_marker_report))
+        incomplete_marker_validation = validate_workflow_report(incomplete_marker_path)
+        incomplete_marker_checks = {check["name"]: check for check in incomplete_marker_validation["checks"]}
+        assert_equal(
+            incomplete_marker_checks["final_proof_markers"]["status"],
+            "degraded",
+            "workflow validation missing final proof markers degraded",
+        )
+        assert_equal(
+            incomplete_marker_checks["final_proof_markers"]["details"]["missing_markers"],
+            ["__VISION_NAV_THRESHOLD_REPORT__", "__VISION_NAV_ROSBAG2_CLI_REVIEW__"],
+            "workflow validation missing final proof marker list",
+        )
 
         broken_archive_path = root / "broken.logs.tar.gz"
         with tarfile.open(broken_archive_path, "w:gz") as archive:
