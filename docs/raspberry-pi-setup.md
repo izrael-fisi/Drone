@@ -425,7 +425,12 @@ Defaults:
 For a bounded app-driven field capture, Module Setup `Field Log Capture` runs
 the same wrapper with `VISION_NAV_COUNT=30`, uses the configured MAVLink
 endpoint when present, and downloads `terrain_matches.jsonl` plus
-`runtime_status.json` into the desktop transfer folders.
+`runtime_status.json` into the desktop transfer folders. The autonomy evidence
+workflow validates existing `terrain_matches.jsonl` files before counting them
+as capture evidence: the file must be parseable JSONL, nonempty, and include
+accepted/rejected/degraded match statuses. A valid log without
+`runtime_status.json` is preserved as degraded evidence until the runtime
+snapshot is generated or downloaded.
 
 `runtime_status.json` is the quick operator snapshot. It names the active map
 bundle, output path, latest frame, estimator health, last match status/reason,

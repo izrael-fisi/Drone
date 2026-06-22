@@ -278,7 +278,11 @@ It uses the configured MAVLink endpoint when present, downloads
 `terrain_matches.jsonl` to `~/DroneTransfer/from-pi/terrain-match/`, and
 downloads the companion `runtime_status.json` for support review. That synced
 log can feed Field Evidence registration, ROS Bag Validation, Native rosbag2
-Review, feature-method benchmarking, and threshold tuning.
+Review, feature-method benchmarking, and threshold tuning. Evidence workflow
+checks parse existing synced logs before accepting them: the JSONL must be
+nonempty and include accepted, rejected, or degraded match statuses. If the log
+is valid but `runtime_status.json` is missing, the capture evidence is reported
+as degraded until the runtime snapshot is refreshed.
 
 The Runtime And MAVLink panel can also create a support bundle on the connected
 Raspberry Pi. Support bundles are written under

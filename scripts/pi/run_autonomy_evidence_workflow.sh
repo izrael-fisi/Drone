@@ -368,7 +368,55 @@ if [[ -f "$field_log" ]]; then
   if [[ -f "$runtime_status" ]]; then
     marker_lines+=("__VISION_NAV_RUNTIME_STATUS__=$runtime_status")
   fi
-  pass_step "capture_field_terrain_log" "Existing terrain runtime log is available for workflow evidence." "${marker_lines[@]}"
+  terrain_log_eval="$(
+    PYTHONPATH="$repo_root/src" "$venv_python" - "$field_log" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from vision_nav.summarize_match_log import summarize_log
+
+
+def emit(status: str, message: str) -> None:
+    print(f"{status}|{message}")
+
+
+path = Path(sys.argv[1]).expanduser()
+try:
+    summary = summarize_log(path)
+except Exception as exc:
+    emit("failed", f"Could not parse terrain runtime log: {exc}")
+    raise SystemExit(0)
+total = int(summary.get("total_records") or 0)
+status_counts = summary.get("status_counts") if isinstance(summary.get("status_counts"), dict) else {}
+known = sum(int(status_counts.get(name) or 0) for name in ("accepted", "rejected", "degraded"))
+if total <= 0:
+    emit("failed", "Terrain runtime log is empty; capture a bounded runtime log before using it as workflow evidence.")
+elif known <= 0:
+    emit("failed", f"Terrain runtime log has {total} records but no accepted/rejected/degraded match statuses.")
+else:
+    accepted = int(status_counts.get("accepted") or 0)
+    rejected = int(status_counts.get("rejected") or 0)
+    degraded = int(status_counts.get("degraded") or 0)
+    emit(
+        "passed",
+        f"Terrain runtime log is parseable with {total} records "
+        f"(accepted={accepted}, rejected={rejected}, degraded={degraded}).",
+    )
+PY
+  )"
+  terrain_log_status="${terrain_log_eval%%|*}"
+  terrain_log_message="${terrain_log_eval#*|}"
+  if [[ "$terrain_log_status" == "passed" && -f "$runtime_status" ]]; then
+    pass_step "capture_field_terrain_log" "$terrain_log_message" "${marker_lines[@]}"
+  elif [[ "$terrain_log_status" == "passed" ]]; then
+    degraded_step "capture_field_terrain_log" \
+      "$terrain_log_message Runtime status snapshot is missing; fetch or generate runtime_status.json before final bench evidence." \
+      "${marker_lines[@]}"
+  else
+    fail_step "capture_field_terrain_log" "$terrain_log_message" "${marker_lines[@]}"
+  fi
 elif [[ -e "$bundle" ]]; then
   (
     export VISION_NAV_COUNT="$field_capture_count"

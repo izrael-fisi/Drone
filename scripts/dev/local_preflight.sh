@@ -216,6 +216,8 @@ steps = {step["name"]: step for step in report["steps"]}
 assert "create_field_evidence_template" in steps
 assert "create_field_collection_plan" in steps
 assert "capture_field_terrain_log" in steps
+assert steps["capture_field_terrain_log"]["status"] == "passed"
+assert "parseable with" in steps["capture_field_terrain_log"]["notes"]
 assert "validate_rosbag_export" in steps
 assert "check_native_rosbag2_review" in steps
 assert "check_px4_receiver_proof" in steps

@@ -832,7 +832,10 @@ Status:
   `capture_field_terrain_log` step that either records an existing terrain log
   and runtime-status snapshot or runs a bounded terrain capture before field
   case registration, feature benchmarking, threshold tuning, and ROS replay
-  validation.
+  validation. Existing logs are parsed before acceptance; empty logs, invalid
+  JSONL, or logs without accepted/rejected/degraded match statuses fail the
+  step, while a valid log without `runtime_status.json` is kept as degraded
+  evidence until the runtime snapshot is generated or downloaded.
 - Done: the evidence workflow writes a compressed workflow-log archive and
   emits `__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=...`, so full per-step logs can
   be downloaded with the workflow report instead of relying only on bounded
