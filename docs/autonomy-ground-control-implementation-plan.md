@@ -609,6 +609,11 @@ Status:
   so proof-grade site, weather, camera, IMU/PX4, altitude, speed, and safety
   metadata can be filled before registration instead of being buried in the
   long registration command.
+- Done: autonomy evidence workflow validation now preserves the selected field
+  condition's metadata-update command on the terrain-capture next step itself,
+  so support bundles, Module Setup summaries, and terminal validation output
+  keep the capture -> metadata -> registration handoff visible even when the
+  bundle must be rebuilt before capture.
 - Done: autonomy-readiness command bundles, evidence-package summaries,
   Markdown handoffs, and Module Setup field-plan cards now expose pending
   metadata-update commands as their own copyable command group between capture

@@ -2897,6 +2897,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             f"VISION_NAV_OUTPUT_DIR={capture_output_dir} "
             "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
         )
+        capture_metadata_command = (
+            "VISION_NAV_FIELD_MANIFEST=/tmp/field_manifest.json "
+            "VISION_NAV_FIELD_CONDITION=good_texture "
+            "./scripts/pi/update_field_capture_metadata.sh"
+        )
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CONDITION__"] = "good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CASE__"] = "dronecompute-test-area-good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_EXPECTED_TERRAIN_LOG__"] = str(capture_output_dir / "terrain_matches.jsonl")
@@ -2904,6 +2909,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE_STATUS__"] = "missing"
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"] = str(capture_output_dir)
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"] = capture_command
+        capture_blocked_report["markers"]["__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__"] = capture_metadata_command
         for step in capture_blocked_report["steps"]:
             if step.get("name") == "select_field_collection_condition":
                 step["status"] = "degraded"
@@ -2942,6 +2948,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             str(capture_output_dir / "runtime_status.json"),
             "workflow validation surfaces expected runtime status path",
         )
+        assert_equal(
+            capture_blocked_validation["next_required_step"]["metadata_update_command"],
+            capture_metadata_command,
+            "workflow validation preserves metadata update command alongside capture guidance",
+        )
         capture_blocked_checks = {check["name"]: check for check in capture_blocked_validation["checks"]}
         assert_equal(
             capture_blocked_checks["required_step_results"]["details"]["next_required_step"]["name"],
@@ -2958,6 +2969,8 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation human output should include selected bundle path")
         if "Expected log: " not in capture_blocked_text:
             raise AssertionError("workflow validation human output should include expected terrain log")
+        if "Metadata update: " not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should include metadata update command")
 
         metadata_blocked_report = json.loads(report_path.read_text())
         metadata_command = (

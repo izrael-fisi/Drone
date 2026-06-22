@@ -598,6 +598,7 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
     bundle_status = marker_string(markers, TERRAIN_BUNDLE_STATUS_MARKER)
     expected_log = marker_string(markers, EXPECTED_TERRAIN_LOG_MARKER)
     output_dir = marker_string(markers, TERRAIN_CAPTURE_OUTPUT_DIR_MARKER)
+    metadata_update_command = marker_string(markers, FIELD_METADATA_UPDATE_COMMAND_MARKER)
     if capture_command:
         summary["command"] = capture_command
     if expected_log:
@@ -607,6 +608,8 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
         summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)
     if bundle_path:
         summary["bundle_path"] = bundle_path
+    if metadata_update_command:
+        summary["metadata_update_command"] = metadata_update_command
     if bundle_status == "missing":
         summary["desktop_action"] = "Mission Planner > Build Bundle, Upload Bundle, then Module Setup > Field Log Capture"
         summary["command"] = bundle_validation_command(bundle_path)
