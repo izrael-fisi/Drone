@@ -694,8 +694,9 @@ Status:
   immediately runnable next-action commands, blocked follow-up commands,
   pending field replay capture commands, pending capture-metadata update
   commands, and pending field replay registration commands for downstream
-  support tooling, and Module Setup consumes that bundle for split bulk command
-  copy plus saved setup-report exports.
+  support tooling, plus structured command items with desktop app actions; Module
+  Setup consumes that bundle for split bulk command copy plus saved setup-report
+  exports.
 - Done: evidence-package command bundles now also preserve structured command
   items with group names and desktop app actions, so support ZIPs keep the
   operator UI route beside each runnable command.

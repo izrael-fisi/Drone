@@ -3304,6 +3304,17 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             not in missing_proof_command_bundle["prerequisite_fix_commands"]
         ):
             raise AssertionError("autonomy readiness should expose PX4 prereq fix commands separately")
+        missing_proof_command_items = missing_proof_command_bundle.get("command_items")
+        if not isinstance(missing_proof_command_items, list):
+            raise AssertionError("autonomy readiness should expose structured command items")
+        if not any(
+            item.get("group") == "immediate_next_action"
+            and item.get("command") == px4_capture_command
+            and item.get("desktop_action") == "Module Setup > PX4 SITL Receiver Capture, then Local Readiness Re-Audit"
+            for item in missing_proof_command_items
+            if isinstance(item, dict)
+        ):
+            raise AssertionError("autonomy readiness missing structured PX4 capture command item")
         if (
             "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot"
             in missing_proof_command_bundle["next_action_commands"]
@@ -3902,6 +3913,17 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             not in field_plan_bundle["field_collection_registration_commands"]
         ):
             raise AssertionError("autonomy readiness JSON missing field registration command bundle")
+        field_plan_command_items = field_plan_bundle.get("command_items")
+        if not isinstance(field_plan_command_items, list):
+            raise AssertionError("autonomy readiness JSON missing structured field command items")
+        if not any(
+            item.get("group") == "field_collection_metadata_update"
+            and item.get("command") == "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+            and item.get("desktop_action") == "Module Setup > Field Evidence Case > Update Metadata"
+            for item in field_plan_command_items
+            if isinstance(item, dict)
+        ):
+            raise AssertionError("autonomy readiness JSON missing structured field metadata command item")
         incomplete_handoff = render_handoff_markdown(incomplete_field_plan_ready)
         if "Field collection metadata update commands:" not in incomplete_handoff:
             raise AssertionError("autonomy handoff missing field metadata update command section")

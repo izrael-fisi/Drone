@@ -55,6 +55,13 @@ FIELD_COLLECTION_BOOTSTRAP_COMMAND = (
 )
 GUIDED_EVIDENCE_WORKFLOW_COMMAND = "./scripts/pi/run_autonomy_evidence_workflow.sh"
 SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
+COMMAND_GROUP_DESKTOP_ACTIONS = {
+    "guided_workflow": "Module Setup > Evidence Workflow",
+    "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
+    "field_collection_capture": "Module Setup > Field Log Capture",
+    "field_collection_metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
+    "field_collection_registration": "Module Setup > Field Evidence Case > Register",
+}
 BENCH_SUBCHECK_ACTION_ORDER = {
     "bundle_health": 10,
     "gnss_denied_plan": 20,
@@ -479,6 +486,16 @@ def build_command_bundle(
     )
     field_collection_registration_commands = field_collection_commands(field_collection_plan_path, "register_command")
     prerequisite_fix_commands = diagnostic_fix_commands(diagnostics)
+    command_groups = {
+        "guided_workflow": guided_workflow_commands,
+        "prerequisite_fix": prerequisite_fix_commands,
+        "next_action": next_action_commands,
+        "immediate_next_action": immediate_next_action_commands,
+        "blocked_follow_up": blocked_follow_up_commands,
+        "field_collection_capture": field_collection_capture_commands,
+        "field_collection_metadata_update": field_collection_metadata_update_commands,
+        "field_collection_registration": field_collection_registration_commands,
+    }
     return {
         "guided_workflow_commands": guided_workflow_commands,
         "prerequisite_fix_commands": prerequisite_fix_commands,
@@ -488,6 +505,7 @@ def build_command_bundle(
         "field_collection_capture_commands": field_collection_capture_commands,
         "field_collection_metadata_update_commands": field_collection_metadata_update_commands,
         "field_collection_registration_commands": field_collection_registration_commands,
+        "command_items": command_bundle_items(command_groups, next_actions, proof_runbook),
         "command_count": len(
             unique_strings(
                 [
@@ -501,6 +519,53 @@ def build_command_bundle(
             )
         ),
     }
+
+
+def command_bundle_items(
+    command_groups: dict[str, list[str]],
+    next_actions: list[dict[str, Any]],
+    proof_runbook: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    app_hints = command_app_hints(next_actions, proof_runbook)
+    items: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for group, commands in command_groups.items():
+        for command in commands:
+            if not isinstance(command, str) or not command:
+                continue
+            dedupe_key = (group, command)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            item = {"group": group, "command": command}
+            desktop_action = app_hints.get(command) or COMMAND_GROUP_DESKTOP_ACTIONS.get(group)
+            if desktop_action:
+                item["desktop_action"] = desktop_action
+            items.append(item)
+    return items
+
+
+def command_app_hints(
+    next_actions: list[dict[str, Any]],
+    proof_runbook: dict[str, Any] | None,
+) -> dict[str, str]:
+    hints: dict[str, str] = {}
+    for action in next_actions:
+        if isinstance(action, dict):
+            add_command_app_hint(hints, action.get("command"), action.get("desktop_action"))
+    if isinstance(proof_runbook, dict):
+        for phase in json_dict_list(proof_runbook.get("phases")):
+            for action in json_dict_list(phase.get("actions")):
+                add_command_app_hint(hints, action.get("command"), action.get("desktop_action"))
+    return hints
+
+
+def add_command_app_hint(hints: dict[str, str], command: Any, desktop_action: Any) -> None:
+    if not isinstance(command, str) or not command.strip():
+        return
+    if not isinstance(desktop_action, str) or not desktop_action.strip():
+        return
+    hints.setdefault(command, desktop_action)
 
 
 def diagnostic_fix_commands(diagnostics: dict[str, Any] | None) -> list[str]:
@@ -558,6 +623,12 @@ def json_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str) and item]
+
+
+def json_dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def field_collection_commands(path: str | Path | None, key: str) -> list[str]:
