@@ -368,6 +368,18 @@ cd Drone
 ./scripts/pi/validate_terrain_bundle.sh
 ```
 
+If validation fails because the bundle is missing or incomplete, run the bundle
+input diagnostic before attempting a field capture:
+
+```bash
+./scripts/pi/diagnose_mission_bundle.sh
+```
+
+The diagnostic scans the expected `VISION_NAV_BUNDLE` path, nearby bundle
+candidates, and raw Mission Planner map sources that contain `satellite.png`
+plus `metadata.json`. Example or synthetic bundles may be listed for smoke
+testing, but they do not satisfy real field-evidence proof.
+
 The validator checks:
 
 - manifest schema and paths

@@ -44,6 +44,7 @@ from vision_nav.bundle import (
     manifest_orthophoto_path,
 )
 from vision_nav.bundle_checksums import verify_checksum_file, write_checksum_file
+from vision_nav.bundle_diagnostics import compact_bundle_diagnostic, diagnose_bundle_inputs
 from vision_nav.camera import load_camera_calibration, validate_image_size
 from vision_nav.external_position import (
     ExternalPositionEstimate,
@@ -1685,6 +1686,51 @@ rotation_quat_xyzw: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
         assert_equal(summary["status"], "passed", "bundle validation status")
         assert_equal(summary["feature_index"]["keypoints"], 2, "bundle validation keypoints")
         assert_equal(summary["checksums"]["status"], "passed", "bundle validation checksums")
+
+
+def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        expected_bundle = root / "drone-data" / "map_bundles" / "mission_bundle"
+        candidate_bundle = create_minimal_terrain_bundle(root / "candidate")
+        map_source = root / "map-source" / "field-area"
+        map_source.mkdir(parents=True)
+        write_minimal_png(map_source / "satellite.png", 80, 50)
+        (map_source / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "id": "field-area",
+                    "name": "Field Area",
+                    "source": "uploaded_geotiff",
+                    "origin_lat": 40.0,
+                    "origin_lon": -75.0,
+                    "gsd_m_per_px": 0.2,
+                    "georef_source": "geotiff_embedded",
+                    "georef_confidence": 0.9,
+                    "georef_crs": "EPSG:4326",
+                    "width_px": 80,
+                    "height_px": 50,
+                }
+            )
+        )
+
+        report = diagnose_bundle_inputs(expected_bundle, search_roots=[root])
+        assert_equal(report["bundle_exists"], False, "bundle diagnostic missing expected bundle")
+        if "manifest.json" not in report["missing_required_files"]:
+            raise AssertionError("Expected diagnostic to list missing manifest")
+        candidate_paths = {item["path"] for item in report["bundle_candidates"]}
+        if str(candidate_bundle) not in candidate_paths:
+            raise AssertionError(f"Expected candidate bundle {candidate_bundle}, got {candidate_paths}")
+        source_paths = {item["path"] for item in report["map_source_candidates"]}
+        if str(map_source) not in source_paths:
+            raise AssertionError(f"Expected map source {map_source}, got {source_paths}")
+        compact = compact_bundle_diagnostic(report)
+        if compact["bundle_candidate_count"] < 1:
+            raise AssertionError("Expected compact diagnostic to count bundle candidates")
+        if compact["map_source_candidate_count"] < 1:
+            raise AssertionError("Expected compact diagnostic to count map source candidates")
+        if compact["recommended_actions"][0]["id"] != "build_or_upload_selected_bundle":
+            raise AssertionError("Expected bundle build/upload to remain the first diagnostic action")
 
 
 def test_geospatial_health_report_validates_stac_tiles_and_bounds() -> None:
@@ -6155,6 +6201,23 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected missing bundle check to include validation command")
         if (missing_bundle_check.get("details") or {}).get("desktop_action") != "Mission Planner > Build Bundle, Upload Bundle":
             raise AssertionError("Expected missing bundle check to include desktop action hint")
+        missing_bundle_diagnostic = (missing_bundle_check.get("details") or {}).get("diagnostic") or {}
+        if "manifest.json" not in missing_bundle_diagnostic.get("missing_required_files", []):
+            raise AssertionError("Expected missing bundle diagnostic to list missing manifest")
+        detected_bundle_paths = {
+            item.get("path")
+            for item in missing_bundle_diagnostic.get("bundle_candidates", [])
+            if isinstance(item, dict)
+        }
+        if str(ready_bundle) not in detected_bundle_paths:
+            raise AssertionError("Expected missing bundle diagnostic to find the ready bundle candidate")
+        diagnostic_actions = {
+            item.get("id")
+            for item in missing_bundle_diagnostic.get("recommended_actions", [])
+            if isinstance(item, dict)
+        }
+        if "build_or_upload_selected_bundle" not in diagnostic_actions:
+            raise AssertionError("Expected missing bundle diagnostic to recommend build/upload")
         missing_bundle_actions = missing_bundle_preflight["next_actions"]
         assert_equal(
             missing_bundle_actions[0]["id"],
@@ -7133,6 +7196,7 @@ def main() -> None:
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
+        test_bundle_diagnostics_finds_bundle_and_map_source_candidates,
         test_geospatial_health_report_validates_stac_tiles_and_bounds,
         test_gdal_metadata_degrades_gracefully_when_unavailable,
         test_terrain_profile_reports_agl_and_gsd_warnings,

@@ -326,12 +326,19 @@ def bundle_validation_command(bundle_path: str) -> str:
 def bundle_path_check(value: Any, validation_command: Any = None) -> dict[str, Any]:
     path = expanded_path(value)
     command = str(validation_command or "").strip()
+    diagnostic = None
+    if path is not None:
+        from vision_nav.bundle_diagnostics import diagnose_bundle_inputs
+
+        diagnostic = diagnose_bundle_inputs(path)
     details = {
         "path": str(path) if path else None,
         "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
         "validation_command": command or None,
         "notes": "Build/upload the selected terrain bundle or set VISION_NAV_BUNDLE to the bundle used for this field plan.",
     }
+    if diagnostic is not None:
+        details["diagnostic"] = diagnostic
     if not path or not path.exists():
         return failed("bundle_path", "Mission bundle is missing.", details)
 

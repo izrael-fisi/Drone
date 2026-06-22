@@ -959,6 +959,46 @@ if isinstance(field_preflight, dict):
             command = item.get("validation_command")
             if command:
                 print(f"    validation: {command}")
+            diagnostic = item.get("bundle_diagnostic")
+            if isinstance(diagnostic, dict):
+                missing = diagnostic.get("missing_required_files") or []
+                if missing:
+                    print(f"    missing bundle files: {', '.join(str(value) for value in missing[:8])}")
+                bundle_candidates = [
+                    candidate
+                    for candidate in diagnostic.get("bundle_candidates") or []
+                    if isinstance(candidate, dict)
+                ]
+                if bundle_candidates:
+                    print("    detected bundle candidates:")
+                    for candidate in bundle_candidates[:3]:
+                        warning = " (example/synthetic only)" if candidate.get("field_proof_warning") else ""
+                        print(f"      - {candidate.get('path')}{warning}")
+                map_sources = [
+                    source
+                    for source in diagnostic.get("map_source_candidates") or []
+                    if isinstance(source, dict)
+                ]
+                if map_sources:
+                    print("    detected map sources:")
+                    for source in map_sources[:3]:
+                        label = source.get("name") or "unnamed"
+                        print(f"      - {source.get('path')} [{label}]")
+                actions = [
+                    action
+                    for action in diagnostic.get("recommended_actions") or []
+                    if isinstance(action, dict)
+                ]
+                for action in actions[:2]:
+                    title = action.get("title")
+                    app_action = action.get("desktop_action")
+                    action_command = action.get("command")
+                    if title:
+                        print(f"    diagnostic action: {title}")
+                    if app_action:
+                        print(f"      app: {app_action}")
+                    if action_command:
+                        print(f"      command: {action_command}")
         for item in degraded_checks[:4]:
             print(f"  degraded check: {item.get('name') or 'unknown'} - {item.get('message') or ''}")
         next_actions = [

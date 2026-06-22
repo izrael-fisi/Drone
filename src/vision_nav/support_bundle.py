@@ -1268,6 +1268,10 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
                 item["missing"] = details.get("missing")
             if details.get("issue_count") is not None:
                 item["issue_count"] = details.get("issue_count")
+            if details.get("diagnostic") is not None:
+                from vision_nav.bundle_diagnostics import compact_bundle_diagnostic
+
+                item["bundle_diagnostic"] = compact_bundle_diagnostic(details.get("diagnostic"))
         checks.append(item)
         if item.get("status") == "failed":
             failed_checks.append(item)

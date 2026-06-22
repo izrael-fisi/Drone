@@ -39,6 +39,7 @@ vision-nav-validate-evidence-workflow = "vision_nav.autonomy_evidence_workflow:m
 vision-nav-benchmark-feature-methods = "vision_nav.feature_method_benchmark:main"
 vision-nav-benchmark-retrieval = "vision_nav.benchmark_retrieval:main"
 vision-nav-bundle-checksums = "vision_nav.bundle_checksums:main"
+vision-nav-diagnose-bundle-inputs = "vision_nav.bundle_diagnostics:main"
 vision-nav-calibrate-camera = "vision_nav.calibrate_camera:main"
 vision-nav-camera-health = "vision_nav.camera_health:main"
 vision-nav-create-field-evidence-template = "vision_nav.field_evidence_template:main"

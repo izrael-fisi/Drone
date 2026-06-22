@@ -45,6 +45,7 @@ descriptor files from `index/descriptors/`.
 vision-nav-build-terrain-bundle --bundle mission_bundle --write-checksums
 vision-nav-validate-terrain-bundle --bundle mission_bundle
 vision-nav-map-health --bundle mission_bundle --json
+vision-nav-diagnose-bundle-inputs --bundle mission_bundle
 ```
 
 The builder updates `manifest.json` with `terrain_bundle` metadata, writes a
@@ -89,6 +90,11 @@ estimated AGL.
 From the desktop app, use Maps -> Attach Elevation Assets to copy DEM/DSM
 GeoTIFFs into a saved map source. The next Mission Planner bundle build will
 carry those assets into `mission_bundle/elevation/`.
+
+Use `vision-nav-diagnose-bundle-inputs` or
+`./scripts/pi/diagnose_mission_bundle.sh` when field preflight says the mission
+bundle is missing. It looks for complete terrain bundles and raw desktop map
+sources, then prints the app action or validation command to run next.
 
 ## Runtime
 

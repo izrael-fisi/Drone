@@ -1954,6 +1954,10 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
             for key in ("path", "desktop_action", "validation_command", "missing", "issue_count"):
                 if details.get(key) is not None:
                     item[key] = details.get(key)
+            if details.get("diagnostic") is not None:
+                from vision_nav.bundle_diagnostics import compact_bundle_diagnostic
+
+                item["bundle_diagnostic"] = compact_bundle_diagnostic(details.get("diagnostic"))
         checks.append(item)
         status = normalize_status(check.get("status"))
         if status == "failed":
