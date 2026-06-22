@@ -17,6 +17,7 @@ REQUIRED_WORKFLOW_STEPS = [
     "run_feature_method_benchmark",
     "run_threshold_tuning_report",
     "validate_rosbag_export",
+    "check_native_rosbag2_review",
     "check_px4_receiver_proof",
     "create_support_bundle",
     "run_autonomy_readiness_audit",

@@ -779,6 +779,10 @@ Status:
   `scripts/pi/run_rosbag_export_validation.sh` wrapper for its ROS bag
   validation step, so direct operator runs and full workflow runs generate the
   same marker/report shape.
+- Done: the evidence workflow now records a `check_native_rosbag2_review` step
+  that preserves an existing `rosbag2-cli-review.json` marker for support
+  bundles and final-readiness evidence, or records a skipped workstation
+  prerequisite with the native review command when that artifact is missing.
 - Done: the evidence workflow now includes an explicit
   `capture_field_terrain_log` step that either records an existing terrain log
   and runtime-status snapshot or runs a bounded terrain capture before field

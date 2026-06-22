@@ -112,6 +112,31 @@ EOF
 cat >"$workflow_smoke_dir/runtime_status.json" <<'EOF'
 {"active_map":{"bundle_id":"preflight"},"last_match":{"status":"accepted"},"estimator":{"health":"healthy"},"external_position_health":{"status":"not_configured"}}
 EOF
+mkdir -p "$workflow_smoke_dir/terrain-match"
+cat >"$workflow_smoke_dir/terrain-match/rosbag2-cli-review.json" <<EOF
+{
+  "schema_version": "vision_nav_rosbag2_cli_review_v1",
+  "status": "passed",
+  "artifact_path": "$workflow_smoke_dir/terrain-match/rosbag2-native",
+  "validation_status": "passed",
+  "validation_format": "vision_nav_rosbag2_v1",
+  "validation_report": {
+    "schema_version": "vision_nav_rosbag_export_validation_v1",
+    "status": "passed",
+    "format": "vision_nav_rosbag2_v1",
+    "message_count": 2,
+    "topic_count": 2
+  },
+  "ros2_cli": {
+    "status": "passed",
+    "command": ["ros2", "bag", "info", "$workflow_smoke_dir/terrain-match/rosbag2-native"],
+    "stdout": "Files: rosbag2_0.db3\\n",
+    "stderr": "",
+    "exit_code": 0
+  },
+  "issues": []
+}
+EOF
 VISION_NAV_PYTHON=python3 \
 VISION_NAV_EVIDENCE_WORKFLOW_DIR="$workflow_smoke_dir/workflow" \
 VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" \
@@ -125,6 +150,7 @@ VISION_NAV_BUNDLE=preflight-bundle \
 VISION_NAV_FIELD_LOG="$workflow_smoke_dir/terrain_matches.jsonl" \
 VISION_NAV_ROSBAG_EXPORT_DIR="$workflow_smoke_dir/terrain-match/rosbag-jsonl" \
 VISION_NAV_ROSBAG_EXPORT_VALIDATION="$workflow_smoke_dir/terrain-match/rosbag-jsonl-validation.json" \
+VISION_NAV_ROSBAG2_CLI_REVIEW="$workflow_smoke_dir/terrain-match/rosbag2-cli-review.json" \
 VISION_NAV_ROSBAG_INCLUDE_FRAME_TOPIC=0 \
 VISION_NAV_FIELD_EVIDENCE_REPORT="$workflow_smoke_dir/replay-cases/field_evidence_report.json" \
 VISION_NAV_FIELD_CASE_REPORT_DIR="$workflow_smoke_dir/replay-cases/field_evidence_cases" \
@@ -157,6 +183,7 @@ assert "create_field_evidence_template" in steps
 assert "create_field_collection_plan" in steps
 assert "capture_field_terrain_log" in steps
 assert "validate_rosbag_export" in steps
+assert "check_native_rosbag2_review" in steps
 assert "check_px4_receiver_proof" in steps
 assert "run_autonomy_readiness_audit" in steps
 assert "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__" in report["markers"]
@@ -167,8 +194,10 @@ assert "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__" in report["markers"]
 assert "__VISION_NAV_TERRAIN_LOG__" in report["markers"]
 assert "__VISION_NAV_RUNTIME_STATUS__" in report["markers"]
 assert "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__" in report["markers"]
+assert "__VISION_NAV_ROSBAG2_CLI_REVIEW__" in report["markers"]
 assert report["status"] in {"passed", "degraded", "failed"}
 assert Path(report["markers"]["__VISION_NAV_ROSBAG_EXPORT_VALIDATION__"]).exists()
+assert Path(report["markers"]["__VISION_NAV_ROSBAG2_CLI_REVIEW__"]).exists()
 log_archive = Path(report["markers"]["__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__"])
 assert log_archive.exists()
 with tarfile.open(log_archive, "r:gz") as archive:
@@ -177,6 +206,7 @@ assert "logs/create_field_evidence_template.log" in names
 assert "logs/create_field_collection_plan.log" in names
 assert "logs/capture_field_terrain_log.log" in names
 assert "logs/validate_rosbag_export.log" in names
+assert "logs/check_native_rosbag2_review.log" in names
 assert "logs/check_px4_receiver_proof.log" in names
 assert "logs/run_autonomy_readiness_audit.log" in names
 PY

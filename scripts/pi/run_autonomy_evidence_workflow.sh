@@ -18,6 +18,7 @@ field_capture_output_dir="${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR:-$(dirname "$fie
 field_capture_count="${VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT:-30}"
 rosbag_export_dir="${VISION_NAV_ROSBAG_EXPORT_DIR:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
+rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json}"
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-$HOME/px4-sitl-evidence}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-$px4_sitl_session/receiver_evidence.json}"
@@ -26,6 +27,7 @@ steps_jsonl=""
 export VISION_NAV_FIELD_COLLECTION_PLAN="$field_collection_plan"
 export VISION_NAV_FIELD_COLLECTION_PLAN_MD="$field_collection_plan_md"
 export VISION_NAV_ROSBAG_EXPORT_VALIDATION="$rosbag_export_validation"
+export VISION_NAV_ROSBAG2_CLI_REVIEW="$rosbag2_cli_review"
 
 usage() {
   cat >&2 <<EOF
@@ -41,9 +43,10 @@ This wrapper attempts the ordered evidence collection path:
   5. run feature-method benchmark when a replay log exists
   6. run threshold tuning when a field manifest exists
   7. export and validate ROS bag JSONL replay artifacts when a replay log exists
-  8. check whether PX4 ODOMETRY receiver proof is available
-  9. create a support bundle
-  10. run the strict autonomy-readiness audit and evidence package
+  8. check whether native rosbag2 CLI review proof is available
+  9. check whether PX4 ODOMETRY receiver proof is available
+  10. create a support bundle
+  11. run the strict autonomy-readiness audit and evidence package
 
 Common optional overrides:
   VISION_NAV_EVIDENCE_WORKFLOW_REPORT     Default: $report
@@ -58,6 +61,7 @@ Common optional overrides:
   VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT=30
   VISION_NAV_ROSBAG_EXPORT_DIR            Default: $rosbag_export_dir
   VISION_NAV_ROSBAG_EXPORT_VALIDATION     Default: $rosbag_export_validation
+  VISION_NAV_ROSBAG2_CLI_REVIEW           Default: $rosbag2_cli_review
   VISION_NAV_BUNDLE                       Default: $bundle
   VISION_NAV_PX4_SITL_SESSION             Default: $px4_sitl_session
   VISION_NAV_PX4_SITL_REPORT              Default: $px4_sitl_report
@@ -317,6 +321,15 @@ if [[ -f "$field_log" ]]; then
   )
 else
   skip_step "validate_rosbag_export" "Missing terrain match replay log: $field_log"
+fi
+
+if [[ -f "$rosbag2_cli_review" ]]; then
+  pass_step "check_native_rosbag2_review" \
+    "Native rosbag2 CLI review artifact is available for support-bundle and final-readiness evidence." \
+    "__VISION_NAV_ROSBAG2_CLI_REVIEW__=$rosbag2_cli_review"
+else
+  skip_step "check_native_rosbag2_review" \
+    "Missing native rosbag2 CLI review artifact: $rosbag2_cli_review. Run Module Setup > Native rosbag2 Review on a sourced ROS 2 workstation, or run ./scripts/dev/run_rosbag2_cli_review.sh after syncing a field log."
 fi
 
 px4_marker_lines=()
