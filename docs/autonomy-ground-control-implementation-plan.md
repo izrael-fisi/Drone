@@ -742,6 +742,10 @@ Status:
   input, emit `__VISION_NAV_PX4_SITL_PREREQS__=...`, and preserve it in the
   Markdown handoff and evidence ZIP without letting it satisfy
   `px4_receiver_proof`.
+- Done: Module Setup parses `__VISION_NAV_PX4_SITL_PREREQS__=...` from
+  autonomy-readiness and evidence-workflow output, downloads the prerequisite
+  JSON beside PX4 receiver reports, and shows it as a copyable `px4 prereqs`
+  workflow artifact.
 - Done: `scripts/dev/run_local_autonomy_readiness_audit.sh` scans the
   conventional downloaded desktop artifact folders, writes the same strict
   autonomy-readiness report locally, includes the latest downloaded

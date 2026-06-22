@@ -748,6 +748,8 @@ export interface AutonomyEvidenceWorkflowReportFile {
   field_collection_plan_markdown_local_path?: string;
   px4_receiver_report_path?: string;
   px4_receiver_report_local_path?: string;
+  px4_prereq_report_path?: string;
+  px4_prereq_report_local_path?: string;
 }
 
 export interface Px4ReceiverReportFile {

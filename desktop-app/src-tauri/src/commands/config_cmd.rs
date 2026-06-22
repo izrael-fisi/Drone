@@ -694,6 +694,8 @@ pub struct AutonomyEvidenceWorkflowReportFile {
     pub field_collection_plan_markdown_local_path: Option<String>,
     pub px4_receiver_report_path: Option<String>,
     pub px4_receiver_report_local_path: Option<String>,
+    pub px4_prereq_report_path: Option<String>,
+    pub px4_prereq_report_local_path: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -3306,6 +3308,8 @@ fn autonomy_evidence_workflow_report_from_json(
         field_collection_plan_markdown_local_path: None,
         px4_receiver_report_path: marker("__VISION_NAV_PX4_SITL_REPORT__"),
         px4_receiver_report_local_path: None,
+        px4_prereq_report_path: marker("__VISION_NAV_PX4_SITL_PREREQS__"),
+        px4_prereq_report_local_path: None,
     })
 }
 
@@ -3365,6 +3369,11 @@ fn populate_workflow_report_local_artifacts(
     report.px4_receiver_report_local_path = workflow_artifact_local_path(
         report_path,
         report.px4_receiver_report_path.as_deref(),
+        Some("px4-sitl-evidence"),
+    );
+    report.px4_prereq_report_local_path = workflow_artifact_local_path(
+        report_path,
+        report.px4_prereq_report_path.as_deref(),
         Some("px4-sitl-evidence"),
     );
 }
@@ -5257,7 +5266,8 @@ mod tests {
                     "__VISION_NAV_AUTONOMY_REPORT__": "/tmp/autonomy_readiness_report.json",
                     "__VISION_NAV_AUTONOMY_HANDOFF__": "/tmp/autonomy_readiness_report.md",
                     "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__": "/tmp/autonomy_readiness_report.evidence.zip",
-                    "__VISION_NAV_PX4_SITL_REPORT__": "/tmp/receiver_evidence.json"
+                    "__VISION_NAV_PX4_SITL_REPORT__": "/tmp/receiver_evidence.json",
+                    "__VISION_NAV_PX4_SITL_PREREQS__": "/tmp/px4_sitl_capture_prereqs.json"
                 }
             })
             .to_string(),
@@ -5277,7 +5287,7 @@ mod tests {
                 "status": "degraded",
                 "workflow_status": "failed",
                 "step_count": 3,
-                "marker_count": 11,
+                "marker_count": 12,
                 "log_archive": "/tmp/autonomy_evidence_workflow.logs.tar.gz",
                 "issues": ["Workflow status is failed; the report is useful, but readiness proof is incomplete."],
                 "checks": [
@@ -5292,14 +5302,15 @@ mod tests {
                         "status": "degraded",
                         "message": "Missing final proof artifact markers.",
                         "details": {
-                            "marker_count": 11,
+                            "marker_count": 12,
                             "missing_markers": [
                                 "__VISION_NAV_FIELD_COLLECTION_PLAN__",
                                 "__VISION_NAV_ROSBAG2_CLI_REVIEW__"
                             ],
                             "present_markers": [
                                 "__VISION_NAV_SUPPORT_ZIP__",
-                                "__VISION_NAV_PX4_SITL_REPORT__"
+                                "__VISION_NAV_PX4_SITL_REPORT__",
+                                "__VISION_NAV_PX4_SITL_PREREQS__"
                             ]
                         }
                     }
@@ -5336,6 +5347,12 @@ mod tests {
             "{}",
         )
         .expect("write local px4 artifact");
+        std::fs::write(
+            base.join("px4-sitl-evidence")
+                .join("px4_sitl_capture_prereqs.json"),
+            "{}",
+        )
+        .expect("write local px4 prereq artifact");
         let reports = list_autonomy_evidence_workflow_reports(dir.to_string_lossy().into_owned())
             .expect("list workflow reports");
         let _ = std::fs::remove_dir_all(&base);
@@ -5353,7 +5370,7 @@ mod tests {
         assert_eq!(reports[0].steps[0].name.as_deref(), Some("field_template"));
         assert_eq!(reports[0].steps[0].exit_code, Some(0));
         assert_eq!(reports[0].steps[1].status.as_deref(), Some("skipped"));
-        assert_eq!(reports[0].marker_count, 11);
+        assert_eq!(reports[0].marker_count, 12);
         assert_eq!(
             reports[0].workflow_logs_path.as_deref(),
             Some("/tmp/autonomy_evidence_workflow.logs.tar.gz")
@@ -5378,7 +5395,7 @@ mod tests {
         assert_eq!(validation.status.as_deref(), Some("degraded"));
         assert_eq!(validation.workflow_status.as_deref(), Some("failed"));
         assert_eq!(validation.step_count, Some(3));
-        assert_eq!(validation.marker_count, Some(11));
+        assert_eq!(validation.marker_count, Some(12));
         assert_eq!(validation.issue_count, 1);
         assert_eq!(validation.issues.len(), 1);
         assert_eq!(validation.checks.len(), 2);
@@ -5387,7 +5404,7 @@ mod tests {
             Some("final_proof_markers")
         );
         assert_eq!(validation.checks[1].status.as_deref(), Some("degraded"));
-        assert_eq!(validation.checks[1].marker_count, Some(11));
+        assert_eq!(validation.checks[1].marker_count, Some(12));
         assert_eq!(
             validation.checks[1].missing_markers,
             vec![
@@ -5399,7 +5416,8 @@ mod tests {
             validation.checks[1].present_markers,
             vec![
                 "__VISION_NAV_SUPPORT_ZIP__".to_string(),
-                "__VISION_NAV_PX4_SITL_REPORT__".to_string()
+                "__VISION_NAV_PX4_SITL_REPORT__".to_string(),
+                "__VISION_NAV_PX4_SITL_PREREQS__".to_string()
             ]
         );
         assert_eq!(
@@ -5474,6 +5492,14 @@ mod tests {
             .px4_receiver_report_local_path
             .as_deref()
             .is_some_and(|path| path.ends_with("px4-sitl-evidence/receiver_evidence.json")));
+        assert_eq!(
+            reports[0].px4_prereq_report_path.as_deref(),
+            Some("/tmp/px4_sitl_capture_prereqs.json")
+        );
+        assert!(reports[0]
+            .px4_prereq_report_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("px4-sitl-evidence/px4_sitl_capture_prereqs.json")));
     }
 
     #[test]

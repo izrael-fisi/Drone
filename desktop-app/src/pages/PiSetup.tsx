@@ -380,6 +380,14 @@ function parsePx4SitlReport(output: string) {
     ?.replace("__VISION_NAV_PX4_SITL_REPORT__=", "");
 }
 
+function parsePx4SitlPrereqs(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_PX4_SITL_PREREQS__="))
+    ?.replace("__VISION_NAV_PX4_SITL_PREREQS__=", "");
+}
+
 function parseRuntimeStatusPath(output: string) {
   return output
     .split(/\r?\n/)
@@ -924,6 +932,7 @@ function workflowMarkerArtifacts(report: AutonomyEvidenceWorkflowReportFile) {
       path: report.field_collection_plan_markdown_local_path ?? report.field_collection_plan_markdown_path,
     },
     { label: "px4", path: report.px4_receiver_report_local_path ?? report.px4_receiver_report_path },
+    { label: "px4 prereqs", path: report.px4_prereq_report_local_path ?? report.px4_prereq_report_path },
   ].filter((artifact): artifact is { label: string; path: string } => Boolean(artifact.path));
 }
 
@@ -3385,6 +3394,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const remoteHandoff = parseAutonomyReadinessHandoff(output);
       const remoteEvidencePackage = parseAutonomyEvidencePackage(output);
       const remotePx4Report = parsePx4SitlReport(output);
+      const remotePx4Prereqs = parsePx4SitlPrereqs(output);
       const remoteWorkflow = parseAutonomyEvidenceWorkflowReport(output);
       const remoteWorkflowLogs = parseAutonomyEvidenceWorkflowLogs(output);
       const remoteWorkflowValidation = parseAutonomyEvidenceWorkflowValidation(output);
@@ -3625,6 +3635,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         );
         px4DownloadText = `\n\n$ download PX4 receiver report\nSaved to ${downloadedPx4.local_path}\n[${downloadedPx4.bytes_received} bytes]`;
       }
+      if (remotePx4Prereqs) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}${px4DownloadText}\n\n$ download PX4 prereq report\nDownloading ${remotePx4Prereqs}...`,
+        });
+        const downloadedPx4Prereqs = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remotePx4Prereqs,
+          PX4_RECEIVER_DOWNLOAD_DIR,
+        );
+        px4DownloadText += `\n\n$ download PX4 prereq report\nSaved to ${downloadedPx4Prereqs.local_path}\n[${downloadedPx4Prereqs.bytes_received} bytes]`;
+      }
       setResult("autonomy-readiness", {
         status: result.exit_code === 0 ? "passed" : "failed",
         output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}${px4DownloadText}\n[exit ${result.exit_code}]`,
@@ -3737,6 +3762,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const remoteRosbagValidation = parseRosbagExportValidationReport(output);
       const remoteRosbag2CliReview = parseRosbag2CliReviewReport(output);
       const remotePx4Report = parsePx4SitlReport(output);
+      const remotePx4Prereqs = parsePx4SitlPrereqs(output);
       if (!remoteWorkflow) {
         setResult("autonomy-evidence-workflow", {
           status: "failed",
@@ -3974,6 +4000,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
           PX4_RECEIVER_DOWNLOAD_DIR,
         );
         downloadText += `\n\n$ download PX4 receiver report\nSaved to ${downloadedPx4.local_path}\n[${downloadedPx4.bytes_received} bytes]`;
+      }
+      if (remotePx4Prereqs) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download PX4 prereq report\nDownloading ${remotePx4Prereqs}...`,
+        });
+        const downloadedPx4Prereqs = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remotePx4Prereqs,
+          PX4_RECEIVER_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download PX4 prereq report\nSaved to ${downloadedPx4Prereqs.local_path}\n[${downloadedPx4Prereqs.bytes_received} bytes]`;
       }
 
       setResult("autonomy-evidence-workflow", {
