@@ -652,8 +652,9 @@ vision-nav-validate-rosbag-export \
 ```
 
 The validator checks metadata, topic counts, JSONL payload shape, MCAP sidecars,
-and native rosbag2 storage files without requiring ROS 2 to be installed. The
-default support-bundle wrapper auto-includes
+and native rosbag2 storage files without requiring ROS 2 to be installed. It
+also fails closed unless the replay contains non-empty `/vision_nav/odometry`
+and `/diagnostics` topics. The default support-bundle wrapper auto-includes
 `~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json` when it
 exists; set `VISION_NAV_ROSBAG_EXPORT_VALIDATION` or
 `VISION_NAV_MCAP_EXPORT_VALIDATION` to package another validation report.

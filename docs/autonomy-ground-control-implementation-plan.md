@@ -127,6 +127,9 @@ Status:
 - Done: `vision-nav-validate-rosbag-export` validates JSONL, MCAP, and native
   rosbag2 export metadata, sidecars, topic counts, message counts, and storage
   presence without requiring ROS 2.
+- Done: ROS replay export validation now fails closed unless the export includes
+  non-empty `/vision_nav/odometry` and `/diagnostics` topics, matching the final
+  autonomy-readiness proof requirement instead of only checking file structure.
 - Done: `scripts/pi/run_rosbag_export_validation.sh` wraps the default Pi
   terrain log export and validation into one command, writes the stable
   `rosbag-jsonl-validation.json` readiness artifact, and emits

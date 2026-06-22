@@ -1015,6 +1015,43 @@ def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
         broken_validation = validate_rosbag_export(broken_dir)
         assert_equal(broken_validation["status"], "failed", "broken rosbag jsonl validation status")
 
+        diagnostics_only_dir = root / "diagnostics-only-rosbag-jsonl"
+        diagnostics_only_dir.mkdir()
+        (diagnostics_only_dir / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "format": "vision_nav_rosbag_jsonl_v1",
+                    "message_file": "messages.jsonl",
+                    "message_count": 1,
+                    "topics": [
+                        {
+                            "name": "/diagnostics",
+                            "type": "diagnostic_msgs/msg/DiagnosticArray",
+                            "message_count": 1,
+                        }
+                    ],
+                }
+            )
+        )
+        (diagnostics_only_dir / "messages.jsonl").write_text(
+            json.dumps(
+                {
+                    "topic": "/diagnostics",
+                    "type": "diagnostic_msgs/msg/DiagnosticArray",
+                    "timestamp_ns": 1,
+                    "message": {"status": []},
+                }
+            )
+            + "\n"
+        )
+        missing_topic_validation = validate_rosbag_export(diagnostics_only_dir)
+        assert_equal(missing_topic_validation["status"], "failed", "rosbag validation missing odometry topic status")
+        assert_equal(
+            missing_topic_validation["missing_required_topics"],
+            ["/vision_nav/odometry"],
+            "rosbag validation missing required topic",
+        )
+
         class FakeMcapWriter:
             instances: list["FakeMcapWriter"] = []
 

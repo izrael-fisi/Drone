@@ -305,10 +305,12 @@ basic Pi setup checks.
 On a sourced ROS 2 workstation, use `--export-rosbag2` instead when you need a
 native serialized rosbag2 directory for `ros2 bag info/play`. The validator
 checks metadata, topic/message counts, MCAP sidecars, and native rosbag2 storage
-files without requiring ROS 2 to be installed. When a validation report exists
-at the normal Pi transfer path, `scripts/pi/create_support_bundle.sh` packages
-it so desktop support-bundle diagnostics show the ROS replay artifact health
-beside PX4, replay-gate, field-evidence, and threshold evidence.
+files without requiring ROS 2 to be installed, and fails closed unless the
+export includes non-empty `/vision_nav/odometry` and `/diagnostics` topics.
+When a validation report exists at the normal Pi transfer path,
+`scripts/pi/create_support_bundle.sh` packages it so desktop support-bundle
+diagnostics show the ROS replay artifact health beside PX4, replay-gate,
+field-evidence, and threshold evidence.
 
 Create a transfer-ready support bundle after a bench run:
 

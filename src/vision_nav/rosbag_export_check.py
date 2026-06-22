@@ -11,6 +11,7 @@ SUPPORTED_FORMATS = {
     "vision_nav_mcap_json_v1",
     "vision_nav_rosbag2_v1",
 }
+REQUIRED_REPLAY_TOPICS = ["/vision_nav/odometry", "/diagnostics"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,11 +42,20 @@ def validate_rosbag_export(artifact: str | Path, *, output_path: str | Path | No
 
     topics = metadata.get("topics") if isinstance(metadata.get("topics"), list) else []
     topic_summary = summarize_topics(topics)
+    missing_required_topics = missing_required_topics_from_summary(topic_summary)
     message_count = int(metadata.get("message_count") or 0) if metadata else 0
     if metadata and message_count <= 0:
         add_issue(issues, "error", "Export metadata has no messages.")
     if metadata and not topic_summary:
         add_issue(issues, "error", "Export metadata has no topics.")
+    if metadata and missing_required_topics:
+        add_issue(
+            issues,
+            "error",
+            "Export metadata is missing required replay topics: "
+            + ", ".join(missing_required_topics)
+            + ".",
+        )
 
     details: dict[str, Any] = {}
     if format_name == "vision_nav_rosbag_jsonl_v1":
@@ -65,6 +75,8 @@ def validate_rosbag_export(artifact: str | Path, *, output_path: str | Path | No
         "message_count": message_count,
         "topic_count": len(topic_summary),
         "topics": topic_summary,
+        "required_topics": REQUIRED_REPLAY_TOPICS,
+        "missing_required_topics": missing_required_topics,
         "details": details,
         "issues": issues,
     }
@@ -239,6 +251,15 @@ def summarize_topics(value: list[Any]) -> list[dict[str, Any]]:
             }
         )
     return topics
+
+
+def missing_required_topics_from_summary(topics: list[dict[str, Any]]) -> list[str]:
+    available = {
+        str(topic.get("name"))
+        for topic in topics
+        if topic.get("name") and int(topic.get("message_count") or 0) > 0
+    }
+    return [topic for topic in REQUIRED_REPLAY_TOPICS if topic not in available]
 
 
 def compare_topic_counts(
