@@ -6,6 +6,15 @@ from pathlib import Path
 from typing import Any
 
 
+COMMAND_GROUP_DESKTOP_ACTIONS = {
+    "guided_workflow": "Module Setup > Evidence Workflow",
+    "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
+    "field_collection_capture": "Module Setup > Field Log Capture",
+    "field_collection_metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
+    "field_collection_registration": "Module Setup > Field Evidence Case > Register",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Render a human-readable autonomy readiness handoff from an autonomy_readiness_report.json file."
@@ -629,6 +638,10 @@ def annotated_command_lines(commands: list[str], app_hints: dict[str, str]) -> l
 
 def command_app_hints(report: dict[str, Any], field_plan: dict[str, Any] | None) -> dict[str, str]:
     hints: dict[str, str] = {}
+    report_bundle = report.get("command_bundle") if isinstance(report.get("command_bundle"), dict) else {}
+    for item in dict_items(report_bundle.get("command_items")):
+        add_command_app_hint(hints, item.get("command"), item.get("desktop_action"))
+
     actions = report.get("next_actions") if isinstance(report.get("next_actions"), list) else []
     for action in dict_items(actions):
         add_command_app_hint(hints, action.get("command"), action.get("desktop_action"))
@@ -655,6 +668,11 @@ def command_app_hints(report: dict[str, Any], field_plan: dict[str, Any] | None)
                 condition.get("register_command"),
                 "Module Setup > Field Evidence Case > Register",
             )
+    for item in dict_items(report_bundle.get("command_items")):
+        group = item.get("group")
+        command = item.get("command")
+        if isinstance(group, str) and group in COMMAND_GROUP_DESKTOP_ACTIONS:
+            add_command_app_hint(hints, command, COMMAND_GROUP_DESKTOP_ACTIONS[group])
     return hints
 
 

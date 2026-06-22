@@ -703,6 +703,9 @@ Status:
 - Done: Module Setup uses those structured command items when copying grouped
   Autonomy Readiness commands, preserving `# app:` route comments in the
   clipboard text.
+- Done: Markdown autonomy handoffs also consume structured command items, so
+  guided workflow and grouped command blocks keep the same `# app:` route
+  comments as terminal output and Module Setup copy actions.
 - Done: the Tauri report parser now preserves
   `field_collection_capture_commands`,
   `field_collection_metadata_update_commands`, and

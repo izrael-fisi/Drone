@@ -4239,6 +4239,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff missing immediate command section")
         if "./scripts/pi/run_autonomy_evidence_workflow.sh" not in handoff:
             raise AssertionError("autonomy handoff missing guided workflow command")
+        if "# app: Module Setup > Evidence Workflow" not in handoff:
+            raise AssertionError("autonomy handoff missing guided workflow app hint")
         if "Goal completion: waiting on proof" not in handoff:
             raise AssertionError("autonomy handoff waiting state")
         if "Proof items:" not in handoff:
