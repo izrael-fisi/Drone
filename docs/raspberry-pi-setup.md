@@ -532,6 +532,9 @@ Starter cases include a `capture_metadata` scaffold and `capture_checklist`
 object so the operator can record who captured the log, date/time, altitude,
 lighting, weather, map-season notes, camera focus/exposure notes, IMU/PX4 state,
 and safety notes before the case becomes field evidence.
+For the field-evidence gate and threshold-tuning report, capture metadata is
+proof-grade: field cases fail if required metadata fields are missing, still
+set to `TODO`, or omit numeric altitude/speed context.
 
 Generate a field-collection checklist from the active manifest before going
 outside:
@@ -581,7 +584,9 @@ vision-nav-field-evidence-gate \
 ```
 
 This is stricter than a coverage audit: it requires real field log files and
-also runs replay gates for every case in the manifest.
+also runs replay gates for every case in the manifest. It also requires filled
+capture metadata for every field case so support can audit where, when, and how
+the evidence was recorded.
 
 Defaults:
 

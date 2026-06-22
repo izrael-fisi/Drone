@@ -1062,6 +1062,10 @@ def check_field_evidence_proof(path: str | Path | None, support_checks: dict[str
         missing_conditions = missing_required_conditions(details.get("covered_conditions") or [])
         if missing_conditions:
             return failed("field_evidence_proof", "Field evidence is missing required real-world conditions.", {**details, "missing_conditions": missing_conditions})
+        metadata_status = capture_metadata_proof_status(details)
+        if metadata_status != "passed":
+            message = "Field evidence is missing capture metadata audit proof." if metadata_status == "missing" else "Field evidence has incomplete capture metadata."
+            return failed("field_evidence_proof", message, {**details, "missing_conditions": missing_conditions})
         return passed("field_evidence_proof", "Field evidence proof is present in the support bundle.", details)
     if support_check and support_check.get("status") == "degraded":
         return degraded("field_evidence_proof", "Field evidence proof in the support bundle is degraded.", {"source": "support_bundle"})
@@ -1079,9 +1083,15 @@ def field_evidence_check_from_report(report: dict[str, Any], *, source: str) -> 
         "replay_status": summary.get("replay_status"),
         "case_count": summary.get("case_count"),
         "field_case_count": summary.get("field_case_count"),
+        "capture_metadata_issue_count": summary.get("capture_metadata_issue_count"),
         "covered_conditions": covered,
         "missing_conditions": missing_conditions,
     }
+    metadata_status = capture_metadata_proof_status(details)
+    if status == "passed" and metadata_status == "missing":
+        return failed("field_evidence_proof", "Field evidence report is missing capture metadata audit proof.", details)
+    if status == "passed" and metadata_status == "failed":
+        return failed("field_evidence_proof", "Field evidence report has incomplete capture metadata.", details)
     if status == "passed" and not missing_conditions:
         return passed("field_evidence_proof", "Field evidence gate passed for all required conditions.", details)
     if status == "passed":
@@ -1177,11 +1187,17 @@ def threshold_tuning_check_from_summary(summary: dict[str, Any]) -> dict[str, An
         "source": "support_bundle",
         "report_count": summary.get("report_count"),
         "field_case_count": summary.get("field_case_count"),
+        "capture_metadata_issue_count": summary.get("capture_metadata_issue_count"),
         "covered_conditions": sorted({str(condition) for condition in covered}),
         "missing_conditions": missing_required_conditions(covered),
     }
     if status == "not_provided" or status is None:
         return failed("threshold_tuning", "Threshold tuning report is required after real field logs are collected.", details)
+    metadata_status = capture_metadata_proof_status(details)
+    if status == "passed" and metadata_status == "missing":
+        return failed("threshold_tuning", "Threshold tuning proof is missing capture metadata audit proof.", details)
+    if status == "passed" and metadata_status == "failed":
+        return failed("threshold_tuning", "Threshold tuning proof has incomplete capture metadata.", details)
     if status == "passed" and not details["missing_conditions"]:
         return passed("threshold_tuning", "Threshold tuning proof is present in the support bundle.", details)
     if status == "passed":
@@ -1195,12 +1211,19 @@ def threshold_tuning_check_from_report(report: dict[str, Any], *, source: str) -
     status = normalize_status(report.get("status"))
     covered = report_conditions(report)
     missing_conditions = missing_required_conditions(covered)
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     details = {
         "source": source,
         "covered_conditions": sorted(covered),
         "missing_conditions": missing_conditions,
         "method": report.get("method"),
+        "capture_metadata_issue_count": summary.get("capture_metadata_issue_count"),
     }
+    metadata_status = capture_metadata_proof_status(details)
+    if status == "passed" and metadata_status == "missing":
+        return failed("threshold_tuning", "Threshold tuning report is missing capture metadata audit proof.", details)
+    if status == "passed" and metadata_status == "failed":
+        return failed("threshold_tuning", "Threshold tuning report has incomplete capture metadata.", details)
     if status == "passed" and not missing_conditions:
         return passed("threshold_tuning", "Thresholds were tuned against all required field conditions.", details)
     if status == "passed":
@@ -1433,6 +1456,16 @@ def missing_required_conditions(covered: Any) -> list[str]:
     else:
         covered_set = {str(value) for value in covered if str(value)}
     return [condition for condition in REQUIRED_FIELD_CONDITIONS if condition not in covered_set]
+
+
+def capture_metadata_proof_status(details: dict[str, Any]) -> str:
+    value = details.get("capture_metadata_issue_count")
+    if value is None:
+        return "missing"
+    try:
+        return "passed" if int(value) == 0 else "failed"
+    except (TypeError, ValueError):
+        return "failed"
 
 
 def print_human(report: dict[str, Any]) -> None:

@@ -33,6 +33,7 @@ def evaluate_field_evidence_gate(
         manifest,
         require_field_logs=True,
         require_log_exists=True,
+        require_capture_metadata=True,
     )
     replay = evaluate_replay_case_manifest(manifest, output_dir=case_output)
     report = {
@@ -55,6 +56,7 @@ def evaluate_field_evidence_gate(
             ],
             "case_count": replay.get("case_count"),
             "field_case_count": coverage.get("field_case_count"),
+            "capture_metadata_issue_count": coverage.get("capture_metadata_issue_count"),
         },
     }
     if output_path is not None:

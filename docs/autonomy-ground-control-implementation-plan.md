@@ -449,6 +449,9 @@ Status:
 - Done: field evidence templates and collection plans now include per-condition
   capture metadata scaffolds and checklists, and Pi registration preserves the
   filled metadata on real replay cases for later support review.
+- Done: field-evidence and threshold-tuning proof gates now require completed
+  capture metadata on real field replay cases, with metadata issue counts
+  carried into support/readiness summaries.
 - Done: `scripts/pi/create_field_evidence_template.sh` wraps the template
   generator on the Pi, writes the starter manifest into the transfer folder,
   and emits a stable marker for desktop/support collection.

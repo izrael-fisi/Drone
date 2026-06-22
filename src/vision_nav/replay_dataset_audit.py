@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from vision_nav.field_capture_metadata import audit_capture_metadata
 from vision_nav.replay_case_manifest import load_replay_case_manifest
 
 
@@ -84,6 +85,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not fail cases whose replay log path is missing.",
     )
+    parser.add_argument(
+        "--require-capture-metadata",
+        action="store_true",
+        help="Fail field cases that still have missing or placeholder capture metadata.",
+    )
     return parser.parse_args()
 
 
@@ -92,6 +98,7 @@ def audit_replay_dataset_coverage(
     *,
     require_field_logs: bool = True,
     require_log_exists: bool = True,
+    require_capture_metadata: bool = False,
 ) -> dict[str, Any]:
     manifest = load_replay_case_manifest(manifest_path)
     cases = [normalize_case(case) for case in manifest["cases"]]
@@ -99,10 +106,19 @@ def audit_replay_dataset_coverage(
         audit_requirement(requirement, cases, require_field_logs=require_field_logs)
         for requirement in REPLAY_COVERAGE_REQUIREMENTS
     ]
-    case_issues = audit_case_paths(cases, require_log_exists=require_log_exists)
+    case_issues = audit_case_paths(
+        cases,
+        require_log_exists=require_log_exists,
+        require_capture_metadata=require_capture_metadata,
+    )
     missing = [report for report in requirement_reports if report["status"] == "missing"]
     synthetic_only = [report for report in requirement_reports if report["status"] == "synthetic_only"]
     failed_case_paths = [issue for issue in case_issues if issue["severity"] == "error"]
+    capture_metadata_issue_count = sum(
+        1
+        for issue in case_issues
+        if str(issue.get("field") or "").startswith("capture_metadata")
+    )
 
     schema = manifest.get("schema") or {}
     schema_failed = schema.get("status") == "failed"
@@ -121,11 +137,13 @@ def audit_replay_dataset_coverage(
         "field_case_count": sum(1 for case in cases if case["dataset_type"] == "field"),
         "synthetic_case_count": sum(1 for case in cases if case["dataset_type"] == "synthetic"),
         "bench_case_count": sum(1 for case in cases if case["dataset_type"] == "bench"),
+        "capture_metadata_issue_count": capture_metadata_issue_count,
         "requirements": requirement_reports,
         "case_issues": case_issues,
         "config": {
             "require_field_logs": require_field_logs,
             "require_log_exists": require_log_exists,
+            "require_capture_metadata": require_capture_metadata,
             "required_conditions": [asdict(requirement) for requirement in REPLAY_COVERAGE_REQUIREMENTS],
         },
     }
@@ -144,6 +162,7 @@ def normalize_case(case: dict[str, Any]) -> dict[str, Any]:
         "notes": case.get("notes"),
         "dataset_type": dataset_type,
         "conditions": sorted(tags),
+        "capture_metadata": case.get("capture_metadata"),
     }
 
 
@@ -169,8 +188,10 @@ def case_tokens(case: dict[str, Any], *, include_dataset_type: bool = True) -> s
         if isinstance(value, list):
             for item in value:
                 tokens.update(tokenize(str(item)))
+                tokens.update(alias_forms(str(item)))
         elif isinstance(value, str):
             tokens.update(tokenize(value))
+            tokens.update(alias_forms(value))
     for key in ("case_name", "notes", "bundle"):
         value = case.get(key)
         if value is not None:
@@ -230,7 +251,12 @@ def audit_requirement(
     }
 
 
-def audit_case_paths(cases: list[dict[str, Any]], *, require_log_exists: bool) -> list[dict[str, str]]:
+def audit_case_paths(
+    cases: list[dict[str, Any]],
+    *,
+    require_log_exists: bool,
+    require_capture_metadata: bool,
+) -> list[dict[str, str]]:
     issues: list[dict[str, str]] = []
     for case in cases:
         case_name = str(case.get("case_name") or "unnamed-case")
@@ -250,6 +276,20 @@ def audit_case_paths(cases: list[dict[str, Any]], *, require_log_exists: bool) -
             issues.append({"severity": "error", "case_name": case_name, "message": f"Replay log does not exist: {log}"})
         if not case.get("bundle"):
             issues.append({"severity": "warning", "case_name": case_name, "message": "Replay case is missing bundle provenance."})
+        if require_capture_metadata and dataset_type == "field":
+            for metadata_issue in audit_capture_metadata(
+                case.get("capture_metadata"),
+                conditions=case.get("conditions") or [],
+                expected=str(case.get("expected") or ""),
+            ):
+                issues.append(
+                    {
+                        "severity": metadata_issue["severity"],
+                        "case_name": case_name,
+                        "message": metadata_issue["message"],
+                        "field": metadata_issue.get("field", "capture_metadata"),
+                    }
+                )
     return issues
 
 
@@ -287,6 +327,7 @@ def main() -> None:
         args.manifest,
         require_field_logs=not args.allow_synthetic,
         require_log_exists=not args.skip_log_exists,
+        require_capture_metadata=args.require_capture_metadata,
     )
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))

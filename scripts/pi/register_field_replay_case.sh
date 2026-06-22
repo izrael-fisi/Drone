@@ -131,7 +131,7 @@ echo "__VISION_NAV_FIELD_EVIDENCE_REPORT__=$report"
 
 if [[ "$gate_status" -ne 0 ]]; then
   echo
-  echo "Field evidence gate is not passing yet. This is expected until all required real field conditions are registered." >&2
+  echo "Field evidence gate is not passing yet. This is expected until all required real field conditions are registered with complete capture metadata." >&2
   if [[ "$strict_gate" == "1" || "$strict_gate" == "true" ]]; then
     exit "$gate_status"
   fi

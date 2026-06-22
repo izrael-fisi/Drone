@@ -45,6 +45,7 @@ pub struct SupportBundleSummary {
     pub feature_method_benchmark_report_count: Option<u64>,
     pub field_evidence_status: Option<String>,
     pub field_evidence_field_case_count: Option<u64>,
+    pub field_evidence_capture_metadata_issue_count: Option<u64>,
     pub field_evidence_report_count: Option<u64>,
     pub field_collection_plan_status: Option<String>,
     pub field_collection_plan_registered_count: Option<u64>,
@@ -52,6 +53,7 @@ pub struct SupportBundleSummary {
     pub field_collection_plan_report_count: Option<u64>,
     pub threshold_tuning_status: Option<String>,
     pub threshold_tuning_field_case_count: Option<u64>,
+    pub threshold_tuning_capture_metadata_issue_count: Option<u64>,
     pub threshold_tuning_report_count: Option<u64>,
     pub rosbag_export_validation_status: Option<String>,
     pub rosbag_export_validation_report_count: Option<u64>,
@@ -189,6 +191,7 @@ pub struct SupportBundleFieldEvidenceReport {
     pub replay_status: Option<String>,
     pub case_count: Option<u64>,
     pub field_case_count: Option<u64>,
+    pub capture_metadata_issue_count: Option<u64>,
     pub covered_conditions: Option<serde_json::Value>,
     pub required_conditions: Option<serde_json::Value>,
     pub requirements: Vec<SupportBundleFieldEvidenceCondition>,
@@ -276,6 +279,7 @@ pub struct SupportBundleThresholdTuningReport {
     pub replay_status: Option<String>,
     pub case_count: Option<u64>,
     pub field_case_count: Option<u64>,
+    pub capture_metadata_issue_count: Option<u64>,
     pub covered_conditions: Option<serde_json::Value>,
     pub margins: Option<serde_json::Value>,
 }
@@ -2467,6 +2471,9 @@ fn field_evidence_report_from_json(value: &serde_json::Value) -> SupportBundleFi
         field_case_count: summary
             .and_then(|value| value.get("field_case_count"))
             .and_then(|value| value.as_u64()),
+        capture_metadata_issue_count: summary
+            .and_then(|value| value.get("capture_metadata_issue_count"))
+            .and_then(|value| value.as_u64()),
         covered_conditions: summary
             .and_then(|value| value.get("covered_conditions"))
             .cloned(),
@@ -2492,6 +2499,9 @@ fn threshold_tuning_report_from_json(
             .and_then(|value| value.as_u64()),
         field_case_count: summary
             .and_then(|value| value.get("field_case_count"))
+            .and_then(|value| value.as_u64()),
+        capture_metadata_issue_count: summary
+            .and_then(|value| value.get("capture_metadata_issue_count"))
             .and_then(|value| value.as_u64()),
         covered_conditions: summary
             .and_then(|value| value.get("covered_conditions"))
@@ -3676,6 +3686,9 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         field_evidence_field_case_count: manifest
             .pointer("/field_evidence/field_case_count")
             .and_then(|value| value.as_u64()),
+        field_evidence_capture_metadata_issue_count: manifest
+            .pointer("/field_evidence/capture_metadata_issue_count")
+            .and_then(|value| value.as_u64()),
         field_evidence_report_count: manifest
             .pointer("/field_evidence/report_count")
             .and_then(|value| value.as_u64()),
@@ -3694,6 +3707,9 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         threshold_tuning_status: json_string(manifest.pointer("/threshold_tuning/status")),
         threshold_tuning_field_case_count: manifest
             .pointer("/threshold_tuning/field_case_count")
+            .and_then(|value| value.as_u64()),
+        threshold_tuning_capture_metadata_issue_count: manifest
+            .pointer("/threshold_tuning/capture_metadata_issue_count")
             .and_then(|value| value.as_u64()),
         threshold_tuning_report_count: manifest
             .pointer("/threshold_tuning/report_count")
@@ -3882,7 +3898,8 @@ mod tests {
             "field_evidence": {
                 "status": "passed",
                 "report_count": 1,
-                "field_case_count": 8
+                "field_case_count": 8,
+                "capture_metadata_issue_count": 0
             },
             "field_collection_plans": {
                 "status": "degraded",
@@ -3893,7 +3910,8 @@ mod tests {
             "threshold_tuning": {
                 "status": "passed",
                 "report_count": 1,
-                "field_case_count": 8
+                "field_case_count": 8,
+                "capture_metadata_issue_count": 0
             },
             "rosbag_export_validations": {
                 "status": "passed",
@@ -3951,6 +3969,10 @@ mod tests {
         assert_eq!(summary.feature_method_benchmark_report_count, Some(1));
         assert_eq!(summary.field_evidence_status.as_deref(), Some("passed"));
         assert_eq!(summary.field_evidence_field_case_count, Some(8));
+        assert_eq!(
+            summary.field_evidence_capture_metadata_issue_count,
+            Some(0)
+        );
         assert_eq!(summary.field_evidence_report_count, Some(1));
         assert_eq!(
             summary.field_collection_plan_status.as_deref(),
@@ -3961,6 +3983,10 @@ mod tests {
         assert_eq!(summary.field_collection_plan_report_count, Some(1));
         assert_eq!(summary.threshold_tuning_status.as_deref(), Some("passed"));
         assert_eq!(summary.threshold_tuning_field_case_count, Some(8));
+        assert_eq!(
+            summary.threshold_tuning_capture_metadata_issue_count,
+            Some(0)
+        );
         assert_eq!(summary.threshold_tuning_report_count, Some(1));
         assert_eq!(
             summary.rosbag_export_validation_status.as_deref(),
@@ -4850,6 +4876,7 @@ mod tests {
                     "replay_status": "passed",
                     "case_count": 1,
                     "field_case_count": 1,
+                    "capture_metadata_issue_count": 2,
                     "covered_conditions": ["good_texture"],
                     "required_conditions": ["good_texture", "low_texture"]
                 }
@@ -4871,6 +4898,7 @@ mod tests {
         assert_eq!(reports[0].report.coverage_status.as_deref(), Some("failed"));
         assert_eq!(reports[0].report.replay_status.as_deref(), Some("passed"));
         assert_eq!(reports[0].report.field_case_count, Some(1));
+        assert_eq!(reports[0].report.capture_metadata_issue_count, Some(2));
         assert_eq!(reports[0].report.requirements.len(), 2);
         assert_eq!(
             reports[0].report.requirements[0].status.as_deref(),
@@ -5155,6 +5183,7 @@ mod tests {
                     "replay_status": "passed",
                     "case_count": 8,
                     "field_case_count": 8,
+                    "capture_metadata_issue_count": 0,
                     "covered_conditions": ["good_texture", "wrong_map"]
                 },
                 "metrics": {
@@ -5183,6 +5212,7 @@ mod tests {
             Some("field-replay-gate-threshold-audit")
         );
         assert_eq!(reports[0].report.field_case_count, Some(8));
+        assert_eq!(reports[0].report.capture_metadata_issue_count, Some(0));
         assert!(reports[0].report.margins.is_some());
     }
 
@@ -5440,6 +5470,7 @@ mod tests {
                         "replay_status": "passed",
                         "case_count": 8,
                         "field_case_count": 8,
+                        "capture_metadata_issue_count": 0,
                         "covered_conditions": ["good_texture", "low_texture", "blur"],
                         "required_conditions": ["good_texture", "low_texture", "blur"]
                     }
@@ -5489,6 +5520,7 @@ mod tests {
                         "replay_status": "passed",
                         "case_count": 8,
                         "field_case_count": 8,
+                        "capture_metadata_issue_count": 0,
                         "covered_conditions": ["good_texture", "low_texture", "blur"]
                     },
                     "metrics": {
@@ -5707,6 +5739,10 @@ mod tests {
             Some("passed")
         );
         assert_eq!(details.field_evidence_reports[0].field_case_count, Some(8));
+        assert_eq!(
+            details.field_evidence_reports[0].capture_metadata_issue_count,
+            Some(0)
+        );
         assert_eq!(details.field_evidence_reports[0].requirements.len(), 3);
         assert_eq!(
             details.field_evidence_reports[0].requirements[0]
@@ -5768,6 +5804,10 @@ mod tests {
         assert_eq!(
             details.threshold_tuning_reports[0].field_case_count,
             Some(8)
+        );
+        assert_eq!(
+            details.threshold_tuning_reports[0].capture_metadata_issue_count,
+            Some(0)
         );
         assert_eq!(details.rosbag_export_validation_reports.len(), 1);
         assert_eq!(

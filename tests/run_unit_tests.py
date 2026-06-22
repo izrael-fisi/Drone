@@ -111,6 +111,35 @@ def write_minimal_tiff(path: Path, width: int, height: int) -> None:
     )
 
 
+def field_capture_metadata_fixture(
+    condition: str,
+    expected: str,
+    *,
+    bundle: str = "field-bundle",
+    site_name: str = "unit-field-site",
+) -> dict[str, object]:
+    return {
+        "schema_version": CAPTURE_METADATA_SCHEMA_VERSION,
+        "site_name": site_name,
+        "condition": condition,
+        "expected_behavior": expected,
+        "bundle": bundle,
+        "operator": "unit-operator",
+        "capture_date_utc": "2026-06-22T12:00:00Z",
+        "location_label": "unit-test-range",
+        "flight_altitude_agl_m": 35,
+        "speed_mps": 4,
+        "lighting": "nominal daylight",
+        "weather": "clear",
+        "terrain_texture": "mixed pavement and grass",
+        "map_age_or_season_notes": "same season as map",
+        "camera_focus_exposure_notes": "manual focus checked before capture",
+        "imu_px4_state_notes": "PX4 attitude stream healthy during capture",
+        "safety_notes": "closed test area",
+        "notes": f"Unit metadata for {condition}.",
+    }
+
+
 def write_scalar_float_tiff(path: Path, values: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     array = np.asarray(values, dtype="<f4")
@@ -1805,6 +1834,7 @@ RC8_OPTION,90
                         "replay_status": "passed",
                         "case_count": 8,
                         "field_case_count": 8,
+                        "capture_metadata_issue_count": 0,
                         "required_conditions": [
                             "good_texture",
                             "low_texture",
@@ -1876,6 +1906,7 @@ RC8_OPTION,90
                         "replay_status": "passed",
                         "case_count": 8,
                         "field_case_count": 8,
+                        "capture_metadata_issue_count": 0,
                         "covered_conditions": REQUIRED_FIELD_CONDITIONS,
                         "tuned_conditions": REQUIRED_FIELD_CONDITIONS,
                     },
@@ -2342,6 +2373,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "status": "passed",
                         "report_count": 1,
                         "field_case_count": 8,
+                        "capture_metadata_issue_count": 0,
                         "covered_conditions": REQUIRED_FIELD_CONDITIONS,
                     },
                     "rosbag_export_validations": {
@@ -2392,6 +2424,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "replay_status": "passed",
                         "case_count": 8,
                         "field_case_count": 8,
+                        "capture_metadata_issue_count": 0,
                         "covered_conditions": REQUIRED_FIELD_CONDITIONS,
                     },
                 }
@@ -2472,6 +2505,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                     "status": "passed",
                     "method": "unit-field-grid-search",
                     "conditions": REQUIRED_FIELD_CONDITIONS,
+                    "summary": {
+                        "field_case_count": 8,
+                        "capture_metadata_issue_count": 0,
+                        "covered_conditions": REQUIRED_FIELD_CONDITIONS,
+                    },
                 }
             )
         )
@@ -2679,6 +2717,30 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         if "./scripts/dev/run_local_autonomy_readiness_audit.sh" not in ready_runbook_phases["final_audit"]["commands"]:
             raise AssertionError("autonomy readiness proof runbook missing final local audit command")
+
+        missing_metadata_audit_field_report = root / "field_evidence_missing_metadata_audit.json"
+        missing_metadata_field_data = json.loads(field_report.read_text())
+        missing_metadata_field_data["summary"].pop("capture_metadata_issue_count", None)
+        missing_metadata_audit_field_report.write_text(json.dumps(missing_metadata_field_data))
+        missing_metadata_audit_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=direct_report_support_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=missing_metadata_audit_field_report,
+            field_collection_plan_path=field_collection_plan,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
+        )
+        missing_metadata_checks = {check["name"]: check["status"] for check in missing_metadata_audit_ready["checks"]}
+        assert_equal(
+            missing_metadata_checks["field_evidence_proof"],
+            "failed",
+            "autonomy readiness requires field capture metadata audit",
+        )
 
         compatibility_receiver_report = root / "receiver_evidence_compatibility.json"
         compatibility_receiver_data = json.loads(px4_receiver_report.read_text())
@@ -2984,6 +3046,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "status": "passed",
             "report_count": 1,
             "field_case_count": 8,
+            "capture_metadata_issue_count": 0,
             "covered_conditions": REQUIRED_FIELD_CONDITIONS,
             "reports": [
                 {
@@ -3668,6 +3731,25 @@ def test_replay_dataset_coverage_audit_requires_real_field_cases() -> None:
         assert_equal(field_report["field_case_count"], len(cases), "field replay coverage case count")
         if any(requirement["status"] != "covered" for requirement in field_report["requirements"]):
             raise AssertionError(f"Expected all coverage requirements to pass, got {field_report['requirements']}")
+        strict_without_metadata = audit_replay_dataset_coverage(
+            manifest,
+            require_field_logs=True,
+            require_capture_metadata=True,
+        )
+        assert_equal(strict_without_metadata["status"], "failed", "strict field replay coverage requires metadata")
+        if not any("capture metadata" in issue["message"].lower() for issue in strict_without_metadata["case_issues"]):
+            raise AssertionError("Expected missing capture metadata to create coverage errors")
+
+        for case in manifest_cases:
+            condition = case["conditions"][0]
+            case["capture_metadata"] = field_capture_metadata_fixture(condition, case["expected"])
+        manifest.write_text(json.dumps({"version": "0.1.0", "cases": manifest_cases}))
+        strict_with_metadata = audit_replay_dataset_coverage(
+            manifest,
+            require_field_logs=True,
+            require_capture_metadata=True,
+        )
+        assert_equal(strict_with_metadata["status"], "passed", "strict field replay coverage with metadata")
 
 
 def test_field_evidence_gate_combines_coverage_and_replay_gates() -> None:
@@ -3712,6 +3794,7 @@ def test_field_evidence_gate_combines_coverage_and_replay_gates() -> None:
                     "conditions": [condition],
                     "bundle": "field-bundle",
                     "log": str(log.relative_to(base)),
+                    "capture_metadata": field_capture_metadata_fixture(condition, expected),
                 }
             )
         manifest = base / "manifest.json"
@@ -3732,6 +3815,15 @@ def test_field_evidence_gate_combines_coverage_and_replay_gates() -> None:
         assert_equal(failed["status"], "failed", "field evidence gate missing log status")
         if not any(issue["severity"] == "error" for issue in failed["coverage"]["case_issues"]):
             raise AssertionError("Expected missing field log to create coverage error")
+
+        missing_metadata_manifest = base / "missing_metadata_manifest.json"
+        missing_metadata_cases = [dict(case) for case in manifest_cases]
+        missing_metadata_cases[0].pop("capture_metadata", None)
+        missing_metadata_manifest.write_text(json.dumps({"version": "0.1.0", "cases": missing_metadata_cases}))
+        missing_metadata = evaluate_field_evidence_gate(missing_metadata_manifest)
+        assert_equal(missing_metadata["status"], "failed", "field evidence gate missing metadata status")
+        if not any("capture metadata" in issue["message"].lower() for issue in missing_metadata["coverage"]["case_issues"]):
+            raise AssertionError("Expected missing capture metadata to fail field evidence gate")
 
 
 def test_threshold_tuning_report_requires_full_field_coverage() -> None:
@@ -3776,6 +3868,7 @@ def test_threshold_tuning_report_requires_full_field_coverage() -> None:
                     "conditions": [condition],
                     "bundle": "field-bundle",
                     "log": str(log.relative_to(base)),
+                    "capture_metadata": field_capture_metadata_fixture(condition, expected),
                 }
             )
         manifest = base / "manifest.json"

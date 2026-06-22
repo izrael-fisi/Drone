@@ -458,6 +458,7 @@ function SupportBundleDetailPanel({
               <div className="font-mono text-slate-500">
                 field cases {report.field_case_count ?? 0}/{report.case_count ?? 0}
                 {arrayCount(report.covered_conditions) > 0 ? `, conditions ${arrayCount(report.covered_conditions)}/${arrayCount(report.required_conditions)}` : ""}
+                {(report.capture_metadata_issue_count ?? 0) > 0 ? `, metadata issues ${report.capture_metadata_issue_count}` : ""}
               </div>
               {report.requirements.length > 0 && (
                 <div className="flex flex-wrap gap-1 pt-0.5">
@@ -528,6 +529,7 @@ function SupportBundleDetailPanel({
                 <div className="font-mono text-slate-500">
                   field cases {report.field_case_count ?? 0}/{report.case_count ?? 0}
                   {arrayCount(report.covered_conditions) > 0 ? `, conditions ${arrayCount(report.covered_conditions)}` : ""}
+                  {(report.capture_metadata_issue_count ?? 0) > 0 ? `, metadata issues ${report.capture_metadata_issue_count}` : ""}
                 </div>
                 <div className="flex flex-wrap gap-1.5 font-mono text-slate-500">
                   <span>good margin {formatMargin(margins?.good_map_accepted_rate)}</span>
@@ -872,6 +874,7 @@ export function SupportBundleList({
                   <span>pick {formatLabel(bundle.summary.feature_method_benchmark_recommended)}</span>
                   <span>field {formatLabel(bundle.summary.field_evidence_status)}</span>
                   <span>field cases {bundle.summary.field_evidence_field_case_count ?? 0}</span>
+                  <span>field metadata issues {bundle.summary.field_evidence_capture_metadata_issue_count ?? 0}</span>
                   <span>plan {formatLabel(bundle.summary.field_collection_plan_status)}</span>
                   <span>
                     plan registered {bundle.summary.field_collection_plan_registered_count ?? 0}/
@@ -879,6 +882,7 @@ export function SupportBundleList({
                   </span>
                   <span>thresholds {formatLabel(bundle.summary.threshold_tuning_status)}</span>
                   <span>threshold cases {bundle.summary.threshold_tuning_field_case_count ?? 0}</span>
+                  <span>threshold metadata issues {bundle.summary.threshold_tuning_capture_metadata_issue_count ?? 0}</span>
                   <span>rosbag {formatLabel(bundle.summary.rosbag_export_validation_status)}</span>
                   <span>
                     rosbag {bundle.summary.rosbag_export_validation_message_count ?? 0} msg /

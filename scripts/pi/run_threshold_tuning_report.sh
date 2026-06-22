@@ -57,7 +57,7 @@ EOF
 
 if [[ "$tuning_status" -ne 0 ]]; then
   echo
-  echo "Threshold tuning is not passing yet. This is expected until full real field coverage and replay gates pass." >&2
+  echo "Threshold tuning is not passing yet. This is expected until full real field coverage, complete capture metadata, and replay gates pass." >&2
   if [[ "$allow_failed" != "1" && "$allow_failed" != "true" ]]; then
     exit "$tuning_status"
   fi

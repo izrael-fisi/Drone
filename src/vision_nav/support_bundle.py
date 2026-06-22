@@ -706,6 +706,7 @@ def summarize_field_evidence_report(report: dict[str, Any], *, report_path: Path
         "replay_status": summary.get("replay_status"),
         "case_count": summary.get("case_count"),
         "field_case_count": summary.get("field_case_count"),
+        "capture_metadata_issue_count": summary.get("capture_metadata_issue_count"),
         "covered_conditions": summary.get("covered_conditions") or [],
         "required_conditions": summary.get("required_conditions") or [],
     }
@@ -763,6 +764,7 @@ def copy_field_evidence_reports(paths: list[str], support_dir: Path) -> dict[str
         "report_count": len(reports),
         "reports": reports,
         "field_case_count": max((int(report.get("field_case_count") or 0) for report in reports), default=0),
+        "capture_metadata_issue_count": sum(int(report.get("capture_metadata_issue_count") or 0) for report in reports),
         "covered_conditions": sorted(
             {
                 str(condition)
@@ -885,6 +887,7 @@ def summarize_threshold_tuning_report(report: dict[str, Any], *, report_path: Pa
         "replay_status": summary.get("replay_status"),
         "case_count": summary.get("case_count"),
         "field_case_count": summary.get("field_case_count"),
+        "capture_metadata_issue_count": summary.get("capture_metadata_issue_count"),
         "covered_conditions": summary.get("covered_conditions") or report.get("conditions") or [],
         "margins": margins,
     }
@@ -942,6 +945,7 @@ def copy_threshold_tuning_reports(paths: list[str], support_dir: Path) -> dict[s
         "report_count": len(reports),
         "reports": reports,
         "field_case_count": max((int(report.get("field_case_count") or 0) for report in reports), default=0),
+        "capture_metadata_issue_count": sum(int(report.get("capture_metadata_issue_count") or 0) for report in reports),
         "covered_conditions": sorted(
             {
                 str(condition)

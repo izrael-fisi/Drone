@@ -82,9 +82,10 @@ Field evidence template output:
 
 Next:
   1. Capture real field logs for each required condition.
-  2. Register logs into the seeded active manifest with:
+  2. Fill the capture_metadata JSON for the case you are registering.
+  3. Register logs into the seeded active manifest with:
      ./scripts/pi/register_field_replay_case.sh
-  3. Run:
+  4. Run:
      ./scripts/pi/run_threshold_tuning_report.sh
 
 __VISION_NAV_FIELD_TEMPLATE__=$output

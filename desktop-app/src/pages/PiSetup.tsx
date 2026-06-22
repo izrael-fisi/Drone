@@ -1609,6 +1609,11 @@ function FieldEvidenceReportList({
                       <span className="font-mono text-[10px] text-slate-500">
                         {covered}/{required} covered
                       </span>
+                      {(file.report.capture_metadata_issue_count ?? 0) > 0 && (
+                        <span className="font-mono text-[10px] text-red-300">
+                          metadata issues {file.report.capture_metadata_issue_count}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
                       {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
@@ -2232,6 +2237,11 @@ function ThresholdTuningReportList({
                     <span className="font-mono text-[10px] text-slate-500">
                       field cases {file.report.field_case_count ?? 0}
                     </span>
+                    {(file.report.capture_metadata_issue_count ?? 0) > 0 && (
+                      <span className="font-mono text-[10px] text-red-300">
+                        metadata issues {file.report.capture_metadata_issue_count}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
                     {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}

@@ -146,6 +146,7 @@ export interface SupportBundleFile {
     feature_method_benchmark_report_count?: number;
     field_evidence_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     field_evidence_field_case_count?: number;
+    field_evidence_capture_metadata_issue_count?: number;
     field_evidence_report_count?: number;
     field_collection_plan_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     field_collection_plan_registered_count?: number;
@@ -153,6 +154,7 @@ export interface SupportBundleFile {
     field_collection_plan_report_count?: number;
     threshold_tuning_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     threshold_tuning_field_case_count?: number;
+    threshold_tuning_capture_metadata_issue_count?: number;
     threshold_tuning_report_count?: number;
     rosbag_export_validation_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     rosbag_export_validation_report_count?: number;
@@ -301,6 +303,7 @@ export interface SupportBundleDetails {
     replay_status?: "passed" | "failed" | "degraded" | string;
     case_count?: number;
     field_case_count?: number;
+    capture_metadata_issue_count?: number;
     covered_conditions?: unknown;
     required_conditions?: unknown;
     requirements: Array<{
@@ -342,6 +345,7 @@ export interface SupportBundleDetails {
     replay_status?: "passed" | "failed" | "degraded" | string;
     case_count?: number;
     field_case_count?: number;
+    capture_metadata_issue_count?: number;
     covered_conditions?: unknown;
     margins?: unknown;
   }>;
@@ -703,6 +707,7 @@ export interface FieldEvidenceReportFile {
     replay_status?: "passed" | "failed" | "degraded" | string;
     case_count?: number;
     field_case_count?: number;
+    capture_metadata_issue_count?: number;
     covered_conditions?: unknown;
     required_conditions?: unknown;
     requirements: Array<{
@@ -791,6 +796,7 @@ export interface ThresholdTuningReportFile {
     replay_status?: "passed" | "failed" | "degraded" | string;
     case_count?: number;
     field_case_count?: number;
+    capture_metadata_issue_count?: number;
     covered_conditions?: unknown;
     margins?: unknown;
   };

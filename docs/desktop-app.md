@@ -364,7 +364,10 @@ operator/date, location label, flight altitude, speed, lighting, weather,
 terrain texture, map-age or seasonal notes, camera focus/exposure notes,
 IMU/PX4 state, safety notes, and freeform notes. Generated registration
 commands pass the filled JSON through `VISION_NAV_FIELD_CAPTURE_METADATA`, so
-registered field replay cases keep that context for support review.
+registered field replay cases keep that context for support review. The
+field-evidence and threshold-tuning proof gates require that metadata to be
+filled for every real field case; placeholder `TODO` values or missing numeric
+altitude/speed context keep the final readiness proof failed.
 
 Module Setup can also register the latest Pi terrain runtime log as a field
 evidence case after capture. The operator selects expected behavior, condition

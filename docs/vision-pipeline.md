@@ -378,6 +378,7 @@ On the Pi, register field logs before treating them as dataset coverage:
 VISION_NAV_FIELD_CASE_NAME=field-good-texture \
 VISION_NAV_FIELD_EXPECTED=good_map \
 VISION_NAV_FIELD_CONDITION=good_texture \
+VISION_NAV_FIELD_CAPTURE_METADATA='{"operator":"Izrael","capture_date_utc":"2026-06-22T12:00:00Z","location_label":"test range","flight_altitude_agl_m":35,"speed_mps":4,"lighting":"nominal","weather":"clear","terrain_texture":"mixed","map_age_or_season_notes":"same season","camera_focus_exposure_notes":"manual focus checked","imu_px4_state_notes":"attitude stream healthy","safety_notes":"closed test area"}' \
 ./scripts/pi/register_field_replay_case.sh
 ```
 
@@ -429,7 +430,9 @@ vision-nav-field-evidence-gate \
 
 This gate requires real field log files, checks that all required field
 conditions are covered, and evaluates every replay case with the same
-accepted/degraded/wrong-map gates used in support bundles.
+accepted/degraded/wrong-map gates used in support bundles. It also requires
+filled capture metadata for every real field case; placeholder metadata keeps
+the evidence report failed so field datasets remain auditable.
 
 Compare feature methods on the same real field replay log before promoting a
 runtime default:

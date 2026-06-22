@@ -71,6 +71,7 @@ def evaluate_threshold_tuning(
         manifest,
         require_field_logs=require_field_logs,
         require_log_exists=True,
+        require_capture_metadata=require_field_logs,
     )
     replay = evaluate_replay_case_manifest(
         manifest,
@@ -92,6 +93,7 @@ def evaluate_threshold_tuning(
             "replay_status": replay.get("status"),
             "case_count": replay.get("case_count"),
             "field_case_count": coverage.get("field_case_count"),
+            "capture_metadata_issue_count": coverage.get("capture_metadata_issue_count"),
             "covered_conditions": covered_conditions,
             "tuned_conditions": covered_conditions,
         },

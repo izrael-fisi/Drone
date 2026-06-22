@@ -353,6 +353,7 @@ def check_field_evidence(manifest: dict[str, Any], *, require: bool) -> dict[str
     details = {
         "report_count": evidence.get("report_count"),
         "field_case_count": evidence.get("field_case_count"),
+        "capture_metadata_issue_count": evidence.get("capture_metadata_issue_count"),
         "covered_conditions": evidence.get("covered_conditions"),
     }
     if status in MISSING:
