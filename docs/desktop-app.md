@@ -630,7 +630,10 @@ condition keys when available.
 If the package manifest includes a compact workflow-validation summary, the card
 also shows the workflow status, issue count, failed/degraded checks, missing
 final-proof markers, and non-passing required workflow steps from the package
-itself.
+itself. When field registration is blocked by incomplete capture metadata, the
+workflow-validation next-step hint uses the exact metadata-update command
+emitted by the Pi workflow, so the operator can resume at metadata completion
+before registration.
 The evidence-package command prints the same first missing package artifact
 labels to terminal logs, so CLI-only support reviews can identify absent proof
 gates without opening the ZIP manifest.

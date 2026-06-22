@@ -720,6 +720,7 @@ pub struct AutonomyEvidenceWorkflowValidationNextStep {
     pub notes: Option<String>,
     pub command: Option<String>,
     pub desktop_action: Option<String>,
+    pub metadata_update_command: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -3756,6 +3757,7 @@ fn workflow_validation_next_step_from_json(
         notes: json_string(value.get("notes")),
         command: json_string(value.get("command")),
         desktop_action: json_string(value.get("desktop_action")),
+        metadata_update_command: json_string(value.get("metadata_update_command")),
     })
 }
 
@@ -5356,7 +5358,8 @@ mod tests {
                             "exit_code": 0,
                             "notes": "Waiting for field replay capture.",
                             "command": "./scripts/pi/register_field_replay_case.sh",
-                            "desktop_action": "Module Setup > Field Evidence Case > Register"
+                            "desktop_action": "Module Setup > Field Evidence Case > Register",
+                            "metadata_update_command": "./scripts/pi/update_field_capture_metadata.sh --condition blur"
                         },
                         "checks": [
                             {"name": "schema", "status": "passed", "message": "Workflow JSON is valid."},
@@ -5618,6 +5621,13 @@ mod tests {
                 .as_ref()
                 .and_then(|step| step.command.as_deref()),
             Some("./scripts/pi/register_field_replay_case.sh")
+        );
+        assert_eq!(
+            package_validation
+                .next_required_step
+                .as_ref()
+                .and_then(|step| step.metadata_update_command.as_deref()),
+            Some("./scripts/pi/update_field_capture_metadata.sh --condition blur")
         );
         assert_eq!(package_validation.checks.len(), 3);
         assert_eq!(

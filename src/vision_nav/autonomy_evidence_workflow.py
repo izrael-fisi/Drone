@@ -100,6 +100,7 @@ FINAL_PROOF_MARKERS = [
     "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__",
 ]
 FINAL_PROOF_MARKER_ALTERNATIVES: list[tuple[str, ...]] = []
+FIELD_METADATA_UPDATE_COMMAND_MARKER = "__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__"
 
 
 def parse_args() -> argparse.Namespace:
@@ -175,11 +176,11 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
     else:
         checks.append(passed("step_statuses", "Workflow step statuses are parseable.", status_counts))
 
-    next_required_step = workflow_next_required_step(steps)
-    step_result_check = validate_required_step_results(steps)
+    markers = report.get("markers") if isinstance(report.get("markers"), dict) else {}
+    next_required_step = workflow_next_required_step(steps, markers=markers)
+    step_result_check = validate_required_step_results(steps, markers=markers)
     checks.append(step_result_check)
 
-    markers = report.get("markers") if isinstance(report.get("markers"), dict) else {}
     important_presence = marker_presence(
         markers,
         required_markers=IMPORTANT_MARKERS,
@@ -367,7 +368,7 @@ def last_workflow_step(steps: list[Any], name: str) -> dict[str, Any] | None:
     return None
 
 
-def validate_required_step_results(steps: list[Any]) -> dict[str, Any]:
+def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] | None = None) -> dict[str, Any]:
     by_name = {str(step.get("name")): step for step in steps if isinstance(step, dict) and step.get("name")}
     non_passed_steps: list[dict[str, Any]] = []
     missing_steps: list[str] = []
@@ -391,7 +392,7 @@ def validate_required_step_results(steps: list[Any]) -> dict[str, Any]:
         "missing_steps": missing_steps,
         "non_passed_steps": non_passed_steps,
         "non_passed_count": len(non_passed_steps),
-        "next_required_step": workflow_next_required_step(steps),
+        "next_required_step": workflow_next_required_step(steps, markers=markers),
     }
     if missing_steps:
         return failed(
@@ -412,12 +413,17 @@ def validate_required_step_results(steps: list[Any]) -> dict[str, Any]:
     )
 
 
-def workflow_next_required_step(steps: list[Any]) -> dict[str, Any] | None:
+def workflow_next_required_step(steps: list[Any], *, markers: dict[str, Any] | None = None) -> dict[str, Any] | None:
     by_name = {str(step.get("name")): step for step in steps if isinstance(step, dict) and step.get("name")}
     for name in REQUIRED_WORKFLOW_STEPS:
         step = by_name.get(name)
         if step is None:
-            return workflow_step_summary(name, status="missing", notes="Required workflow step has not been recorded yet.")
+            return workflow_step_summary(
+                name,
+                status="missing",
+                notes="Required workflow step has not been recorded yet.",
+                markers=markers,
+            )
         status = str(step.get("status") or "unknown")
         if status != "passed":
             return workflow_step_summary(
@@ -425,11 +431,19 @@ def workflow_next_required_step(steps: list[Any]) -> dict[str, Any] | None:
                 status=status,
                 exit_code=step.get("exit_code"),
                 notes=step.get("notes"),
+                markers=markers,
             )
     return None
 
 
-def workflow_step_summary(name: str, *, status: str, exit_code: Any = None, notes: Any = None) -> dict[str, Any]:
+def workflow_step_summary(
+    name: str,
+    *,
+    status: str,
+    exit_code: Any = None,
+    notes: Any = None,
+    markers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     guidance = WORKFLOW_STEP_GUIDANCE.get(name, {})
     summary: dict[str, Any] = {
         "name": name,
@@ -443,7 +457,22 @@ def workflow_step_summary(name: str, *, status: str, exit_code: Any = None, note
         summary["command"] = guidance["command"]
     if guidance.get("desktop_action"):
         summary["desktop_action"] = guidance["desktop_action"]
+    apply_marker_guidance(summary, markers)
     return summary
+
+
+def apply_marker_guidance(summary: dict[str, Any], markers: dict[str, Any] | None) -> None:
+    if summary.get("name") != "register_field_replay_case" or not isinstance(markers, dict):
+        return
+    metadata_update_command = markers.get(FIELD_METADATA_UPDATE_COMMAND_MARKER)
+    if not isinstance(metadata_update_command, str) or not metadata_update_command.strip():
+        return
+    summary["command"] = metadata_update_command.strip()
+    summary["desktop_action"] = "Module Setup > Field Evidence Case > Update Metadata"
+    summary["metadata_update_command"] = metadata_update_command.strip()
+    existing_notes = str(summary.get("notes") or "").strip()
+    guidance = "Capture metadata is incomplete; run the metadata update command before registration."
+    summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
 
 
 def marker_presence(

@@ -1009,6 +1009,11 @@ Status:
   workflow cards, and saved setup reports now preserve the next required
   workflow step with command and desktop-action hints, so a partial external
   evidence run can resume at the correct proof action.
+- Done: workflow validation now uses the
+  `__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__` marker as the next command
+  when field replay registration is waiting on incomplete capture metadata, so
+  partial workflows resume at metadata completion instead of generic
+  registration.
 - Done: the Pi evidence workflow now auto-loads the field collection plan's next
   pending condition when no explicit field case is supplied, redirects capture
   to the condition-specific output folder, and skips registration until the

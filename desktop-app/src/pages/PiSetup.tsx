@@ -875,7 +875,9 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
       {nextStep && (
         <span
           className="inline-flex max-w-full items-center gap-1 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-amber-200"
-          title={[nextStep.desktop_action, nextStep.command, nextStep.notes].filter(Boolean).join("\n") || undefined}
+          title={[nextStep.desktop_action, nextStep.command, nextStep.metadata_update_command, nextStep.notes]
+            .filter(Boolean)
+            .join("\n") || undefined}
         >
           <span className={cn(readinessBadgeClass(nextStep.status), "text-[9px] px-1 py-0")}>next</span>
           <span className="truncate font-mono">{formatReadinessLabel(nextStep.name)}</span>

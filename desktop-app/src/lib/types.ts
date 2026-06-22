@@ -677,6 +677,7 @@ export interface AutonomyEvidenceWorkflowValidationNextStep {
   notes?: string;
   command?: string;
   desktop_action?: string;
+  metadata_update_command?: string;
 }
 
 export interface AutonomyEvidenceWorkflowReportFile {

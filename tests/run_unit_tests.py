@@ -2594,6 +2594,42 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         if "__VISION_NAV_PX4_SITL_PREREQS__" in detailed_checks["final_proof_markers"]["details"]["present_markers"]:
             raise AssertionError("PX4 prereq diagnostics should not satisfy final proof markers")
 
+        metadata_blocked_report = json.loads(report_path.read_text())
+        metadata_command = (
+            "VISION_NAV_FIELD_MANIFEST=/tmp/field_manifest.json "
+            "VISION_NAV_FIELD_CONDITION=good_texture "
+            "./scripts/pi/update_field_capture_metadata.sh"
+        )
+        metadata_blocked_report["markers"]["__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__"] = metadata_command
+        for step in metadata_blocked_report["steps"]:
+            if step.get("name") == "register_field_replay_case":
+                step["status"] = "skipped"
+                step["notes"] = "Loaded field condition has incomplete capture metadata."
+        metadata_blocked_path = root / "metadata_blocked_autonomy_evidence_workflow.json"
+        metadata_blocked_path.write_text(json.dumps(metadata_blocked_report))
+        metadata_blocked_validation = validate_workflow_report(metadata_blocked_path)
+        assert_equal(
+            metadata_blocked_validation["next_required_step"]["name"],
+            "register_field_replay_case",
+            "workflow validation metadata-blocked next step name",
+        )
+        assert_equal(
+            metadata_blocked_validation["next_required_step"]["command"],
+            metadata_command,
+            "workflow validation metadata-blocked next command",
+        )
+        assert_equal(
+            metadata_blocked_validation["next_required_step"]["desktop_action"],
+            "Module Setup > Field Evidence Case > Update Metadata",
+            "workflow validation metadata-blocked desktop action",
+        )
+        metadata_blocked_checks = {check["name"]: check for check in metadata_blocked_validation["checks"]}
+        assert_equal(
+            metadata_blocked_checks["required_step_results"]["details"]["next_required_step"]["metadata_update_command"],
+            metadata_command,
+            "workflow validation required-step metadata command detail",
+        )
+
         missing_required_step_report = json.loads(report_path.read_text())
         missing_required_step_report["steps"] = [
             step for step in missing_required_step_report["steps"] if step.get("name") != "capture_field_terrain_log"
