@@ -296,7 +296,10 @@ def normalize_selected_condition(
         normalized["bundle_validation_command"] = bundle_validation_command(bundle_path)
     capture_command = str(normalized.get("capture_command") or "").strip()
     if capture_command:
-        normalized["capture_command"] = command_with_runtime_status_read(capture_command)
+        normalized["capture_command"] = command_with_runtime_status_read(
+            capture_command,
+            runtime_status_root=str(normalized.get("capture_output_dir") or "").strip() or None,
+        )
     metadata_command = str(normalized.get("metadata_update_command") or "").strip()
     if condition_key and not metadata_update_command_is_detailed(metadata_command):
         manifest_path = plan.get("manifest_path")
@@ -435,7 +438,13 @@ def script_check(repo: Path, name: str, relative_path: str) -> dict[str, Any]:
 def capture_command_check(command: str) -> dict[str, Any]:
     missing = [
         needle
-        for needle in ("run_terrain_nav_loop.sh", "read_runtime_status.sh", "VISION_NAV_OUTPUT_DIR", "VISION_NAV_COUNT")
+        for needle in (
+            "run_terrain_nav_loop.sh",
+            "read_runtime_status.sh",
+            "VISION_NAV_RUNTIME_STATUS_ROOTS",
+            "VISION_NAV_OUTPUT_DIR",
+            "VISION_NAV_COUNT",
+        )
         if needle not in command
     ]
     if missing:

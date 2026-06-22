@@ -2497,7 +2497,7 @@ RC8_OPTION,90
                             "status": "blocked",
                             "title": "Capture the terrain log and runtime status for this condition.",
                             "desktop_action": "Module Setup > Field Log Capture",
-                            "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+                            "command": f"VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'} ./scripts/pi/read_runtime_status.sh",
                             "waits_on": ["bundle_path"],
                             "source_log": str(root / "field-captures" / "good_texture" / "terrain_matches.jsonl"),
                             "runtime_status_path": str(root / "field-captures" / "good_texture" / "runtime_status.json"),
@@ -3151,7 +3151,7 @@ RC8_OPTION,90
         assert_equal(runtime_checks["runtime_status"], "degraded", "bench readiness runtime status degrade")
         assert_equal(
             runtime_actions["runtime_status"]["command"],
-            "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+            "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match ./scripts/pi/read_runtime_status.sh",
             "bench readiness runtime status next action command",
         )
         field_next_condition = {
@@ -3171,7 +3171,9 @@ RC8_OPTION,90
         runtime_field_actions = {action["check"]: action for action in runtime_field_degraded["next_actions"]}
         expected_field_capture_command = (
             f"VISION_NAV_OUTPUT_DIR={root / 'field-captures' / 'good_texture'} "
-            "./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh"
+            "./scripts/pi/run_terrain_nav_loop.sh && "
+            f"VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'} \\\n"
+            "  ./scripts/pi/read_runtime_status.sh"
         )
         assert_equal(
             runtime_field_actions["runtime_status"]["command"],
@@ -3550,7 +3552,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             preflight_blocked_validation["next_required_step"]["capture_command_after_preflight"],
-            f"{capture_command} && ./scripts/pi/read_runtime_status.sh",
+            f"{capture_command} && VISION_NAV_RUNTIME_STATUS_ROOTS={capture_output_dir} ./scripts/pi/read_runtime_status.sh",
             "workflow validation preserves capture command after preflight",
         )
         assert_equal(
@@ -3648,7 +3650,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             stale_preflight_ready_validation["next_required_step"]["command"],
-            f"{ready_preflight_capture_command} && ./scripts/pi/read_runtime_status.sh",
+            f"{ready_preflight_capture_command} && VISION_NAV_RUNTIME_STATUS_ROOTS={ready_preflight_capture_output} ./scripts/pi/read_runtime_status.sh",
             "workflow validation should prefer the refreshed preflight capture command",
         )
         assert_equal(
@@ -3721,7 +3723,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             capture_blocked_validation["next_required_step"]["capture_command_after_bundle"],
-            f"{capture_command} && ./scripts/pi/read_runtime_status.sh",
+            f"{capture_command} && VISION_NAV_RUNTIME_STATUS_ROOTS={capture_output_dir} ./scripts/pi/read_runtime_status.sh",
             "workflow validation preserves capture command after missing-bundle fix",
         )
         assert_equal(
@@ -3831,7 +3833,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             missing_required_step_validation["next_required_step"]["command"],
-            "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+            "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match ./scripts/pi/read_runtime_status.sh",
             "workflow validation missing capture guidance should include runtime status read",
         )
         missing_step_output = io.StringIO()
@@ -4304,7 +4306,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "status": "blocked",
                             "title": "Capture the terrain log and runtime status for this condition.",
                             "desktop_action": "Module Setup > Field Log Capture",
-                            "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+                            "command": f"VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'} ./scripts/pi/read_runtime_status.sh",
                             "waits_on": ["bundle_path"],
                             "source_log": str(root / "field-captures" / "good_texture" / "terrain_matches.jsonl"),
                             "runtime_status_path": str(root / "field-captures" / "good_texture" / "runtime_status.json"),
@@ -4427,7 +4429,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "expected_log": str(root / "field-captures/good_texture/terrain_matches.jsonl"),
                         "output_dir": str(root / "field-captures/good_texture"),
                         "runtime_status_path": str(root / "field-captures/good_texture/runtime_status.json"),
-                        "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+                        "capture_command_after_bundle": f"VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'} ./scripts/pi/read_runtime_status.sh",
                     },
                     "checks": [
                         {
@@ -6067,7 +6069,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             )
             assert_equal(
                 workflow_validation_summary["next_required_step"]["capture_command_after_bundle"],
-                "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+                f"VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'} ./scripts/pi/read_runtime_status.sh",
                 "autonomy evidence package workflow validation capture-after-bundle command",
             )
             assert_equal(
@@ -6637,6 +6639,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected generated capture command to be bounded")
         if "read_runtime_status.sh" not in good_texture["capture_command"]:
             raise AssertionError("Expected generated capture command to read runtime status after capture")
+        if "VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture" not in good_texture["capture_command"]:
+            raise AssertionError("Expected generated capture command to read the condition-specific runtime status")
         if "update_field_capture_metadata.sh" not in good_texture["metadata_update_command"]:
             raise AssertionError("Expected generated metadata update command")
         if "VISION_NAV_FIELD_CONDITION=good_texture" not in good_texture["metadata_update_command"]:

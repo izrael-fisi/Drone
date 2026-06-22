@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import platform
 import shutil
+import shlex
 import subprocess
 import sys
 import zipfile
@@ -1082,7 +1083,10 @@ def summarize_field_collection_condition(
         if preflight_command:
             summary["preflight_command"] = preflight_command
         if item.get("capture_command"):
-            summary["capture_command"] = command_with_runtime_status_read(str(item.get("capture_command")))
+            summary["capture_command"] = command_with_runtime_status_read(
+                str(item.get("capture_command")),
+                runtime_status_root=str(item.get("capture_output_dir") or "").strip() or None,
+            )
         if item.get("metadata_update_command"):
             summary["metadata_update_command"] = item.get("metadata_update_command")
         if item.get("register_command"):
@@ -1090,10 +1094,26 @@ def summarize_field_collection_condition(
     return summary
 
 
-def command_with_runtime_status_read(command: str) -> str:
+def command_with_runtime_status_read(command: str, runtime_status_root: str | None = None) -> str:
+    read_command = "./scripts/pi/read_runtime_status.sh"
+    if runtime_status_root:
+        read_command = (
+            f"VISION_NAV_RUNTIME_STATUS_ROOTS={shell_env_value(runtime_status_root)} "
+            "./scripts/pi/read_runtime_status.sh"
+        )
     if "read_runtime_status.sh" in command:
+        if runtime_status_root and "VISION_NAV_RUNTIME_STATUS_ROOTS" not in command:
+            return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
         return command
-    return f"{command} && ./scripts/pi/read_runtime_status.sh"
+    return f"{command} && {read_command}"
+
+
+def shell_env_value(value: Any) -> str:
+    text = str(value)
+    expandable_prefixes = ("$HOME/", "${HOME}/", "$PWD/", "${PWD}/")
+    if text.startswith(expandable_prefixes) and all(ch not in text for ch in " \t\n\"'`;&|<>"):
+        return text
+    return shlex.quote(text)
 
 
 def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:

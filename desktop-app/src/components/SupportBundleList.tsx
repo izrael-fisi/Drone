@@ -182,7 +182,7 @@ const BENCH_FOLLOW_UPS: Record<string, { title: string; desktopAction: string; c
   runtime_status: {
     title: "Capture runtime status with the terrain log",
     desktopAction: "Module Setup > Field Log Capture, Runtime Status, then Bench Report",
-    command: "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+    command: "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match ./scripts/pi/read_runtime_status.sh",
     notes: "Runtime status proves active map, output path, estimator health, and latest match state.",
   },
   replay_gates: {

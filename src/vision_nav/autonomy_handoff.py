@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import shlex
 from typing import Any
 
 from vision_nav.field_collection_plan import (
@@ -520,7 +521,10 @@ def normalize_field_collection_condition(item: dict[str, Any], *, plan: dict[str
         )
     command = normalized.get("capture_command")
     if isinstance(command, str) and command:
-        normalized["capture_command"] = command_with_runtime_status_read(command)
+        normalized["capture_command"] = command_with_runtime_status_read(
+            command,
+            runtime_status_root=str(normalized.get("capture_output_dir") or "").strip() or None,
+        )
     metadata_command = str(normalized.get("metadata_update_command") or "")
     if not metadata_update_command_is_detailed(metadata_command):
         manifest_path = (plan or {}).get("manifest_path")
@@ -535,10 +539,26 @@ def normalize_field_collection_condition(item: dict[str, Any], *, plan: dict[str
     return normalized
 
 
-def command_with_runtime_status_read(command: str) -> str:
+def command_with_runtime_status_read(command: str, runtime_status_root: str | None = None) -> str:
+    read_command = "./scripts/pi/read_runtime_status.sh"
+    if runtime_status_root:
+        read_command = (
+            f"VISION_NAV_RUNTIME_STATUS_ROOTS={shell_env_value(runtime_status_root)} "
+            "./scripts/pi/read_runtime_status.sh"
+        )
     if "read_runtime_status.sh" in command:
+        if runtime_status_root and "VISION_NAV_RUNTIME_STATUS_ROOTS" not in command:
+            return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
         return command
-    return f"{command} && ./scripts/pi/read_runtime_status.sh"
+    return f"{command} && {read_command}"
+
+
+def shell_env_value(value: Any) -> str:
+    text = str(value)
+    expandable_prefixes = ("$HOME/", "${HOME}/", "$PWD/", "${PWD}/")
+    if text.startswith(expandable_prefixes) and all(ch not in text for ch in " \t\n\"'`;&|<>"):
+        return text
+    return shlex.quote(text)
 
 
 def missing_condition_checklist(report: dict[str, Any]) -> list[str]:

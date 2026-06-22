@@ -4023,6 +4023,7 @@ fn field_collection_plan_condition_from_json(
         return None;
     }
     let capture_command = json_string(item.get("capture_command"));
+    let capture_output_dir = json_string(item.get("capture_output_dir"));
     Some(FieldCollectionPlanCondition {
         condition: json_string(item.get("condition")),
         label: json_string(item.get("label")),
@@ -4036,7 +4037,7 @@ fn field_collection_plan_condition_from_json(
             .and_then(|value| value.as_bool()),
         source_log: json_string(item.get("source_log")),
         legacy_source_log: json_string(item.get("legacy_source_log")),
-        capture_output_dir: json_string(item.get("capture_output_dir")),
+        capture_output_dir: capture_output_dir.clone(),
         runtime_status_path: json_string(item.get("runtime_status_path")),
         has_capture_command: item
             .get("has_capture_command")
@@ -4054,20 +4055,47 @@ fn field_collection_plan_condition_from_json(
             .or_else(|| json_string(item.get("register_command")).map(|value| !value.is_empty())),
         bundle: json_string(item.get("bundle")),
         capture_metadata: item.get("capture_metadata").cloned(),
-        capture_command: capture_command_with_runtime_status(capture_command),
+        capture_command: capture_command_with_runtime_status(capture_command, capture_output_dir.as_deref()),
         metadata_update_command: json_string(item.get("metadata_update_command")),
         register_command: json_string(item.get("register_command")),
     })
 }
 
-fn capture_command_with_runtime_status(command: Option<String>) -> Option<String> {
+fn capture_command_with_runtime_status(command: Option<String>, runtime_status_root: Option<&str>) -> Option<String> {
     command.map(|value| {
+        let read_command = runtime_status_root
+            .filter(|root| !root.trim().is_empty())
+            .map(|root| {
+                format!(
+                    "VISION_NAV_RUNTIME_STATUS_ROOTS={} ./scripts/pi/read_runtime_status.sh",
+                    shell_env_value(root.trim())
+                )
+            })
+            .unwrap_or_else(|| "./scripts/pi/read_runtime_status.sh".to_string());
         if value.contains("read_runtime_status.sh") {
-            value
+            if runtime_status_root.is_some() && !value.contains("VISION_NAV_RUNTIME_STATUS_ROOTS") {
+                value.replace("./scripts/pi/read_runtime_status.sh", &read_command)
+            } else {
+                value
+            }
         } else {
-            format!("{value} && ./scripts/pi/read_runtime_status.sh")
+            format!("{value} && {read_command}")
         }
     })
+}
+
+fn shell_env_value(value: &str) -> String {
+    let expandable_path = ["$HOME/", "${HOME}/", "$PWD/", "${PWD}/"]
+        .iter()
+        .any(|prefix| value.starts_with(prefix));
+    let has_unsafe = value
+        .chars()
+        .any(|ch| ch.is_whitespace() || matches!(ch, '"' | '\'' | '`' | ';' | '&' | '|' | '<' | '>'));
+    if expandable_path && !has_unsafe {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\"'\"'"))
+    }
 }
 
 fn field_collection_plan_report_from_json(
@@ -6531,7 +6559,7 @@ mod tests {
                     "expected_log": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/terrain_matches.jsonl",
                     "output_dir": "/home/user/DroneTransfer/outgoing/field-captures/good_texture",
                     "runtime_status_path": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/runtime_status.json",
-                    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh"
+                    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=/home/user/DroneTransfer/outgoing/field-captures/good_texture ./scripts/pi/read_runtime_status.sh"
                 },
                 "checks": [
                     {
@@ -6702,7 +6730,7 @@ mod tests {
         );
         assert_eq!(
             next_step.capture_command_after_bundle.as_deref(),
-            Some("VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh")
+            Some("VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=/home/user/DroneTransfer/outgoing/field-captures/good_texture ./scripts/pi/read_runtime_status.sh")
         );
         assert_eq!(validation.checks.len(), 3);
         assert_eq!(
@@ -6990,6 +7018,7 @@ mod tests {
                         "case_name": "site-a-low-texture",
                         "manifest_log_exists": false,
                         "source_log": "/home/user/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl",
+                        "capture_output_dir": "/tmp/field-captures/low_texture",
                         "capture_command": "VISION_NAV_OUTPUT_DIR=/tmp/field-captures/low_texture ./scripts/pi/run_terrain_nav_loop.sh",
                         "metadata_update_command": "VISION_NAV_FIELD_CONDITION=low_texture ./scripts/pi/update_field_capture_metadata.sh",
                         "register_command": "VISION_NAV_FIELD_CASE_NAME=site-a-low-texture ./scripts/pi/register_field_replay_case.sh"
@@ -7056,7 +7085,7 @@ mod tests {
         assert_eq!(next_condition.condition.as_deref(), Some("low_texture"));
         assert_eq!(
                 next_condition.capture_command.as_deref(),
-                Some("VISION_NAV_OUTPUT_DIR=/tmp/field-captures/low_texture ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh")
+                Some("VISION_NAV_OUTPUT_DIR=/tmp/field-captures/low_texture ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS='/tmp/field-captures/low_texture' ./scripts/pi/read_runtime_status.sh")
             );
         assert_eq!(
             next_condition.metadata_update_command.as_deref(),
@@ -8126,7 +8155,7 @@ mod tests {
         assert_eq!(next_condition.condition.as_deref(), Some("blur"));
         assert_eq!(
             next_condition.capture_command.as_deref(),
-            Some("./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh")
+            Some("./scripts/pi/run_terrain_nav_loop.sh --condition blur && VISION_NAV_RUNTIME_STATUS_ROOTS='field-captures/blur' ./scripts/pi/read_runtime_status.sh")
         );
         assert_eq!(
             next_condition.register_command.as_deref(),

@@ -504,6 +504,11 @@ Status:
 - Done: the guided evidence workflow now records
   `__VISION_NAV_TERRAIN_CAPTURE_COMMAND__` with the runtime-status read step
   included, so raw workflow markers match the operator handoff command.
+- Done: field capture commands, app runtime buttons, stale preflight reports,
+  support-bundle summaries, readiness next actions, and Markdown handoffs now
+  scope `read_runtime_status.sh` with `VISION_NAV_RUNTIME_STATUS_ROOTS` pointed
+  at the same capture output directory, preventing stale `runtime_status.json`
+  snapshots from a different run from being reported as proof.
 
 Tasks:
 

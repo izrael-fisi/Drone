@@ -333,6 +333,7 @@ fi
 
 PYTHONPATH="$repo_root/src" "$python_bin" - "$tmp_report" <<'PY'
 import json
+import shlex
 import sys
 
 try:
@@ -399,6 +400,28 @@ def unique_ordered(values):
         seen.add(key)
         ordered.append(key)
     return ordered
+
+
+def shell_env_value(value):
+    text = str(value)
+    expandable_prefixes = ("$HOME/", "${HOME}/", "$PWD/", "${PWD}/")
+    if text.startswith(expandable_prefixes) and all(ch not in text for ch in " \t\n\"'`;&|<>"):
+        return text
+    return shlex.quote(text)
+
+
+def command_with_runtime_status_root(command, output_dir):
+    if not isinstance(command, str) or not command.strip():
+        return command
+    if "read_runtime_status.sh" not in command or "VISION_NAV_RUNTIME_STATUS_ROOTS" in command:
+        return command
+    if not isinstance(output_dir, str) or not output_dir.strip():
+        return command
+    read_command = (
+        f"VISION_NAV_RUNTIME_STATUS_ROOTS={shell_env_value(output_dir.strip())} "
+        "./scripts/pi/read_runtime_status.sh"
+    )
+    return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
 
 
 def order_field_conditions(values):
@@ -1091,7 +1114,11 @@ if isinstance(field_preflight, dict):
                     print_search_roots(diagnostic, "    ")
                     print_bundle_recommendations(diagnostic, "    ")
                 if item.get("command"):
-                    print(f"    command: {item.get('command')}")
+                    command = command_with_runtime_status_root(
+                        item.get("command"),
+                        item.get("capture_output_dir") or field_preflight.get("capture_output_dir"),
+                    )
+                    print(f"    command: {command}")
 
 px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
 if isinstance(px4_prereqs, dict):

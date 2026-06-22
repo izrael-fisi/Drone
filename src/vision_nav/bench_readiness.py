@@ -44,7 +44,7 @@ BENCH_NEXT_ACTIONS = {
     "runtime_status": {
         "title": "Capture runtime status with the terrain log.",
         "desktop_action": "Module Setup > Field Log Capture, Runtime Status, then Bench Report",
-        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match ./scripts/pi/read_runtime_status.sh",
         "notes": "Runtime status proves active map, output path, estimator health, and latest match state.",
     },
     "replay_gates": {
@@ -608,7 +608,14 @@ def enrich_action_with_field_capture(
         return
     capture_command = condition.get("capture_command")
     if isinstance(capture_command, str) and capture_command.strip():
-        action["command"] = command_with_runtime_status_read(capture_command) if append_runtime_status_read else capture_command
+        action["command"] = (
+            command_with_runtime_status_read(
+                capture_command,
+                runtime_status_root=str(condition.get("capture_output_dir") or "").strip() or None,
+            )
+            if append_runtime_status_read
+            else capture_command
+        )
 
     field_mappings = {
         "field_condition": "condition",
@@ -643,15 +650,31 @@ def enrich_action_with_field_capture(
         action["notes"] = " ".join([str(action.get("notes") or ""), *detail_lines]).strip()
 
 
-def command_with_runtime_status_read(command: str) -> str:
+def command_with_runtime_status_read(command: str, runtime_status_root: str | None = None) -> str:
+    read_command = "./scripts/pi/read_runtime_status.sh"
+    if runtime_status_root:
+        read_command = shell_command(
+            {"VISION_NAV_RUNTIME_STATUS_ROOTS": runtime_status_root},
+            "./scripts/pi/read_runtime_status.sh",
+        )
     if "read_runtime_status.sh" in command:
+        if runtime_status_root and "VISION_NAV_RUNTIME_STATUS_ROOTS" not in command:
+            return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
         return command
-    return f"{command} && ./scripts/pi/read_runtime_status.sh"
+    return f"{command} && {read_command}"
 
 
 def shell_command(env: dict[str, str], command: str) -> str:
-    parts = [f"{key}={shlex.quote(str(value))}" for key, value in env.items() if str(value)]
+    parts = [f"{key}={shell_env_value(value)}" for key, value in env.items() if str(value)]
     return " \\\n  ".join(parts + [command])
+
+
+def shell_env_value(value: Any) -> str:
+    text = str(value)
+    expandable_prefixes = ("$HOME/", "${HOME}/", "$PWD/", "${PWD}/")
+    if text.startswith(expandable_prefixes) and all(ch not in text for ch in " \t\n\"'`;&|<>"):
+        return text
+    return shlex.quote(text)
 
 
 def normalize_status(value: Any) -> str | None:

@@ -406,7 +406,9 @@ assert "__VISION_NAV_RUNTIME_STATUS__" in capture["markers"]
 assert "read_runtime_status.sh" in capture["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"]
 assert Path(capture["markers"]["__VISION_NAV_TERRAIN_LOG__"]).exists()
 assert Path(capture["markers"]["__VISION_NAV_RUNTIME_STATUS__"]).exists()
-assert "Stub terrain capture wrote" in "\n".join(capture["tail"])
+tail_text = "\n".join(capture["tail"])
+assert "__VISION_NAV_RUNTIME_STATUS_JSON__" in tail_text
+assert "Runtime status summary:" in tail_text
 PY
 invalid_workflow_dir="$field_smoke_dir/workflow-invalid-log"
 mkdir -p "$invalid_workflow_dir"
@@ -880,7 +882,7 @@ cat >"$local_audit_dir/replay-cases/autonomy-evidence-workflow/autonomy_evidence
     "expected_log": "/tmp/field-captures/good_texture/terrain_matches.jsonl",
     "output_dir": "/tmp/field-captures/good_texture",
     "runtime_status_path": "/tmp/field-captures/good_texture/runtime_status.json",
-    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh"
+    "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=/tmp/field-captures/good_texture ./scripts/pi/read_runtime_status.sh"
   },
   "checks": [
     {
@@ -958,7 +960,7 @@ grep -q "bundle: /tmp/mission_bundle" "$scanned_goal_status_output"
 grep -q "expected log: /tmp/field-captures/good_texture/terrain_matches.jsonl" "$scanned_goal_status_output"
 grep -q "output: /tmp/field-captures/good_texture" "$scanned_goal_status_output"
 grep -q "runtime status: /tmp/field-captures/good_texture/runtime_status.json" "$scanned_goal_status_output"
-grep -q "after bundle: VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh" "$scanned_goal_status_output"
+grep -q "after bundle: VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=/tmp/field-captures/good_texture ./scripts/pi/read_runtime_status.sh" "$scanned_goal_status_output"
 grep -q "notes: The guided workflow creates or loads the field collection plan, captures the next pending condition" "$scanned_goal_status_output"
 python3 - "$scanned_goal_status_output" <<'PY'
 from pathlib import Path
@@ -1308,12 +1310,12 @@ for app_runtime_file in \
   desktop-app/src/pages/MissionPlanner.tsx \
   desktop-app/src/pages/Devices.tsx
 do
-  if ! grep -q './scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh' "$app_runtime_file"; then
-    echo "desktop runtime actions must read runtime_status.json after bounded terrain captures: $app_runtime_file" >&2
+  if ! grep -q './scripts/pi/run_terrain_nav_loop.sh && .*runtimeStatusReadCommand' "$app_runtime_file"; then
+    echo "desktop runtime actions must use the scoped runtimeStatusReadCommand after bounded terrain captures: $app_runtime_file" >&2
     exit 1
   fi
 done
-grep -q '"command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh"' src/vision_nav/autonomy_evidence_workflow.py
+grep -q '"command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match ./scripts/pi/read_runtime_status.sh"' src/vision_nav/autonomy_evidence_workflow.py
 scope_pattern="M""CP|L""LM|Chat""GPT"
 if rg -n "$scope_pattern" .; then
   echo "Found unrelated agent/chatbot scope text. Remove it before committing." >&2

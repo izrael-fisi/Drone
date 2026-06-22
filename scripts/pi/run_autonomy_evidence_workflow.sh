@@ -579,15 +579,25 @@ terrain_capture_command_marker() {
     "$field_capture_output_dir" \
     "$field_capture_count" \
     "$terrain_capture_command")"
-  command_with_runtime_status_read "$raw_command"
+  command_with_runtime_status_read "$raw_command" "$field_capture_output_dir"
 }
 
 command_with_runtime_status_read() {
   local command="$1"
+  local runtime_status_root="${2:-}"
+  local read_command="./scripts/pi/read_runtime_status.sh"
+  if [[ -n "$runtime_status_root" ]]; then
+    printf -v quoted_runtime_status_root '%q' "$runtime_status_root"
+    read_command="VISION_NAV_RUNTIME_STATUS_ROOTS=$quoted_runtime_status_root ./scripts/pi/read_runtime_status.sh"
+  fi
   if [[ "$command" == *"read_runtime_status.sh"* ]]; then
+    if [[ -n "$runtime_status_root" && "$command" != *"VISION_NAV_RUNTIME_STATUS_ROOTS"* ]]; then
+      printf '%s' "${command//.\/scripts\/pi\/read_runtime_status.sh/$read_command}"
+      return
+    fi
     printf '%s' "$command"
   else
-    printf '%s && ./scripts/pi/read_runtime_status.sh' "$command"
+    printf '%s && %s' "$command" "$read_command"
   fi
 }
 
@@ -798,7 +808,8 @@ elif [[ -e "$bundle" ]]; then
     export VISION_NAV_COUNT="$field_capture_count"
     export VISION_NAV_OUTPUT_DIR="$field_capture_output_dir"
     export VISION_NAV_BUNDLE="$bundle"
-    "$terrain_capture_command"
+    "$terrain_capture_command" && \
+      VISION_NAV_RUNTIME_STATUS_ROOTS="$field_capture_output_dir" ./scripts/pi/read_runtime_status.sh
   ) >"$capture_log_path" 2>&1
   capture_exit=$?
   set -e

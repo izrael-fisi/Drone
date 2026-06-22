@@ -209,6 +209,15 @@ function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\"'\"'")}'`;
 }
 
+function shellEnvValue(value: string) {
+  if (/^\$(HOME|PWD)\//.test(value) && !/[\s"'`;&|<>]/.test(value)) return value;
+  return shellQuote(value);
+}
+
+function runtimeStatusReadCommand(runtimeStatusRoot = "$HOME/DroneTransfer/outgoing/terrain-match") {
+  return `VISION_NAV_RUNTIME_STATUS_ROOTS=${shellEnvValue(runtimeStatusRoot)} ./scripts/pi/read_runtime_status.sh`;
+}
+
 const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
 const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 const SUPPORT_EVIDENCE_ENV =
@@ -2406,7 +2415,7 @@ export function MissionPlanner() {
                 disabled={activeDevice.kind !== "pi5" || cmdRunning}
                 onClick={() => runPiCommand(
                   enableMavlink ? "run loop with mavlink" : "run loop",
-                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh`,
+                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ${runtimeStatusReadCommand()}`,
                 )}
                 className="btn-secondary justify-center text-emerald-400 border-emerald-500/20"
               >

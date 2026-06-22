@@ -179,6 +179,18 @@ function shellQuote(value: string) {
   return `'${value.replace(/'/g, "'\"'\"'")}'`;
 }
 
+function shellEnvValue(value: string) {
+  if (/^\$(HOME|PWD)\//.test(value) && !/[\s"'`;&|<>]/.test(value)) return value;
+  return shellQuote(value);
+}
+
+function runtimeStatusReadCommand(runtimeStatusRoot?: string) {
+  const root = runtimeStatusRoot?.trim();
+  return root
+    ? `VISION_NAV_RUNTIME_STATUS_ROOTS=${shellEnvValue(root)} ./scripts/pi/read_runtime_status.sh`
+    : "./scripts/pi/read_runtime_status.sh";
+}
+
 function safeReportName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "module";
 }
@@ -499,7 +511,8 @@ function fieldLogCaptureCommand(
     mavlinkEndpoint.trim() ? `VISION_NAV_MAVLINK_ENDPOINT=${shellQuote(mavlinkEndpoint.trim())}` : "",
     "VISION_NAV_MAVLINK_MESSAGE=odometry",
   ].filter(Boolean).join(" ");
-  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh`;
+  const runtimeStatusRoot = captureOutputDir || "$HOME/DroneTransfer/outgoing/terrain-match";
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_terrain_nav_loop.sh && ${runtimeStatusReadCommand(runtimeStatusRoot)}`;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

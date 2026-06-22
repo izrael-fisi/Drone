@@ -162,12 +162,19 @@ def shell_assignments(selection: dict[str, Any]) -> str:
 
 
 def shell_assignment(key: str, value: str) -> str:
-    return f"export {key}={shlex.quote(value)}"
+    return f"export {key}={shell_env_value(value)}"
 
 
 def shell_command(env: dict[str, str], command: str) -> str:
-    parts = [f"{key}={shlex.quote(str(value))}" for key, value in env.items() if str(value)]
+    parts = [f"{key}={shell_env_value(str(value))}" for key, value in env.items() if str(value)]
     return " ".join(parts + [command])
+
+
+def shell_env_value(value: str) -> str:
+    expandable_prefixes = ("$HOME/", "${HOME}/", "$PWD/", "${PWD}/")
+    if value.startswith(expandable_prefixes) and all(ch not in value for ch in " \t\n\"'`;&|<>"):
+        return value
+    return shlex.quote(value)
 
 
 def main() -> None:

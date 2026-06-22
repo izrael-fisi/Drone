@@ -42,7 +42,7 @@ WORKFLOW_STEP_GUIDANCE = {
         "desktop_action": "Module Setup > Load Next Field Condition",
     },
     "capture_field_terrain_log": {
-        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match ./scripts/pi/read_runtime_status.sh",
         "desktop_action": "Module Setup > Field Log Capture",
     },
     "preflight_field_capture": {
@@ -636,7 +636,10 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
         summary["output_dir"] = output_dir
         summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)
     if capture_command:
-        summary["capture_command_after_preflight"] = command_with_runtime_status_read(capture_command)
+        summary["capture_command_after_preflight"] = command_with_runtime_status_read(
+            capture_command,
+            runtime_status_root=output_dir,
+        )
     if metadata_update_command:
         summary["metadata_update_command"] = metadata_update_command
     if bundle_status == "missing":
@@ -675,7 +678,10 @@ def apply_current_preflight_report_guidance(summary: dict[str, Any], markers: di
         summary["runtime_status_path"] = report["runtime_status_path"].strip()
     capture_command = report.get("capture_command")
     if isinstance(capture_command, str) and capture_command.strip():
-        command = command_with_runtime_status_read(capture_command)
+        command = command_with_runtime_status_read(
+            capture_command,
+            runtime_status_root=str(report.get("capture_output_dir") or "").strip() or None,
+        )
         if summary.get("name") == "capture_field_terrain_log" and report.get("ready_for_capture") is True:
             summary["command"] = command
             summary["desktop_action"] = "Module Setup > Field Log Capture"
@@ -726,7 +732,10 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
         summary["desktop_action"] = "Mission Planner > Build Bundle, Upload Bundle, then Module Setup > Field Log Capture"
         summary["command"] = bundle_validation_command(bundle_path)
         if capture_command:
-            summary["capture_command_after_bundle"] = command_with_runtime_status_read(capture_command)
+            summary["capture_command_after_bundle"] = command_with_runtime_status_read(
+                capture_command,
+                runtime_status_root=output_dir,
+            )
         existing_notes = str(summary.get("notes") or "").strip()
         guidance = "Terrain bundle is missing; build/upload the selected mission bundle and validate it before field-log capture."
         summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
@@ -817,10 +826,26 @@ def bundle_validation_command(bundle_path: str | None) -> str:
     return "./scripts/pi/validate_terrain_bundle.sh"
 
 
-def command_with_runtime_status_read(command: str) -> str:
+def command_with_runtime_status_read(command: str, runtime_status_root: str | None = None) -> str:
+    read_command = "./scripts/pi/read_runtime_status.sh"
+    if runtime_status_root:
+        read_command = (
+            f"VISION_NAV_RUNTIME_STATUS_ROOTS={shell_env_value(runtime_status_root)} "
+            "./scripts/pi/read_runtime_status.sh"
+        )
     if "read_runtime_status.sh" in command:
+        if runtime_status_root and "VISION_NAV_RUNTIME_STATUS_ROOTS" not in command:
+            return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
         return command
-    return f"{command} && ./scripts/pi/read_runtime_status.sh"
+    return f"{command} && {read_command}"
+
+
+def shell_env_value(value: Any) -> str:
+    text = str(value)
+    expandable_prefixes = ("$HOME/", "${HOME}/", "$PWD/", "${PWD}/")
+    if text.startswith(expandable_prefixes) and all(ch not in text for ch in " \t\n\"'`;&|<>"):
+        return text
+    return shlex.quote(text)
 
 
 def runtime_status_path_for_output(output_dir: str) -> str:

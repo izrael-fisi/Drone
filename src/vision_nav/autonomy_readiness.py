@@ -776,10 +776,18 @@ def unique_strings(values: Any) -> list[str]:
     return result
 
 
-def command_with_runtime_status_read(command: str) -> str:
+def command_with_runtime_status_read(command: str, runtime_status_root: str | None = None) -> str:
+    read_command = "./scripts/pi/read_runtime_status.sh"
+    if runtime_status_root:
+        read_command = shell_command(
+            {"VISION_NAV_RUNTIME_STATUS_ROOTS": runtime_status_root},
+            "./scripts/pi/read_runtime_status.sh",
+        )
     if "read_runtime_status.sh" in command:
+        if runtime_status_root and "VISION_NAV_RUNTIME_STATUS_ROOTS" not in command:
+            return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
         return command
-    return f"{command} && ./scripts/pi/read_runtime_status.sh"
+    return f"{command} && {read_command}"
 
 
 def build_evidence_manifest(
@@ -1356,7 +1364,7 @@ def next_actions_for_bench_subchecks(
         "runtime_status": {
             "title": "Fetch a fresh runtime status snapshot.",
             "desktop_action": "Module Setup > Field Log Capture, then Runtime Status and Bench Report",
-            "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
+            "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match ./scripts/pi/read_runtime_status.sh",
             "notes": "Field Log Capture writes runtime_status.json beside the terrain log; Runtime Status verifies the latest snapshot before the bench report.",
         },
         "replay_gates": {
@@ -1466,7 +1474,10 @@ def enrich_action_with_field_capture(
     capture_command = condition.get("capture_command")
     if isinstance(capture_command, str) and capture_command.strip():
         if append_runtime_status_read:
-            action["command"] = command_with_runtime_status_read(capture_command)
+            action["command"] = command_with_runtime_status_read(
+                capture_command,
+                runtime_status_root=str(condition.get("capture_output_dir") or "").strip() or None,
+            )
         else:
             action["command"] = capture_command
 
@@ -2384,7 +2395,10 @@ def condition_with_metadata_update_command(
             condition=str(condition_name),
         )
     if updated.get("capture_command"):
-        updated["capture_command"] = command_with_runtime_status_read(str(updated["capture_command"]))
+        updated["capture_command"] = command_with_runtime_status_read(
+            str(updated["capture_command"]),
+            runtime_status_root=str(updated.get("capture_output_dir") or "").strip() or None,
+        )
     if not metadata_update_command_is_detailed(str(updated.get("metadata_update_command") or "")):
         manifest_path = plan.get("manifest_path")
         if condition_name and manifest_path:
@@ -2419,8 +2433,16 @@ def item_capture_metadata(condition: dict[str, Any], plan: dict[str, Any]) -> di
 
 
 def shell_command(env: dict[str, str], command: str) -> str:
-    parts = [f"{key}={shlex.quote(str(value))}" for key, value in env.items() if str(value)]
+    parts = [f"{key}={shell_env_value(value)}" for key, value in env.items() if str(value)]
     return " \\\n  ".join(parts + [command])
+
+
+def shell_env_value(value: Any) -> str:
+    text = str(value)
+    expandable_prefixes = ("$HOME/", "${HOME}/", "$PWD/", "${PWD}/")
+    if text.startswith(expandable_prefixes) and all(ch not in text for ch in " \t\n\"'`;&|<>"):
+        return text
+    return shlex.quote(text)
 
 
 def field_collection_missing_traceability(conditions: list[dict[str, Any]]) -> list[str]:
