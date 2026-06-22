@@ -845,6 +845,8 @@ Status:
   PX4 receiver proof accepts either the evidence-session marker or the evaluated
   receiver-report marker so session-only support handoffs are not mislabeled as
   missing PX4 proof.
+  PX4 prerequisite reports are tracked as important diagnostic markers, but do
+  not satisfy the receiver-proof gate or final-proof marker set.
   The Pi evidence workflow now writes this validation JSON beside the workflow
   report and emits `__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=...`.
   The validator exits nonzero only for structurally failed report/archive

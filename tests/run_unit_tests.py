@@ -2470,6 +2470,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                     "markers": {
                         "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__": str(archive_path),
                         "__VISION_NAV_SUPPORT_ZIP__": str(root / "support.zip"),
+                        "__VISION_NAV_PX4_SITL_PREREQS__": str(root / "px4_sitl_capture_prereqs.json"),
                         "__VISION_NAV_PX4_SITL_REPORT__": str(root / "receiver_evidence.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN__": str(root / "field_collection_plan.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__": str(root / "field_collection_plan.md"),
@@ -2496,6 +2497,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         assert_equal(checks["final_proof_markers"], "passed", "workflow validation final proof markers")
         assert_equal(checks["final_readiness_status"], "passed", "workflow validation final readiness status")
         assert_equal(validation["step_count"], len(REQUIRED_WORKFLOW_STEPS), "workflow validation step count")
+        detailed_checks = {check["name"]: check for check in validation["checks"]}
+        if "__VISION_NAV_PX4_SITL_PREREQS__" not in detailed_checks["important_markers"]["details"]["present_markers"]:
+            raise AssertionError("workflow validation should list PX4 prereqs as an important diagnostic marker")
+        if "__VISION_NAV_PX4_SITL_PREREQS__" in detailed_checks["final_proof_markers"]["details"]["present_markers"]:
+            raise AssertionError("PX4 prereq diagnostics should not satisfy final proof markers")
 
         mismatched_readiness_report = json.loads(report_path.read_text())
         for step in mismatched_readiness_report["steps"]:
@@ -2554,6 +2560,8 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             ["__VISION_NAV_PX4_SITL_SESSION__", "__VISION_NAV_PX4_SITL_REPORT__"],
             "workflow validation missing px4 proof marker alternatives",
         )
+        if "__VISION_NAV_PX4_SITL_PREREQS__" in missing_px4_checks["final_proof_markers"]["details"]["present_markers"]:
+            raise AssertionError("PX4 prereq diagnostics should not satisfy missing PX4 receiver proof")
 
         incomplete_marker_report = json.loads(report_path.read_text())
         incomplete_marker_report["markers"].pop("__VISION_NAV_THRESHOLD_REPORT__")
