@@ -71,22 +71,20 @@ as base64 so the artifact remains plain JSON.
 ## Native Bag Exports
 
 On a sourced ROS 2 workstation, export the same replay stream as native rosbag2
-serialized messages:
+serialized messages and create the final CLI review artifact:
 
 ```bash
 source /opt/ros/humble/setup.bash
-vision-nav-ros2-replay-log \
-  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
-  --export-rosbag2 ~/DroneTransfer/outgoing/terrain-match/rosbag2-native \
-  --include-frame-topic
+./scripts/dev/run_rosbag2_cli_review.sh
 ```
 
-This path imports `rosbag2_py`, `rclpy.serialization`, `nav_msgs`,
-`diagnostic_msgs`, and `sensor_msgs` only when `--export-rosbag2` is used. It
-writes serialized `nav_msgs/msg/Odometry`,
+The wrapper imports `rosbag2_py`, `rclpy.serialization`, `nav_msgs`,
+`diagnostic_msgs`, and `sensor_msgs` only during the native export. It writes
+serialized `nav_msgs/msg/Odometry`,
 `diagnostic_msgs/msg/DiagnosticArray`, and optional
 `sensor_msgs/msg/CompressedImage` topics, plus
-`vision_nav_rosbag2_metadata.json` for the support tooling.
+`vision_nav_rosbag2_metadata.json` for the support tooling, then captures
+`ros2 bag info` into `rosbag2-cli-review.json`.
 
 Use the dependency-free JSONL export on the Pi or on machines without ROS 2.
 For MCAP-capable tools that do not require native ROS serialization, install the

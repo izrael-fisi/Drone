@@ -419,7 +419,7 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
         "rosbag2_cli_review": {
             "title": "Review the native rosbag2 export with ROS 2 CLI tools.",
             "desktop_action": "Sourced ROS 2 workstation > rosbag2 CLI Review, then Local Readiness Re-Audit",
-            "command": "vision-nav-review-rosbag2-cli --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag2-native --output ~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json --require-ros2",
+            "command": "./scripts/dev/run_rosbag2_cli_review.sh",
             "notes": "Run on a sourced ROS 2 workstation after native rosbag2 export. The review must include a passing validator result and successful ros2 bag info output.",
         },
     }
@@ -544,7 +544,7 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
         "rosbag2_cli_reviews": {
             "title": "Review the native rosbag2 export with ROS 2 CLI tools.",
             "desktop_action": "Sourced ROS 2 workstation > rosbag2 CLI Review, then Bench Report",
-            "command": "vision-nav-review-rosbag2-cli --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag2-native --output ~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json --require-ros2",
+            "command": "./scripts/dev/run_rosbag2_cli_review.sh && ./scripts/pi/create_support_bundle.sh",
             "notes": "Support bundles should include a passed native rosbag2 CLI review summary when native rosbag2 export is part of the evidence package.",
         },
         "ardupilot_params": {

@@ -156,6 +156,9 @@ Status:
 - Done: `vision-nav-review-rosbag2-cli` creates a native rosbag2 workstation
   review artifact by combining strict export validation with captured
   `ros2 bag info` output, degrading cleanly when the ROS 2 CLI is unavailable.
+- Done: `scripts/dev/run_rosbag2_cli_review.sh` wraps the sourced workstation
+  native export plus `ros2 bag info` review into one fail-closed operator
+  command, with a dry-run mode covered by local preflight.
 - Done: support bundles can ingest native rosbag2 CLI review artifacts under
   `extras/rosbag2_cli_reviews/`, publish parsed summaries under
   `summaries/rosbag2_cli_reviews/`, and include the optional review in bench
@@ -171,8 +174,9 @@ Tasks:
 
 1. Add PX4 SITL launch profile arguments once SITL receiver verification is
    available.
-2. Validate native rosbag2 export on a sourced ROS 2 workstation with real
-   `ros2 bag info/play` commands and save the resulting review artifact.
+2. Run `scripts/dev/run_rosbag2_cli_review.sh` on a sourced ROS 2 workstation
+   against real terrain logs, then save the resulting native export and review
+   artifact.
 
 Acceptance checks:
 

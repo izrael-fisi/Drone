@@ -302,24 +302,22 @@ vision-nav-validate-rosbag-export \
 
 The JSONL export is still the dependency-free fallback and is preferred for
 basic Pi setup checks.
-On a sourced ROS 2 workstation, use `--export-rosbag2` instead when you need a
-native serialized rosbag2 directory for `ros2 bag info/play`. The validator
-checks metadata, topic/message counts, MCAP sidecars, and native rosbag2 storage
-files without requiring ROS 2 to be installed, and fails closed unless the
-export includes non-empty `/vision_nav/odometry` and `/diagnostics` topics.
-After creating a native rosbag2 directory on a sourced workstation, save a
-CLI review artifact with:
+On a sourced ROS 2 workstation, use the dev wrapper when you need a native
+serialized rosbag2 directory for `ros2 bag info/play` plus the final CLI review
+artifact:
 
 ```bash
-vision-nav-review-rosbag2-cli \
-  --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag2-native \
-  --output ~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json
+source /opt/ros/humble/setup.bash
+./scripts/dev/run_rosbag2_cli_review.sh
 ```
 
-That review wraps the strict validator and captures `ros2 bag info` output so
-support can confirm the bag is readable by standard ROS 2 tooling. The final
-autonomy-readiness audit treats this review as its own proof gate, either from
-the standalone JSON report or from the same report packaged in a support bundle.
+That wrapper exports native rosbag2, runs the strict validator, and captures
+`ros2 bag info` output so support can confirm the bag is readable by standard
+ROS 2 tooling. Set `VISION_NAV_ROSBAG_SOURCE_LOG`,
+`VISION_NAV_ROSBAG2_EXPORT_DIR`, or `VISION_NAV_ROSBAG2_CLI_REVIEW` for custom
+paths. The final autonomy-readiness audit treats this review as its own proof
+gate, either from the standalone JSON report or from the same report packaged
+in a support bundle.
 When a validation report exists at the normal Pi transfer path,
 `scripts/pi/create_support_bundle.sh` packages it, and it also packages
 `rosbag2-cli-review.json` when that native workstation review exists. Desktop

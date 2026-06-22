@@ -43,6 +43,7 @@ field_register_output="$preflight_tmp_dir/field_register_preflight.txt"
 evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_preflight.txt"
 evidence_workflow_validation_output="$preflight_tmp_dir/evidence_workflow_validation_preflight.txt"
 rosbag_validation_output="$preflight_tmp_dir/rosbag_validation_preflight.txt"
+rosbag2_review_output="$preflight_tmp_dir/rosbag2_cli_review_dry_run.txt"
 field_smoke_dir="$(mktemp -d "$preflight_tmp_dir/field-case.XXXXXX")"
 PYTHONPATH=src python3 -m vision_nav.field_evidence_template \
   --output "$field_smoke_dir/field_manifest.template.json" \
@@ -199,6 +200,13 @@ VISION_NAV_ROSBAG_EXPORT_VALIDATION="$rosbag_smoke_dir/rosbag-jsonl-validation.j
 VISION_NAV_ROSBAG_INCLUDE_FRAME_TOPIC=0 \
 ./scripts/pi/run_rosbag_export_validation.sh >"$rosbag_validation_output" 2>&1
 grep -q "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=" "$rosbag_validation_output"
+VISION_NAV_ROSBAG2_DRY_RUN=1 \
+VISION_NAV_ROSBAG_SOURCE_LOG="$rosbag_smoke_dir/terrain_matches.jsonl" \
+VISION_NAV_ROSBAG2_EXPORT_DIR="$rosbag_smoke_dir/rosbag2-native" \
+VISION_NAV_ROSBAG2_CLI_REVIEW="$rosbag_smoke_dir/rosbag2-cli-review.json" \
+./scripts/dev/run_rosbag2_cli_review.sh >"$rosbag2_review_output" 2>&1
+grep -q "__VISION_NAV_ROSBAG2_EXPORT_DIR__=" "$rosbag2_review_output"
+grep -q "__VISION_NAV_ROSBAG2_CLI_REVIEW__=" "$rosbag2_review_output"
 python3 - "$rosbag_smoke_dir/rosbag-jsonl-validation.json" <<'PY'
 from __future__ import annotations
 

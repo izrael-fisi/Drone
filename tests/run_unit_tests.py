@@ -2818,8 +2818,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             if action.get("check") == "rosbag2_cli_review"
         ]
         assert_equal(len(rosbag2_actions), 1, "autonomy readiness rosbag2 cli review next action")
-        if "vision-nav-review-rosbag2-cli" not in rosbag2_actions[0]["command"]:
-            raise AssertionError("autonomy readiness rosbag2 action should use the rosbag2 CLI review command")
+        if "scripts/dev/run_rosbag2_cli_review.sh" not in rosbag2_actions[0]["command"]:
+            raise AssertionError("autonomy readiness rosbag2 action should use the sourced-workstation wrapper")
 
         direct_rosbag2_ready = evaluate_autonomy_readiness(
             research_doc_path=research_doc,

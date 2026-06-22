@@ -665,18 +665,33 @@ and `/diagnostics` topics. The default support-bundle wrapper auto-includes
 exists; set `VISION_NAV_ROSBAG_EXPORT_VALIDATION` or
 `VISION_NAV_MCAP_EXPORT_VALIDATION` to package another validation report.
 
-On a sourced ROS 2 workstation, save a native rosbag2 CLI review artifact after
-exporting a rosbag2 directory:
+On a sourced ROS 2 workstation, export native rosbag2 and save the CLI review
+artifact with the dev wrapper:
+
+```bash
+source /opt/ros/humble/setup.bash
+./scripts/dev/run_rosbag2_cli_review.sh
+```
+
+Set `VISION_NAV_ROSBAG_SOURCE_LOG`, `VISION_NAV_ROSBAG2_EXPORT_DIR`, or
+`VISION_NAV_ROSBAG2_CLI_REVIEW` when the synced field log or desired output
+paths are different. The wrapper writes the native rosbag2 directory, runs the
+strict validator, captures `ros2 bag info`, and emits
+`__VISION_NAV_ROSBAG2_CLI_REVIEW__=...`.
+
+The equivalent low-level review command for an already exported native rosbag2
+directory is:
 
 ```bash
 vision-nav-review-rosbag2-cli \
   --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag2-native \
-  --output ~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json
+  --output ~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json \
+  --require-ros2
 ```
 
 This command records both the strict validation result and `ros2 bag info`
-output. If the `ros2` CLI is not sourced, the report degrades by default; add
-`--require-ros2` when the workstation review must fail closed.
+output. The wrapper fails closed by default when the `ros2` CLI is not sourced;
+set `VISION_NAV_ROSBAG2_REQUIRE_ROS2=0` only for non-gating diagnostics.
 The support-bundle wrapper auto-includes
 `~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json` when it
 exists, or set `VISION_NAV_ROSBAG2_CLI_REVIEW` to package a custom review path.

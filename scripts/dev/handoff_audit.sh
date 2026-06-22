@@ -183,6 +183,15 @@ for entrypoint in "${entrypoints[@]}"; do
 done
 
 echo
+echo "== Required Dev Scripts =="
+required_dev_scripts=(
+  "scripts/dev/run_rosbag2_cli_review.sh"
+)
+for path in "${required_dev_scripts[@]}"; do
+  require_executable "$path"
+done
+
+echo
 echo "== Git state =="
 git status --short --branch
 if git remote get-url origin >/dev/null 2>&1; then
