@@ -6688,6 +6688,40 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                                     ))}
                                   </div>
                                 )}
+                                {action.bundle_diagnostic.recommended_actions.length > 0 && (
+                                  <div className="space-y-0.5">
+                                    <div className="text-slate-500">recommended actions</div>
+                                    {action.bundle_diagnostic.recommended_actions.slice(0, 3).map((recommendation, recommendationIndex) => (
+                                      recommendation.command ? (
+                                        <button
+                                          key={`${action.id ?? "action"}-diagnostic-recommendation-${recommendation.id}-${recommendationIndex}`}
+                                          type="button"
+                                          onClick={() => recommendation.command && navigator.clipboard.writeText(recommendation.command)}
+                                          className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/60 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
+                                          title={recommendation.command}
+                                        >
+                                          <Copy size={9} className="shrink-0" />
+                                          <span className={cn(readinessBadgeClass(recommendation.status), "text-[10px] shrink-0")}>
+                                            {formatReadinessLabel(recommendation.status)}
+                                          </span>
+                                          <span className="truncate whitespace-pre">{recommendation.command}</span>
+                                        </button>
+                                      ) : (
+                                        <div
+                                          key={`${action.id ?? "action"}-diagnostic-recommendation-${recommendation.id}-${recommendationIndex}`}
+                                          className="flex min-w-0 flex-wrap items-center gap-1 rounded border border-border/40 bg-bg-base/40 px-2 py-1"
+                                        >
+                                          <span className={cn(readinessBadgeClass(recommendation.status), "text-[10px] shrink-0")}>
+                                            {formatReadinessLabel(recommendation.status)}
+                                          </span>
+                                          <span className="text-slate-300">{formatReadinessLabel(recommendation.title ?? recommendation.id)}</span>
+                                          {recommendation.desktop_action && <span className="font-mono text-slate-500">{recommendation.desktop_action}</span>}
+                                          {recommendation.map_source_path && <span className="font-mono text-slate-500 break-all">{recommendation.map_source_path}</span>}
+                                        </div>
+                                      )
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             )}
                             {action.command && (

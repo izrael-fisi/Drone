@@ -946,6 +946,21 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
             if source.get("requires_import"):
                 label_parts.append("import required")
             lines.append(f"Detected map source: {source.get('path')} [{'; '.join(label_parts)}]")
+        recommendations = [
+            item
+            for item in diagnostic.get("recommended_actions") or []
+            if isinstance(item, dict)
+        ]
+        for recommendation in recommendations[:3]:
+            title = recommendation.get("title") or recommendation.get("id") or "bundle action"
+            status = recommendation.get("status") or "unknown"
+            lines.append(f"Recommended bundle action: {title} [{status}]")
+            if recommendation.get("desktop_action"):
+                lines.append(f"Recommended app action: {recommendation['desktop_action']}")
+            if recommendation.get("command"):
+                lines.append(f"Recommended command: {recommendation['command']}")
+            elif recommendation.get("map_source_path"):
+                lines.append(f"Recommended map source: {recommendation['map_source_path']}")
     return lines
 
 

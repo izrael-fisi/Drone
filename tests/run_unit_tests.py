@@ -62,6 +62,7 @@ from vision_nav.field_capture_metadata import (
 )
 from vision_nav.field_capture_metadata_update import update_field_capture_metadata
 from vision_nav.field_capture_preflight import evaluate_field_capture_preflight
+from vision_nav.field_capture_preflight import print_human as print_field_capture_preflight_human
 from vision_nav.field_collection_plan import (
     create_field_collection_plan,
     print_human as print_field_collection_human,
@@ -3334,6 +3335,8 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation human output should include post-preflight capture command")
         if "Missing bundle files: manifest.json" not in preflight_blocked_text:
             raise AssertionError("workflow validation human output should include bundle diagnostics")
+        if "Recommended bundle action: Build and upload the selected Mission Planner terrain bundle." not in preflight_blocked_text:
+            raise AssertionError("workflow validation human output should include bundle recommendation")
 
         capture_blocked_report = json.loads(report_path.read_text())
         capture_blocked_report["markers"].pop("__VISION_NAV_TERRAIN_LOG__", None)
@@ -6514,6 +6517,13 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         prepare_bundle_diagnostic = missing_bundle_actions[0].get("bundle_diagnostic") or {}
         if "manifest.json" not in prepare_bundle_diagnostic.get("missing_required_files", []):
             raise AssertionError("Expected prepare-bundle action to carry missing bundle file diagnostics")
+        prepare_diagnostic_actions = {
+            item.get("id")
+            for item in prepare_bundle_diagnostic.get("recommended_actions", [])
+            if isinstance(item, dict)
+        }
+        if "build_or_upload_selected_bundle" not in prepare_diagnostic_actions:
+            raise AssertionError("Expected prepare-bundle diagnostic to carry recommended bundle actions")
         detected_action_bundle_paths = {
             item.get("path")
             for item in prepare_bundle_diagnostic.get("bundle_candidates", [])
@@ -6529,6 +6539,14 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         )
         if "bundle_path" not in missing_capture_action.get("waits_on", []):
             raise AssertionError("Expected capture action to wait on bundle_path")
+        missing_bundle_output = io.StringIO()
+        with contextlib.redirect_stdout(missing_bundle_output):
+            print_field_capture_preflight_human(missing_bundle_preflight)
+        missing_bundle_text = missing_bundle_output.getvalue()
+        if "recommended bundle actions:" not in missing_bundle_text:
+            raise AssertionError("Expected field preflight output to include recommended bundle actions")
+        if "Build and upload the selected Mission Planner terrain bundle." not in missing_bundle_text:
+            raise AssertionError("Expected field preflight output to include build/upload recommendation")
 
         invalid_bundle = base / "invalid_bundle"
         invalid_bundle.mkdir()

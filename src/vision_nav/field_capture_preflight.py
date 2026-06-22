@@ -609,6 +609,23 @@ def print_human(report: dict[str, Any]) -> None:
                         if source.get("requires_import"):
                             label_parts.append("import required")
                         print(f"    - {source.get('path')} [{'; '.join(label_parts)}]")
+                recommended = [
+                    item
+                    for item in diagnostic.get("recommended_actions") or []
+                    if isinstance(item, dict)
+                ]
+                if recommended:
+                    print("  recommended bundle actions:")
+                    for recommendation in recommended[:3]:
+                        title = recommendation.get("title") or recommendation.get("id") or "bundle action"
+                        status = recommendation.get("status") or "unknown"
+                        print(f"    - {title} [{status}]")
+                        if recommendation.get("desktop_action"):
+                            print(f"      app: {recommendation['desktop_action']}")
+                        if recommendation.get("command"):
+                            print(f"      command: {recommendation['command']}")
+                        elif recommendation.get("map_source_path"):
+                            print(f"      map source: {recommendation['map_source_path']}")
             if action.get("command"):
                 print(f"  command: {action['command']}")
     if report.get("output_path"):

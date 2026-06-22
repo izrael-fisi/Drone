@@ -545,6 +545,24 @@ def map_source_label(source):
     return "; ".join(label_parts)
 
 
+def print_bundle_recommendations(diagnostic, indent):
+    recommendations = [
+        item
+        for item in diagnostic.get("recommended_actions") or []
+        if isinstance(item, dict)
+    ]
+    for recommendation in recommendations[:3]:
+        title = recommendation.get("title") or recommendation.get("id") or "bundle action"
+        status = recommendation.get("status") or "unknown"
+        print(f"{indent}recommended bundle action: {title} [{status}]")
+        if recommendation.get("desktop_action"):
+            print(f"{indent}  app: {recommendation.get('desktop_action')}")
+        if recommendation.get("command"):
+            print(f"{indent}  command: {recommendation.get('command')}")
+        elif recommendation.get("map_source_path"):
+            print(f"{indent}  map source: {recommendation.get('map_source_path')}")
+
+
 report_path = sys.argv[1]
 with open(report_path, "r", encoding="utf-8") as handle:
     report = json.load(handle)
@@ -727,6 +745,7 @@ if workflow_validation:
                     print("  detected map sources:")
                     for source in map_sources[:3]:
                         print(f"    - {source.get('path')} [{map_source_label(source)}]")
+                print_bundle_recommendations(diagnostic, "  ")
             if next_step.get("capture_command_after_bundle"):
                 print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
             if next_step.get("capture_command_after_preflight"):
@@ -1016,21 +1035,7 @@ if isinstance(field_preflight, dict):
                     print("    detected map sources:")
                     for source in map_sources[:3]:
                         print(f"      - {source.get('path')} [{map_source_label(source)}]")
-                actions = [
-                    action
-                    for action in diagnostic.get("recommended_actions") or []
-                    if isinstance(action, dict)
-                ]
-                for action in actions[:2]:
-                    title = action.get("title")
-                    app_action = action.get("desktop_action")
-                    action_command = action.get("command")
-                    if title:
-                        print(f"    diagnostic action: {title}")
-                    if app_action:
-                        print(f"      app: {app_action}")
-                    if action_command:
-                        print(f"      command: {action_command}")
+                print_bundle_recommendations(diagnostic, "    ")
         for item in degraded_checks[:4]:
             print(f"  degraded check: {item.get('name') or 'unknown'} - {item.get('message') or ''}")
         next_actions = [
@@ -1072,6 +1077,7 @@ if isinstance(field_preflight, dict):
                         print("    detected map sources:")
                         for source in map_sources[:3]:
                             print(f"      - {source.get('path')} [{map_source_label(source)}]")
+                    print_bundle_recommendations(diagnostic, "    ")
                 if item.get("command"):
                     print(f"    command: {item.get('command')}")
 
@@ -1239,6 +1245,7 @@ if next_actions:
                 print("   detected map sources:")
                 for source in map_sources[:3]:
                     print(f"     - {source.get('path')} [{map_source_label(source)}]")
+            print_bundle_recommendations(diagnostic, "   ")
         for label, key in (
             ("field", "field_condition"),
             ("bundle", "field_bundle"),
