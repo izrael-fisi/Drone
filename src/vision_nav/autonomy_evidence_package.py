@@ -245,6 +245,7 @@ def build_command_bundle_summary(report: dict[str, Any]) -> dict[str, Any] | Non
     bundle = report.get("command_bundle") if isinstance(report.get("command_bundle"), dict) else {}
     if not bundle:
         return None
+    command_items = command_bundle_items(report, bundle)
     summary = {
         "guided_workflow_commands": string_list(bundle.get("guided_workflow_commands")),
         "prerequisite_fix_commands": string_list(bundle.get("prerequisite_fix_commands")),
@@ -260,9 +261,59 @@ def build_command_bundle_summary(report: dict[str, Any]) -> dict[str, Any] | Non
     command_count = bundle.get("command_count")
     if isinstance(command_count, int):
         summary["command_count"] = command_count
+    if command_items:
+        summary["command_items"] = command_items
     if not any(value for value in summary.values() if isinstance(value, list)):
         return None
     return summary
+
+
+def command_bundle_items(report: dict[str, Any], bundle: dict[str, Any]) -> list[dict[str, str]]:
+    app_hints = command_app_hints(report)
+    groups = [
+        ("guided_workflow", "guided_workflow_commands"),
+        ("prerequisite_fix", "prerequisite_fix_commands"),
+        ("next_action", "next_action_commands"),
+        ("immediate_next_action", "immediate_next_action_commands"),
+        ("blocked_follow_up", "blocked_follow_up_commands"),
+        ("field_collection_capture", "field_collection_capture_commands"),
+        ("field_collection_metadata_update", "field_collection_metadata_update_commands"),
+        ("field_collection_registration", "field_collection_registration_commands"),
+    ]
+    items: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for group, key in groups:
+        for command in string_list(bundle.get(key)):
+            dedupe_key = (group, command)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            item = {"group": group, "command": command}
+            desktop_action = app_hints.get(command)
+            if desktop_action:
+                item["desktop_action"] = desktop_action
+            items.append(item)
+    return items
+
+
+def command_app_hints(report: dict[str, Any]) -> dict[str, str]:
+    hints: dict[str, str] = {}
+    actions = report.get("next_actions") if isinstance(report.get("next_actions"), list) else []
+    for action in dict_items(actions):
+        add_command_app_hint(hints, action.get("command"), action.get("desktop_action"))
+    runbook = report.get("proof_runbook") if isinstance(report.get("proof_runbook"), dict) else {}
+    for phase in dict_items(runbook.get("phases")):
+        for action in dict_items(phase.get("actions")):
+            add_command_app_hint(hints, action.get("command"), action.get("desktop_action"))
+    return hints
+
+
+def add_command_app_hint(hints: dict[str, str], command: Any, desktop_action: Any) -> None:
+    if not isinstance(command, str) or not command.strip():
+        return
+    if not isinstance(desktop_action, str) or not desktop_action.strip():
+        return
+    hints.setdefault(command, desktop_action)
 
 
 def build_workflow_validation_summary(report: dict[str, Any], *, report_path: Path) -> dict[str, Any] | None:

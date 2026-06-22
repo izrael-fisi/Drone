@@ -696,6 +696,9 @@ Status:
   commands, and pending field replay registration commands for downstream
   support tooling, and Module Setup consumes that bundle for split bulk command
   copy plus saved setup-report exports.
+- Done: evidence-package command bundles now also preserve structured command
+  items with group names and desktop app actions, so support ZIPs keep the
+  operator UI route beside each runnable command.
 - Done: the Tauri report parser now preserves
   `field_collection_capture_commands`,
   `field_collection_metadata_update_commands`, and

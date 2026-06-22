@@ -561,6 +561,11 @@ export interface AutonomyReadinessReportFile {
       field_collection_metadata_update_commands?: string[];
       field_collection_registration_commands: string[];
       command_count?: number;
+      command_items?: Array<{
+        group?: string;
+        command?: string;
+        desktop_action?: string;
+      }>;
     };
     workflow_validation_summary?: AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"];
     proof_items: AutonomyReadinessEvidenceBlocker[];
@@ -644,6 +649,11 @@ export interface AutonomyReadinessReportFile {
     field_collection_metadata_update_commands?: string[];
     field_collection_registration_commands: string[];
     command_count?: number;
+    command_items?: Array<{
+      group?: string;
+      command?: string;
+      desktop_action?: string;
+    }>;
   };
   plan_snapshot?: AutonomyReadinessPlanSnapshot;
   evidence_manifest?: {

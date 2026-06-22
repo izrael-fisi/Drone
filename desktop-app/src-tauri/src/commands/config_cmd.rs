@@ -664,6 +664,14 @@ pub struct AutonomyReadinessCommandBundle {
     pub field_collection_metadata_update_commands: Vec<String>,
     pub field_collection_registration_commands: Vec<String>,
     pub command_count: Option<u64>,
+    pub command_items: Vec<AutonomyReadinessCommandItem>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessCommandItem {
+    pub group: Option<String>,
+    pub command: Option<String>,
+    pub desktop_action: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -3220,7 +3228,32 @@ fn autonomy_readiness_command_bundle_from_bundle_json(
             bundle.get("field_collection_registration_commands"),
         ),
         command_count: bundle.get("command_count").and_then(|value| value.as_u64()),
+        command_items: autonomy_readiness_command_items(bundle.get("command_items")),
     })
+}
+
+fn autonomy_readiness_command_items(
+    value: Option<&serde_json::Value>,
+) -> Vec<AutonomyReadinessCommandItem> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let command = json_string(item.get("command"));
+                    if command.is_none() {
+                        return None;
+                    }
+                    Some(AutonomyReadinessCommandItem {
+                        group: json_string(item.get("group")),
+                        command,
+                        desktop_action: json_string(item.get("desktop_action")),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn autonomy_evidence_manifest_from_json(
@@ -4983,7 +5016,14 @@ mod tests {
                     "field_collection_registration_commands": [
                         "./scripts/pi/register_field_replay_case.sh --condition blur"
                     ],
-                    "command_count": 8
+                    "command_count": 8,
+                    "command_items": [
+                        {
+                            "group": "immediate_next_action",
+                            "command": "./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+                            "desktop_action": "PX4 SITL capture harness"
+                        }
+                    ]
                 },
                 "plan_snapshot": {
                     "schema_version": "vision_nav_autonomy_plan_snapshot_v1",
@@ -5359,7 +5399,14 @@ mod tests {
                         "field_collection_registration_commands": [
                             "./scripts/pi/register_field_replay_case.sh --condition blur"
                         ],
-                        "command_count": 8
+                        "command_count": 8,
+                        "command_items": [
+                            {
+                                "group": "blocked_follow_up",
+                                "command": "./scripts/pi/run_threshold_tuning_report.sh",
+                                "desktop_action": "Module Setup > Threshold Tuning"
+                            }
+                        ]
                     },
                     "workflow_validation_summary": {
                         "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
@@ -5622,6 +5669,12 @@ mod tests {
             "./scripts/pi/update_field_capture_metadata.sh --condition blur"
         );
         assert_eq!(package_command_bundle.command_count, Some(8));
+        assert_eq!(
+            package_command_bundle.command_items[0]
+                .desktop_action
+                .as_deref(),
+            Some("Module Setup > Threshold Tuning")
+        );
         let package_validation = package_summary
             .workflow_validation_summary
             .as_ref()
@@ -5791,6 +5844,10 @@ mod tests {
             "./scripts/pi/register_field_replay_case.sh --condition blur"
         );
         assert_eq!(command_bundle.command_count, Some(8));
+        assert_eq!(
+            command_bundle.command_items[0].desktop_action.as_deref(),
+            Some("PX4 SITL capture harness")
+        );
         let field_collection_plan = reports[0]
             .field_collection_plan
             .as_ref()

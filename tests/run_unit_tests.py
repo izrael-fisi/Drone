@@ -3926,6 +3926,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 [],
             ):
                 raise AssertionError("autonomy evidence package missing field metadata update command group")
+            incomplete_command_items = incomplete_package_bundle.get("command_items")
+            if not isinstance(incomplete_command_items, list):
+                raise AssertionError("autonomy evidence package missing structured command items")
+            if not any(
+                item.get("group") == "field_collection_metadata_update"
+                and item.get("command") == "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+                for item in incomplete_command_items
+                if isinstance(item, dict)
+            ):
+                raise AssertionError("autonomy evidence package missing structured field metadata command item")
 
         missing_rosbag_manifest = root / "support_manifest_without_rosbag_validation.json"
         missing_rosbag_data = json.loads(direct_report_support_manifest.read_text())
@@ -4306,6 +4316,17 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package missing immediate threshold command")
             if "./scripts/pi/run_threshold_tuning_report.sh" in package_command_bundle["blocked_follow_up_commands"]:
                 raise AssertionError("autonomy evidence package should not block immediate threshold command")
+            package_command_items = package_command_bundle.get("command_items")
+            if not isinstance(package_command_items, list):
+                raise AssertionError("autonomy evidence package missing structured command items")
+            if not any(
+                item.get("group") == "immediate_next_action"
+                and item.get("command") == "./scripts/pi/run_threshold_tuning_report.sh"
+                and item.get("desktop_action") == "Module Setup > Threshold Tuning"
+                for item in package_command_items
+                if isinstance(item, dict)
+            ):
+                raise AssertionError("autonomy evidence package missing structured app-routed command item")
             workflow_validation_summary = package_manifest.get("workflow_validation_summary")
             if not isinstance(workflow_validation_summary, dict):
                 raise AssertionError("autonomy evidence package missing workflow validation summary")
