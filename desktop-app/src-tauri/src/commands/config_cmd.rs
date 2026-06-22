@@ -32,6 +32,7 @@ pub struct SupportBundleSummary {
     pub georef_confidence: Option<f64>,
     pub replay_gate_status: Option<String>,
     pub replay_case_count: Option<u64>,
+    pub gnss_denied_plan_status: Option<String>,
     pub px4_sitl_evidence_status: Option<String>,
     pub px4_sitl_sample_count: Option<u64>,
     pub px4_params_status: Option<String>,
@@ -91,6 +92,7 @@ pub struct SupportBundlePx4EvidenceReport {
     pub status: Option<String>,
     pub expected_message: Option<String>,
     pub sample_count: Option<u64>,
+    pub observed_rate_hz: Option<f64>,
     pub latest_sample_age_s: Option<f64>,
     pub last_position: Option<serde_json::Value>,
     pub mavlink_version: Option<u64>,
@@ -331,8 +333,36 @@ pub struct AutonomyReadinessEvidenceBlocker {
 pub struct AutonomyReadinessEvidenceManifest {
     pub schema_version: Option<String>,
     pub ready_for_goal_completion: Option<bool>,
+    pub proof_items: Vec<AutonomyReadinessEvidenceBlocker>,
     pub completion_blockers: Vec<AutonomyReadinessEvidenceBlocker>,
     pub external_blockers: Vec<AutonomyReadinessEvidenceBlocker>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessPlanSourceSnapshot {
+    pub path: Option<String>,
+    pub exists: Option<bool>,
+    pub required_marker_count: Option<u64>,
+    pub missing_markers: Vec<String>,
+    pub highest_value_reference_count: Option<u64>,
+    pub fit_criteria_count: Option<u64>,
+    pub architecture_section_count: Option<u64>,
+    pub near_term_item_count: Option<u64>,
+    pub avoid_choice_count: Option<u64>,
+    pub track_count: Option<u64>,
+    pub done_count: Option<u64>,
+    pub in_progress_count: Option<u64>,
+    pub task_count: Option<u64>,
+    pub next_task_count: Option<u64>,
+    pub acceptance_check_count: Option<u64>,
+    pub execution_order_count: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessPlanSnapshot {
+    pub schema_version: Option<String>,
+    pub research_doc: Option<AutonomyReadinessPlanSourceSnapshot>,
+    pub implementation_plan: Option<AutonomyReadinessPlanSourceSnapshot>,
 }
 
 #[derive(Serialize)]
@@ -360,9 +390,16 @@ pub struct AutonomyEvidencePackageSummary {
     pub schema_version: Option<String>,
     pub readiness_status: Option<String>,
     pub ready_for_goal_completion: Option<bool>,
+    pub plan_snapshot: Option<AutonomyReadinessPlanSnapshot>,
+    pub proof_item_count: Option<u64>,
+    pub proof_item_passed_count: Option<u64>,
+    pub completion_blocker_count: Option<u64>,
+    pub external_blocker_count: Option<u64>,
     pub included_count: Option<u64>,
     pub missing_count: Option<u64>,
     pub skipped_count: Option<u64>,
+    pub proof_items: Vec<AutonomyReadinessEvidenceBlocker>,
+    pub included_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
     pub missing_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
     pub skipped_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
 }
@@ -380,11 +417,18 @@ pub struct AutonomyReadinessReportFile {
     pub evidence_package_size_bytes: Option<u64>,
     pub evidence_package_modified_unix_ms: Option<u128>,
     pub evidence_package_summary: Option<AutonomyEvidencePackageSummary>,
+    pub workflow_report_path: Option<String>,
+    pub workflow_report_local_path: Option<String>,
+    pub workflow_validation_path: Option<String>,
+    pub workflow_validation_local_path: Option<String>,
+    pub workflow_log_archive_path: Option<String>,
+    pub workflow_log_archive_local_path: Option<String>,
     pub summary: AutonomyReadinessSummary,
     pub checks: Vec<AutonomyReadinessCheck>,
     pub next_actions: Vec<AutonomyReadinessNextAction>,
     pub command_bundle: Option<AutonomyReadinessCommandBundle>,
     pub evidence_manifest: Option<AutonomyReadinessEvidenceManifest>,
+    pub plan_snapshot: Option<AutonomyReadinessPlanSnapshot>,
     pub field_collection_plan: Option<AutonomyReadinessFieldCollectionPlan>,
 }
 
@@ -901,6 +945,7 @@ pub fn list_autonomy_readiness_reports(
                 None => continue,
             };
         let command_bundle = autonomy_readiness_command_bundle_from_json(&value);
+        let plan_snapshot = autonomy_readiness_plan_snapshot_from_json(value.get("plan_snapshot"));
         let field_collection_plan = autonomy_readiness_field_collection_plan_from_json(&value, &p);
         let modified_unix_ms = metadata
             .modified()
@@ -920,6 +965,18 @@ pub fn list_autonomy_readiness_reports(
         let evidence_package_summary = evidence_package_metadata
             .as_ref()
             .and_then(|_| read_autonomy_evidence_package_summary(&evidence_package_path));
+        let workflow_report_path =
+            autonomy_readiness_input_path(&value, "evidence_workflow_report");
+        let workflow_report_local_path =
+            workflow_artifact_local_path(&p, workflow_report_path.as_deref(), None);
+        let workflow_validation_path =
+            autonomy_readiness_input_path(&value, "evidence_workflow_validation_report");
+        let workflow_validation_local_path =
+            workflow_artifact_local_path(&p, workflow_validation_path.as_deref(), None);
+        let workflow_log_archive_path =
+            autonomy_readiness_input_path(&value, "evidence_workflow_log_archive");
+        let workflow_log_archive_local_path =
+            workflow_artifact_local_path(&p, workflow_log_archive_path.as_deref(), None);
         files.push(AutonomyReadinessReportFile {
             name: p
                 .file_name()
@@ -948,11 +1005,18 @@ pub fn list_autonomy_readiness_reports(
                 .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
                 .map(|duration| duration.as_millis()),
             evidence_package_summary,
+            workflow_report_path,
+            workflow_report_local_path,
+            workflow_validation_path,
+            workflow_validation_local_path,
+            workflow_log_archive_path,
+            workflow_log_archive_local_path,
             summary,
             checks,
             next_actions,
             command_bundle,
             evidence_manifest,
+            plan_snapshot,
             field_collection_plan,
         });
     }
@@ -962,6 +1026,14 @@ pub fn list_autonomy_readiness_reports(
             .then_with(|| a.name.cmp(&b.name))
     });
     Ok(files)
+}
+
+fn autonomy_readiness_input_path(value: &serde_json::Value, key: &str) -> Option<String> {
+    value
+        .pointer(&format!("/inputs/{key}"))
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
 }
 
 #[tauri::command]
@@ -1451,15 +1523,33 @@ fn read_autonomy_evidence_package_summary(path: &Path) -> Option<AutonomyEvidenc
     if schema_version.as_deref() != Some("vision_nav_autonomy_evidence_package_v1") {
         return None;
     }
+    let proof_summary = manifest.get("proof_summary");
     Some(AutonomyEvidencePackageSummary {
         schema_version,
         readiness_status: json_string(manifest.get("readiness_status")),
         ready_for_goal_completion: manifest
             .get("ready_for_goal_completion")
             .and_then(|value| value.as_bool()),
+        plan_snapshot: autonomy_readiness_plan_snapshot_from_json(manifest.get("plan_snapshot")),
+        proof_item_count: proof_summary
+            .and_then(|value| value.get("proof_item_count"))
+            .and_then(|value| value.as_u64()),
+        proof_item_passed_count: proof_summary
+            .and_then(|value| value.get("proof_item_passed_count"))
+            .and_then(|value| value.as_u64()),
+        completion_blocker_count: proof_summary
+            .and_then(|value| value.get("completion_blocker_count"))
+            .and_then(|value| value.as_u64()),
+        external_blocker_count: proof_summary
+            .and_then(|value| value.get("external_blocker_count"))
+            .and_then(|value| value.as_u64()),
         included_count: json_array_count(manifest.get("included")),
         missing_count: json_array_count(manifest.get("missing")),
         skipped_count: json_array_count(manifest.get("skipped")),
+        proof_items: autonomy_evidence_blockers_from_value(
+            proof_summary.and_then(|value| value.get("proof_items")),
+        ),
+        included_artifacts: evidence_package_artifacts(manifest.get("included")),
         missing_artifacts: evidence_package_artifacts(manifest.get("missing")),
         skipped_artifacts: evidence_package_artifacts(manifest.get("skipped")),
     })
@@ -1983,6 +2073,9 @@ fn px4_evidence_report_from_json(value: &serde_json::Value) -> SupportBundlePx4E
         sample_count: value
             .pointer("/listener/sample_count")
             .and_then(|value| value.as_u64()),
+        observed_rate_hz: value
+            .pointer("/listener/observed_rate_hz")
+            .and_then(|value| value.as_f64()),
         latest_sample_age_s: value
             .pointer("/listener/latest_sample_age_s")
             .and_then(|value| value.as_f64()),
@@ -2354,10 +2447,74 @@ fn autonomy_evidence_manifest_from_json(
         ready_for_goal_completion: value
             .get("ready_for_goal_completion")
             .and_then(|value| value.as_bool()),
+        proof_items: autonomy_evidence_blockers_from_value(value.get("proof_items")),
         completion_blockers: autonomy_evidence_blockers_from_value(
             value.get("completion_blockers"),
         ),
         external_blockers: autonomy_evidence_blockers_from_value(value.get("external_blockers")),
+    })
+}
+
+fn autonomy_readiness_plan_snapshot_from_json(
+    value: Option<&serde_json::Value>,
+) -> Option<AutonomyReadinessPlanSnapshot> {
+    let value = value?;
+    if !value.is_object() {
+        return None;
+    }
+    Some(AutonomyReadinessPlanSnapshot {
+        schema_version: json_string(value.get("schema_version")),
+        research_doc: autonomy_readiness_plan_source_from_json(value.get("research_doc")),
+        implementation_plan: autonomy_readiness_plan_source_from_json(
+            value.get("implementation_plan"),
+        ),
+    })
+}
+
+fn autonomy_readiness_plan_source_from_json(
+    value: Option<&serde_json::Value>,
+) -> Option<AutonomyReadinessPlanSourceSnapshot> {
+    let value = value?;
+    if !value.is_object() {
+        return None;
+    }
+    Some(AutonomyReadinessPlanSourceSnapshot {
+        path: json_string(value.get("path")),
+        exists: value.get("exists").and_then(|value| value.as_bool()),
+        required_marker_count: value
+            .get("required_marker_count")
+            .and_then(|value| value.as_u64()),
+        missing_markers: json_string_array(value.get("missing_markers")),
+        highest_value_reference_count: value
+            .get("highest_value_reference_count")
+            .and_then(|value| value.as_u64()),
+        fit_criteria_count: value
+            .get("fit_criteria_count")
+            .and_then(|value| value.as_u64()),
+        architecture_section_count: value
+            .get("architecture_section_count")
+            .and_then(|value| value.as_u64()),
+        near_term_item_count: value
+            .get("near_term_item_count")
+            .and_then(|value| value.as_u64()),
+        avoid_choice_count: value
+            .get("avoid_choice_count")
+            .and_then(|value| value.as_u64()),
+        track_count: value.get("track_count").and_then(|value| value.as_u64()),
+        done_count: value.get("done_count").and_then(|value| value.as_u64()),
+        in_progress_count: value
+            .get("in_progress_count")
+            .and_then(|value| value.as_u64()),
+        task_count: value.get("task_count").and_then(|value| value.as_u64()),
+        next_task_count: value
+            .get("next_task_count")
+            .and_then(|value| value.as_u64()),
+        acceptance_check_count: value
+            .get("acceptance_check_count")
+            .and_then(|value| value.as_u64()),
+        execution_order_count: value
+            .get("execution_order_count")
+            .and_then(|value| value.as_u64()),
     })
 }
 
@@ -2965,6 +3122,35 @@ fn json_string(value: Option<&serde_json::Value>) -> Option<String> {
         .map(|value| value.to_string())
 }
 
+fn bench_readiness_check_status(manifest: &serde_json::Value, name: &str) -> Option<String> {
+    manifest
+        .pointer("/bench_readiness/checks")
+        .and_then(|value| value.as_array())
+        .and_then(|checks| {
+            checks.iter().find(|check| {
+                check
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|check_name| check_name == name)
+            })
+        })
+        .and_then(|check| json_string(check.get("status")))
+}
+
+fn gnss_denied_plan_summary_status(manifest: &serde_json::Value) -> Option<String> {
+    bench_readiness_check_status(manifest, "gnss_denied_plan").or_else(|| {
+        json_string(manifest.pointer("/bundle/mission_plan/gnss_denied/status")).map(|status| {
+            if status == "ready" {
+                "passed".to_string()
+            } else if status == "incomplete" {
+                "failed".to_string()
+            } else {
+                status
+            }
+        })
+    })
+}
+
 fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<SupportBundleSummary> {
     let health = manifest.pointer("/bundle/health");
     let provenance = manifest.pointer("/bundle/health/source_provenance");
@@ -2997,6 +3183,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         replay_case_count: manifest
             .pointer("/replay_gates/case_count")
             .and_then(|value| value.as_u64()),
+        gnss_denied_plan_status: gnss_denied_plan_summary_status(manifest),
         px4_sitl_evidence_status: json_string(manifest.pointer("/px4_sitl_evidence/status")),
         px4_sitl_sample_count: manifest
             .pointer("/px4_sitl_evidence/listener/sample_count")
@@ -3062,6 +3249,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.checksum_status.is_none()
         && summary.elevation_status.is_none()
         && summary.replay_gate_status.is_none()
+        && summary.gnss_denied_plan_status.is_none()
         && summary.px4_sitl_evidence_status.is_none()
         && summary.px4_params_status.is_none()
         && summary.ardupilot_params_status.is_none()
@@ -3139,6 +3327,12 @@ mod tests {
                         "asset_count": 2,
                         "vertical_sanity_ready": true
                     }
+                },
+                "mission_plan": {
+                    "status": "loaded",
+                    "gnss_denied": {
+                        "status": "ready"
+                    }
                 }
             },
             "replay_gates": {
@@ -3195,7 +3389,13 @@ mod tests {
                     "failed": 0,
                     "degraded": 1,
                     "passed": 4
-                }
+                },
+                "checks": [
+                    {
+                        "name": "gnss_denied_plan",
+                        "status": "passed"
+                    }
+                ]
             }
         });
         let summary = support_summary_from_manifest(&manifest).expect("support summary");
@@ -3210,6 +3410,7 @@ mod tests {
         assert_eq!(summary.source_name.as_deref(), Some("field-map.tif"));
         assert_eq!(summary.replay_gate_status.as_deref(), Some("passed"));
         assert_eq!(summary.replay_case_count, Some(3));
+        assert_eq!(summary.gnss_denied_plan_status.as_deref(), Some("passed"));
         assert_eq!(summary.px4_sitl_evidence_status.as_deref(), Some("passed"));
         assert_eq!(summary.px4_sitl_sample_count, Some(2));
         assert_eq!(summary.px4_params_status.as_deref(), Some("degraded"));
@@ -3296,7 +3497,10 @@ mod tests {
             serde_json::json!({
                 "status": "failed",
                 "inputs": {
-                    "field_collection_plan": "/home/user/DroneTransfer/outgoing/replay-cases/field_collection_plan.json"
+                    "field_collection_plan": "/home/user/DroneTransfer/outgoing/replay-cases/field_collection_plan.json",
+                    "evidence_workflow_report": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.json",
+                    "evidence_workflow_validation_report": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.validation.json",
+                    "evidence_workflow_log_archive": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.logs.tar.gz"
                 },
                 "summary": {"failed": 2, "degraded": 1, "passed": 4},
                 "checks": [
@@ -3353,12 +3557,58 @@ mod tests {
                     ],
                     "command_count": 3
                 },
-                "evidence_manifest": {
-                    "schema_version": "vision_nav_autonomy_evidence_manifest_v1",
-                    "ready_for_goal_completion": false,
-                    "completion_blockers": [
-                        {
-                            "name": "support_bundle_bench_readiness",
+                "plan_snapshot": {
+                    "schema_version": "vision_nav_autonomy_plan_snapshot_v1",
+                    "research_doc": {
+                        "path": "docs/autonomy-ground-control-research.md",
+                        "exists": true,
+                        "required_marker_count": 3,
+                        "missing_markers": [],
+                        "highest_value_reference_count": 18,
+                        "near_term_item_count": 7
+                    },
+                    "implementation_plan": {
+                        "path": "docs/autonomy-ground-control-implementation-plan.md",
+                        "exists": true,
+                        "required_marker_count": 5,
+                        "missing_markers": [],
+                        "track_count": 6,
+                        "done_count": 84,
+                        "task_count": 13,
+                        "acceptance_check_count": 12
+                    }
+                },
+                    "evidence_manifest": {
+                        "schema_version": "vision_nav_autonomy_evidence_manifest_v1",
+                        "ready_for_goal_completion": false,
+                        "proof_items": [
+                            {
+                                "name": "research_doc",
+                                "status": "passed",
+                                "message": "Research doc ready."
+                            },
+                            {
+                                "name": "support_bundle_bench_readiness",
+                                "status": "failed",
+                                "message": "Support bundle missing.",
+                                "bench_subchecks": [
+                                    {
+                                        "name": "runtime_status",
+                                        "status": "degraded",
+                                        "message": "Runtime status snapshot was not provided."
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "px4_receiver_proof",
+                                "status": "failed",
+                                "message": "Receiver proof missing.",
+                                "missing_conditions": ["good_texture", "wrong_map"]
+                            }
+                        ],
+                        "completion_blockers": [
+                            {
+                                "name": "support_bundle_bench_readiness",
                             "status": "failed",
                             "message": "Support bundle missing.",
                             "bench_subchecks": [
@@ -3400,6 +3650,12 @@ mod tests {
             .to_string(),
         )
         .expect("write readiness report");
+        std::fs::write(dir.join("autonomy_evidence_workflow.json"), "{}")
+            .expect("write workflow report artifact");
+        std::fs::write(dir.join("autonomy_evidence_workflow.validation.json"), "{}")
+            .expect("write workflow validation artifact");
+        std::fs::write(dir.join("autonomy_evidence_workflow.logs.tar.gz"), "logs")
+            .expect("write workflow log archive artifact");
         std::fs::write(
             dir.join("threshold_tuning_report.json"),
             serde_json::json!({"status": "passed", "method": "field-replay-gate-threshold-audit"})
@@ -3423,9 +3679,58 @@ mod tests {
                     "schema_version": "vision_nav_autonomy_evidence_package_v1",
                     "readiness_status": "failed",
                     "ready_for_goal_completion": false,
+                    "plan_snapshot": {
+                        "schema_version": "vision_nav_autonomy_plan_snapshot_v1",
+                        "research_doc": {
+                            "path": "docs/autonomy-ground-control-research.md",
+                            "exists": true,
+                            "required_marker_count": 3,
+                            "missing_markers": [],
+                            "highest_value_reference_count": 18,
+                            "near_term_item_count": 7
+                        },
+                        "implementation_plan": {
+                            "path": "docs/autonomy-ground-control-implementation-plan.md",
+                            "exists": true,
+                            "required_marker_count": 5,
+                            "missing_markers": [],
+                            "track_count": 6,
+                            "done_count": 84,
+                            "task_count": 13,
+                            "acceptance_check_count": 12
+                        }
+                    },
+                    "proof_summary": {
+                        "proof_item_count": 3,
+                        "proof_item_passed_count": 1,
+                        "completion_blocker_count": 2,
+                        "external_blocker_count": 2,
+                        "proof_items": [
+                            {"name": "research_doc", "status": "passed", "message": "Research doc ready."},
+                            {
+                                "name": "support_bundle_bench_readiness",
+                                "status": "failed",
+                                "message": "Support bundle missing.",
+                                "bench_subchecks": [
+                                    {
+                                        "name": "runtime_status",
+                                        "status": "degraded",
+                                        "message": "Runtime status snapshot was not provided."
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "px4_receiver_proof",
+                                "status": "failed",
+                                "message": "Receiver proof missing.",
+                                "missing_conditions": ["good_texture", "wrong_map"]
+                            }
+                        ]
+                    },
                     "included": [
                         {"label": "autonomy_report"},
-                        {"label": "autonomy_handoff"}
+                        {"label": "autonomy_handoff"},
+                        {"label": "input:evidence_workflow_log_archive", "path": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.logs.tar.gz"}
                     ],
                     "missing": [
                         {"label": "px4_receiver_proof"}
@@ -3464,15 +3769,71 @@ mod tests {
             Some("autonomy_readiness_report.evidence.zip")
         );
         assert!(reports[0].evidence_package_size_bytes.is_some());
+        assert_eq!(
+            reports[0].workflow_report_path.as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.json")
+        );
+        assert!(reports[0]
+            .workflow_report_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("autonomy_evidence_workflow.json")));
+        assert!(reports[0]
+            .workflow_validation_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("autonomy_evidence_workflow.validation.json")));
+        assert!(reports[0]
+            .workflow_log_archive_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("autonomy_evidence_workflow.logs.tar.gz")));
+        let plan_snapshot = reports[0].plan_snapshot.as_ref().expect("plan snapshot");
+        assert_eq!(
+            plan_snapshot.schema_version.as_deref(),
+            Some("vision_nav_autonomy_plan_snapshot_v1")
+        );
+        assert_eq!(
+            plan_snapshot
+                .research_doc
+                .as_ref()
+                .and_then(|snapshot| snapshot.highest_value_reference_count),
+            Some(18)
+        );
+        assert_eq!(
+            plan_snapshot
+                .implementation_plan
+                .as_ref()
+                .and_then(|snapshot| snapshot.track_count),
+            Some(6)
+        );
         let package_summary = reports[0]
             .evidence_package_summary
             .as_ref()
             .expect("evidence package summary");
         assert_eq!(package_summary.readiness_status.as_deref(), Some("failed"));
         assert_eq!(package_summary.ready_for_goal_completion, Some(false));
-        assert_eq!(package_summary.included_count, Some(2));
+        assert_eq!(
+            package_summary
+                .plan_snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.implementation_plan.as_ref())
+                .and_then(|snapshot| snapshot.done_count),
+            Some(84)
+        );
+        assert_eq!(package_summary.proof_item_count, Some(3));
+        assert_eq!(package_summary.proof_item_passed_count, Some(1));
+        assert_eq!(package_summary.completion_blocker_count, Some(2));
+        assert_eq!(package_summary.external_blocker_count, Some(2));
+        assert_eq!(package_summary.proof_items.len(), 3);
+        assert_eq!(
+            package_summary.proof_items[2].missing_conditions,
+            vec!["good_texture".to_string(), "wrong_map".to_string()]
+        );
+        assert_eq!(package_summary.included_count, Some(3));
         assert_eq!(package_summary.missing_count, Some(1));
         assert_eq!(package_summary.skipped_count, Some(1));
+        assert_eq!(
+            package_summary.included_artifacts[2].label.as_deref(),
+            Some("input:evidence_workflow_log_archive")
+        );
         assert_eq!(
             package_summary.missing_artifacts[0].label.as_deref(),
             Some("px4_receiver_proof")
@@ -3555,6 +3916,15 @@ mod tests {
             .as_ref()
             .expect("evidence manifest");
         assert_eq!(evidence.ready_for_goal_completion, Some(false));
+        assert_eq!(evidence.proof_items.len(), 3);
+        assert_eq!(
+            evidence.proof_items[0].name.as_deref(),
+            Some("research_doc")
+        );
+        assert_eq!(
+            evidence.proof_items[1].bench_subchecks[0].name.as_deref(),
+            Some("runtime_status")
+        );
         assert_eq!(evidence.external_blockers.len(), 2);
         assert_eq!(
             evidence.external_blockers[0].bench_subchecks[0]
@@ -4005,6 +4375,7 @@ mod tests {
                 "expected_message": "odometry",
                 "listener": {
                     "sample_count": 4,
+                    "observed_rate_hz": 5.0,
                     "latest_sample_age_s": 0.3,
                     "last_position": [1.0, 2.0, -3.0]
                 },
@@ -4033,6 +4404,7 @@ mod tests {
             Some("odometry")
         );
         assert_eq!(reports[0].report.sample_count, Some(4));
+        assert_eq!(reports[0].report.observed_rate_hz, Some(5.0));
         assert_eq!(reports[0].report.mavlink_version, Some(2));
         assert_eq!(reports[0].report.has_udp_14550, Some(true));
     }

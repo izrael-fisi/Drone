@@ -335,6 +335,9 @@ function SupportBundleDetailPanel({
                 </span>
                 <span className="font-mono text-slate-400">{formatLabel(report.expected_message)}</span>
                 <span className="font-mono text-slate-500">{report.sample_count ?? 0} samples</span>
+                {report.observed_rate_hz != null && (
+                  <span className="font-mono text-slate-500">{report.observed_rate_hz.toFixed(2)}hz</span>
+                )}
                 {report.latest_sample_age_s != null && (
                   <span className="font-mono text-slate-500">age {report.latest_sample_age_s.toFixed(2)}s</span>
                 )}
@@ -696,6 +699,12 @@ export function SupportBundleList({
                     replay {formatLabel(bundle.summary.replay_gate_status)}
                   </span>
                 )}
+                {bundle.summary.gnss_denied_plan_status && (
+                  <span className={statusClass(bundle.summary.gnss_denied_plan_status)}>
+                    {statusIcon(bundle.summary.gnss_denied_plan_status)}
+                    gnss prep {formatLabel(bundle.summary.gnss_denied_plan_status)}
+                  </span>
+                )}
                 {bundle.summary.px4_sitl_evidence_status && bundle.summary.px4_sitl_evidence_status !== "not_provided" && (
                   <span className={statusClass(bundle.summary.px4_sitl_evidence_status)}>
                     {statusIcon(bundle.summary.px4_sitl_evidence_status)}
@@ -778,6 +787,7 @@ export function SupportBundleList({
                   <span>checksums {formatLabel(bundle.summary.checksum_status)}</span>
                   <span>elevation {bundle.summary.vertical_sanity_ready ? "ready" : formatLabel(bundle.summary.elevation_status)}</span>
                   <span>replay {formatLabel(bundle.summary.replay_gate_status)}</span>
+                  <span>gnss prep {formatLabel(bundle.summary.gnss_denied_plan_status)}</span>
                   <span>px4 {formatLabel(bundle.summary.px4_sitl_evidence_status)}</span>
                   <span>px4 samples {bundle.summary.px4_sitl_sample_count ?? 0}</span>
                   <span>params {formatLabel(bundle.summary.px4_params_status)}</span>

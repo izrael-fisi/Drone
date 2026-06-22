@@ -6,6 +6,8 @@ python_bin="${VISION_NAV_PYTHON:-python3}"
 listener_path="${1:-}"
 mavlink_status_path="${2:-}"
 expected_message="${VISION_NAV_SITL_MAVLINK_MESSAGE:-odometry}"
+expected_rate_hz="${VISION_NAV_SITL_RATE_HZ:-}"
+min_rate_ratio="${VISION_NAV_PX4_SITL_MIN_RATE_RATIO:-}"
 
 if [[ -z "$listener_path" ]]; then
   cat >&2 <<EOF
@@ -27,6 +29,12 @@ args=(
   --expected-message "$expected_message"
 )
 
+if [[ -n "$expected_rate_hz" ]]; then
+  args+=(--expected-rate-hz "$expected_rate_hz")
+fi
+if [[ -n "$min_rate_ratio" ]]; then
+  args+=(--min-rate-ratio "$min_rate_ratio")
+fi
 if [[ -n "$mavlink_status_path" ]]; then
   args+=(--mavlink-status "$mavlink_status_path")
 fi

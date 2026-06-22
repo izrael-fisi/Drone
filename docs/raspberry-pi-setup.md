@@ -616,6 +616,10 @@ vision-nav-ros2-replay-log \
   --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
   --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl \
   --include-frame-topic
+
+vision-nav-validate-rosbag-export \
+  --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl \
+  --output ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json
 ```
 
 On a workstation that has the optional MCAP package installed, the same command
@@ -627,7 +631,14 @@ vision-nav-ros2-replay-log \
   --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
   --export-mcap ~/DroneTransfer/outgoing/terrain-match/vision-nav.mcap \
   --include-frame-topic
+
+vision-nav-validate-rosbag-export \
+  --artifact ~/DroneTransfer/outgoing/terrain-match/vision-nav.mcap \
+  --output ~/DroneTransfer/outgoing/terrain-match/vision-nav-mcap-validation.json
 ```
+
+The validator checks metadata, topic counts, JSONL payload shape, MCAP sidecars,
+and native rosbag2 storage files without requiring ROS 2 to be installed.
 
 ## Create A Support Bundle
 
@@ -703,7 +714,11 @@ The desktop SITL smoke and capture scripts print
 `__VISION_NAV_PX4_SITL_REPORT__=...` markers after preparing or evaluating a
 session. Use the session marker as `VISION_NAV_PX4_SITL_SESSION`. The session
 folder is copied under `extras/px4_sitl_session/`, and the parsed pass/fail
-report is still written under `summaries/px4_sitl_evidence/`.
+report is still written under `summaries/px4_sitl_evidence/`. Session-based
+receiver reports also compare the observed `vehicle_visual_odometry` listener
+rate against the smoke manifest `rate_hz`, so support bundles show whether PX4
+received the external-vision stream at a plausible rate. The same timing detail
+is carried into bench-readiness and final autonomy-readiness check details.
 The final autonomy-readiness wrapper can also consume the report marker
 directly through `VISION_NAV_PX4_SITL_REPORT`, which is useful when receiver
 proof has already been evaluated and does not need to be repackaged into a new
@@ -782,11 +797,11 @@ vision-nav-bench-readiness \
   --support-bundle "$HOME/DroneTransfer/outgoing/support-bundles/<bundle>.zip"
 ```
 
-The gate checks terrain bundle health, runtime logs, replay gates, PX4 receiver
-evidence, and PX4 parameter readiness in one report. If an ArduPilot
-ExternalNav parameter report is bundled, it is counted in the same readiness
-report; add `--require-ardupilot-params` only for ArduPilot-specific adapter
-bench runs. Use
+The gate checks terrain bundle health, Mission Planner GNSS-denied prep from
+the bundled mission JSON, runtime logs, replay gates, PX4 receiver evidence, and
+PX4 parameter readiness in one report. If an ArduPilot ExternalNav parameter
+report is bundled, it is counted in the same readiness report; add
+`--require-ardupilot-params` only for ArduPilot-specific adapter bench runs. Use
 `--allow-missing-px4-evidence`, `--allow-missing-px4-params`, or
 `--allow-missing-replay-gates` only for local software smoke checks before the
 real bench evidence exists.
@@ -864,10 +879,14 @@ Then run:
 ./scripts/pi/run_autonomy_readiness_audit.sh
 ```
 
-If the evidence workflow report and validation JSON are present in the default
-workflow folder, the readiness audit records them as artifact inputs. They do
-not change the final pass/fail gates, but the generated handoff and evidence ZIP
-include those JSON reports for support review.
+If the evidence workflow report, validation JSON, and workflow-log archive are
+present in the default workflow folder, the readiness audit records them as
+artifact inputs. They do not change the final pass/fail gates, but the generated
+handoff shows their availability and the evidence ZIP includes them for support
+review when each file is under the package artifact size limit. After download,
+the Module Setup Autonomy Readiness Reports card shows workflow, validation, and
+logs chips for those referenced inputs so support can copy or reveal the local
+artifacts directly.
 
 The wrapper uses the latest Pi-side support bundle under
 `~/DroneTransfer/outgoing/support-bundles/` by default and writes
@@ -904,7 +923,8 @@ It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and
 `~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.md`, plus
 `~/DroneTransfer/from-pi/replay-cases/autonomy_readiness_report.evidence.zip`,
 even when the audit fails, so the missing proof artifacts are visible in both a
-machine-readable report, a support handoff, and a package manifest.
+machine-readable report, a support handoff, and a package manifest with the
+plan source snapshot and compact goal-proof counts.
 Failed or degraded gates include `next_actions` entries with the matching
 Module Setup action or shell command to run next. Field-evidence and
 threshold-tuning next actions include the missing real-world condition keys.
@@ -912,7 +932,10 @@ The Module Setup readiness card can copy all next-action shell commands at once
 or copy a single command from its row, and the JSON report includes the same
 machine-readable command bundle for support tooling.
 The Markdown handoff turns those missing condition keys and failed/degraded
-bench subchecks into checkbox lists for field collection and support review.
+bench subchecks into checkbox lists for field collection and support review. It
+also lists all goal proof items and separates completion blockers from external
+proof blockers. The handoff includes a plan source snapshot so support can see
+which research and implementation-plan markers were present during the audit.
 When a field collection plan is present, the handoff also summarizes registered
 vs required field conditions and the pending placeholder/missing cases. It
 also includes an artifact-availability table when the referenced evidence
@@ -927,14 +950,19 @@ the desktop. The `Autonomy Readiness` action runs the same strict final audit on
 the Pi against the latest support bundle and downloads the readiness report to
 `~/DroneTransfer/from-pi/replay-cases/` on the desktop, including the sibling
 Markdown handoff and evidence ZIP package when those markers are emitted. It
-also lets you save a local JSON setup report containing the check results,
+also downloads referenced evidence-workflow reports, workflow-log archives,
+workflow-validation JSON, field-evidence reports, feature benchmarks,
+threshold-tuning reports, and field-collection plans when the readiness wrapper
+emits those markers. It also
+lets you save a local JSON setup report containing the check results,
 selected discovery adapter, copyable discovery checklist, downloaded
 support-bundle summaries, downloaded feature-benchmark summaries, downloaded
 field-evidence coverage summaries, downloaded autonomy-readiness report
 summaries, downloaded autonomy-workflow reports, and a compact latest-readiness
 snapshot with handoff path, evidence package path, goal-completion flag,
-external blockers, next actions, the readiness `command_bundle`, and the
-referenced field collection plan summary when it is available locally. The same Module
+plan source snapshot, external blockers, next actions, the readiness
+`command_bundle`, and the referenced field collection plan summary when it is
+available locally. The same Module
 Setup panel lists the latest downloaded feature-method benchmark JSON reports
 with recommended method and accepted rates, lists field-evidence JSON reports
 with per-condition coverage, then lists autonomy-readiness JSON reports with
@@ -954,7 +982,10 @@ autonomy-readiness list detects the sibling Markdown handoff and evidence ZIP
 package beside each JSON report and exposes copy/reveal controls for support
 review. When the evidence ZIP contains the expected package manifest, the list
 also shows included, missing, and skipped artifact counts with the first
-missing/skipped artifact labels.
+included/missing/skipped artifact labels plus packaged proof pass counts and
+external-blocker counts. When the downloaded JSON or evidence package includes a
+plan snapshot, the same card shows research marker/reference coverage and
+implementation track/task/done counts.
 The desktop support-bundle list can reveal
 downloaded ZIPs in the local file manager, copy their path, show compact
 manifest details, inspect log/replay-gate summaries and per-record JSONL

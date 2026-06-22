@@ -14,6 +14,7 @@ feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$replay_dir/threshold_tuning_report.json}"
 evidence_workflow_report="${VISION_NAV_EVIDENCE_WORKFLOW_REPORT:-}"
 evidence_workflow_validation_report="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-}"
+evidence_workflow_log_archive="${VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE:-}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 output_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$replay_dir/autonomy_readiness_report.json}"
@@ -101,6 +102,26 @@ first_existing_workflow_validation_report() {
   done
 }
 
+first_existing_workflow_log_archive() {
+  local candidates=()
+  if [[ -n "$evidence_workflow_report" ]]; then
+    candidates+=("${evidence_workflow_report%.json}.logs.tar.gz")
+  fi
+  candidates+=(
+    "$replay_dir/autonomy_evidence_workflow.logs.tar.gz"
+    "$replay_dir/autonomy-evidence-workflow/autonomy_evidence_workflow.logs.tar.gz"
+    "$download_root/replay-cases/autonomy_evidence_workflow.logs.tar.gz"
+    "$download_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.logs.tar.gz"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
 if [[ -z "$support_bundle" ]]; then
   support_bundle="$(latest_glob "$support_dir/*.zip")"
 fi
@@ -123,6 +144,10 @@ fi
 
 if [[ -z "$evidence_workflow_validation_report" ]]; then
   evidence_workflow_validation_report="$(first_existing_workflow_validation_report || true)"
+fi
+
+if [[ -z "$evidence_workflow_log_archive" ]]; then
+  evidence_workflow_log_archive="$(first_existing_workflow_log_archive || true)"
 fi
 
 mkdir -p "$(dirname "$output_report")"
@@ -168,6 +193,10 @@ if [[ -f "$evidence_workflow_validation_report" ]]; then
   args+=(--evidence-workflow-validation-report "$evidence_workflow_validation_report")
 fi
 
+if [[ -f "$evidence_workflow_log_archive" ]]; then
+  args+=(--evidence-workflow-log-archive "$evidence_workflow_log_archive")
+fi
+
 set +e
 PYTHONPATH="$repo_root/src" "$python_bin" "${args[@]}"
 audit_status=$?
@@ -195,6 +224,7 @@ Local autonomy readiness audit inputs:
   threshold tuning report: $([[ -f "$threshold_tuning_report" ]] && printf '%s' "$threshold_tuning_report" || printf 'not found')
   evidence workflow report: $([[ -f "$evidence_workflow_report" ]] && printf '%s' "$evidence_workflow_report" || printf 'not found')
   workflow validation:     $([[ -f "$evidence_workflow_validation_report" ]] && printf '%s' "$evidence_workflow_validation_report" || printf 'not found')
+  workflow log archive:    $([[ -f "$evidence_workflow_log_archive" ]] && printf '%s' "$evidence_workflow_log_archive" || printf 'not found')
   output report:           $output_report
   output handoff:          $output_handoff
   evidence package:        $output_package
@@ -208,11 +238,23 @@ if [[ -f "$px4_sitl_report" ]]; then
   echo "__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report"
 fi
 
+if [[ -f "$field_evidence_report" ]]; then
+  echo "__VISION_NAV_FIELD_EVIDENCE_REPORT__=$field_evidence_report"
+fi
+
 if [[ -f "$field_collection_plan" ]]; then
   echo "__VISION_NAV_FIELD_COLLECTION_PLAN__=$field_collection_plan"
   if [[ -f "${field_collection_plan%.json}.md" ]]; then
     echo "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=${field_collection_plan%.json}.md"
   fi
+fi
+
+if [[ -f "$feature_method_benchmark_report" ]]; then
+  echo "__VISION_NAV_FEATURE_METHOD_REPORT__=$feature_method_benchmark_report"
+fi
+
+if [[ -f "$threshold_tuning_report" ]]; then
+  echo "__VISION_NAV_THRESHOLD_REPORT__=$threshold_tuning_report"
 fi
 
 if [[ -f "$evidence_workflow_report" ]]; then
@@ -221,6 +263,10 @@ fi
 
 if [[ -f "$evidence_workflow_validation_report" ]]; then
   echo "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=$evidence_workflow_validation_report"
+fi
+
+if [[ -f "$evidence_workflow_log_archive" ]]; then
+  echo "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=$evidence_workflow_log_archive"
 fi
 
 if [[ "$audit_status" -ne 0 ]]; then

@@ -74,6 +74,19 @@ type GnssDeniedReadiness = {
   estimator_health: EstimatorHealthState;
   updated_at: string | null;
 };
+type PlannerReadinessCheck = {
+  key: string;
+  label: string;
+  ok: boolean;
+};
+type GnssDeniedReadinessExport = GnssDeniedReadiness & {
+  status: "ready" | "incomplete";
+  checks: Array<{
+    name: string;
+    label: string;
+    status: "passed" | "failed";
+  }>;
+};
 type TerrainPlanningConstraints = {
   min_agl_m: number;
   max_terrain_relief_m: number;
@@ -157,8 +170,11 @@ type MissionPlanPayload = {
     feature_method: PipelineConfig["featureMethod"];
     max_features: number;
   };
-  gnss_denied: GnssDeniedReadiness;
+  gnss_denied: GnssDeniedReadinessExport;
   terrain_planning: TerrainPlanningMetadata;
+};
+type ImportedMissionPlanPayload = Partial<Omit<MissionPlanPayload, "gnss_denied">> & {
+  gnss_denied?: GnssDeniedReadiness;
 };
 
 const DEFAULT_LOCAL_REPO = "/Users/izzyfisi/Documents/DRONE";
@@ -554,6 +570,52 @@ function missionReadinessClass(ok: boolean) {
   return ok ? "badge-green" : "badge-yellow";
 }
 
+function gnssDeniedChecklist(readiness: GnssDeniedReadiness): PlannerReadinessCheck[] {
+  return [
+    {
+      key: "satellite_source_disabled",
+      label: "Satellite off",
+      ok: readiness.satellite_source_disabled,
+    },
+    {
+      key: "map_position_reset",
+      label: "Map reset",
+      ok: readiness.map_position_reset != null,
+    },
+    {
+      key: "home_position",
+      label: "Home reset",
+      ok: readiness.home_position != null,
+    },
+    {
+      key: "heading",
+      label: "Heading",
+      ok: readiness.heading_deg != null && Number.isFinite(readiness.heading_deg),
+    },
+    {
+      key: "estimator_health",
+      label: "Estimator ready",
+      ok: readiness.estimator_health === "ready",
+    },
+  ];
+}
+
+function exportGnssDeniedReadiness(
+  readiness: GnssDeniedReadiness,
+  checks: PlannerReadinessCheck[],
+): GnssDeniedReadinessExport {
+  const allReady = checks.every((check) => check.ok);
+  return {
+    ...readiness,
+    status: allReady ? "ready" : "incomplete",
+    checks: checks.map((check) => ({
+      name: check.key,
+      label: check.label,
+      status: check.ok ? "passed" : "failed",
+    })),
+  };
+}
+
 function missionPlanStateClass(status: MissionPlanStateStatus) {
   if (status === "uploaded" || status === "bundle_ready") return "badge-green";
   if (status === "invalid" || status === "stale_bundle") return "badge-red";
@@ -615,6 +677,7 @@ function buildMissionPlanPayload({
   visionCheckpoints,
   pipelineConfig,
   gnssDeniedReadiness,
+  gnssDeniedChecks,
   terrainPlanning,
 }: {
   activeLayer: PlanLayer;
@@ -627,6 +690,7 @@ function buildMissionPlanPayload({
   visionCheckpoints: PlanPoint[];
   pipelineConfig: PipelineConfig;
   gnssDeniedReadiness: GnssDeniedReadiness;
+  gnssDeniedChecks: PlannerReadinessCheck[];
   terrainPlanning: TerrainPlanningMetadata;
 }): MissionPlanPayload {
   return {
@@ -668,7 +732,7 @@ function buildMissionPlanPayload({
       feature_method: pipelineConfig.featureMethod,
       max_features: pipelineConfig.maxFeatures,
     },
-    gnss_denied: gnssDeniedReadiness,
+    gnss_denied: exportGnssDeniedReadiness(gnssDeniedReadiness, gnssDeniedChecks),
     terrain_planning: terrainPlanning,
   };
 }
@@ -787,7 +851,7 @@ function normalizeTerrainPlanningMetadata(value: unknown): TerrainPlanningMetada
   };
 }
 
-function parseImportedPlan(text: string): Partial<MissionPlanPayload> {
+function parseImportedPlan(text: string): ImportedMissionPlanPayload {
   const parsed = JSON.parse(text);
   if (parsed?.mission?.items && Array.isArray(parsed.mission.items)) {
     return {
@@ -1134,6 +1198,9 @@ export function MissionPlanner() {
     () => terrainConstraintChecks(bundleResult?.geospatial_health?.terrain_profile, terrainConstraints),
     [bundleResult?.geospatial_health?.terrain_profile, terrainConstraints],
   );
+  const gnssDeniedChecks = useMemo(() => gnssDeniedChecklist(gnssDeniedReadiness), [gnssDeniedReadiness]);
+  const gnssDeniedReady = gnssDeniedChecks.every((check) => check.ok);
+  const firstFailedGnssDeniedCheck = gnssDeniedChecks.find((check) => !check.ok);
   const planPayload = useMemo(
     () => buildMissionPlanPayload({
       activeLayer,
@@ -1146,6 +1213,7 @@ export function MissionPlanner() {
       visionCheckpoints,
       pipelineConfig,
       gnssDeniedReadiness,
+      gnssDeniedChecks,
       terrainPlanning: terrainPlanningMetadata,
     }),
     [
@@ -1161,6 +1229,7 @@ export function MissionPlanner() {
       visionCheckpoints,
       pipelineConfig,
       gnssDeniedReadiness,
+      gnssDeniedChecks,
       terrainPlanningMetadata,
     ],
   );
@@ -1181,6 +1250,7 @@ export function MissionPlanner() {
     { label: "Map source", ok: !!selectedRegion },
     { label: "Mission path", ok: missionItems.length >= 2 },
     { label: "Vision map quality", ok: hasVisionReadyMap },
+    { label: "GNSS-denied prep", ok: gnssDeniedReady },
     { label: "Fence optional", ok: fencePoints.length === 0 || fencePoints.length >= 3 },
     { label: "MAVLink endpoint", ok: !enableMavlink || !!activeDevice?.mavlink_endpoint },
   ];
@@ -1413,6 +1483,15 @@ export function MissionPlanner() {
 
   const buildBundle = async (): Promise<BuildDroneBundleResult | null> => {
     if (!selectedRegion || !effectiveBundleDir || !repoPath) return null;
+    if (!allReadinessChecksPass) {
+      const failedCheck = readinessChecks.find((check) => !check.ok);
+      setPlanMessage(
+        failedCheck?.label === "GNSS-denied prep" && firstFailedGnssDeniedCheck
+          ? `Complete GNSS-denied prep: ${firstFailedGnssDeniedCheck.label}.`
+          : `Resolve readiness check: ${failedCheck?.label ?? "mission readiness"}.`,
+      );
+      return null;
+    }
     setBuilding(true);
     setError(null);
     setCommandOutput("");
@@ -1981,6 +2060,18 @@ export function MissionPlanner() {
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
               <Navigation size={14} className="text-cyan-400" /> GNSS-Denied Readiness
             </h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={missionReadinessClass(gnssDeniedReady)}>
+                {gnssDeniedReady ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />}
+                {gnssDeniedReady ? "Ready" : "Incomplete"}
+              </span>
+              {gnssDeniedChecks.map((check) => (
+                <span key={check.key} className={missionReadinessClass(check.ok)}>
+                  {check.ok ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />}
+                  {check.label}
+                </span>
+              ))}
+            </div>
             <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
               <div>
                 <div className="text-sm text-slate-200">Satellite source disabled</div>
@@ -2197,7 +2288,7 @@ export function MissionPlanner() {
             )}
             <button
               onClick={buildAndDeployBundle}
-              disabled={!selectedRegion || !repoPath || building || uploading || (activeDevice.kind === "pi5" && (!activeDevice.host || !activeDevice.auth))}
+              disabled={!selectedRegion || !repoPath || !allReadinessChecksPass || building || uploading || (activeDevice.kind === "pi5" && (!activeDevice.host || !activeDevice.auth))}
               className="btn-primary w-full justify-center"
             >
               {building || uploading ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}

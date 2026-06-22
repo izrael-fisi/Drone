@@ -12,6 +12,7 @@ feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
 evidence_workflow_report="${VISION_NAV_EVIDENCE_WORKFLOW_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json}"
 evidence_workflow_validation_report="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-${evidence_workflow_report%.json}.validation.json}"
+evidence_workflow_log_archive="${VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE:-${evidence_workflow_report%.json}.logs.tar.gz}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 output_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json}"
@@ -93,6 +94,10 @@ if [[ -f "$evidence_workflow_validation_report" ]]; then
   args+=(--evidence-workflow-validation-report "$evidence_workflow_validation_report")
 fi
 
+if [[ -f "$evidence_workflow_log_archive" ]]; then
+  args+=(--evidence-workflow-log-archive "$evidence_workflow_log_archive")
+fi
+
 set +e
 PYTHONPATH="$repo_root/src" "$venv_python" "${args[@]}"
 audit_status=$?
@@ -120,6 +125,7 @@ Autonomy readiness audit outputs:
   threshold tuning report:   $([[ -f "$threshold_tuning_report" ]] && printf '%s' "$threshold_tuning_report" || printf 'not found')
   evidence workflow report:  $([[ -f "$evidence_workflow_report" ]] && printf '%s' "$evidence_workflow_report" || printf 'not found')
   workflow validation:       $([[ -f "$evidence_workflow_validation_report" ]] && printf '%s' "$evidence_workflow_validation_report" || printf 'not found')
+  workflow log archive:      $([[ -f "$evidence_workflow_log_archive" ]] && printf '%s' "$evidence_workflow_log_archive" || printf 'not found')
   report:                    $output_report
   handoff:                   $output_handoff
   evidence package:          $output_package
@@ -133,11 +139,23 @@ if [[ -f "$px4_sitl_report" ]]; then
   echo "__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report"
 fi
 
+if [[ -f "$field_evidence_report" ]]; then
+  echo "__VISION_NAV_FIELD_EVIDENCE_REPORT__=$field_evidence_report"
+fi
+
 if [[ -f "$field_collection_plan" ]]; then
   echo "__VISION_NAV_FIELD_COLLECTION_PLAN__=$field_collection_plan"
   if [[ -f "${field_collection_plan%.json}.md" ]]; then
     echo "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=${field_collection_plan%.json}.md"
   fi
+fi
+
+if [[ -f "$feature_method_benchmark_report" ]]; then
+  echo "__VISION_NAV_FEATURE_METHOD_REPORT__=$feature_method_benchmark_report"
+fi
+
+if [[ -f "$threshold_tuning_report" ]]; then
+  echo "__VISION_NAV_THRESHOLD_REPORT__=$threshold_tuning_report"
 fi
 
 if [[ -f "$evidence_workflow_report" ]]; then
@@ -146,6 +164,10 @@ fi
 
 if [[ -f "$evidence_workflow_validation_report" ]]; then
   echo "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=$evidence_workflow_validation_report"
+fi
+
+if [[ -f "$evidence_workflow_log_archive" ]]; then
+  echo "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=$evidence_workflow_log_archive"
 fi
 
 if [[ "$audit_status" -ne 0 ]]; then

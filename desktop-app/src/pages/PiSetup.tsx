@@ -788,6 +788,30 @@ function AutonomyReadinessReportList({
               ...uniqueActionCommands(report.next_actions),
               ...(report.command_bundle?.next_action_commands ?? []),
             ]);
+            const readinessWorkflowArtifacts = [
+              {
+                label: "workflow",
+                path: report.workflow_report_local_path ?? report.workflow_report_path,
+                localPath: report.workflow_report_local_path,
+              },
+              {
+                label: "validation",
+                path: report.workflow_validation_local_path ?? report.workflow_validation_path,
+                localPath: report.workflow_validation_local_path,
+              },
+              {
+                label: "logs",
+                path: report.workflow_log_archive_local_path ?? report.workflow_log_archive_path,
+                localPath: report.workflow_log_archive_local_path,
+              },
+            ].flatMap((artifact) =>
+              artifact.path
+                ? [{ label: artifact.label, path: artifact.path, localPath: artifact.localPath }]
+                : []
+            );
+            const planSnapshot = report.plan_snapshot ?? report.evidence_package_summary?.plan_snapshot;
+            const researchSnapshot = planSnapshot?.research_doc;
+            const implementationSnapshot = planSnapshot?.implementation_plan;
             return (
             <div key={report.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
               <div className="flex items-start justify-between gap-3">
@@ -830,7 +854,42 @@ function AutonomyReadinessReportList({
                         <span>included {report.evidence_package_summary.included_count ?? 0}</span>
                         <span>missing {report.evidence_package_summary.missing_count ?? 0}</span>
                         <span>skipped {report.evidence_package_summary.skipped_count ?? 0}</span>
+                        {typeof report.evidence_package_summary.proof_item_count === "number" && (
+                          <span>
+                            proof {report.evidence_package_summary.proof_item_passed_count ?? 0}/
+                            {report.evidence_package_summary.proof_item_count}
+                          </span>
+                        )}
+                        {typeof report.evidence_package_summary.external_blocker_count === "number" && (
+                          <span>external blockers {report.evidence_package_summary.external_blocker_count}</span>
+                        )}
                       </div>
+                      {report.evidence_package_summary.proof_items.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {report.evidence_package_summary.proof_items.slice(0, 4).map((item, index) => (
+                            <span
+                              key={`${report.path}-package-proof-${item.name ?? index}`}
+                              className="rounded border border-sky-500/20 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] text-sky-200"
+                              title={item.message ?? item.name ?? "proof item"}
+                            >
+                              {formatReadinessLabel(item.name ?? "proof")} {formatReadinessLabel(item.status)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {report.evidence_package_summary.included_artifacts.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {report.evidence_package_summary.included_artifacts.slice(0, 4).map((artifact, index) => (
+                            <span
+                              key={`${report.path}-included-artifact-${artifact.label ?? index}`}
+                              className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300"
+                              title={artifact.path ?? artifact.label ?? "included artifact"}
+                            >
+                              included {formatReadinessLabel(artifact.label ?? artifact.path ?? "artifact")}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {report.evidence_package_summary.missing_artifacts.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {report.evidence_package_summary.missing_artifacts.slice(0, 4).map((artifact, index) => (
@@ -857,6 +916,42 @@ function AutonomyReadinessReportList({
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+                  {readinessWorkflowArtifacts.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {readinessWorkflowArtifacts.map((artifact) => (
+                        <span
+                          key={`${report.path}-workflow-artifact-${artifact.label}`}
+                          className="inline-flex items-center gap-1 rounded border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] text-cyan-200"
+                          title={artifact.path}
+                        >
+                          {artifact.label}
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(artifact.path)}
+                            className="text-cyan-300 hover:text-cyan-100"
+                            title={`Copy ${artifact.label} path`}
+                          >
+                            <Copy size={9} />
+                          </button>
+                          {artifact.localPath && (
+                            <button
+                              type="button"
+                              onClick={() => reveal(artifact.localPath ?? artifact.path)}
+                              disabled={busyPath === artifact.localPath}
+                              className="text-cyan-300 hover:text-cyan-100 disabled:text-slate-600"
+                              title={`Show ${artifact.label} artifact`}
+                            >
+                              {busyPath === artifact.localPath ? (
+                                <Loader2 size={9} className="animate-spin" />
+                              ) : (
+                                <FolderOpen size={9} />
+                              )}
+                            </button>
+                          )}
+                        </span>
+                      ))}
                     </div>
                   )}
                   {report.field_collection_plan && (
@@ -979,6 +1074,46 @@ function AutonomyReadinessReportList({
                   </div>
                 ))}
               </div>
+              {planSnapshot && (
+                <div className="rounded-md border border-border bg-slate-950/30 px-2 py-1.5 space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-500">
+                    <span className={readinessBadgeClass(
+                      (researchSnapshot?.missing_markers.length ?? 0) === 0 &&
+                        (implementationSnapshot?.missing_markers.length ?? 0) === 0
+                        ? "passed"
+                        : "failed"
+                    )}>
+                      plan snapshot
+                    </span>
+                    {researchSnapshot && (
+                      <>
+                        <span>research markers {(researchSnapshot.required_marker_count ?? 0) - researchSnapshot.missing_markers.length}/{researchSnapshot.required_marker_count ?? 0}</span>
+                        <span>refs {researchSnapshot.highest_value_reference_count ?? 0}</span>
+                        <span>near-term {researchSnapshot.near_term_item_count ?? 0}</span>
+                      </>
+                    )}
+                    {implementationSnapshot && (
+                      <>
+                        <span>tracks {implementationSnapshot.track_count ?? 0}</span>
+                        <span>done {implementationSnapshot.done_count ?? 0}</span>
+                        <span>tasks {implementationSnapshot.task_count ?? 0}</span>
+                      </>
+                    )}
+                  </div>
+                  {[
+                    ...(researchSnapshot?.missing_markers ?? []),
+                    ...(implementationSnapshot?.missing_markers ?? []),
+                  ].length > 0 && (
+                    <div className="font-mono text-[10px] text-amber-300">
+                      missing markers{" "}
+                      {[
+                        ...(researchSnapshot?.missing_markers ?? []),
+                        ...(implementationSnapshot?.missing_markers ?? []),
+                      ].slice(0, 4).join(", ")}
+                    </div>
+                  )}
+                </div>
+              )}
               {report.evidence_manifest && (
                 <div className="rounded-md border border-border bg-slate-950/30 px-2 py-1.5 space-y-1">
                   <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
@@ -994,7 +1129,23 @@ function AutonomyReadinessReportList({
                     <span className="font-mono text-slate-500">
                       external blockers {report.evidence_manifest.external_blockers.length}
                     </span>
+                    <span className="font-mono text-slate-500">
+                      proof {report.evidence_manifest.proof_items.filter((item) => item.status === "passed").length}/
+                      {report.evidence_manifest.proof_items.length}
+                    </span>
                   </div>
+                  {report.evidence_manifest.proof_items.length > 0 && (
+                    <div className="grid grid-cols-2 gap-1">
+                      {report.evidence_manifest.proof_items.slice(0, 6).map((item) => (
+                        <div key={`${report.path}-proof-${item.name}`} className="flex items-center gap-1.5 text-[10px] min-w-0">
+                          <span className={cn(readinessBadgeClass(item.status), "text-[10px] shrink-0")}>
+                            {formatReadinessLabel(item.status)}
+                          </span>
+                          <span className="font-mono text-slate-500 truncate">{formatReadinessLabel(item.name)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {report.evidence_manifest.external_blockers.length > 0 && (
                     <div className="space-y-1">
                       {report.evidence_manifest.external_blockers.slice(0, 3).map((blocker) => (
@@ -1731,6 +1882,11 @@ function Px4ReceiverReportList({
                     <span className="font-mono text-[10px] text-slate-500">
                       samples {file.report.sample_count ?? 0}
                     </span>
+                    {file.report.observed_rate_hz != null && (
+                      <span className="font-mono text-[10px] text-slate-500">
+                        {file.report.observed_rate_hz.toFixed(2)}hz
+                      </span>
+                    )}
                     <span className="font-mono text-[10px] text-slate-500">
                       age {file.report.latest_sample_age_s == null ? "n/a" : `${file.report.latest_sample_age_s.toFixed(2)}s`}
                     </span>
@@ -2481,6 +2637,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const remoteHandoff = parseAutonomyReadinessHandoff(output);
       const remoteEvidencePackage = parseAutonomyEvidencePackage(output);
       const remotePx4Report = parsePx4SitlReport(output);
+      const remoteWorkflow = parseAutonomyEvidenceWorkflowReport(output);
+      const remoteWorkflowLogs = parseAutonomyEvidenceWorkflowLogs(output);
+      const remoteWorkflowValidation = parseAutonomyEvidenceWorkflowValidation(output);
+      const remoteFieldEvidenceReport = parseFieldEvidenceReport(output);
+      const remoteFieldCollectionPlan = parseFieldCollectionPlan(output);
+      const remoteFieldCollectionPlanMarkdown = parseFieldCollectionPlanMarkdown(output);
+      const remoteFeatureMethodReport = parseFeatureMethodReport(output);
+      const remoteThresholdReport = parseThresholdTuningReport(output);
       if (!remoteReport) {
         setResult("autonomy-readiness", {
           status: "failed",
@@ -2540,11 +2704,136 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       } else {
         setAutonomyEvidencePackageLocalPath(null);
       }
+      let workflowDownloadText = "";
+      if (remoteWorkflow) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}\n\n$ download workflow report\nDownloading ${remoteWorkflow}...`,
+        });
+        const downloadedWorkflow = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteWorkflow,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setAutonomyWorkflowLocalPath(downloadedWorkflow.local_path);
+        workflowDownloadText = `\n\n$ download workflow report\nSaved to ${downloadedWorkflow.local_path}\n[${downloadedWorkflow.bytes_received} bytes]`;
+      }
+      if (remoteWorkflowLogs) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}\n\n$ download workflow logs\nDownloading ${remoteWorkflowLogs}...`,
+        });
+        const downloadedWorkflowLogs = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteWorkflowLogs,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        workflowDownloadText += `\n\n$ download workflow logs\nSaved to ${downloadedWorkflowLogs.local_path}\n[${downloadedWorkflowLogs.bytes_received} bytes]`;
+      }
+      if (remoteWorkflowValidation) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}\n\n$ download workflow validation\nDownloading ${remoteWorkflowValidation}...`,
+        });
+        const downloadedWorkflowValidation = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteWorkflowValidation,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        workflowDownloadText += `\n\n$ download workflow validation\nSaved to ${downloadedWorkflowValidation.local_path}\n[${downloadedWorkflowValidation.bytes_received} bytes]`;
+      }
+      let proofDownloadText = "";
+      if (remoteFieldEvidenceReport) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}\n\n$ download field evidence report\nDownloading ${remoteFieldEvidenceReport}...`,
+        });
+        const downloadedFieldEvidence = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteFieldEvidenceReport,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        proofDownloadText += `\n\n$ download field evidence report\nSaved to ${downloadedFieldEvidence.local_path}\n[${downloadedFieldEvidence.bytes_received} bytes]`;
+      }
+      if (remoteFeatureMethodReport) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}\n\n$ download feature benchmark\nDownloading ${remoteFeatureMethodReport}...`,
+        });
+        const downloadedFeatureBenchmark = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteFeatureMethodReport,
+          FEATURE_BENCH_DOWNLOAD_DIR,
+        );
+        proofDownloadText += `\n\n$ download feature benchmark\nSaved to ${downloadedFeatureBenchmark.local_path}\n[${downloadedFeatureBenchmark.bytes_received} bytes]`;
+      }
+      if (remoteThresholdReport) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}\n\n$ download threshold report\nDownloading ${remoteThresholdReport}...`,
+        });
+        const downloadedThreshold = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteThresholdReport,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        proofDownloadText += `\n\n$ download threshold report\nSaved to ${downloadedThreshold.local_path}\n[${downloadedThreshold.bytes_received} bytes]`;
+      }
+      if (remoteFieldCollectionPlan) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}\n\n$ download field collection plan\nDownloading ${remoteFieldCollectionPlan}...`,
+        });
+        const downloadedPlan = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteFieldCollectionPlan,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldCollectionPlanLocalPath(downloadedPlan.local_path);
+        proofDownloadText += `\n\n$ download field collection plan\nSaved to ${downloadedPlan.local_path}\n[${downloadedPlan.bytes_received} bytes]`;
+      }
+      if (remoteFieldCollectionPlanMarkdown) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}\n\n$ download field collection checklist\nDownloading ${remoteFieldCollectionPlanMarkdown}...`,
+        });
+        const downloadedMarkdown = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteFieldCollectionPlanMarkdown,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldCollectionPlanMarkdownLocalPath(downloadedMarkdown.local_path);
+        proofDownloadText += `\n\n$ download field collection checklist\nSaved to ${downloadedMarkdown.local_path}\n[${downloadedMarkdown.bytes_received} bytes]`;
+      }
       let px4DownloadText = "";
       if (remotePx4Report) {
         setResult("autonomy-readiness", {
           status: "running",
-          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}\n\n$ download PX4 receiver report\nDownloading ${remotePx4Report}...`,
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}\n\n$ download PX4 receiver report\nDownloading ${remotePx4Report}...`,
         });
         const downloadedPx4 = await cmd.sshDownloadFile(
           form.host,
@@ -2558,10 +2847,15 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       }
       setResult("autonomy-readiness", {
         status: result.exit_code === 0 ? "passed" : "failed",
-        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${px4DownloadText}\n[exit ${result.exit_code}]`,
+        output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}${px4DownloadText}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
       await refreshAutonomyReports();
+      await refreshAutonomyWorkflowReports();
+      await refreshFieldEvidenceReports();
+      await refreshFeatureBenchmarkReports();
+      await refreshThresholdTuningReports();
+      await refreshFieldCollectionPlans();
       await refreshPx4ReceiverReports();
     } catch (err) {
       setResult("autonomy-readiness", { status: "failed", output: `$ autonomy readiness\nERROR: ${err}` });
@@ -3456,6 +3750,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     const latestAutonomyReport = autonomyReports[0] ?? null;
     const latestWorkflowReport = autonomyWorkflowReports[0] ?? null;
     const latestExternalBlockers = latestAutonomyReport?.evidence_manifest?.external_blockers ?? [];
+    const latestProofItems = latestAutonomyReport?.evidence_manifest?.proof_items ?? [];
+    const latestCompletionBlockers = latestAutonomyReport?.evidence_manifest?.completion_blockers ?? [];
     const report = {
       version: "0.1.0",
       generated_at: new Date().toISOString(),
@@ -3548,12 +3844,25 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             evidence_package_path: latestAutonomyReport.evidence_package_path ?? null,
             evidence_package_size_bytes: latestAutonomyReport.evidence_package_size_bytes ?? null,
             evidence_package_summary: latestAutonomyReport.evidence_package_summary ?? null,
+            plan_snapshot:
+              latestAutonomyReport.plan_snapshot ?? latestAutonomyReport.evidence_package_summary?.plan_snapshot ?? null,
+            workflow_report_path:
+              latestAutonomyReport.workflow_report_local_path ?? latestAutonomyReport.workflow_report_path ?? null,
+            workflow_validation_path:
+              latestAutonomyReport.workflow_validation_local_path ?? latestAutonomyReport.workflow_validation_path ?? null,
+            workflow_log_archive_path:
+              latestAutonomyReport.workflow_log_archive_local_path ?? latestAutonomyReport.workflow_log_archive_path ?? null,
             status: latestAutonomyReport.summary.status ?? null,
             failed_count: latestAutonomyReport.summary.failed_count ?? 0,
             degraded_count: latestAutonomyReport.summary.degraded_count ?? 0,
             passed_count: latestAutonomyReport.summary.passed_count ?? 0,
             ready_for_goal_completion:
               latestAutonomyReport.evidence_manifest?.ready_for_goal_completion ?? null,
+            proof_item_count: latestProofItems.length,
+            proof_item_passed_count: latestProofItems.filter((item) => item.status === "passed").length,
+            proof_items: latestProofItems.slice(0, 12),
+            completion_blocker_count: latestCompletionBlockers.length,
+            completion_blockers: latestCompletionBlockers.slice(0, 8),
             external_blocker_count: latestExternalBlockers.length,
             external_blockers: latestExternalBlockers.slice(0, 8),
             next_action_count: latestAutonomyReport.next_actions.length,

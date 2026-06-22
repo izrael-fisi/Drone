@@ -53,6 +53,7 @@ from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.px4_params import check_px4_external_vision_params, evaluate_px4_param_file, params_from_text
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
 from vision_nav.ros2_bridge import export_rosbag_jsonl, export_rosbag_mcap, export_rosbag2, ros_records_from_log
+from vision_nav.rosbag_export_check import validate_rosbag_export
 from vision_nav.runtime_status import runtime_status_snapshot, write_runtime_status
 from vision_nav.replay_case_manifest import evaluate_replay_case_manifest
 from vision_nav.replay_case_registry import register_replay_case
@@ -252,6 +253,46 @@ def create_minimal_terrain_bundle(root: Path, *, include_tile_index: bool = True
         )
     )
     return bundle
+
+
+def write_ready_gnss_denied_mission_plan(bundle: Path) -> None:
+    (bundle / "mission").mkdir(exist_ok=True)
+    (bundle / "mission" / "mission_plan.json").write_text(
+        json.dumps(
+            {
+                "version": "0.3.0",
+                "mission": {
+                    "altitude_m": 35,
+                    "speed_mps": 4,
+                    "items": [
+                        {"id": "takeoff", "type": "takeoff", "lat": 40.0, "lon": -75.0, "altitudeM": 35},
+                        {"id": "wp1", "type": "waypoint", "lat": 39.9999, "lon": -74.9999, "altitudeM": 35},
+                        {"id": "land", "type": "land", "lat": 39.9998, "lon": -74.9998, "altitudeM": 35},
+                    ],
+                },
+                "gnss_denied": {
+                    "status": "ready",
+                    "satellite_source_disabled": True,
+                    "map_position_reset": {"id": "wp1", "lat": 39.9999, "lon": -74.9999},
+                    "home_position": {"id": "takeoff", "lat": 40.0, "lon": -75.0},
+                    "heading_deg": 92.0,
+                    "estimator_health": "ready",
+                    "updated_at": "2026-06-21T00:00:00Z",
+                    "checks": [
+                        {"name": "satellite_source_disabled", "label": "Satellite off", "status": "passed"},
+                        {"name": "map_position_reset", "label": "Map reset", "status": "passed"},
+                        {"name": "home_position", "label": "Home reset", "status": "passed"},
+                        {"name": "heading", "label": "Heading", "status": "passed"},
+                        {"name": "estimator_health", "label": "Estimator ready", "status": "passed"},
+                    ],
+                },
+            }
+        )
+    )
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["mission"] = {"desktop_plan_path": "mission/mission_plan.json"}
+    manifest_path.write_text(json.dumps(manifest))
 
 
 class SkipTest(Exception):
@@ -589,12 +630,22 @@ instance #0:
         listener_text=listener,
         mavlink_status_text=mavlink_status,
         expected_message="odometry",
-        config=Px4SitlEvidenceConfig(min_samples=2, max_sample_age_s=1.0),
+        config=Px4SitlEvidenceConfig(min_samples=2, max_sample_age_s=1.0, expected_rate_hz=5.0),
     )
     assert_equal(report["status"], "passed", "px4 sitl evidence passed")
     assert_equal(report["listener"]["sample_count"], 2, "px4 sitl evidence sample count")
+    assert_equal(report["listener"]["observed_rate_hz"], 5.0, "px4 sitl evidence observed rate")
     assert_equal(report["listener"]["last_position"], [0.35, 0.3, -1.5], "px4 sitl evidence position")
     assert_equal(report["mavlink_status"]["has_udp_14550"], True, "px4 sitl evidence mavlink udp")
+
+    slow = evaluate_px4_sitl_evidence(
+        listener_text=listener.replace("timestamp: 5200000", "timestamp: 9000000"),
+        expected_message="odometry",
+        config=Px4SitlEvidenceConfig(min_samples=2, max_sample_age_s=1.0, expected_rate_hz=5.0),
+    )
+    assert_equal(slow["status"], "failed", "px4 sitl evidence slow rate failed")
+    if "Observed receiver rate" not in " ".join(issue["message"] for issue in slow["issues"]):
+        raise AssertionError("Expected slow PX4 receiver evidence to report observed-rate issue")
 
     failed = evaluate_px4_sitl_evidence(
         listener_text="TOPIC: vehicle_visual_odometry\nnever published\n",
@@ -648,6 +699,7 @@ instance #0:
                 {
                     "version": "0.1.0",
                     "message_type": "odometry",
+                    "rate_hz": 5.0,
                     "expected_captures": {
                         "vehicle_visual_odometry": "receiver_capture/vehicle_visual_odometry.txt",
                         "mavlink_status": "receiver_capture/mavlink_status.txt",
@@ -663,6 +715,7 @@ instance #0:
         )
         assert_equal(report["status"], "passed", "px4 sitl session passed")
         assert_equal(report["listener"]["sample_count"], 2, "px4 sitl session sample count")
+        assert_equal(report["config"]["expected_rate_hz"], 5.0, "px4 sitl session manifest rate")
         if not report_path.exists():
             raise AssertionError("Expected px4 sitl session evaluator to write receiver_evidence.json")
 
@@ -948,6 +1001,19 @@ def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
         assert_equal(messages[1]["topic"], "/vision_nav/odometry", "second rosbag jsonl topic")
         assert_equal(messages[2]["topic"], "/diagnostics", "third rosbag jsonl topic")
         assert_equal(messages[3]["message"]["status"][0]["message"], "terrain match rejected: low_inliers", "rejected diagnostic message")
+        validation = validate_rosbag_export(root / "rosbag-jsonl")
+        assert_equal(validation["status"], "passed", "rosbag jsonl validation status")
+        assert_equal(validation["message_count"], 4, "rosbag jsonl validation message count")
+        assert_equal(validation["details"]["topic_counts"]["/diagnostics"], 2, "rosbag jsonl validation diagnostics count")
+
+        broken_dir = root / "broken-rosbag-jsonl"
+        shutil.copytree(root / "rosbag-jsonl", broken_dir)
+        broken_metadata_path = broken_dir / "metadata.json"
+        broken_metadata = json.loads(broken_metadata_path.read_text())
+        broken_metadata["message_count"] = 99
+        broken_metadata_path.write_text(json.dumps(broken_metadata))
+        broken_validation = validate_rosbag_export(broken_dir)
+        assert_equal(broken_validation["status"], "failed", "broken rosbag jsonl validation status")
 
         class FakeMcapWriter:
             instances: list["FakeMcapWriter"] = []
@@ -999,6 +1065,9 @@ def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
         assert_equal(len(fake_writer.messages), 4, "mcap writer message count")
         if not Path(mcap_result["mcap_path"]).read_bytes().startswith(b"FAKE-MCAP"):
             raise AssertionError("Expected fake MCAP writer to write output file")
+        mcap_validation = validate_rosbag_export(mcap_result["mcap_path"])
+        assert_equal(mcap_validation["status"], "passed", "mcap validation status")
+        assert_equal(mcap_validation["format"], "vision_nav_mcap_json_v1", "mcap validation format")
 
         class FakeStamp:
             def __init__(self) -> None:
@@ -1140,6 +1209,11 @@ def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
         assert_equal(fake_rosbag2_writer.messages[0][0], "/vision_nav/camera/image/compressed", "rosbag2 first topic")
         if fake_rosbag2_writer.messages[0][1] != b"FakeCompressedImage":
             raise AssertionError("Expected rosbag2 frame event to serialize as FakeCompressedImage")
+        fake_storage = Path(rosbag2_result["output_dir"]) / "rosbag2_0.db3"
+        fake_storage.write_bytes(b"sqlite")
+        rosbag2_validation = validate_rosbag_export(rosbag2_result["output_dir"])
+        assert_equal(rosbag2_validation["status"], "passed", "rosbag2 validation status")
+        assert_equal(rosbag2_validation["details"]["storage_files"], ["rosbag2_0.db3"], "rosbag2 validation storage files")
 
 
 def test_ros2_launch_profiles_static() -> None:
@@ -1469,6 +1543,10 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         bundle = create_minimal_terrain_bundle(root, include_elevation=True)
+        write_ready_gnss_denied_mission_plan(bundle)
+        flat_elevation = np.zeros((60, 100), dtype=np.float32)
+        write_scalar_float_tiff(bundle / "elevation" / "dem.tif", flat_elevation)
+        write_scalar_float_tiff(bundle / "elevation" / "dsm.tif", flat_elevation)
         terrain_bundle = load_terrain_bundle(bundle)
         log = root / "terrain_matches.jsonl"
         log.write_text(
@@ -1574,6 +1652,7 @@ instance #0:
                 {
                     "version": "0.1.0",
                     "message_type": "odometry",
+                    "rate_hz": 5.0,
                     "expected_captures": {
                         "vehicle_visual_odometry": "receiver_capture/vehicle_visual_odometry.txt",
                         "mavlink_status": "receiver_capture/mavlink_status.txt",
@@ -1769,6 +1848,7 @@ RC8_OPTION,90
             "support_manifest.json",
             "bundle/manifest.json",
             "bundle/bundle_health.generated.json",
+            "bundle/mission/mission_plan.json",
             "bundle/elevation/dem.tif",
             "bundle/elevation/dsm.tif",
             "logs/terrain_matches.jsonl",
@@ -1797,6 +1877,8 @@ RC8_OPTION,90
             if expected not in names:
                 raise AssertionError(f"Missing {expected} from support bundle zip")
         manifest = json.loads(Path(result["manifest_path"]).read_text())
+        assert_equal(manifest["bundle"]["mission_plan"]["status"], "loaded", "support mission plan loaded")
+        assert_equal(manifest["bundle"]["mission_plan"]["gnss_denied"]["status"], "ready", "support gnss denied status")
         assert_equal(manifest["logs"]["summaries"][0]["accepted_rate"], 1.0, "support log accepted rate")
         assert_equal(manifest["field_collection_plans"]["status"], "passed", "support field collection plan status")
         assert_equal(manifest["field_collection_plans"]["report_count"], 1, "support field collection plan count")
@@ -1824,6 +1906,8 @@ RC8_OPTION,90
         assert_equal(manifest["replay_gates"]["reports"][0]["status"], "passed", "support replay gate report")
         assert_equal(manifest["px4_sitl_evidence"]["status"], "passed", "support px4 evidence status")
         assert_equal(manifest["px4_sitl_evidence"]["listener"]["sample_count"], 2, "support px4 evidence samples")
+        assert_equal(manifest["px4_sitl_evidence"]["listener"]["observed_rate_hz"], 5.0, "support px4 evidence rate")
+        assert_equal(manifest["px4_sitl_evidence"]["config"]["expected_rate_hz"], 5.0, "support px4 expected rate")
         assert_equal(manifest["px4_params"]["status"], "degraded", "support px4 params status")
         assert_equal(manifest["px4_params"]["parameters"]["EKF2_EV_CTRL"], 1, "support px4 ev ctrl")
         assert_equal(manifest["ardupilot_params"]["status"], "passed", "support ardupilot params status")
@@ -1839,13 +1923,33 @@ RC8_OPTION,90
         readiness = evaluate_bench_readiness_file(zip_path)
         assert_equal(readiness["status"], "degraded", "bench readiness degraded on px4 param warning")
         readiness_checks = {check["name"]: check["status"] for check in readiness["checks"]}
+        readiness_check_details = {check["name"]: check.get("details") or {} for check in readiness["checks"]}
         assert_equal(readiness_checks["bundle_health"], "passed", "bench readiness bundle health")
+        assert_equal(readiness_checks["gnss_denied_plan"], "passed", "bench readiness gnss denied plan")
         assert_equal(readiness_checks["runtime_status"], "passed", "bench readiness runtime status")
         assert_equal(readiness_checks["px4_sitl_evidence"], "passed", "bench readiness px4 evidence")
+        assert_equal(
+            readiness_check_details["px4_sitl_evidence"]["observed_rate_hz"],
+            5.0,
+            "bench readiness px4 observed rate",
+        )
+        assert_equal(
+            readiness_check_details["px4_sitl_evidence"]["expected_rate_hz"],
+            5.0,
+            "bench readiness px4 expected rate",
+        )
         assert_equal(readiness_checks["px4_params"], "degraded", "bench readiness px4 params")
         assert_equal(readiness_checks["ardupilot_params"], "passed", "bench readiness ardupilot params")
         assert_equal(readiness_checks["feature_method_benchmarks"], "passed", "bench readiness feature benchmarks")
         assert_equal(readiness_checks["field_evidence"], "passed", "bench readiness field evidence")
+
+        incomplete_gnss = json.loads(json.dumps(manifest))
+        incomplete_gnss["bundle"]["mission_plan"]["gnss_denied"]["status"] = "incomplete"
+        incomplete_gnss["bundle"]["mission_plan"]["gnss_denied"]["checks"][1]["status"] = "failed"
+        gnss_failed = evaluate_bench_readiness(incomplete_gnss)
+        gnss_failed_checks = {check["name"]: check["status"] for check in gnss_failed["checks"]}
+        assert_equal(gnss_failed["status"], "failed", "bench readiness incomplete gnss denied plan")
+        assert_equal(gnss_failed_checks["gnss_denied_plan"], "failed", "failed gnss denied check included")
 
         missing_px4 = dict(manifest)
         missing_px4["px4_sitl_evidence"] = {"status": "not_provided"}
@@ -2000,7 +2104,30 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 {
                     "name": "unit-support",
                     "metadata": {"generated_at": "2026-06-21T00:00:00Z"},
-                    "bundle": {"bundle_id": "unit-bundle", "health": {"status": "passed"}},
+                    "bundle": {
+                        "bundle_id": "unit-bundle",
+                        "health": {"status": "passed"},
+                        "mission_plan": {
+                            "status": "loaded",
+                            "path": "mission/mission_plan.json",
+                            "mission_item_count": 3,
+                            "gnss_denied": {
+                                "status": "ready",
+                                "satellite_source_disabled": True,
+                                "map_position_reset_set": True,
+                                "home_position_set": True,
+                                "heading_set": True,
+                                "estimator_health": "ready",
+                                "checks": [
+                                    {"name": "satellite_source_disabled", "status": "passed"},
+                                    {"name": "map_position_reset", "status": "passed"},
+                                    {"name": "home_position", "status": "passed"},
+                                    {"name": "heading", "status": "passed"},
+                                    {"name": "estimator_health", "status": "passed"},
+                                ],
+                            },
+                        },
+                    },
                     "logs": {
                         "copied": ["logs/terrain_matches.jsonl"],
                         "missing": [],
@@ -2116,9 +2243,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                     "report_path": str(root / "receiver_evidence.json"),
                     "listener": {
                         "sample_count": 5,
+                        "observed_rate_hz": 5.0,
                         "latest_sample_age_s": 0.25,
                         "last_position": [1.0, 2.0, -3.0],
                     },
+                    "config": {"expected_rate_hz": 5.0, "min_rate_ratio": 0.5},
                     "issues": [],
                 }
             )
@@ -2161,6 +2290,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 }
             )
         )
+        workflow_log_archive = root / "autonomy_evidence_workflow.logs.tar.gz"
+        workflow_logs_dir = root / "workflow-logs"
+        workflow_logs_dir.mkdir()
+        (workflow_logs_dir / "create_field_evidence_template.log").write_text("unit workflow log\n")
+        with tarfile.open(workflow_log_archive, "w:gz") as archive:
+            archive.add(workflow_logs_dir / "create_field_evidence_template.log", arcname="logs/create_field_evidence_template.log")
 
         direct_report_support_manifest = root / "support_manifest_without_embedded_field_feature.json"
         direct_report_support_data = json.loads(support_manifest.read_text())
@@ -2180,6 +2315,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             threshold_tuning_report_path=threshold_report,
             evidence_workflow_report_path=workflow_report,
             evidence_workflow_validation_report_path=workflow_validation_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
         )
         assert_equal(ready["status"], "passed", "autonomy readiness full proof status")
         assert_equal(
@@ -2197,9 +2333,40 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             str(workflow_validation_report),
             "autonomy readiness workflow validation input",
         )
+        assert_equal(
+            ready["inputs"]["evidence_workflow_log_archive"],
+            str(workflow_log_archive),
+            "autonomy readiness workflow log archive input",
+        )
+        assert_equal(
+            ready["plan_snapshot"]["schema_version"],
+            "vision_nav_autonomy_plan_snapshot_v1",
+            "autonomy readiness plan snapshot schema",
+        )
+        assert_equal(
+            ready["plan_snapshot"]["research_doc"]["missing_markers"],
+            [],
+            "autonomy readiness research snapshot markers",
+        )
+        assert_equal(
+            ready["plan_snapshot"]["implementation_plan"]["track_count"],
+            5,
+            "autonomy readiness implementation track count",
+        )
         ready_checks = {check["name"]: check["status"] for check in ready["checks"]}
+        ready_check_details = {check["name"]: check.get("details") or {} for check in ready["checks"]}
         assert_equal(ready_checks["support_bundle_bench_readiness"], "passed", "autonomy readiness support bundle")
         assert_equal(ready_checks["px4_receiver_proof"], "passed", "autonomy readiness direct px4 receiver proof")
+        assert_equal(
+            ready_check_details["px4_receiver_proof"]["observed_rate_hz"],
+            5.0,
+            "autonomy readiness direct px4 observed rate",
+        )
+        assert_equal(
+            ready_check_details["px4_receiver_proof"]["expected_rate_hz"],
+            5.0,
+            "autonomy readiness direct px4 expected rate",
+        )
         assert_equal(ready_checks["field_evidence_proof"], "passed", "autonomy readiness field evidence")
         assert_equal(ready_checks["feature_method_benchmark"], "passed", "autonomy readiness feature benchmark")
         assert_equal(ready_checks["threshold_tuning"], "passed", "autonomy readiness threshold tuning")
@@ -2329,6 +2496,44 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "autonomy readiness support evidence subcheck",
         )
 
+        incomplete_gnss_manifest = root / "support_manifest_incomplete_gnss.json"
+        incomplete_gnss_data = json.loads(direct_report_support_manifest.read_text())
+        incomplete_gnss_data["bundle"]["mission_plan"]["gnss_denied"]["status"] = "incomplete"
+        incomplete_gnss_data["bundle"]["mission_plan"]["gnss_denied"]["checks"][1]["status"] = "failed"
+        incomplete_gnss_manifest.write_text(json.dumps(incomplete_gnss_data))
+        incomplete_gnss_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=incomplete_gnss_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+        )
+        assert_equal(incomplete_gnss_ready["status"], "failed", "autonomy readiness incomplete gnss denied plan")
+        gnss_actions = [
+            action
+            for action in incomplete_gnss_ready["next_actions"]
+            if action.get("check") == "support_bundle_bench_readiness.gnss_denied_plan"
+        ]
+        assert_equal(len(gnss_actions), 1, "autonomy readiness gnss denied plan next action")
+        assert_equal(
+            gnss_actions[0]["desktop_action"],
+            "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
+            "autonomy readiness gnss denied desktop action",
+        )
+        gnss_blockers = [
+            blocker
+            for blocker in incomplete_gnss_ready["evidence_manifest"]["external_blockers"]
+            if blocker.get("name") == "support_bundle_bench_readiness"
+        ]
+        assert_equal(len(gnss_blockers), 1, "autonomy readiness gnss support evidence blocker")
+        assert_equal(
+            gnss_blockers[0]["bench_subchecks"][0]["name"],
+            "gnss_denied_plan",
+            "autonomy readiness gnss support evidence subcheck",
+        )
+
         bundled_threshold_manifest = root / "support_manifest_with_threshold.json"
         bundled_threshold_data = json.loads(support_manifest.read_text())
         bundled_threshold_data["threshold_tuning"] = {
@@ -2360,6 +2565,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             field_collection_plan_path=field_collection_plan,
             evidence_workflow_report_path=workflow_report,
             evidence_workflow_validation_report_path=workflow_validation_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
         )
         assert_equal(missing_threshold["status"], "failed", "autonomy readiness missing threshold report")
         missing_checks = {check["name"]: check["status"] for check in missing_threshold["checks"]}
@@ -2395,6 +2601,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         handoff = render_handoff_markdown(missing_threshold)
         if "Goal completion: waiting on proof" not in handoff:
             raise AssertionError("autonomy handoff waiting state")
+        if "Proof items:" not in handoff:
+            raise AssertionError("autonomy handoff proof item summary")
+        if "## Goal Proof Items" not in handoff:
+            raise AssertionError("autonomy handoff proof item section")
+        if "## Completion Blockers" not in handoff:
+            raise AssertionError("autonomy handoff completion blocker section")
         if "threshold_tuning" not in handoff:
             raise AssertionError("autonomy handoff threshold blocker")
         if "Module Setup > Threshold Tuning" not in handoff:
@@ -2407,6 +2619,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff artifact availability")
         if "## Field Collection Plan" not in handoff:
             raise AssertionError("autonomy handoff field collection plan")
+        if "## Plan Source Snapshot" not in handoff:
+            raise AssertionError("autonomy handoff plan snapshot")
+        if "implementation_plan" not in handoff:
+            raise AssertionError("autonomy handoff missing implementation plan snapshot")
         if "- Registered: 1/8" not in handoff:
             raise AssertionError("autonomy handoff field collection plan summary")
         if "field_collection_plan.json" not in handoff:
@@ -2440,6 +2656,37 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                     raise AssertionError(f"autonomy evidence package missing {expected}")
             manifest = json.loads(archive.read("manifest.json"))
             assert_equal(manifest["readiness_status"], "failed", "autonomy evidence package status")
+            assert_equal(
+                manifest["plan_snapshot"]["schema_version"],
+                "vision_nav_autonomy_plan_snapshot_v1",
+                "autonomy evidence package plan snapshot schema",
+            )
+            proof_summary = manifest["proof_summary"]
+            expected_proof_items = missing_threshold["evidence_manifest"]["proof_items"]
+            expected_completion_blockers = missing_threshold["evidence_manifest"]["completion_blockers"]
+            expected_external_blockers = missing_threshold["evidence_manifest"]["external_blockers"]
+            assert_equal(
+                proof_summary["proof_item_count"],
+                len(expected_proof_items),
+                "autonomy evidence package proof item count",
+            )
+            assert_equal(
+                proof_summary["proof_item_passed_count"],
+                len([item for item in expected_proof_items if item.get("status") == "passed"]),
+                "autonomy evidence package proof item passed count",
+            )
+            assert_equal(
+                proof_summary["completion_blocker_count"],
+                len(expected_completion_blockers),
+                "autonomy evidence package completion blocker count",
+            )
+            assert_equal(
+                proof_summary["external_blocker_count"],
+                len(expected_external_blockers),
+                "autonomy evidence package external blocker count",
+            )
+            if not any(item.get("name") == "threshold_tuning" for item in proof_summary["proof_items"]):
+                raise AssertionError("autonomy evidence package proof summary missing threshold item")
             if not any(item["label"] == "input:support_bundle" for item in manifest["included"]):
                 raise AssertionError("autonomy evidence package did not include support manifest artifact")
             if not any(item["label"] == "input:field_collection_plan" for item in manifest["included"]):
@@ -2450,6 +2697,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package did not include workflow report artifact")
             if not any(item["label"] == "input:evidence_workflow_validation_report" for item in manifest["included"]):
                 raise AssertionError("autonomy evidence package did not include workflow validation artifact")
+            if not any(item["label"] == "input:evidence_workflow_log_archive" for item in manifest["included"]):
+                raise AssertionError("autonomy evidence package did not include workflow log archive artifact")
 
         downloaded_report_data = json.loads(json.dumps(missing_threshold))
         downloaded_report_data["inputs"]["field_collection_plan"] = (

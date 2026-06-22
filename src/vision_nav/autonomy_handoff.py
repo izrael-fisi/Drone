@@ -17,6 +17,9 @@ def parse_args() -> argparse.Namespace:
 
 def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path | None = None) -> str:
     evidence = report.get("evidence_manifest") if isinstance(report.get("evidence_manifest"), dict) else {}
+    proof_items = dict_items(evidence.get("proof_items"))
+    completion_blockers = dict_items(evidence.get("completion_blockers"))
+    blockers = dict_items(evidence.get("external_blockers"))
     ready = evidence.get("ready_for_goal_completion") is True
     lines = [
         "# Autonomy Readiness Handoff",
@@ -25,7 +28,10 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         f"- Goal completion: {'ready' if ready else 'waiting on proof'}",
         f"- Checks: {summary_counts(report.get('summary'))}",
     ]
-    blockers = evidence.get("external_blockers") if isinstance(evidence.get("external_blockers"), list) else []
+    if proof_items:
+        lines.append(f"- Proof items: {count_status(proof_items, 'passed')}/{len(proof_items)} passed")
+    if completion_blockers:
+        lines.append(f"- Completion blockers: {len(completion_blockers)}")
     if blockers:
         lines.append(f"- External blockers: {len(blockers)}")
     lines.extend(["", "## Inputs", ""])
@@ -34,6 +40,11 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         lines.extend(table(["Input", "Path"], [[key, value or "not provided"] for key, value in sorted(inputs.items())]))
     else:
         lines.append("No input metadata was recorded.")
+
+    plan_snapshot = report.get("plan_snapshot") if isinstance(report.get("plan_snapshot"), dict) else {}
+    if plan_snapshot:
+        lines.extend(["", "## Plan Source Snapshot", ""])
+        lines.extend(plan_snapshot_lines(plan_snapshot))
 
     artifacts = artifact_availability(report, report_path=report_path)
     if artifacts:
@@ -105,6 +116,46 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         )
     else:
         lines.append("No checks were recorded.")
+
+    lines.extend(["", "## Goal Proof Items", ""])
+    if proof_items:
+        lines.extend(
+            table(
+                ["Proof Item", "Status", "Missing Conditions", "Bench Subchecks", "Message"],
+                [
+                    [
+                        item.get("name"),
+                        item.get("status"),
+                        join_values(item.get("missing_conditions")),
+                        bench_subcheck_summary(item.get("bench_subchecks")),
+                        item.get("message"),
+                    ]
+                    for item in proof_items
+                ],
+            )
+        )
+    else:
+        lines.append("No proof items were recorded.")
+
+    lines.extend(["", "## Completion Blockers", ""])
+    if completion_blockers:
+        lines.extend(
+            table(
+                ["Blocker", "Status", "Missing Conditions", "Bench Subchecks", "Message"],
+                [
+                    [
+                        item.get("name"),
+                        item.get("status"),
+                        join_values(item.get("missing_conditions")),
+                        bench_subcheck_summary(item.get("bench_subchecks")),
+                        item.get("message"),
+                    ]
+                    for item in completion_blockers
+                ],
+            )
+        )
+    else:
+        lines.append("No completion blockers were recorded.")
 
     lines.extend(["", "## External Proof Blockers", ""])
     if blockers:
@@ -412,6 +463,58 @@ def summary_counts(summary: Any) -> str:
         f"{int(summary.get('degraded') or 0)} degraded, "
         f"{int(summary.get('failed') or 0)} failed"
     )
+
+
+def plan_snapshot_lines(snapshot: dict[str, Any]) -> list[str]:
+    research = snapshot.get("research_doc") if isinstance(snapshot.get("research_doc"), dict) else {}
+    implementation = (
+        snapshot.get("implementation_plan")
+        if isinstance(snapshot.get("implementation_plan"), dict)
+        else {}
+    )
+    rows = []
+    if research:
+        rows.append(
+            [
+                "research_doc",
+                research.get("path"),
+                "yes" if research.get("exists") else "no",
+                research.get("required_marker_count"),
+                len(research.get("missing_markers") or []),
+                (
+                    f"{int(research.get('highest_value_reference_count') or 0)} refs, "
+                    f"{int(research.get('near_term_item_count') or 0)} near-term"
+                ),
+            ]
+        )
+    if implementation:
+        rows.append(
+            [
+                "implementation_plan",
+                implementation.get("path"),
+                "yes" if implementation.get("exists") else "no",
+                implementation.get("required_marker_count"),
+                len(implementation.get("missing_markers") or []),
+                (
+                    f"{int(implementation.get('track_count') or 0)} tracks, "
+                    f"{int(implementation.get('done_count') or 0)} done, "
+                    f"{int(implementation.get('task_count') or 0)} tasks"
+                ),
+            ]
+        )
+    if not rows:
+        return ["No plan snapshot was recorded."]
+    return table(["Source", "Path", "Present", "Markers", "Missing", "Summary"], rows)
+
+
+def dict_items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def count_status(items: list[dict[str, Any]], status: str) -> int:
+    return sum(1 for item in items if item.get("status") == status)
 
 
 def bench_subcheck_summary(value: Any) -> str:

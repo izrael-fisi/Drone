@@ -133,6 +133,7 @@ export interface SupportBundleFile {
     georef_confidence?: number;
     replay_gate_status?: "passed" | "failed" | "degraded" | string;
     replay_case_count?: number;
+    gnss_denied_plan_status?: "passed" | "failed" | "degraded" | string;
     px4_sitl_evidence_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     px4_sitl_sample_count?: number;
     px4_params_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
@@ -247,6 +248,7 @@ export interface SupportBundleDetails {
     status?: "passed" | "failed" | "degraded" | string;
     expected_message?: string;
     sample_count?: number;
+    observed_rate_hz?: number;
     latest_sample_age_s?: number;
     last_position?: unknown;
     mavlink_version?: number;
@@ -357,6 +359,31 @@ export interface ExtractedSupportBundleArtifact {
   size_bytes: number;
 }
 
+export interface AutonomyReadinessPlanSourceSnapshot {
+  path?: string;
+  exists?: boolean;
+  required_marker_count?: number;
+  missing_markers: string[];
+  highest_value_reference_count?: number;
+  fit_criteria_count?: number;
+  architecture_section_count?: number;
+  near_term_item_count?: number;
+  avoid_choice_count?: number;
+  track_count?: number;
+  done_count?: number;
+  in_progress_count?: number;
+  task_count?: number;
+  next_task_count?: number;
+  acceptance_check_count?: number;
+  execution_order_count?: number;
+}
+
+export interface AutonomyReadinessPlanSnapshot {
+  schema_version?: string;
+  research_doc?: AutonomyReadinessPlanSourceSnapshot;
+  implementation_plan?: AutonomyReadinessPlanSourceSnapshot;
+}
+
 export interface AutonomyReadinessReportFile {
   name: string;
   path: string;
@@ -372,9 +399,30 @@ export interface AutonomyReadinessReportFile {
     schema_version?: string;
     readiness_status?: "passed" | "failed" | "degraded" | string;
     ready_for_goal_completion?: boolean;
+    plan_snapshot?: AutonomyReadinessPlanSnapshot;
+    proof_item_count?: number;
+    proof_item_passed_count?: number;
+    completion_blocker_count?: number;
+    external_blocker_count?: number;
     included_count?: number;
     missing_count?: number;
     skipped_count?: number;
+    proof_items: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+      missing_conditions: string[];
+      bench_subchecks: Array<{
+        name?: string;
+        status?: "passed" | "failed" | "degraded" | string;
+        message?: string;
+      }>;
+    }>;
+    included_artifacts: Array<{
+      label?: string;
+      path?: string;
+      reason?: string;
+    }>;
     missing_artifacts: Array<{
       label?: string;
       path?: string;
@@ -386,6 +434,12 @@ export interface AutonomyReadinessReportFile {
       reason?: string;
     }>;
   };
+  workflow_report_path?: string;
+  workflow_report_local_path?: string;
+  workflow_validation_path?: string;
+  workflow_validation_local_path?: string;
+  workflow_log_archive_path?: string;
+  workflow_log_archive_local_path?: string;
   summary: {
     status?: "passed" | "failed" | "degraded" | string;
     failed_count?: number;
@@ -423,9 +477,21 @@ export interface AutonomyReadinessReportFile {
     field_collection_registration_commands: string[];
     command_count?: number;
   };
+  plan_snapshot?: AutonomyReadinessPlanSnapshot;
   evidence_manifest?: {
     schema_version?: string;
     ready_for_goal_completion?: boolean;
+    proof_items: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+      missing_conditions: string[];
+      bench_subchecks: Array<{
+        name?: string;
+        status?: "passed" | "failed" | "degraded" | string;
+        message?: string;
+      }>;
+    }>;
     completion_blockers: Array<{
       name?: string;
       status?: "passed" | "failed" | "degraded" | string;
@@ -539,8 +605,9 @@ export interface Px4ReceiverReportFile {
   report: {
     status?: "passed" | "failed" | "degraded" | string;
     expected_message?: string;
-    sample_count?: number;
-    latest_sample_age_s?: number;
+      sample_count?: number;
+      observed_rate_hz?: number;
+      latest_sample_age_s?: number;
     last_position?: unknown;
     mavlink_version?: number;
     has_udp_14550?: boolean;

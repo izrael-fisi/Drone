@@ -15,6 +15,8 @@ class Px4SitlEvidenceConfig:
     max_sample_age_s: float = 5.0
     require_position: bool = True
     require_covariance: bool = True
+    expected_rate_hz: float | None = None
+    min_rate_ratio: float = 0.5
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +31,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--min-samples", type=int, default=Px4SitlEvidenceConfig.min_samples)
     parser.add_argument("--max-sample-age-s", type=float, default=Px4SitlEvidenceConfig.max_sample_age_s)
+    parser.add_argument(
+        "--expected-rate-hz",
+        type=float,
+        help="Optional expected receiver publish rate. Session evaluation usually reads this from the session manifest.",
+    )
+    parser.add_argument(
+        "--min-rate-ratio",
+        type=float,
+        default=Px4SitlEvidenceConfig.min_rate_ratio,
+        help="Minimum observed/expected rate ratio before receiver evidence fails.",
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON only.")
     parser.add_argument("--allow-degraded", action="store_true", help="Exit zero for warning-only degraded evidence.")
     return parser.parse_args()
@@ -60,6 +73,20 @@ def evaluate_px4_sitl_evidence(
         add_issue(issues, "error", "Listener capture has no local position vector.")
     if config.require_covariance and listener["position_variance_count"] == 0:
         add_issue(issues, "error", "Listener capture has no position variance/covariance vector.")
+
+    expected_rate_hz = _positive_float(config.expected_rate_hz)
+    if expected_rate_hz is not None:
+        observed_rate_hz = listener["observed_rate_hz"]
+        min_rate_hz = expected_rate_hz * max(float(config.min_rate_ratio), 0.0)
+        if observed_rate_hz is None:
+            add_issue(issues, "error", "Listener capture does not have enough increasing timestamps to compute receive rate.")
+        elif observed_rate_hz < min_rate_hz:
+            add_issue(
+                issues,
+                "error",
+                f"Observed receiver rate {observed_rate_hz:.3f}Hz is below required {min_rate_hz:.3f}Hz "
+                f"for expected {expected_rate_hz:.3f}Hz.",
+            )
 
     latest_age_s = listener["latest_sample_age_s"]
     if latest_age_s is not None and latest_age_s > config.max_sample_age_s:
@@ -97,6 +124,7 @@ def evaluate_px4_sitl_evidence(
 def parse_vehicle_visual_odometry_listener(text: str) -> dict[str, Any]:
     lower = text.lower()
     timestamp_matches = list(re.finditer(r"(?im)^\s*timestamp\s*[:=]\s*(\d+)(?:\s*\(([-+0-9.eE]+)\s+seconds ago\))?", text))
+    timestamps = [int(match.group(1)) for match in timestamp_matches]
     timestamp_sample_matches = re.findall(r"(?im)^\s*timestamp_sample\s*[:=]\s*(\d+)", text)
     positions = _parse_named_vectors(text, "position")
     position_variances = _parse_named_vectors(text, "position_variance")
@@ -106,13 +134,18 @@ def parse_vehicle_visual_odometry_listener(text: str) -> dict[str, Any]:
     reset_counters = _parse_named_numbers(text, "reset_counter")
     ages = [_optional_float(match.group(2)) for match in timestamp_matches if match.group(2) is not None]
     finite_positions = [vector for vector in positions if all(math.isfinite(value) for value in vector)]
+    sample_time_span_s = _sample_time_span_s(timestamps)
+    observed_rate_hz = (len(timestamps) - 1) / sample_time_span_s if sample_time_span_s else None
 
     return {
         "topic_seen": "vehicle_visual_odometry" in lower,
         "not_published": "never published" in lower or "not published" in lower,
         "sample_count": len(timestamp_matches),
         "timestamp_sample_count": len(timestamp_sample_matches),
-        "latest_timestamp": int(timestamp_matches[-1].group(1)) if timestamp_matches else None,
+        "first_timestamp": timestamps[0] if timestamps else None,
+        "latest_timestamp": timestamps[-1] if timestamps else None,
+        "sample_time_span_s": sample_time_span_s,
+        "observed_rate_hz": observed_rate_hz,
         "latest_sample_age_s": ages[-1] if ages else None,
         "position_count": len(positions),
         "finite_position_count": len(finite_positions),
@@ -164,6 +197,18 @@ def _parse_rate_lines(text: str, name: str) -> list[float]:
     return [float(match.group(1)) for match in pattern.finditer(text)]
 
 
+def _sample_time_span_s(timestamps_us: list[int]) -> float | None:
+    if len(timestamps_us) < 2:
+        return None
+    span_s = (timestamps_us[-1] - timestamps_us[0]) / 1_000_000.0
+    return span_s if span_s > 0 else None
+
+
+def _positive_float(value: Any) -> float | None:
+    parsed = _optional_float(value)
+    return parsed if parsed is not None and parsed > 0 else None
+
+
 def _optional_float(value: Any) -> float | None:
     try:
         if value is None:
@@ -184,6 +229,7 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"Status: {report['status']}")
     print(f"Expected sender message: {report['expected_message']}")
     print(f"Listener samples: {listener['sample_count']}")
+    print(f"Observed receive rate hz: {listener['observed_rate_hz']}")
     print(f"Last sample age: {listener['latest_sample_age_s']}")
     print(f"Last position: {listener['last_position']}")
     print(f"Last position variance: {listener['last_position_variance']}")
@@ -204,6 +250,8 @@ def main() -> None:
         config=Px4SitlEvidenceConfig(
             min_samples=args.min_samples,
             max_sample_age_s=args.max_sample_age_s,
+            expected_rate_hz=args.expected_rate_hz,
+            min_rate_ratio=args.min_rate_ratio,
         ),
     )
     if args.json:

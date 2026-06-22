@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from vision_nav.bench_readiness import (
@@ -91,6 +92,10 @@ def parse_args() -> argparse.Namespace:
         "--evidence-workflow-validation-report",
         help="Optional validation report for the autonomy evidence workflow report/log archive.",
     )
+    parser.add_argument(
+        "--evidence-workflow-log-archive",
+        help="Optional compressed log archive emitted by the autonomy evidence workflow.",
+    )
     parser.add_argument("--output", help="Optional JSON report output path.")
     parser.add_argument("--json", action="store_true", help="Emit JSON only.")
     return parser.parse_args()
@@ -109,6 +114,7 @@ def evaluate_autonomy_readiness(
     threshold_tuning_report_path: str | Path | None = None,
     evidence_workflow_report_path: str | Path | None = None,
     evidence_workflow_validation_report_path: str | Path | None = None,
+    evidence_workflow_log_archive_path: str | Path | None = None,
 ) -> dict[str, Any]:
     support_report = evaluate_support_bundle(
         support_bundle_path,
@@ -139,6 +145,10 @@ def evaluate_autonomy_readiness(
     ]
     status = readiness_status(checks)
     next_actions = next_actions_for_checks(checks)
+    plan_snapshot = build_plan_snapshot(
+        research_doc_path=research_doc_path,
+        implementation_plan_path=implementation_plan_path,
+    )
     field_collection_markdown_path = None
     if field_collection_plan_path:
         candidate = Path(field_collection_plan_path).expanduser().with_suffix(".md")
@@ -167,6 +177,9 @@ def evaluate_autonomy_readiness(
             if evidence_workflow_validation_report_path
             else None
         ),
+        "evidence_workflow_log_archive": (
+            str(Path(evidence_workflow_log_archive_path).expanduser()) if evidence_workflow_log_archive_path else None
+        ),
     }
     report = {
         "status": status,
@@ -182,6 +195,7 @@ def evaluate_autonomy_readiness(
             "passed": sum(1 for check in checks if check["status"] == "passed"),
         },
         "inputs": inputs,
+        "plan_snapshot": plan_snapshot,
         "evidence_manifest": build_evidence_manifest(status, checks, inputs, next_actions),
     }
     if support_report.get("report") is not None:
@@ -434,6 +448,12 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
             "command": "./scripts/pi/validate_terrain_bundle.sh",
             "notes": "The support bundle must include passing terrain bundle health before bench readiness can pass.",
         },
+        "gnss_denied_plan": {
+            "title": "Complete GNSS-denied mission prep before rebuilding the bundle.",
+            "desktop_action": "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
+            "command": "./scripts/pi/validate_terrain_bundle.sh && ./scripts/pi/create_support_bundle.sh",
+            "notes": "The support bundle must include a Mission Planner export with satellite source disabled, map reset, home reset, heading, and estimator readiness all marked complete.",
+        },
         "runtime_logs": {
             "title": "Run the terrain runtime before creating the bench report.",
             "desktop_action": "Module Setup > Runtime Bundle Check, then Bench Report",
@@ -604,6 +624,128 @@ def check_doc_markers(name: str, path: str | Path, markers: list[str], message: 
     return passed(name, message, details)
 
 
+def build_plan_snapshot(
+    *,
+    research_doc_path: str | Path,
+    implementation_plan_path: str | Path,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "vision_nav_autonomy_plan_snapshot_v1",
+        "research_doc": summarize_research_doc(research_doc_path),
+        "implementation_plan": summarize_implementation_plan(implementation_plan_path),
+    }
+
+
+def summarize_research_doc(path: str | Path) -> dict[str, Any]:
+    source = Path(path).expanduser()
+    text = safe_read_text(source)
+    missing_markers = [marker for marker in RESEARCH_DOC_MARKERS if marker not in text]
+    return {
+        "path": str(source),
+        "exists": source.is_file(),
+        "required_marker_count": len(RESEARCH_DOC_MARKERS),
+        "missing_markers": missing_markers,
+        "highest_value_reference_count": count_markdown_table_rows(
+            section_text(text, "Highest-Value References")
+        ),
+        "fit_criteria_count": count_section_bullets(text, "Fit Criteria"),
+        "architecture_section_count": count_numbered_headings(
+            section_text(text, "Recommended Product Architecture Changes")
+        ),
+        "near_term_item_count": count_numbered_lines(
+            section_text(text, "Near-Term Repo Integration Plan")
+        ),
+        "avoid_choice_count": count_section_bullets(text, "Implementation Choices To Avoid"),
+    }
+
+
+def summarize_implementation_plan(path: str | Path) -> dict[str, Any]:
+    source = Path(path).expanduser()
+    text = safe_read_text(source)
+    missing_markers = [marker for marker in IMPLEMENTATION_PLAN_MARKERS if marker not in text]
+    return {
+        "path": str(source),
+        "exists": source.is_file(),
+        "required_marker_count": len(IMPLEMENTATION_PLAN_MARKERS),
+        "missing_markers": missing_markers,
+        "track_count": len(re.findall(r"^### Track \d+:", text, flags=re.MULTILINE)),
+        "done_count": count_status_lines(text, "Done"),
+        "in_progress_count": count_status_lines(text, "In progress"),
+        "task_count": count_plan_list_items_under_heading(text, "Tasks"),
+        "next_task_count": count_plan_list_items_under_heading(text, "Next tasks"),
+        "acceptance_check_count": count_plan_list_items_under_heading(text, "Acceptance checks"),
+        "execution_order_count": count_numbered_lines(section_text(text, "Execution Order")),
+    }
+
+
+def safe_read_text(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    return path.read_text(errors="replace")
+
+
+def section_text(text: str, heading: str) -> str:
+    pattern = re.compile(rf"^(#+)\s+{re.escape(heading)}\s*$", flags=re.MULTILINE)
+    match = pattern.search(text)
+    if not match:
+        return ""
+    level = len(match.group(1))
+    start = match.end()
+    following = re.finditer(r"^(#+)\s+", text[start:], flags=re.MULTILINE)
+    for candidate in following:
+        if len(candidate.group(1)) <= level:
+            return text[start : start + candidate.start()]
+    return text[start:]
+
+
+def count_section_bullets(text: str, heading: str) -> int:
+    return count_bullet_lines(section_text(text, heading))
+
+
+def count_bullet_lines(text: str) -> int:
+    return len(re.findall(r"^\s*-\s+", text, flags=re.MULTILINE))
+
+
+def count_numbered_lines(text: str) -> int:
+    return len(re.findall(r"^\s*\d+\.\s+", text, flags=re.MULTILINE))
+
+
+def count_numbered_headings(text: str) -> int:
+    return len(re.findall(r"^###\s+\d+\.\s+", text, flags=re.MULTILINE))
+
+
+def count_markdown_table_rows(text: str) -> int:
+    rows = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|") or "---" in stripped:
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if cells and cells[0] and cells[0] != "Reference":
+            rows += 1
+    return rows
+
+
+def count_status_lines(text: str, status: str) -> int:
+    return len(re.findall(rf"^\s*-\s+{re.escape(status)}:", text, flags=re.MULTILINE))
+
+
+def count_plan_list_items_under_heading(text: str, heading: str) -> int:
+    total = 0
+    search_from = 0
+    pattern = re.compile(rf"^({re.escape(heading)}):\s*$", flags=re.MULTILINE)
+    while True:
+        match = pattern.search(text, search_from)
+        if not match:
+            break
+        start = match.end()
+        next_heading = re.search(r"^\S.*:$|^#{1,6}\s+", text[start:], flags=re.MULTILINE)
+        block = text[start : start + next_heading.start()] if next_heading else text[start:]
+        total += count_numbered_lines(block)
+        search_from = start
+    return total
+
+
 def check_px4_receiver_proof(
     session_path: str | Path | None,
     report_path: str | Path | None,
@@ -626,9 +768,17 @@ def check_px4_receiver_proof(
 
     support_check = support_checks.get("px4_sitl_evidence")
     if support_check and support_check.get("status") == "passed":
-        return passed("px4_receiver_proof", "PX4 receiver proof is present in the support bundle.", {"source": "support_bundle"})
+        return passed(
+            "px4_receiver_proof",
+            "PX4 receiver proof is present in the support bundle.",
+            px4_receiver_details_from_support_check(support_check),
+        )
     if support_check and support_check.get("status") == "degraded":
-        return degraded("px4_receiver_proof", "PX4 receiver proof in the support bundle is degraded.", {"source": "support_bundle"})
+        return degraded(
+            "px4_receiver_proof",
+            "PX4 receiver proof in the support bundle is degraded.",
+            px4_receiver_details_from_support_check(support_check),
+        )
     return failed("px4_receiver_proof", "PX4 SITL or bench receiver proof is required.", {"source": "support_bundle"})
 
 
@@ -640,7 +790,10 @@ def px4_receiver_check_from_report(report: dict[str, Any], *, source: str) -> di
         "session_dir": report.get("session_dir"),
         "report_path": report.get("report_path"),
         "sample_count": listener.get("sample_count"),
+        "observed_rate_hz": listener.get("observed_rate_hz"),
         "expected_message": report.get("expected_message"),
+        "expected_rate_hz": (report.get("config") or {}).get("expected_rate_hz"),
+        "min_rate_ratio": (report.get("config") or {}).get("min_rate_ratio"),
         "latest_sample_age_s": listener.get("latest_sample_age_s"),
     }
     if status == "passed":
@@ -648,6 +801,12 @@ def px4_receiver_check_from_report(report: dict[str, Any], *, source: str) -> di
     if status == "degraded":
         return degraded("px4_receiver_proof", "PX4 receiver evidence is degraded.", details)
     return failed("px4_receiver_proof", f"PX4 receiver evidence is {status or 'missing'}.", details)
+
+
+def px4_receiver_details_from_support_check(support_check: dict[str, Any]) -> dict[str, Any]:
+    details = dict(support_check.get("details") or {})
+    details["source"] = "support_bundle"
+    return details
 
 
 def check_field_evidence_proof(path: str | Path | None, support_checks: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -859,6 +1018,7 @@ def main() -> None:
         threshold_tuning_report_path=args.threshold_tuning_report,
         evidence_workflow_report_path=args.evidence_workflow_report,
         evidence_workflow_validation_report_path=args.evidence_workflow_validation_report,
+        evidence_workflow_log_archive_path=args.evidence_workflow_log_archive,
     )
     if args.output:
         destination = Path(args.output).expanduser()

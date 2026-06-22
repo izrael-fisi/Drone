@@ -12,6 +12,8 @@ from vision_nav.autonomy_handoff import artifact_availability
 
 
 DEFAULT_MAX_ARTIFACT_BYTES = 25_000_000
+MAX_MANIFEST_PROOF_ITEMS = 12
+MAX_MANIFEST_BLOCKERS = 12
 
 
 def parse_args() -> argparse.Namespace:
@@ -97,6 +99,8 @@ def create_evidence_package(
             "ready_for_goal_completion": (report.get("evidence_manifest") or {}).get("ready_for_goal_completion")
             if isinstance(report.get("evidence_manifest"), dict)
             else None,
+            "plan_snapshot": report.get("plan_snapshot") if isinstance(report.get("plan_snapshot"), dict) else None,
+            "proof_summary": build_proof_summary(report),
             "max_artifact_bytes": max_artifact_bytes,
             "included": included,
             "missing": missing,
@@ -112,6 +116,82 @@ def create_evidence_package(
         "skipped_count": len(skipped),
     }
     return result
+
+
+def build_proof_summary(report: dict[str, Any]) -> dict[str, Any]:
+    evidence = report.get("evidence_manifest") if isinstance(report.get("evidence_manifest"), dict) else {}
+    proof_items = dict_items(evidence.get("proof_items"))
+    completion_blockers = dict_items(evidence.get("completion_blockers"))
+    external_blockers = dict_items(evidence.get("external_blockers"))
+    return {
+        "schema_version": evidence.get("schema_version"),
+        "ready_for_goal_completion": evidence.get("ready_for_goal_completion"),
+        "proof_item_count": len(proof_items),
+        "proof_item_passed_count": count_status(proof_items, "passed"),
+        "proof_items_truncated": len(proof_items) > MAX_MANIFEST_PROOF_ITEMS,
+        "completion_blocker_count": len(completion_blockers),
+        "completion_blockers_truncated": len(completion_blockers) > MAX_MANIFEST_BLOCKERS,
+        "external_blocker_count": len(external_blockers),
+        "external_blockers_truncated": len(external_blockers) > MAX_MANIFEST_BLOCKERS,
+        "proof_items": compact_evidence_items(proof_items, limit=MAX_MANIFEST_PROOF_ITEMS),
+        "completion_blockers": compact_evidence_items(completion_blockers, limit=MAX_MANIFEST_BLOCKERS),
+        "external_blockers": compact_evidence_items(external_blockers, limit=MAX_MANIFEST_BLOCKERS),
+    }
+
+
+def dict_items(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def count_status(items: list[dict[str, Any]], status: str) -> int:
+    return sum(1 for item in items if item.get("status") == status)
+
+
+def compact_evidence_items(items: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+    return [compact_evidence_item(item) for item in items[:limit]]
+
+
+def compact_evidence_item(item: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("name", "status", "message", "source"):
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            compact[key] = value
+    requires_external = item.get("requires_external_proof")
+    if isinstance(requires_external, bool):
+        compact["requires_external_proof"] = requires_external
+    missing_conditions = string_list(item.get("missing_conditions"))
+    if missing_conditions:
+        compact["missing_conditions"] = missing_conditions
+    bench_subchecks = compact_bench_subchecks(item.get("bench_subchecks"))
+    if bench_subchecks:
+        compact["bench_subchecks"] = bench_subchecks
+    return compact
+
+
+def compact_bench_subchecks(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    subchecks: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        compact: dict[str, Any] = {}
+        for key in ("name", "status", "message"):
+            text = item.get(key)
+            if isinstance(text, str) and text:
+                compact[key] = text
+        if compact:
+            subchecks.append(compact)
+    return subchecks
+
+
+def string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
 
 
 def add_file(

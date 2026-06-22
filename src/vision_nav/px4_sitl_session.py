@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", help="Optional report path. Defaults to receiver_report from the session manifest.")
     parser.add_argument("--min-samples", type=int, default=Px4SitlEvidenceConfig.min_samples)
     parser.add_argument("--max-sample-age-s", type=float, default=Px4SitlEvidenceConfig.max_sample_age_s)
+    parser.add_argument(
+        "--expected-rate-hz",
+        type=float,
+        help="Override the session manifest rate_hz used for receiver-rate evidence.",
+    )
+    parser.add_argument(
+        "--min-rate-ratio",
+        type=float,
+        default=Px4SitlEvidenceConfig.min_rate_ratio,
+        help="Minimum observed/expected rate ratio before receiver evidence fails.",
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON only.")
     parser.add_argument("--allow-degraded", action="store_true", help="Exit zero for warning-only degraded evidence.")
     return parser.parse_args()
@@ -37,6 +49,11 @@ def evaluate_px4_sitl_session(
     manifest_path, session = load_session_manifest(session_path)
     root = manifest_path.parent
     expected_message = str(session.get("message_type") or "odometry")
+    evidence_config = config or Px4SitlEvidenceConfig()
+    if evidence_config.expected_rate_hz is None:
+        manifest_rate = _positive_float(session.get("rate_hz"))
+        if manifest_rate is not None:
+            evidence_config = replace(evidence_config, expected_rate_hz=manifest_rate)
     captures = session.get("expected_captures") or {}
     listener_path = resolve_session_path(root, captures.get("vehicle_visual_odometry"))
     mavlink_status_path = resolve_session_path(root, captures.get("mavlink_status"))
@@ -63,7 +80,7 @@ def evaluate_px4_sitl_session(
             listener_text=listener_text,
             mavlink_status_text=mavlink_status_text,
             expected_message=expected_message,
-            config=config or Px4SitlEvidenceConfig(),
+            config=evidence_config,
         )
         report.setdefault("issues", []).extend(issues)
         if any(issue["severity"] == "error" for issue in report["issues"]):
@@ -74,7 +91,7 @@ def evaluate_px4_sitl_session(
         report = {
             "status": "failed",
             "expected_message": expected_message,
-            "config": config_dict(config or Px4SitlEvidenceConfig()),
+            "config": config_dict(evidence_config),
             "listener": None,
             "mavlink_status": None,
             "issues": issues,
@@ -103,7 +120,17 @@ def config_dict(config: Px4SitlEvidenceConfig) -> dict[str, Any]:
         "max_sample_age_s": config.max_sample_age_s,
         "require_position": config.require_position,
         "require_covariance": config.require_covariance,
+        "expected_rate_hz": config.expected_rate_hz,
+        "min_rate_ratio": config.min_rate_ratio,
     }
+
+
+def _positive_float(value: Any) -> float | None:
+    try:
+        output = float(value)
+    except (TypeError, ValueError):
+        return None
+    return output if output > 0 else None
 
 
 def print_human(report: dict[str, Any]) -> None:
@@ -115,6 +142,7 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"__VISION_NAV_PX4_SITL_REPORT__={report.get('report_path')}")
     listener = report.get("listener") or {}
     print(f"Listener samples: {listener.get('sample_count')}")
+    print(f"Observed receive rate hz: {listener.get('observed_rate_hz')}")
     print(f"Last position: {listener.get('last_position')}")
     for issue in report.get("issues") or []:
         print(f"[{str(issue.get('severity') or 'info').upper()}] {issue.get('message')}")
@@ -128,6 +156,8 @@ def main() -> None:
         config=Px4SitlEvidenceConfig(
             min_samples=args.min_samples,
             max_sample_age_s=args.max_sample_age_s,
+            expected_rate_hz=args.expected_rate_hz,
+            min_rate_ratio=args.min_rate_ratio,
         ),
     )
     if args.json:

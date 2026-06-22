@@ -78,6 +78,11 @@ Status:
   type, send rate, latency, covariance warnings, and skip reasons.
 - Done: `ODOMETRY` output includes reset-counter tracking for estimator reset
   epochs, map changes, and backward timestamps.
+- Done: PX4 SITL receiver evidence now computes observed receive rate from
+  `vehicle_visual_odometry` listener timestamps, compares it with the smoke
+  session `rate_hz`, and surfaces the rate in desktop receiver/support-bundle
+  views, bench-readiness details, and final autonomy-readiness details so proof
+  covers timing as well as sample presence.
 
 Next tasks:
 
@@ -119,6 +124,9 @@ Status:
 - In progress: the same JSONL export can include bounded
   `sensor_msgs/msg/CompressedImage` camera-frame topic records from runtime
   `frame_path` entries, with relative paths resolved from the log directory.
+- Done: `vision-nav-validate-rosbag-export` validates JSONL, MCAP, and native
+  rosbag2 export metadata, sidecars, topic counts, message counts, and storage
+  presence without requiring ROS 2.
 - Done: `vision-nav-ros2-replay-log --export-mcap` writes an optional
   JSON-encoded MCAP archive with odometry, diagnostics, and bounded compressed
   camera-frame topics when the `mcap` Python package is installed.
@@ -222,9 +230,17 @@ Status:
 - Done: Mission Planner persists build/upload fingerprints and timestamps
   across app restarts and shows whether the active imported/exported `.plan`
   file has unsaved local changes.
-- In progress: Mission Planner now records GNSS-denied readiness actions in the
-  mission bundle metadata: satellite-source disabled state, map-position reset,
-  heading reset, home reset, and estimator-health status.
+- Done: Mission Planner now records GNSS-denied readiness actions in the mission
+  bundle metadata, exports per-check status under `visionNavigation.gnss_denied`,
+  renders the satellite/map/home/heading/estimator checklist, and blocks bundle
+  build/upload until that GNSS-denied prep checklist is complete.
+- Done: support bundles now parse the bundled Mission Planner JSON, summarize
+  its GNSS-denied readiness block, and count `gnss_denied_plan` in bench
+  readiness so stale or incomplete mission prep fails the bench report.
+- Done: final autonomy-readiness reports expand failed `gnss_denied_plan`
+  bench subchecks into a Mission Planner-specific next action, so operators know
+  to complete GNSS-denied prep, rebuild/upload the bundle, and recreate the
+  bench report.
 - In progress: Module Setup chains Wi-Fi SSH identity, repo sync/install,
   runtime verification, camera preview/health, time sync, MAVLink endpoint
   validation, optional Micro XRCE-DDS Agent readiness, calibration image
@@ -352,7 +368,8 @@ Status:
   feature-method benchmark reports, and threshold-tuning reports.
 - Done: Module Setup saved reports now include a compact final
   autonomy-readiness snapshot with latest status, handoff path,
-  goal-completion flag, external blockers, and next actions.
+  evidence-package summary, workflow artifact references, goal-completion flag,
+  external blockers, and next actions.
 - Done: Module Setup saved reports now include a compact autonomy evidence
   workflow snapshot with the latest workflow status, artifact marker count,
   workflow-log archive path, validation report path, validation status, and
@@ -481,6 +498,11 @@ Status:
   readiness, PX4 receiver proof, real field evidence, feature-method benchmark
   evidence, and threshold-tuning proof. It intentionally fails until the
   external PX4 and field-log artifacts exist.
+- Done: autonomy-readiness reports include a `plan_snapshot` with source-doc
+  marker coverage, research reference/near-term item counts, implementation
+  track counts, status-line counts, task counts, and acceptance-check counts so
+  the final proof package records which version of the research/plan docs it
+  evaluated.
 - Done: autonomy-readiness reports include machine-readable `next_actions` for
   failed or degraded proof gates, with the relevant Module Setup action and
   shell command to collect the missing artifact.
@@ -520,14 +542,17 @@ Status:
   `autonomy_readiness_report.json` for transfer or support review.
 - Done: `vision-nav-autonomy-handoff` renders
   `autonomy_readiness_report.json` into a Markdown handoff with status, inputs,
-  checks, external proof blockers, missing field conditions, bench subchecks,
-  and next actions.
+  plan source snapshot, checks, all goal proof items, completion blockers,
+  external proof blockers, missing field conditions, bench subchecks, and next
+  actions.
 - Done: the Markdown handoff includes a copy-friendly command bundle for
   next-action shell commands and pending field replay registration commands.
 - Done: `vision-nav-autonomy-evidence-package` creates a support-review ZIP
   containing the strict readiness JSON, Markdown handoff, package manifest, and
   small referenced evidence artifacts that exist locally while listing missing
-  or oversized artifacts in the manifest.
+  or oversized artifacts in the manifest. The package manifest also carries a
+  plan source snapshot plus a bounded goal-proof summary with proof pass counts,
+  first proof items, completion-blocker count, and external-blocker count.
 - Done: the Pi and local autonomy-readiness wrappers emit
   `__VISION_NAV_PX4_SITL_REPORT__=...` when direct receiver proof is available,
   letting Module Setup download the receiver report beside the final audit.
@@ -547,8 +572,14 @@ Status:
   downloads the generated evidence ZIP beside the JSON report, includes it in
   saved setup reports, and lists/reveals the sibling package from the Autonomy
   Readiness Reports card after restart, including package manifest counts for
-  included, missing, and skipped evidence artifacts plus bounded missing/skipped
-  artifact labels for support triage.
+  included, missing, and skipped evidence artifacts, packaged proof pass counts,
+  external-blocker counts, and bounded included/missing/skipped artifact labels
+  for support triage.
+- Done: the Autonomy Readiness SSH action also parses emitted evidence-workflow,
+  workflow-log, workflow-validation, field-evidence, feature-benchmark,
+  threshold-tuning, and field-collection markers from the readiness wrapper,
+  downloads those referenced artifacts, and refreshes the matching report lists
+  without requiring the separate Evidence Workflow action first.
 - Done: `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the ordered
   field-template, field-collection checklist, optional field-case registration,
   feature-benchmark, threshold-tuning, support-bundle, and final-readiness
@@ -568,9 +599,22 @@ Status:
   validation, while degraded-but-usable workflows can still pass script checks
   when readiness proof is merely incomplete.
 - Done: final autonomy-readiness audits now record discovered evidence-workflow
-  and workflow-validation JSON paths as non-gating inputs. Handoffs show their
-  artifact availability, and evidence ZIPs include the small JSON reports when
-  they are present.
+  JSON, workflow-validation JSON, and workflow-log archive paths as non-gating
+  inputs. Handoffs show their artifact availability, and evidence ZIPs include
+  the files when present and under the artifact size limit.
+- Done: downloaded autonomy-readiness report cards now surface those workflow,
+  validation, and log archive inputs directly with copy/reveal controls when
+  the local downloaded artifacts are available.
+- Done: downloaded autonomy-readiness report cards now preserve and render the
+  final audit `proof_items` checklist, so operators can see every research-plan
+  proof gate's current status instead of only the failed blockers.
+- Done: downloaded autonomy-readiness report cards now parse and render the
+  `plan_snapshot`, showing research marker/reference coverage and implementation
+  track/task/done counts directly in the desktop app.
+- Done: saved Module Setup reports now include bounded final-audit proof items,
+  proof pass counts, plan snapshots, completion blockers, and external blockers
+  so exported support archives preserve both passing and missing research-plan
+  evidence.
 - Done: Module Setup exposes that wrapper as `Evidence Workflow`, downloads the
   workflow JSON, workflow-log archive, validation JSON, and any support bundle,
   field-evidence report, feature-method benchmark, threshold-tuning report,

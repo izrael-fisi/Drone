@@ -270,6 +270,10 @@ vision-nav-ros2-replay-log \
   --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
   --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl \
   --include-frame-topic
+
+vision-nav-validate-rosbag-export \
+  --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl \
+  --output ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json
 ```
 
 For MCAP-capable desktop tooling, install the optional extra and write a
@@ -281,12 +285,18 @@ vision-nav-ros2-replay-log \
   --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
   --export-mcap ~/DroneTransfer/outgoing/terrain-match/vision-nav.mcap \
   --include-frame-topic
+
+vision-nav-validate-rosbag-export \
+  --artifact ~/DroneTransfer/outgoing/terrain-match/vision-nav.mcap \
+  --output ~/DroneTransfer/outgoing/terrain-match/vision-nav-mcap-validation.json
 ```
 
 The JSONL export is still the dependency-free fallback and is preferred for
 basic Pi setup checks.
 On a sourced ROS 2 workstation, use `--export-rosbag2` instead when you need a
-native serialized rosbag2 directory for `ros2 bag info/play`.
+native serialized rosbag2 directory for `ros2 bag info/play`. The validator
+checks metadata, topic/message counts, MCAP sidecars, and native rosbag2 storage
+files without requiring ROS 2 to be installed.
 
 Create a transfer-ready support bundle after a bench run:
 
@@ -440,7 +450,9 @@ feature-method benchmark, and threshold-tuning reports directly when they were
 downloaded outside the support bundle. Use `vision-nav-autonomy-readiness`
 directly when custom artifact paths are needed, or
 `vision-nav-autonomy-handoff --report <report.json> --output <handoff.md>` to
-render a handoff from an existing report.
+render a handoff from an existing report. The handoff and evidence ZIP package
+include bounded goal-proof summaries so support review can see both passing
+proof items and remaining completion blockers.
 
 This is intentionally stricter than the synthetic smoke tests. It fails until
 PX4 receiver proof, real field coverage, feature-method benchmark evidence, and

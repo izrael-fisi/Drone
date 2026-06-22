@@ -147,6 +147,7 @@ entrypoints=(
   "vision-nav-evaluate-replay-gates"
   "vision-nav-replay-bundle-frames"
   "vision-nav-replay-terrain-log"
+  "vision-nav-validate-rosbag-export"
   "vision-nav-summarize-match-log"
   "vision-nav-support-bundle"
   "vision-nav-validate-evidence-workflow"

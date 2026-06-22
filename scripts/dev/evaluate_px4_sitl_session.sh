@@ -31,6 +31,12 @@ fi
 if [[ -n "${VISION_NAV_PX4_SITL_MAX_SAMPLE_AGE_S:-}" ]]; then
   args+=(--max-sample-age-s "$VISION_NAV_PX4_SITL_MAX_SAMPLE_AGE_S")
 fi
+if [[ -n "${VISION_NAV_SITL_RATE_HZ:-}" ]]; then
+  args+=(--expected-rate-hz "$VISION_NAV_SITL_RATE_HZ")
+fi
+if [[ -n "${VISION_NAV_PX4_SITL_MIN_RATE_RATIO:-}" ]]; then
+  args+=(--min-rate-ratio "$VISION_NAV_PX4_SITL_MIN_RATE_RATIO")
+fi
 if [[ "${VISION_NAV_ALLOW_DEGRADED:-0}" == "1" ]]; then
   args+=(--allow-degraded)
 fi

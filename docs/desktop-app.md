@@ -73,17 +73,20 @@ diagnose whether the Pi and desktop are on the same local network after a
 failed bench install.
 When autonomy-readiness reports are available, the setup report also includes a
 compact final-audit snapshot with the latest status, handoff path, evidence
-package path, goal-completion flag, external blocker count, bounded blocker
-details, the first next actions, and the referenced field collection plan
-summary when it is available locally.
+package path, goal-completion flag, plan source snapshot, proof-item
+passed/total counts, bounded proof items, completion blockers, external blocker
+details, the first next actions, the referenced workflow report/validation/log
+archive paths, and the referenced field collection plan summary when it is
+available locally.
 When autonomy evidence workflow reports are available, the setup report also
 includes the latest workflow status, pass/fail/skip summary, marker count,
 workflow-log archive path, validation report path, validation status, issue
 count, and the first validation issues.
 The readiness wrappers also create
 `autonomy_readiness_report.evidence.zip`, a support-review package with the JSON
-report, Markdown handoff, package manifest, and any small referenced evidence
-artifacts available on the local machine.
+report, Markdown handoff, package manifest, a plan source snapshot, a bounded
+goal-proof summary, and any small referenced evidence artifacts available on the
+local machine.
 
 ## Vision Pipeline
 
@@ -199,8 +202,17 @@ shows whether the active imported/exported plan file has unsaved local changes.
 Mission Planner also includes a GNSS-denied readiness block. The operator can
 record that satellite-source assumptions are disabled, set map-position and
 home resets from the selected mission item, set or derive heading, and mark
-estimator health. Those values are exported in the app mission JSON and in the
-QGroundControl `.plan` file under `visionNavigation.gnss_denied`.
+estimator health. The planner shows each subcheck and treats the combined
+GNSS-denied prep state as a bundle-readiness gate, so build/upload stays
+disabled until satellite, map reset, home reset, heading, and estimator status
+are complete. Those values and per-check statuses are exported in the app
+mission JSON and in the QGroundControl `.plan` file under
+`visionNavigation.gnss_denied`.
+
+Support bundles parse that exported mission JSON and include a
+`gnss_denied_plan` bench-readiness check. The support-bundle list shows this as
+`gnss prep`, so the operator can confirm the uploaded plan still carries the
+GNSS-denied prep state before relying on PX4 receiver or field evidence.
 
 Mission Planner also records terrain planning constraints before bundle build.
 The operator can confirm the offline map-cache path, set minimum AGL, maximum
@@ -271,10 +283,11 @@ checks, optional feature-method benchmarks, optional field-evidence gates, and
 optional threshold-tuning reports, and an automatic bench-readiness summary. The
 panel lists recent downloaded support bundle ZIPs with parsed bench-readiness
 status, bundle health, checksum status, map source provenance, georeference
-confidence, replay-gate status, PX4 evidence status, PX4 parameter status,
-ArduPilot parameter status, feature-method benchmark status, field-evidence
-status, and threshold-tuning status so the operator can confirm what was
-captured without manually opening the archive. Feature-method benchmark reports
+confidence, replay-gate status, GNSS-denied mission-prep status, PX4 evidence
+status, PX4 parameter status, ArduPilot parameter status, feature-method
+benchmark status, field-evidence status, and threshold-tuning status so the
+operator can confirm what was captured without manually opening the archive.
+Feature-method benchmark reports
 from `$HOME/DroneTransfer/outgoing/feature-method-bench`, field-evidence reports
 from `$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`, and
 threshold-tuning reports from
@@ -422,15 +435,19 @@ card shows each subcheck's status and message so the operator can jump to the
 specific setup action that fixes it.
 Each final audit report also carries an `evidence_manifest` that the app renders
 as a goal-completion proof summary. It shows whether the implementation is ready
-to be treated as complete, how many external proof blockers remain, and the
-first missing PX4 receiver, field replay, feature-benchmark, threshold, or
-support-bundle evidence items.
+to be treated as complete, the final audit's proof-item passed/total count, how
+many external proof blockers remain, and the first missing PX4 receiver, field
+replay, feature-benchmark, threshold, or support-bundle evidence items.
+The same card renders the report `plan_snapshot` when present, showing research
+marker/reference coverage and implementation track/task/done counts without
+opening the JSON report.
 Module Setup also lists downloaded PX4 receiver-evidence JSON reports from
 `~/DroneTransfer/from-pi/px4-sitl-evidence/`, including sample count, latest
-sample age, MAVLink version, and issue summaries. The local readiness wrapper
-consumes the downloaded feature-benchmark JSON and PX4 receiver-evidence JSON
-directly, so a new benchmark or receiver check can be audited without rebuilding
-the support bundle just to duplicate the same report summary.
+sample age, observed receiver rate, MAVLink version, and issue summaries. The
+local readiness wrapper consumes the downloaded feature-benchmark JSON and PX4
+receiver-evidence JSON directly, so a new benchmark or receiver check can be
+audited without rebuilding the support bundle just to duplicate the same report
+summary.
 
 After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
 `Open Bench Report In Module Setup` action opens that device's setup tab with
@@ -443,7 +460,11 @@ Pi-side support bundle, then downloads the strict final audit report to
 Markdown handoff marker, Module Setup downloads that handoff beside the JSON
 report. When the Pi emits the evidence-package marker, Module Setup also
 downloads `autonomy_readiness_report.evidence.zip` beside the JSON report and
-shows both local paths in the Latest Output panel for support review.
+shows both local paths in the Latest Output panel for support review. If the
+readiness wrapper also emits evidence-workflow report, workflow-log archive,
+workflow-validation, field-evidence, feature-benchmark, threshold-tuning, or
+field-collection markers, the same action downloads those sibling artifacts and
+refreshes the matching report lists.
 If a field collection plan/checklist exists in the replay-cases folder, the
 audit records those paths and the evidence ZIP includes them as referenced
 artifacts.
@@ -452,8 +473,8 @@ On later app launches, the Autonomy Readiness Reports list detects sibling
 `autonomy_readiness_report.evidence.zip` files beside each JSON report and
 exposes copy and reveal controls for both artifacts. When the evidence ZIP has
 the expected `manifest.json`, the list also shows included, missing, and
-skipped artifact counts plus the first missing/skipped artifact labels so
-support can tell what proof is absent without opening the archive.
+skipped artifact counts plus the first included/missing/skipped artifact labels
+so support can tell what proof is present or absent without opening the archive.
 Readiness report cards also provide a bulk command copy action for all
 machine-readable next-action shell commands, while preserving each row's
 individual command copy control. The underlying JSON report includes the same
@@ -477,11 +498,18 @@ copy individual or batched generated registration commands when the plan
 includes them, which keeps real replay-case registration out of manual
 retyping.
 The Markdown handoff mirrors that workflow with a copy-friendly command bundle
-for next-action commands and pending field replay registration commands.
-When downloaded evidence-workflow and workflow-validation JSON reports are
-available, the local/Pi readiness audit records them as non-gating inputs so
-the handoff can show availability and the evidence ZIP can carry them with the
-rest of the review package.
+for next-action commands and pending field replay registration commands. It also
+summarizes the research/implementation source-doc snapshot that the final audit
+used, including required marker coverage and implementation track/task counts.
+When downloaded evidence-workflow JSON, workflow-validation JSON, and workflow
+log archives are available, the local/Pi readiness audit records them as
+non-gating inputs so the handoff can show availability and the evidence ZIP can
+carry them with the rest of the review package when they are under the artifact
+size limit. The evidence ZIP manifest also includes the plan snapshot, bounded
+proof counts, and the first proof items, and the Autonomy Readiness Reports card
+shows those package proof counts beside compact workflow, validation, and logs
+chips for referenced inputs, with copy/reveal actions when the downloaded local
+artifact exists.
 
 ## MAVLink
 

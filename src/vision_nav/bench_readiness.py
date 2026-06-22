@@ -10,6 +10,13 @@ import zipfile
 PASSING = {"passed", "healthy"}
 WARNING = {"degraded", "warming_up"}
 MISSING = {"not_provided", None}
+REQUIRED_GNSS_DENIED_CHECKS = {
+    "satellite_source_disabled",
+    "map_position_reset",
+    "home_position",
+    "heading",
+    "estimator_health",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,6 +78,7 @@ def evaluate_bench_readiness(
 ) -> dict[str, Any]:
     checks = [
         check_bundle_health(manifest),
+        check_gnss_denied_plan(manifest),
         check_runtime_logs(manifest),
         check_runtime_status(manifest),
         check_replay_gates(manifest, allow_missing=allow_missing_replay_gates),
@@ -118,6 +126,46 @@ def check_bundle_health(manifest: dict[str, Any]) -> dict[str, Any]:
     if status in WARNING:
         return degraded("bundle_health", "Terrain bundle health is degraded.", {"bundle_id": bundle.get("bundle_id")})
     return failed("bundle_health", f"Terrain bundle health is {status or 'missing'}.", {"bundle_id": bundle.get("bundle_id")})
+
+
+def check_gnss_denied_plan(manifest: dict[str, Any]) -> dict[str, Any]:
+    bundle = manifest.get("bundle") if isinstance(manifest.get("bundle"), dict) else {}
+    mission_plan = bundle.get("mission_plan") if isinstance(bundle.get("mission_plan"), dict) else {}
+    gnss = mission_plan.get("gnss_denied") if isinstance(mission_plan.get("gnss_denied"), dict) else {}
+    checks = [check for check in gnss.get("checks") or [] if isinstance(check, dict)]
+    check_statuses = {str(check.get("name")): normalize_status(check.get("status")) for check in checks if check.get("name")}
+    missing_checks = sorted(REQUIRED_GNSS_DENIED_CHECKS - set(check_statuses))
+    failed_checks = sorted(name for name, status in check_statuses.items() if name in REQUIRED_GNSS_DENIED_CHECKS and status not in PASSING)
+    field_ready = {
+        "satellite_source_disabled": gnss.get("satellite_source_disabled") is True,
+        "map_position_reset": gnss.get("map_position_reset_set") is True,
+        "home_position": gnss.get("home_position_set") is True,
+        "heading": gnss.get("heading_set") is True,
+        "estimator_health": normalize_status(gnss.get("estimator_health")) == "ready",
+    }
+    legacy_ready = all(field_ready.values())
+    status = normalize_status(gnss.get("status"))
+    details = {
+        "mission_plan_path": mission_plan.get("path"),
+        "mission_plan_status": mission_plan.get("status"),
+        "gnss_denied_status": status,
+        "mission_item_count": mission_plan.get("mission_item_count"),
+        "missing_checks": missing_checks,
+        "failed_checks": failed_checks,
+        "field_ready": field_ready,
+    }
+
+    if not mission_plan or normalize_status(mission_plan.get("status")) in MISSING:
+        return degraded("gnss_denied_plan", "Support bundle has no mission-plan GNSS-denied summary.", details)
+    if normalize_status(mission_plan.get("status")) == "failed":
+        return failed("gnss_denied_plan", "Mission plan could not be parsed for GNSS-denied readiness.", details)
+    if not gnss or status in MISSING:
+        if legacy_ready and not checks:
+            return passed("gnss_denied_plan", "GNSS-denied mission-plan readiness is complete from legacy fields.", details)
+        return failed("gnss_denied_plan", "Mission plan does not declare GNSS-denied readiness.", details)
+    if status in {"ready", "passed"} and not failed_checks and (not missing_checks or legacy_ready):
+        return passed("gnss_denied_plan", "GNSS-denied mission-plan readiness is complete.", details)
+    return failed("gnss_denied_plan", "GNSS-denied mission-plan readiness is incomplete.", details)
 
 
 def check_runtime_logs(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -201,9 +249,14 @@ def check_px4_evidence(manifest: dict[str, Any], *, allow_missing: bool) -> dict
     evidence = manifest.get("px4_sitl_evidence") or {}
     status = normalize_status(evidence.get("status"))
     listener = evidence.get("listener") or {}
+    config = evidence.get("config") or {}
     details = {
         "sample_count": listener.get("sample_count"),
+        "observed_rate_hz": listener.get("observed_rate_hz"),
+        "latest_sample_age_s": listener.get("latest_sample_age_s"),
         "expected_message": evidence.get("expected_message"),
+        "expected_rate_hz": config.get("expected_rate_hz"),
+        "min_rate_ratio": config.get("min_rate_ratio"),
     }
     if status in MISSING:
         if allow_missing:

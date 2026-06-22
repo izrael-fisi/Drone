@@ -248,6 +248,13 @@ the receiver-side evidence from this repo:
 ./scripts/dev/evaluate_px4_sitl_session.sh "$PWD/px4-sitl-evidence"
 ```
 
+The session evaluator reads `rate_hz` from
+`px4_sitl_evidence_session.json`, computes observed receive rate from the
+captured `vehicle_visual_odometry` timestamps, and fails the receiver evidence
+if the topic is far below the requested stream rate. Use
+`VISION_NAV_PX4_SITL_MIN_RATE_RATIO` to adjust the conservative default only
+when documenting a noisy SITL machine.
+
 The evaluator checks that PX4 published `vehicle_visual_odometry`, that multiple
 fresh samples are present, that local position and position variance arrived,
 and that the optional MAVLink status capture looks like a MAVLink 2 UDP link.

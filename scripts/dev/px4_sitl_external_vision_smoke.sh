@@ -198,6 +198,7 @@ if [[ -f "$listener_capture" ]]; then
     -m vision_nav.px4_sitl_evidence
     --listener "$listener_capture"
     --expected-message "$message_type"
+    --expected-rate-hz "$rate_hz"
     --json
     --allow-degraded
   )
