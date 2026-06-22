@@ -759,6 +759,9 @@ Status:
   replay export validation, and native rosbag2 CLI review before the final
   support-bundle refresh, matching the final autonomy proof gates instead of
   treating ROS artifacts as optional operator context.
+- Done: Module Setup's Autonomy Readiness report card can now bulk-copy the
+  full bench evidence order with step numbers, Module Setup routes, dependency
+  waits, notes, and shell commands, while preserving per-step copy buttons.
 - Done: autonomy-readiness reports now include a strict
   `evidence_manifest` section with completion blockers, external proof
   blockers, missing field conditions, and failed/degraded bench subchecks so the

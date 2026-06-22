@@ -992,6 +992,27 @@ function commandGroupText(
     .join("\n");
 }
 
+function benchEvidenceOrderText(
+  actions: Array<{
+    label?: string;
+    desktop_action?: string;
+    command?: string;
+    blocked_by?: string;
+    notes?: string;
+  }>,
+) {
+  return actions
+    .flatMap((action, index) => {
+      const lines = [`# ${index + 1}. ${action.label ?? action.desktop_action ?? "Bench evidence step"}`];
+      if (action.desktop_action) lines.push(`# app: ${action.desktop_action}`);
+      if (action.blocked_by) lines.push(`# waits on: ${formatReadinessLabel(action.blocked_by)}`);
+      if (action.notes) lines.push(`# notes: ${action.notes}`);
+      if (action.command) lines.push(action.command);
+      return lines;
+    })
+    .join("\n\n");
+}
+
 function workflowMarkerArtifacts(report: AutonomyEvidenceWorkflowReportFile) {
   return [
     { label: "logs", path: report.workflow_logs_local_path ?? report.workflow_logs_path },
@@ -1727,6 +1748,17 @@ function AutonomyReadinessReportList({
                     <span className="text-[10px] font-medium uppercase tracking-wide text-cyan-300">
                       Bench evidence order
                     </span>
+                    {benchEvidenceActions.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(benchEvidenceOrderText(benchEvidenceActions))}
+                        className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                        title="Copy the full bench evidence order with app routes and commands"
+                      >
+                        <Copy size={9} />
+                        order
+                      </button>
+                    )}
                     {supportBenchBlocker?.support_bundle_command && (
                       <button
                         type="button"
