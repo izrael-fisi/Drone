@@ -323,6 +323,8 @@ grep -q "remediation: refresh the guided workflow proof" "$workflow_goal_status_
 grep -q "app: Module Setup > Evidence Workflow" "$workflow_goal_status_output"
 grep -q "command: ./scripts/pi/run_autonomy_evidence_workflow.sh" "$workflow_goal_status_output"
 grep -q "non-passing checks:" "$workflow_goal_status_output"
+grep -q "non-passing workflow step:" "$workflow_goal_status_output"
+grep -q "missing final proof markers:" "$workflow_goal_status_output"
 python3 - "$workflow_goal_status_output" <<'PY'
 from pathlib import Path
 import sys

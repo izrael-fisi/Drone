@@ -637,6 +637,51 @@ if workflow_validation:
                 print(f"  command: {next_step.get('command')}")
         for issue in issues[:4]:
             print(f"- issue: {issue}")
+        printed_missing_steps = set()
+        for check in workflow_validation.get("checks") or []:
+            if not isinstance(check, dict) or check.get("status") == "passed":
+                continue
+            details = check.get("details") if isinstance(check.get("details"), dict) else {}
+            missing_steps = details.get("missing_steps")
+            if not isinstance(missing_steps, list):
+                missing_steps = check.get("missing_steps")
+            if isinstance(missing_steps, list):
+                new_missing_steps = [
+                    str(step)
+                    for step in missing_steps
+                    if str(step) and str(step) not in printed_missing_steps
+                ]
+                if new_missing_steps:
+                    for step in new_missing_steps[:6]:
+                        printed_missing_steps.add(step)
+                    print(f"- missing workflow steps: {', '.join(new_missing_steps[:6])}")
+                    if len(new_missing_steps) > 6:
+                        print(f"  ... {len(new_missing_steps) - 6} more")
+            non_passed_steps = details.get("non_passed_steps")
+            if not isinstance(non_passed_steps, list):
+                non_passed_steps = check.get("non_passed_steps")
+            if isinstance(non_passed_steps, list):
+                for step in non_passed_steps[:4]:
+                    if not isinstance(step, dict):
+                        continue
+                    step_name = step.get("name") or "unknown"
+                    step_status = step.get("status") or "unknown"
+                    print(f"- non-passing workflow step: {step_name} [{step_status}]")
+                    if step.get("notes"):
+                        print(f"  notes: {step.get('notes')}")
+            missing_markers = details.get("missing_markers")
+            if not isinstance(missing_markers, list):
+                missing_markers = check.get("missing_markers")
+            if isinstance(missing_markers, list) and missing_markers:
+                marker_label = (
+                    "missing final proof markers"
+                    if check.get("name") == "final_proof_markers"
+                    else "missing workflow markers"
+                )
+                marker_names = [str(marker) for marker in missing_markers if str(marker)]
+                print(f"- {marker_label}: {', '.join(marker_names[:6])}")
+                if len(marker_names) > 6:
+                    print(f"  ... {len(marker_names) - 6} more")
         workflow_checks = [
             str(check.get("name") or "unknown")
             for check in workflow_validation.get("checks") or []
