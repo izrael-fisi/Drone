@@ -670,6 +670,10 @@ Status:
   Workflow, which creates or refreshes the field collection plan, auto-loads
   the next pending condition, captures into the condition-specific output
   folder, and waits to register the replay case until metadata is complete.
+- Done: field-collection-plan readiness next actions now use the lighter
+  `create_field_evidence_template.sh && create_field_collection_plan.sh`
+  bootstrap command, while field-evidence proof remains on the full Evidence
+  Workflow.
 - Done: Module Setup renders the field plan's `next_condition` in downloaded
   field-plan and autonomy-readiness cards, including direct capture/register copy
   controls and a one-click `Load` action in the field-plan list.

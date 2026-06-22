@@ -3702,10 +3702,20 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(field_plan_actions), 1, "autonomy readiness field collection plan next action")
         assert_equal(
             field_plan_actions[0]["desktop_action"],
-            "Module Setup > Evidence Workflow",
+            "Module Setup > Create Plan",
             "autonomy readiness field collection plan desktop action",
         )
+        assert_equal(
+            field_plan_actions[0]["command"],
+            "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh",
+            "autonomy readiness field collection plan bootstrap command",
+        )
         field_plan_bundle = incomplete_field_plan_ready["command_bundle"]
+        if (
+            "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh"
+            not in field_plan_bundle["next_action_commands"]
+        ):
+            raise AssertionError("autonomy readiness JSON missing field collection bootstrap command")
         if (
             "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
             not in field_plan_bundle["field_collection_capture_commands"]

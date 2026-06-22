@@ -49,6 +49,9 @@ EXTERNAL_PROOF_CHECKS = {
     "rosbag2_cli_review",
 }
 
+FIELD_COLLECTION_BOOTSTRAP_COMMAND = (
+    "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh"
+)
 GUIDED_EVIDENCE_WORKFLOW_COMMAND = "./scripts/pi/run_autonomy_evidence_workflow.sh"
 
 PROOF_RUNBOOK_PHASES = [
@@ -761,10 +764,10 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "notes": "The final report must show the MAVLink ODOMETRY path arriving as fresh vehicle_visual_odometry samples with covariance/variance fields.",
         },
         "field_collection_plan": {
-            "title": "Run the guided evidence workflow for field collection and replay proof.",
-            "desktop_action": "Module Setup > Evidence Workflow",
-            "command": GUIDED_EVIDENCE_WORKFLOW_COMMAND,
-            "notes": "The guided workflow creates or refreshes the field collection plan, auto-loads the next pending condition, and preserves condition-specific capture/register artifacts.",
+            "title": "Create or refresh the field collection checklist.",
+            "desktop_action": "Module Setup > Create Plan",
+            "command": FIELD_COLLECTION_BOOTSTRAP_COMMAND,
+            "notes": "Create or refresh the field evidence template plus field collection plan before capturing condition-specific terrain logs.",
         },
         "field_evidence_proof": {
             "title": "Run the guided evidence workflow for field replay proof.",
