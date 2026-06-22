@@ -439,6 +439,10 @@ Status:
   runs `scripts/pi/preflight_field_capture.sh` over SSH for the selected or next
   field condition, downloads `field_capture_preflight.json`, and keeps the JSON
   available for support bundles and local readiness re-audits.
+- Done: Module Setup now parses the downloaded field-capture preflight report
+  into a compact operator summary with capture and registration readiness,
+  failed or degraded checks, active bundle/log/runtime-status paths, and
+  copyable next-action commands.
 - Done: readiness reports, support-bundle summaries, Markdown handoffs, and the
   desktop parser normalize older field collection plans so stale capture-only
   commands are shown with the required runtime-status read step.

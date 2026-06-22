@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import {
   AlertTriangle,
   Archive,
@@ -81,6 +81,7 @@ type WorkflowValidationSummary = NonNullable<AutonomyEvidenceWorkflowReportFile[
 type WorkflowValidationCheck = WorkflowValidationSummary["checks"][number];
 type EvidencePackageArtifact = NonNullable<AutonomyReadinessReportFile["evidence_package_summary"]>["missing_artifacts"][number];
 type AutonomyCommandBundle = NonNullable<AutonomyReadinessReportFile["command_bundle"]>;
+type FieldCapturePreflightReport = SupportBundleDetails["field_capture_preflight_reports"][number];
 
 type AuthForm = "password" | "key";
 type StepStatus = "idle" | "running" | "passed" | "failed";
@@ -354,6 +355,25 @@ function parseFieldCapturePreflightReport(output: string) {
     .map((line) => line.trim())
     .find((line) => line.startsWith("__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__="))
     ?.replace("__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__=", "");
+}
+
+function parseFieldCapturePreflightJson(text: string): FieldCapturePreflightReport | null {
+  try {
+    const parsed = JSON.parse(text) as FieldCapturePreflightReport & { schema_version?: string };
+    if (parsed.schema_version !== "vision_nav_field_capture_preflight_v1") return null;
+    if (!Array.isArray(parsed.checks) || !Array.isArray(parsed.next_actions)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function readFieldCapturePreflightReport(path: string) {
+  try {
+    return parseFieldCapturePreflightJson(await readTextFile(path));
+  } catch {
+    return null;
+  }
 }
 
 function parseFieldCaptureReady(output: string) {
@@ -3562,6 +3582,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [fieldCollectionPlanLocalPath, setFieldCollectionPlanLocalPath] = useState<string | null>(null);
   const [fieldCollectionPlanMarkdownLocalPath, setFieldCollectionPlanMarkdownLocalPath] = useState<string | null>(null);
   const [fieldCapturePreflightLocalPath, setFieldCapturePreflightLocalPath] = useState<string | null>(null);
+  const [fieldCapturePreflightReport, setFieldCapturePreflightReport] = useState<FieldCapturePreflightReport | null>(null);
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
   const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
   const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => loadFieldCaseForm());
@@ -3598,6 +3619,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       setFieldCollectionPlanLocalPath(null);
       setFieldCollectionPlanMarkdownLocalPath(null);
       setFieldCapturePreflightLocalPath(null);
+      setFieldCapturePreflightReport(null);
       setError(null);
     }
   }, [selectedDeviceId]);
@@ -4174,6 +4196,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     setRunningStep("field-capture-preflight");
     setError(null);
+    setFieldCapturePreflightLocalPath(null);
+    setFieldCapturePreflightReport(null);
     setResult("field-capture-preflight", { status: "running", output: "$ field capture preflight\n" });
     try {
       const result = await cmd.sshRunCommand(
@@ -4208,6 +4232,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         AUTONOMY_REPORT_DOWNLOAD_DIR,
       );
       setFieldCapturePreflightLocalPath(downloaded.local_path);
+      setFieldCapturePreflightReport(await readFieldCapturePreflightReport(downloaded.local_path));
       setResult("field-capture-preflight", {
         status: result.exit_code === 0 && readyForCapture ? "passed" : "failed",
         output: `$ field capture preflight\n${output}\n\n$ download field capture preflight\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
@@ -6023,6 +6048,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   };
 
   const output = selectedOutputId ? results[selectedOutputId]?.output : undefined;
+  const fieldPreflightFailedChecks = fieldCapturePreflightReport?.checks.filter((check) => check.status === "failed") ?? [];
+  const fieldPreflightDegradedChecks = fieldCapturePreflightReport?.checks.filter((check) => check.status === "degraded") ?? [];
+  const fieldPreflightVisibleChecks = [...fieldPreflightFailedChecks, ...fieldPreflightDegradedChecks].slice(0, 4);
+  const fieldPreflightNextActions = fieldCapturePreflightReport?.next_actions.slice(0, 4) ?? [];
 
   return (
     <div className={cn(embedded ? "space-y-5" : "p-6 space-y-6 animate-fade-in")}>
@@ -6521,6 +6550,116 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                       {issue}
                     </span>
                   ))}
+                </div>
+              )}
+              {fieldCapturePreflightReport && (
+                <div className="space-y-3 border-t border-border pt-3">
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+                    <span className={cn(readinessBadgeClass(fieldCapturePreflightReport.status), "text-[10px]")}>
+                      preflight {formatReadinessLabel(fieldCapturePreflightReport.status)}
+                    </span>
+                    <span className={fieldCapturePreflightReport.ready_for_capture ? "badge-green text-[10px]" : "badge-red text-[10px]"}>
+                      capture {fieldCapturePreflightReport.ready_for_capture ? "ready" : "blocked"}
+                    </span>
+                    <span className={fieldCapturePreflightReport.ready_for_registration ? "badge-green text-[10px]" : "badge-yellow text-[10px]"}>
+                      registration {fieldCapturePreflightReport.ready_for_registration ? "ready" : "waiting"}
+                    </span>
+                    <span className="text-slate-500">condition {fieldCapturePreflightReport.condition ?? "n/a"}</span>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 text-[11px]">
+                    <div className="min-w-0 text-slate-400">
+                      Bundle{" "}
+                      <span className="font-mono text-slate-300 break-all">
+                        {fieldCapturePreflightReport.bundle_path ?? "n/a"}
+                      </span>
+                    </div>
+                    <div className="min-w-0 text-slate-400">
+                      Capture output{" "}
+                      <span className="font-mono text-slate-300 break-all">
+                        {fieldCapturePreflightReport.capture_output_dir ?? "n/a"}
+                      </span>
+                    </div>
+                    <div className="min-w-0 text-slate-400">
+                      Source log{" "}
+                      <span className="font-mono text-slate-300 break-all">
+                        {fieldCapturePreflightReport.source_log ?? "n/a"}
+                      </span>
+                    </div>
+                    <div className="min-w-0 text-slate-400">
+                      Runtime status{" "}
+                      <span className="font-mono text-slate-300 break-all">
+                        {fieldCapturePreflightReport.runtime_status_path ?? "n/a"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Blocking checks</div>
+                      {fieldPreflightVisibleChecks.length ? (
+                        fieldPreflightVisibleChecks.map((check) => (
+                          <div key={`${check.name ?? "check"}-${check.status ?? "status"}`} className="rounded-md border border-border/70 px-2 py-2 space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="min-w-0 truncate text-xs text-slate-200">{formatReadinessLabel(check.name ?? "check")}</span>
+                              <span className={cn(readinessBadgeClass(check.status), "text-[10px] shrink-0")}>
+                                {formatReadinessLabel(check.status)}
+                              </span>
+                            </div>
+                            {check.message && <div className="text-[11px] text-slate-400">{check.message}</div>}
+                            {check.validation_command && (
+                              <button
+                                type="button"
+                                onClick={() => navigator.clipboard.writeText(check.validation_command ?? "")}
+                                className="btn-secondary text-[10px] px-2 py-0.5"
+                                title="Copy validation command"
+                              >
+                                <Copy size={10} /> Copy command
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-md border border-emerald-500/20 px-2 py-2 text-[11px] text-emerald-300">
+                          No failed or degraded checks in the latest preflight.
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Next actions</div>
+                      {fieldPreflightNextActions.length ? (
+                        fieldPreflightNextActions.map((action) => (
+                          <div key={action.id ?? action.title ?? "next-action"} className="rounded-md border border-border/70 px-2 py-2 space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="min-w-0 truncate text-xs text-slate-200">{action.title ?? formatReadinessLabel(action.id ?? "next action")}</span>
+                              <span className={cn(readinessBadgeClass(action.status), "text-[10px] shrink-0")}>
+                                {formatReadinessLabel(action.status)}
+                              </span>
+                            </div>
+                            {action.desktop_action && <div className="text-[11px] text-cyan-300">{action.desktop_action}</div>}
+                            {action.notes && <div className="text-[11px] text-slate-400">{action.notes}</div>}
+                            {(action.waits_on ?? []).length > 0 && (
+                              <div className="text-[10px] text-amber-300">
+                                waits on {(action.waits_on ?? []).map(formatReadinessLabel).join(", ")}
+                              </div>
+                            )}
+                            {action.command && (
+                              <button
+                                type="button"
+                                onClick={() => navigator.clipboard.writeText(action.command ?? "")}
+                                className="btn-secondary text-[10px] px-2 py-0.5"
+                                title="Copy next action command"
+                              >
+                                <Copy size={10} /> Copy command
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-md border border-border/70 px-2 py-2 text-[11px] text-slate-400">
+                          No next actions were reported.
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
