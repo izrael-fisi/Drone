@@ -60,7 +60,7 @@ PROOF_RUNBOOK_PHASES = [
     {
         "id": "bench_foundation",
         "title": "Create bench evidence package",
-        "checks": ["support_bundle_bench_readiness", "px4_receiver_proof"],
+        "checks": ["px4_receiver_proof", "support_bundle_bench_readiness"],
         "depends_on": ["plan_source"],
         "notes": "Build and upload the terrain bundle, run the runtime, capture PX4 ODOMETRY receiver proof, export parameters, then create the support bundle.",
     },
@@ -91,8 +91,8 @@ PROOF_RUNBOOK_PHASES = [
         "checks": [
             "research_doc",
             "implementation_plan",
-            "support_bundle_bench_readiness",
             "px4_receiver_proof",
+            "support_bundle_bench_readiness",
             "field_collection_plan",
             "field_evidence_proof",
             "feature_method_benchmark",
@@ -507,15 +507,21 @@ def proof_runbook_actions(
     next_actions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
-    for action in next_actions:
-        if not isinstance(action, dict):
-            continue
-        action_check = str(action.get("check") or "")
-        if not action_check:
-            continue
-        if not any(action_check == name or action_check.startswith(f"{name}.") for name in check_names):
-            continue
-        actions.append(compact_proof_runbook_action(action))
+    seen: set[tuple[str, str]] = set()
+    for name in check_names:
+        for action in next_actions:
+            if not isinstance(action, dict):
+                continue
+            action_check = str(action.get("check") or "")
+            if not action_check:
+                continue
+            if action_check != name and not action_check.startswith(f"{name}."):
+                continue
+            key = (action_check, str(action.get("command") or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            actions.append(compact_proof_runbook_action(action))
     return actions
 
 

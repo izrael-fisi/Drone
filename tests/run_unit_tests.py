@@ -2800,6 +2800,23 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         direct_report_support_data.pop("field_evidence", None)
         direct_report_support_manifest.write_text(json.dumps(direct_report_support_data))
 
+        missing_proof_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+        )
+        missing_proof_phases = {phase["id"]: phase for phase in missing_proof_ready["proof_runbook"]["phases"]}
+        bench_commands = missing_proof_phases["bench_foundation"]["commands"]
+        px4_capture_command = "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh"
+        support_bundle_command = "./scripts/pi/create_support_bundle.sh"
+        if bench_commands.index(px4_capture_command) > bench_commands.index(support_bundle_command):
+            raise AssertionError("autonomy proof runbook should capture PX4 receiver proof before creating support bundle")
+        bench_action_checks = [action.get("check") for action in missing_proof_phases["bench_foundation"]["actions"]]
+        assert_equal(
+            bench_action_checks[:2],
+            ["px4_receiver_proof", "support_bundle_bench_readiness"],
+            "autonomy proof runbook bench action order",
+        )
+
         ready = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
             implementation_plan_path=implementation_plan,

@@ -249,6 +249,13 @@ grep -q "waiting on: field_dataset=action_required" "$goal_status_output"
 grep -q "External proof blockers:" "$goal_status_output"
 grep -q "Next commands:" "$goal_status_output"
 grep -q "support_bundle_bench_readiness" "$goal_status_output"
+python3 - "$goal_status_output" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+px4 = text.index("VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh")
+support = text.index("./scripts/pi/create_support_bundle.sh")
+assert px4 < support
+PY
 local_autonomy_output="$preflight_tmp_dir/local_autonomy_readiness_preflight.txt"
 local_audit_dir="$(mktemp -d "$preflight_tmp_dir/local-audit.XXXXXX")"
 mkdir -p "$local_audit_dir/feature-method-bench"

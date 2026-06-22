@@ -720,6 +720,9 @@ Status:
   folders, and prints a concise goal-status summary with consumed evidence
   inputs, proof-item counts, external blockers, proof-runbook phase counts, and
   runbook-ordered next commands without creating a new handoff package.
+- Done: the proof runbook now orders the bench foundation phase so PX4 ODOMETRY
+  receiver proof is captured before the support bundle is created, keeping the
+  status helper and handoff commands aligned with the actual evidence workflow.
 - Done: `scripts/mac/goal_status.sh` now embeds that autonomy proof summary
   before its transfer-folder and Pi connectivity checks so one operator command
   reports both missing proof gates and setup connectivity.
