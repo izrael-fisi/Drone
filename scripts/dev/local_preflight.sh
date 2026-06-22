@@ -42,6 +42,7 @@ field_template_schema_output="$preflight_tmp_dir/field_template_schema_preflight
 field_register_output="$preflight_tmp_dir/field_register_preflight.txt"
 evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_preflight.txt"
 evidence_workflow_validation_output="$preflight_tmp_dir/evidence_workflow_validation_preflight.txt"
+support_autodetect_output="$preflight_tmp_dir/support_autodetect_px4_report.txt"
 rosbag_validation_output="$preflight_tmp_dir/rosbag_validation_preflight.txt"
 rosbag2_review_output="$preflight_tmp_dir/rosbag2_cli_review_dry_run.txt"
 field_smoke_dir="$(mktemp -d "$preflight_tmp_dir/field-case.XXXXXX")"
@@ -196,6 +197,44 @@ assert validation["schema_version"] == "vision_nav_autonomy_evidence_workflow_va
 assert validation["status"] in {"passed", "degraded"}
 checks = {check["name"]: check["status"] for check in validation["checks"]}
 assert checks["log_archive"] == "passed"
+PY
+support_autodetect_home="$workflow_smoke_dir/support-autodetect-home"
+support_autodetect_dir="$workflow_smoke_dir/support-autodetect-bundles"
+mkdir -p "$support_autodetect_home/px4-sitl-evidence"
+cat >"$support_autodetect_home/px4-sitl-evidence/receiver_evidence.json" <<'EOF'
+{
+  "status": "passed",
+  "expected_message": "odometry",
+  "listener": {"sample_count": 2, "observed_rate_hz": 5.0},
+  "config": {"expected_rate_hz": 5.0},
+  "issues": []
+}
+EOF
+env -u VISION_NAV_PX4_SITL_SESSION -u VISION_NAV_PX4_SITL_REPORT \
+HOME="$support_autodetect_home" \
+VISION_NAV_PYTHON=python3 \
+VISION_NAV_SUPPORT_OUTPUT_DIR="$support_autodetect_dir" \
+./scripts/pi/create_support_bundle.sh >"$support_autodetect_output" 2>&1
+grep -q "__VISION_NAV_SUPPORT_ZIP__=" "$support_autodetect_output"
+python3 - "$support_autodetect_dir" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+import zipfile
+from pathlib import Path
+
+support_dir = Path(sys.argv[1])
+zips = sorted(support_dir.glob("*.zip"))
+assert len(zips) == 1
+manifest = json.loads((support_dir / zips[0].stem / "support_manifest.json").read_text())
+assert manifest["px4_sitl_evidence"]["status"] == "passed"
+assert manifest["px4_sitl_evidence"]["source"] == "px4_sitl_report"
+assert manifest["px4_sitl_evidence"]["source_report_path"].endswith("px4-sitl-evidence/receiver_evidence.json")
+with zipfile.ZipFile(zips[0]) as archive:
+    names = set(archive.namelist())
+assert "summaries/px4_sitl_evidence/receiver_evidence.json" in names
+assert "extras/px4_sitl_evidence/receiver_evidence.json" in names
 PY
 rosbag_smoke_dir="$workflow_smoke_dir/rosbag-smoke"
 mkdir -p "$rosbag_smoke_dir"

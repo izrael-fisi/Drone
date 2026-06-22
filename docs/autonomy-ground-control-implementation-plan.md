@@ -60,6 +60,11 @@ Status:
   `receiver_evidence.json` through `--px4-sitl-report` /
   `VISION_NAV_PX4_SITL_REPORT`, copy it under `extras/px4_sitl_evidence/`, and
   republish it under `summaries/px4_sitl_evidence/`.
+- Done: `scripts/pi/create_support_bundle.sh` auto-detects
+  `~/px4-sitl-evidence/px4_sitl_evidence_session.json` and
+  `~/px4-sitl-evidence/receiver_evidence.json`, so the runbook's support-bundle
+  command picks up the conventional PX4 capture output without requiring the
+  operator to re-enter marker environment variables.
 - Done: the final readiness audit accepts standalone PX4 receiver-evidence
   reports through `--px4-sitl-report` / `VISION_NAV_PX4_SITL_REPORT`, so
   already evaluated receiver proof can be reused without rebuilding the support

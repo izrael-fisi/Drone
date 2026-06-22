@@ -12,6 +12,16 @@ field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$HOME/DroneTransfer/o
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
 rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json}"
+px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
+px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
+
+if [[ -z "$px4_sitl_session" && -f "$HOME/px4-sitl-evidence/px4_sitl_evidence_session.json" ]]; then
+  px4_sitl_session="$HOME/px4-sitl-evidence"
+fi
+
+if [[ -z "$px4_sitl_report" && -f "$HOME/px4-sitl-evidence/receiver_evidence.json" ]]; then
+  px4_sitl_report="$HOME/px4-sitl-evidence/receiver_evidence.json"
+fi
 
 if [[ "$venv_python" == */* ]]; then
   if [[ ! -x "$venv_python" ]]; then
@@ -57,12 +67,12 @@ if [[ -n "${VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE:-}" && -f "${VISION_NAV_PX4_MA
   args+=(--px4-mavlink-status "$VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE")
 fi
 
-if [[ -n "${VISION_NAV_PX4_SITL_SESSION:-}" && -e "${VISION_NAV_PX4_SITL_SESSION}" ]]; then
-  args+=(--px4-sitl-session "$VISION_NAV_PX4_SITL_SESSION")
+if [[ -n "$px4_sitl_session" && -e "$px4_sitl_session" ]]; then
+  args+=(--px4-sitl-session "$px4_sitl_session")
 fi
 
-if [[ -n "${VISION_NAV_PX4_SITL_REPORT:-}" && -f "${VISION_NAV_PX4_SITL_REPORT}" ]]; then
-  args+=(--px4-sitl-report "$VISION_NAV_PX4_SITL_REPORT")
+if [[ -n "$px4_sitl_report" && -f "$px4_sitl_report" ]]; then
+  args+=(--px4-sitl-report "$px4_sitl_report")
 fi
 
 if [[ -n "${VISION_NAV_PX4_PARAMS:-}" && -f "${VISION_NAV_PX4_PARAMS}" ]]; then

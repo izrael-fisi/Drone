@@ -815,6 +815,10 @@ can download and list the standalone receiver proof beside the final readiness
 report. Receiver reports must show `expected_message: odometry` to satisfy
 bench or final readiness; compatibility-path reports are treated as debug
 evidence only.
+When `~/px4-sitl-evidence/px4_sitl_evidence_session.json` or
+`~/px4-sitl-evidence/receiver_evidence.json` exists, `create_support_bundle.sh`
+finds it automatically, so the normal support-bundle command can be run right
+after the PX4 capture command without retyping the marker path.
 
 To include the PX4 parameter readiness report in the same support bundle:
 
