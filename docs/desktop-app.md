@@ -547,6 +547,8 @@ exposes copy and reveal controls for both artifacts. When the evidence ZIP has
 the expected `manifest.json`, the list also shows included, missing, and
 skipped artifact counts plus the first included/missing/skipped artifact labels
 so support can tell what proof is present or absent without opening the archive.
+Missing entries include not-yet-passed required proof gates, even when no
+concrete artifact path has been produced yet.
 Readiness report cards also provide a bulk command copy action for all
 machine-readable next-action shell commands, while preserving each row's
 individual command copy control. The underlying JSON report includes the same

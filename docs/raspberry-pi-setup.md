@@ -1098,9 +1098,12 @@ package beside each JSON report and exposes copy/reveal controls for support
 review. When the evidence ZIP contains the expected package manifest, the list
 also shows included, missing, and skipped artifact counts with the first
 included/missing/skipped artifact labels plus packaged proof pass counts and
-external-blocker counts. When the downloaded JSON or evidence package includes a
-plan snapshot, the same card shows research marker/reference coverage and
-implementation track/task/done counts.
+external-blocker counts. Missing package entries include failed required proof
+gates that do not have an artifact path yet, so an evidence ZIP cannot look
+complete just because the corresponding field, PX4, or ROS proof has not been
+created. When the downloaded JSON or evidence package includes a plan snapshot,
+the same card shows research marker/reference coverage and implementation
+track/task/done counts.
 The desktop support-bundle list can reveal
 downloaded ZIPs in the local file manager, copy their path, show compact
 manifest details, inspect log/replay-gate summaries and per-record JSONL

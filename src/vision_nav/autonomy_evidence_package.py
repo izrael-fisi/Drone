@@ -58,6 +58,7 @@ def create_evidence_package(
             add_file(archive, handoff_file, "reports/autonomy_readiness_report.md", "autonomy_handoff", included, used_names)
         else:
             missing.append({"label": "autonomy_handoff", "path": str(handoff_file)})
+        missing.extend(missing_proof_artifacts(report))
 
         for artifact in artifact_availability(report, report_path=report_file):
             label = str(artifact.get("label") or "artifact")
@@ -120,6 +121,36 @@ def create_evidence_package(
         "skipped_count": len(skipped),
     }
     return result
+
+
+def missing_proof_artifacts(report: dict[str, Any]) -> list[dict[str, Any]]:
+    evidence = report.get("evidence_manifest") if isinstance(report.get("evidence_manifest"), dict) else {}
+    items = dict_items(evidence.get("proof_items")) or dict_items(evidence.get("completion_blockers"))
+    missing: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        name = item.get("name")
+        if not isinstance(name, str) or not name or name in seen:
+            continue
+        if item.get("status") == "passed" or item.get("requires_external_proof") is not True:
+            continue
+        seen.add(name)
+        entry: dict[str, Any] = {
+            "label": f"proof:{name}",
+            "reason": "proof_gate_not_passed",
+            "status": str(item.get("status") or "missing"),
+        }
+        message = item.get("message")
+        if isinstance(message, str) and message:
+            entry["message"] = message
+        source = item.get("source")
+        if isinstance(source, str) and source:
+            entry["source"] = source
+        missing_conditions = string_list(item.get("missing_conditions"))
+        if missing_conditions:
+            entry["missing_conditions"] = missing_conditions
+        missing.append(entry)
+    return missing
 
 
 def build_proof_summary(report: dict[str, Any]) -> dict[str, Any]:

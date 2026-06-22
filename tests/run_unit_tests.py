@@ -3681,6 +3681,19 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             )
             if not any(item.get("name") == "threshold_tuning" for item in proof_summary["proof_items"]):
                 raise AssertionError("autonomy evidence package proof summary missing threshold item")
+            missing_proof_entries = [
+                item for item in manifest["missing"] if item.get("reason") == "proof_gate_not_passed"
+            ]
+            if not any(item.get("label") == "proof:threshold_tuning" for item in missing_proof_entries):
+                raise AssertionError("autonomy evidence package missing proof-gate placeholder")
+            threshold_missing = next(
+                item for item in missing_proof_entries if item.get("label") == "proof:threshold_tuning"
+            )
+            assert_equal(
+                threshold_missing["missing_conditions"],
+                REQUIRED_FIELD_CONDITIONS,
+                "autonomy evidence package proof-gate missing conditions",
+            )
             if not any(item["label"] == "input:support_bundle" for item in manifest["included"]):
                 raise AssertionError("autonomy evidence package did not include support manifest artifact")
             if not any(item["label"] == "input:field_collection_plan" for item in manifest["included"]):

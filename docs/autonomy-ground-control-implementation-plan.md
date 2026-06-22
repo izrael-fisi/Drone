@@ -689,6 +689,10 @@ Status:
   plan source snapshot plus a bounded goal-proof summary and proof-runbook
   summary with proof pass counts, first proof items, completion-blocker count,
   external-blocker count, and ordered phase state.
+- Done: evidence-package manifests now list failed required proof gates as
+  missing `proof:<check>` entries even when no artifact path exists yet, so an
+  incomplete package cannot appear artifact-complete just because PX4, field,
+  feature, threshold, or ROS proof has not been produced.
 - Done: the Pi and local autonomy-readiness wrappers emit
   `__VISION_NAV_PX4_SITL_REPORT__=...` when direct receiver proof is available,
   letting Module Setup download the receiver report beside the final audit.
