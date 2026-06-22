@@ -2439,9 +2439,15 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                     "### Track 4: Desktop Setup And Mission UX",
                     "### Track 5: Validation And Product Risk Controls",
                     "### Track 6: ArduPilot Adapter Path",
+                    "Tasks:",
+                    "1. Collect proof artifacts for the active implementation tracks.",
+                    "Next tasks:",
+                    "1. Re-run the final readiness audit after proof artifacts exist.",
                     "Acceptance checks:",
                     "- ArduPilot support never becomes the default output path.",
                     "- Runtime adapter work remains gated behind PX4 proof.",
+                    "## Execution Order",
+                    "1. Finish PX4 bench evidence before optional adapters.",
                 ]
             )
         )
@@ -2812,6 +2818,21 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             2,
             "autonomy readiness implementation acceptance checks",
         )
+        assert_equal(
+            ready["plan_snapshot"]["implementation_plan"]["task_count"],
+            1,
+            "autonomy readiness implementation task count",
+        )
+        assert_equal(
+            ready["plan_snapshot"]["implementation_plan"]["next_task_count"],
+            1,
+            "autonomy readiness implementation next task count",
+        )
+        assert_equal(
+            ready["plan_snapshot"]["implementation_plan"]["execution_order_count"],
+            1,
+            "autonomy readiness implementation execution order",
+        )
         ready_checks = {check["name"]: check["status"] for check in ready["checks"]}
         ready_check_details = {check["name"]: check.get("details") or {} for check in ready["checks"]}
         assert_equal(ready_checks["support_bundle_bench_readiness"], "passed", "autonomy readiness support bundle")
@@ -2866,6 +2887,49 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         if "./scripts/dev/run_local_autonomy_readiness_audit.sh" not in ready_runbook_phases["final_audit"]["commands"]:
             raise AssertionError("autonomy readiness proof runbook missing final local audit command")
+
+        headings_only_plan = root / "implementation_plan_headings_only.md"
+        headings_only_plan.write_text(
+            "\n".join(
+                [
+                    "# Autonomy And Ground Control Implementation Plan",
+                    "### Track 1: External Position Output",
+                    "### Track 2: ROS 2 Companion Runtime",
+                    "### Track 3: Terrain Map Bundle Pipeline",
+                    "### Track 4: Desktop Setup And Mission UX",
+                    "### Track 5: Validation And Product Risk Controls",
+                    "### Track 6: ArduPilot Adapter Path",
+                ]
+            )
+        )
+        headings_only_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=headings_only_plan,
+            support_bundle_path=direct_report_support_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
+        )
+        headings_only_checks = {check["name"]: check["status"] for check in headings_only_ready["checks"]}
+        assert_equal(headings_only_ready["status"], "failed", "autonomy readiness rejects headings-only plan")
+        assert_equal(
+            headings_only_checks["implementation_plan"],
+            "failed",
+            "autonomy readiness implementation plan requires executable scaffolding",
+        )
+        implementation_plan_actions = [
+            action
+            for action in headings_only_ready["next_actions"]
+            if action.get("check") == "implementation_plan"
+        ]
+        assert_equal(len(implementation_plan_actions), 1, "autonomy readiness implementation plan next action")
+        if "autonomy-ground-control-implementation-plan.md" not in implementation_plan_actions[0]["command"]:
+            raise AssertionError("autonomy readiness implementation plan action should point to the plan doc")
 
         missing_metadata_audit_field_report = root / "field_evidence_missing_metadata_audit.json"
         missing_metadata_field_data = json.loads(field_report.read_text())

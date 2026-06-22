@@ -203,12 +203,7 @@ def evaluate_autonomy_readiness(
             RESEARCH_DOC_MARKERS,
             "Autonomy research doc covers references, architecture, and integration plan.",
         ),
-        check_doc_markers(
-            "implementation_plan",
-            implementation_plan_path,
-            IMPLEMENTATION_PLAN_MARKERS,
-            "Implementation plan covers the required delivery tracks.",
-        ),
+        check_implementation_plan_source(implementation_plan_path),
         support_report["check"],
         check_px4_receiver_proof(px4_sitl_session_path, px4_sitl_report_path, support_checks),
         check_field_collection_plan(field_collection_plan_path, support_manifest=support_manifest),
@@ -563,6 +558,18 @@ def blocker_summary(item: dict[str, Any]) -> dict[str, Any]:
 
 def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     actions = {
+        "research_doc": {
+            "title": "Restore the autonomy ground-control research source document.",
+            "desktop_action": "Repo docs > autonomy-ground-control-research.md",
+            "command": "sed -n '1,260p' docs/autonomy-ground-control-research.md",
+            "notes": "The final audit requires the research document sections for references, architecture, and near-term integration plan.",
+        },
+        "implementation_plan": {
+            "title": "Update the autonomy ground-control implementation plan.",
+            "desktop_action": "Repo docs > autonomy-ground-control-implementation-plan.md",
+            "command": "sed -n '1,900p' docs/autonomy-ground-control-implementation-plan.md",
+            "notes": "The implementation plan must include all delivery tracks, executable task lists, acceptance checks, and execution order.",
+        },
         "support_bundle_bench_readiness": {
             "title": "Create a support bundle with bench evidence.",
             "desktop_action": "Module Setup > Bench Report",
@@ -856,6 +863,37 @@ def check_doc_markers(name: str, path: str | Path, markers: list[str], message: 
     if missing:
         return failed(name, f"{source} is missing required plan sections.", details)
     return passed(name, message, details)
+
+
+def check_implementation_plan_source(path: str | Path) -> dict[str, Any]:
+    summary = summarize_implementation_plan(path)
+    details = {
+        "path": summary["path"],
+        "required_marker_count": summary["required_marker_count"],
+        "missing_markers": summary["missing_markers"],
+        "track_count": summary["track_count"],
+        "task_count": summary["task_count"],
+        "next_task_count": summary["next_task_count"],
+        "acceptance_check_count": summary["acceptance_check_count"],
+        "execution_order_count": summary["execution_order_count"],
+    }
+    if not summary["exists"]:
+        return failed("implementation_plan", f"Missing {summary['path']}.", details)
+    if summary["missing_markers"]:
+        return failed("implementation_plan", f"{summary['path']} is missing required delivery tracks.", details)
+    if summary["track_count"] < summary["required_marker_count"]:
+        return failed("implementation_plan", "Implementation plan track count is incomplete.", details)
+    if summary["task_count"] + summary["next_task_count"] <= 0:
+        return failed("implementation_plan", "Implementation plan is missing executable task lists.", details)
+    if summary["acceptance_check_count"] <= 0:
+        return failed("implementation_plan", "Implementation plan is missing acceptance checks.", details)
+    if summary["execution_order_count"] <= 0:
+        return failed("implementation_plan", "Implementation plan is missing execution order.", details)
+    return passed(
+        "implementation_plan",
+        "Implementation plan covers delivery tracks, tasks, acceptance checks, and execution order.",
+        details,
+    )
 
 
 def build_plan_snapshot(
