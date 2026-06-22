@@ -334,14 +334,21 @@ def build_command_bundle(
     proof_runbook: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     guided_workflow_commands = ["./scripts/pi/run_autonomy_evidence_workflow.sh"] if next_actions else []
-    next_action_commands = unique_strings(
+    raw_next_action_commands = unique_strings(
         action.get("command")
         for action in next_actions
         if isinstance(action, dict)
     )
     immediate_next_action_commands, blocked_follow_up_commands = proof_runbook_command_groups(
         proof_runbook,
-        fallback_commands=next_action_commands,
+        fallback_commands=raw_next_action_commands,
+    )
+    next_action_commands = unique_strings(
+        [
+            *immediate_next_action_commands,
+            *blocked_follow_up_commands,
+            *raw_next_action_commands,
+        ]
     )
     field_collection_capture_commands = field_collection_commands(field_collection_plan_path, "capture_command")
     field_collection_registration_commands = field_collection_commands(field_collection_plan_path, "register_command")

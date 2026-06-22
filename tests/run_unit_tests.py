@@ -2894,6 +2894,9 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "autonomy proof runbook bench action order",
         )
         missing_proof_command_bundle = missing_proof_ready["command_bundle"]
+        missing_proof_next_commands = missing_proof_command_bundle["next_action_commands"]
+        if missing_proof_next_commands.index(px4_capture_command) > missing_proof_next_commands.index(support_bundle_command):
+            raise AssertionError("autonomy command bundle should order PX4 receiver proof before support bundle")
         if "./scripts/pi/run_threshold_tuning_report.sh" not in missing_proof_command_bundle["blocked_follow_up_commands"]:
             raise AssertionError("autonomy readiness should mark threshold tuning as blocked follow-up")
         if "./scripts/pi/run_rosbag_export_validation.sh" not in missing_proof_command_bundle["blocked_follow_up_commands"]:
@@ -2903,6 +2906,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             in missing_proof_command_bundle["immediate_next_action_commands"]
         ):
             raise AssertionError("autonomy readiness should not copy blocked ROS replay validation as immediate")
+        if missing_proof_next_commands.index(
+            "./scripts/pi/run_rosbag_export_validation.sh"
+        ) < missing_proof_next_commands.index(
+            "./scripts/pi/create_field_collection_plan.sh && VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/register_field_replay_case.sh"
+        ):
+            raise AssertionError("autonomy command bundle should list blocked ROS replay after immediate field capture")
 
         ready = evaluate_autonomy_readiness(
             research_doc_path=research_doc,

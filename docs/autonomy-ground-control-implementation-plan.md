@@ -621,15 +621,16 @@ Status:
   standalone `ROS Bag Validation` action and the
   `scripts/pi/run_rosbag_export_validation.sh` wrapper instead of asking
   operators to hand-run the lower-level export and validator commands.
-- Done: Module Setup can copy all shell commands from an autonomy-readiness
-  report's next actions in one click, while preserving per-action command copy.
+- Done: Module Setup can copy grouped shell commands from an
+  autonomy-readiness report's next actions, while preserving per-action command
+  copy.
 - Done: autonomy-readiness JSON reports include a machine-readable
-  `command_bundle` with the guided evidence-workflow command, all next-action
-  commands, immediately runnable next-action commands, blocked follow-up
-  commands, pending field replay capture commands, and pending field replay
-  registration commands for downstream support tooling, and Module Setup
-  consumes that bundle for split bulk command copy plus saved setup-report
-  exports.
+  `command_bundle` with the guided evidence-workflow command,
+  dependency-ordered next-action commands, immediately runnable next-action
+  commands, blocked follow-up commands, pending field replay capture commands,
+  and pending field replay registration commands for downstream support
+  tooling, and Module Setup consumes that bundle for split bulk command copy
+  plus saved setup-report exports.
 - Done: the Tauri report parser now preserves
   `field_collection_capture_commands` from downloaded autonomy-readiness
   reports, so Module Setup bulk-copy and saved setup reports retain the exact

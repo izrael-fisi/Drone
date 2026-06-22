@@ -567,9 +567,10 @@ Readiness report cards also provide bulk command copy actions for immediately
 runnable next-action shell commands and blocked follow-up commands, while
 preserving each row's individual command copy control. The underlying JSON
 report includes the same split command bundle for downstream support tooling,
-and Module Setup reads that bundle directly so bulk copy still works when the
-referenced Pi-side field plan is only available as downloaded report metadata.
-Saved setup reports also include the latest readiness report's
+with its compatibility `next_action_commands` list ordered by proof-runbook
+dependencies. Module Setup reads that bundle directly so bulk copy still works
+when the referenced Pi-side field plan is only available as downloaded report
+metadata. Saved setup reports also include the latest readiness report's
 `command_bundle`.
 If the readiness report points to a local field collection plan, the same card
 shows the plan status, registered-vs-required count, pending condition count,
