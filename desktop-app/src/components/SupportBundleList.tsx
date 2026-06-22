@@ -5,6 +5,8 @@ import type { FieldCollectionPlanCondition, SupportBundleDetails, SupportBundleF
 
 type WorkflowValidationSummary = NonNullable<SupportBundleDetails["autonomy_evidence_workflow_validation"]>;
 type WorkflowValidationStep = WorkflowValidationSummary["checks"][number]["non_passed_steps"][number];
+type FieldCapturePreflightCheck = SupportBundleDetails["field_capture_preflight_reports"][number]["checks"][number];
+type BundleDiagnostic = NonNullable<FieldCapturePreflightCheck["bundle_diagnostic"]>;
 
 function formatBundleSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -897,6 +899,9 @@ function SupportBundleDetailPanel({
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Field capture preflight</div>
           {details.field_capture_preflight_reports.slice(0, 2).map((report, index) => {
             const commandActions = report.next_actions.filter((action) => action.command);
+            const bundleDiagnostics = report.checks
+              .map((check) => check.bundle_diagnostic)
+              .filter((diagnostic): diagnostic is BundleDiagnostic => Boolean(diagnostic));
             return (
               <div key={`${report.condition}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -935,6 +940,82 @@ function SupportBundleDetailPanel({
                         {statusIcon(check.status)}
                         {formatLabel(check.name)} {formatLabel(check.status)}
                       </span>
+                    ))}
+                  </div>
+                )}
+                {bundleDiagnostics.length > 0 && (
+                  <div className="space-y-1 rounded border border-cyan-500/20 bg-cyan-500/5 px-2 py-1 text-[10px] text-slate-400">
+                    {bundleDiagnostics.slice(0, 1).map((diagnostic, diagnosticIndex) => (
+                      <div key={`${report.condition}-bundle-diagnostic-${diagnosticIndex}`} className="space-y-1">
+                        {diagnostic.missing_required_files.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            <span className="text-slate-500">missing</span>
+                            {diagnostic.missing_required_files.slice(0, 5).map((file) => (
+                              <span key={`${report.condition}-missing-${file}`} className="rounded bg-bg-base/70 px-1 font-mono text-slate-300">
+                                {file}
+                              </span>
+                            ))}
+                            {diagnostic.missing_required_files.length > 5 && (
+                              <span className="text-slate-500">+{diagnostic.missing_required_files.length - 5}</span>
+                            )}
+                          </div>
+                        )}
+                        {diagnostic.bundle_candidates.length > 0 && (
+                          <div className="space-y-0.5">
+                            <div className="text-slate-500">bundle candidates {diagnostic.bundle_candidate_count ?? diagnostic.bundle_candidates.length}</div>
+                            {diagnostic.bundle_candidates.slice(0, 2).map((candidate) => (
+                              <div key={`${report.condition}-candidate-${candidate.path}`} className="flex min-w-0 flex-wrap items-center gap-1">
+                                <span className="font-mono text-slate-300 truncate">{formatLabel(candidate.path)}</span>
+                                {candidate.bundle_id && <span className="badge-yellow">{formatLabel(candidate.bundle_id)}</span>}
+                                {candidate.field_proof_warning && (
+                                  <span className="badge-yellow" title={candidate.field_proof_warning}>smoke only</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {diagnostic.map_source_candidates.length > 0 && (
+                          <div className="space-y-0.5">
+                            <div className="text-slate-500">map sources {diagnostic.map_source_candidate_count ?? diagnostic.map_source_candidates.length}</div>
+                            {diagnostic.map_source_candidates.slice(0, 2).map((source) => (
+                              <div key={`${report.condition}-map-source-${source.path}`} className="flex min-w-0 flex-wrap items-center gap-1">
+                                <span className="font-mono text-slate-300 truncate">{formatLabel(source.path)}</span>
+                                <span className="badge-green">{formatLabel(source.name)}</span>
+                                {source.georef_source && <span className="badge-yellow">{formatLabel(source.georef_source)}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {diagnostic.recommended_actions.length > 0 && (
+                          <div className="space-y-0.5">
+                            {diagnostic.recommended_actions.slice(0, 2).map((action, actionIndex) => (
+                              action.command ? (
+                                <button
+                                  key={`${report.condition}-diagnostic-action-${action.id}-${actionIndex}`}
+                                  type="button"
+                                  onClick={() => action.command && navigator.clipboard.writeText(action.command)}
+                                  className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/60 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
+                                  title={action.command}
+                                >
+                                  <Clipboard size={9} className="shrink-0" />
+                                  <span className="shrink-0 text-slate-500">{formatLabel(action.id)}</span>
+                                  <span className={statusClass(action.status)}>{formatLabel(action.status)}</span>
+                                  <span className="truncate whitespace-pre">{action.command}</span>
+                                </button>
+                              ) : (
+                                <div
+                                  key={`${report.condition}-diagnostic-action-${action.id}-${actionIndex}`}
+                                  className="flex min-w-0 flex-wrap items-center gap-1 rounded border border-border/40 bg-bg-base/40 px-2 py-1"
+                                >
+                                  <span className={statusClass(action.status)}>{formatLabel(action.status)}</span>
+                                  <span className="truncate">{formatLabel(action.title)}</span>
+                                  {action.desktop_action && <span className="font-mono text-slate-500">{action.desktop_action}</span>}
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}

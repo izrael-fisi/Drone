@@ -410,6 +410,33 @@ export interface SupportBundleDetails {
       validation_command?: string;
       missing?: unknown;
       issue_count?: number;
+      bundle_diagnostic?: {
+        bundle_exists?: boolean;
+        missing_required_files: string[];
+        bundle_candidate_count?: number;
+        map_source_candidate_count?: number;
+        bundle_candidates: Array<{
+          path?: string;
+          bundle_id?: string;
+          tile_index_exists?: boolean;
+          field_proof_warning?: string;
+        }>;
+        map_source_candidates: Array<{
+          path?: string;
+          name?: string;
+          source?: string;
+          georef_source?: string;
+        }>;
+        recommended_actions: Array<{
+          id?: string;
+          status?: string;
+          title?: string;
+          desktop_action?: string;
+          command?: string;
+          bundle_path?: string;
+          map_source_path?: string;
+        }>;
+      };
     }>;
     next_actions: Array<{
       id?: string;

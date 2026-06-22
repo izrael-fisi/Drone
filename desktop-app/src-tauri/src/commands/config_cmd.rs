@@ -359,6 +359,44 @@ pub struct SupportBundleFieldCollectionPlanReport {
 }
 
 #[derive(Serialize)]
+pub struct SupportBundleDiagnosticBundleCandidate {
+    pub path: Option<String>,
+    pub bundle_id: Option<String>,
+    pub tile_index_exists: Option<bool>,
+    pub field_proof_warning: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleDiagnosticMapSourceCandidate {
+    pub path: Option<String>,
+    pub name: Option<String>,
+    pub source: Option<String>,
+    pub georef_source: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleDiagnosticAction {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub title: Option<String>,
+    pub desktop_action: Option<String>,
+    pub command: Option<String>,
+    pub bundle_path: Option<String>,
+    pub map_source_path: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleDiagnostic {
+    pub bundle_exists: Option<bool>,
+    pub missing_required_files: Vec<String>,
+    pub bundle_candidate_count: Option<u64>,
+    pub map_source_candidate_count: Option<u64>,
+    pub bundle_candidates: Vec<SupportBundleDiagnosticBundleCandidate>,
+    pub map_source_candidates: Vec<SupportBundleDiagnosticMapSourceCandidate>,
+    pub recommended_actions: Vec<SupportBundleDiagnosticAction>,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleFieldCapturePreflightCheck {
     pub name: Option<String>,
     pub status: Option<String>,
@@ -368,6 +406,7 @@ pub struct SupportBundleFieldCapturePreflightCheck {
     pub validation_command: Option<String>,
     pub missing: Option<serde_json::Value>,
     pub issue_count: Option<u64>,
+    pub bundle_diagnostic: Option<SupportBundleDiagnostic>,
 }
 
 #[derive(Serialize)]
@@ -1361,8 +1400,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
                     field_collection_plan_reports.push(report);
                 }
             }
-        } else if name.starts_with("summaries/field_capture_preflights/")
-            && name.ends_with(".json")
+        } else if name.starts_with("summaries/field_capture_preflights/") && name.ends_with(".json")
         {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 if let Some(report) = field_capture_preflight_report_from_json(&value) {
@@ -4053,6 +4091,11 @@ fn field_collection_plan_report_from_json(
 fn field_capture_preflight_check_from_json(
     value: &serde_json::Value,
 ) -> SupportBundleFieldCapturePreflightCheck {
+    let bundle_diagnostic = value
+        .get("bundle_diagnostic")
+        .or_else(|| value.pointer("/details/bundle_diagnostic"))
+        .or_else(|| value.pointer("/details/diagnostic"))
+        .and_then(support_bundle_diagnostic_from_json);
     SupportBundleFieldCapturePreflightCheck {
         name: json_string(value.get("name")),
         status: json_string(value.get("status")),
@@ -4071,7 +4114,82 @@ fn field_capture_preflight_check_from_json(
             .get("issue_count")
             .or_else(|| value.pointer("/details/issue_count"))
             .and_then(|value| value.as_u64()),
+        bundle_diagnostic,
     }
+}
+
+fn support_bundle_diagnostic_from_json(
+    value: &serde_json::Value,
+) -> Option<SupportBundleDiagnostic> {
+    if !value.is_object() {
+        return None;
+    }
+    let bundle_candidates = value
+        .get("bundle_candidates")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| SupportBundleDiagnosticBundleCandidate {
+                    path: json_string(item.get("path")),
+                    bundle_id: json_string(item.get("bundle_id")),
+                    tile_index_exists: item
+                        .get("tile_index_exists")
+                        .and_then(|value| value.as_bool()),
+                    field_proof_warning: json_string(item.get("field_proof_warning")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let map_source_candidates = value
+        .get("map_source_candidates")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| SupportBundleDiagnosticMapSourceCandidate {
+                    path: json_string(item.get("path")),
+                    name: json_string(item.get("name")),
+                    source: json_string(item.get("source")),
+                    georef_source: json_string(item.get("georef_source")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let recommended_actions = value
+        .get("recommended_actions")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| SupportBundleDiagnosticAction {
+                    id: json_string(item.get("id")),
+                    status: json_string(item.get("status")),
+                    title: json_string(item.get("title")),
+                    desktop_action: json_string(item.get("desktop_action")),
+                    command: json_string(item.get("command")),
+                    bundle_path: json_string(item.get("bundle_path")),
+                    map_source_path: json_string(item.get("map_source_path")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Some(SupportBundleDiagnostic {
+        bundle_exists: value.get("bundle_exists").and_then(|value| value.as_bool()),
+        missing_required_files: json_string_array(value.get("missing_required_files")),
+        bundle_candidate_count: value
+            .get("bundle_candidate_count")
+            .and_then(|value| value.as_u64()),
+        map_source_candidate_count: value
+            .get("map_source_candidate_count")
+            .and_then(|value| value.as_u64()),
+        bundle_candidates,
+        map_source_candidates,
+        recommended_actions,
+    })
 }
 
 fn field_capture_preflight_action_from_json(
@@ -4129,7 +4247,9 @@ fn field_capture_preflight_report_from_json(
         expected: json_string(value.get("expected")),
         bundle_path: json_string(value.get("bundle_path")),
         bundle_validation_command: json_string(value.get("bundle_validation_command")),
-        ready_for_capture: value.get("ready_for_capture").and_then(|value| value.as_bool()),
+        ready_for_capture: value
+            .get("ready_for_capture")
+            .and_then(|value| value.as_bool()),
         ready_for_registration: value
             .get("ready_for_registration")
             .and_then(|value| value.as_bool()),
@@ -5196,9 +5316,15 @@ mod tests {
             Some(0)
         );
         assert_eq!(summary.field_capture_preflight_failed_check_count, Some(1));
-        assert_eq!(summary.field_capture_preflight_degraded_check_count, Some(1));
+        assert_eq!(
+            summary.field_capture_preflight_degraded_check_count,
+            Some(1)
+        );
         assert_eq!(summary.field_capture_preflight_next_action_count, Some(2));
-        assert_eq!(summary.field_capture_preflight_blocked_action_count, Some(1));
+        assert_eq!(
+            summary.field_capture_preflight_blocked_action_count,
+            Some(1)
+        );
         assert_eq!(summary.threshold_tuning_status.as_deref(), Some("passed"));
         assert_eq!(summary.threshold_tuning_field_case_count, Some(8));
         assert_eq!(
@@ -6552,7 +6678,9 @@ mod tests {
         );
         assert_eq!(
             next_step.runtime_status_path.as_deref(),
-            Some("/home/user/DroneTransfer/outgoing/field-captures/good_texture/runtime_status.json")
+            Some(
+                "/home/user/DroneTransfer/outgoing/field-captures/good_texture/runtime_status.json"
+            )
         );
         assert_eq!(
             next_step.capture_command_after_bundle.as_deref(),
@@ -7516,6 +7644,37 @@ mod tests {
                                 "path": "/home/user/drone-data/map_bundles/mission_bundle",
                                 "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
                                 "validation_command": "VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh"
+                            },
+                            "bundle_diagnostic": {
+                                "bundle_exists": false,
+                                "missing_required_files": ["manifest.json", "ortho/map.png", "features/map_features.npz", "index/tiles.sqlite"],
+                                "bundle_candidate_count": 1,
+                                "map_source_candidate_count": 1,
+                                "bundle_candidates": [
+                                    {
+                                        "path": "/home/user/Drone/map_bundles/example",
+                                        "bundle_id": "example-single-image",
+                                        "tile_index_exists": false,
+                                        "field_proof_warning": "Example or synthetic bundles are useful for tooling smoke tests but do not satisfy real field evidence."
+                                    }
+                                ],
+                                "map_source_candidates": [
+                                    {
+                                        "path": "/home/user/maps/field-area",
+                                        "name": "Field Area",
+                                        "source": "uploaded_geotiff",
+                                        "georef_source": "geotiff_embedded"
+                                    }
+                                ],
+                                "recommended_actions": [
+                                    {
+                                        "id": "build_or_upload_selected_bundle",
+                                        "status": "action_required",
+                                        "title": "Build and upload the selected Mission Planner terrain bundle.",
+                                        "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                                        "command": "VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh"
+                                    }
+                                ]
                             }
                         },
                         {
@@ -7945,9 +8104,7 @@ mod tests {
         }));
         assert_eq!(details.field_capture_preflight_reports.len(), 1);
         assert_eq!(
-            details.field_capture_preflight_reports[0]
-                .status
-                .as_deref(),
+            details.field_capture_preflight_reports[0].status.as_deref(),
             Some("failed")
         );
         assert_eq!(
@@ -7967,13 +8124,40 @@ mod tests {
                 .as_deref(),
             Some("VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh")
         );
+        let bundle_diagnostic = details.field_capture_preflight_reports[0].checks[0]
+            .bundle_diagnostic
+            .as_ref()
+            .expect("bundle diagnostic parsed");
+        assert_eq!(
+            bundle_diagnostic.missing_required_files,
+            vec![
+                "manifest.json".to_string(),
+                "ortho/map.png".to_string(),
+                "features/map_features.npz".to_string(),
+                "index/tiles.sqlite".to_string()
+            ]
+        );
+        assert_eq!(bundle_diagnostic.bundle_candidate_count, Some(1));
+        assert_eq!(
+            bundle_diagnostic.bundle_candidates[0].field_proof_warning.as_deref(),
+            Some("Example or synthetic bundles are useful for tooling smoke tests but do not satisfy real field evidence.")
+        );
+        assert_eq!(
+            bundle_diagnostic.map_source_candidates[0].name.as_deref(),
+            Some("Field Area")
+        );
+        assert_eq!(
+            bundle_diagnostic.recommended_actions[0]
+                .desktop_action
+                .as_deref(),
+            Some("Mission Planner > Build Bundle, Upload Bundle")
+        );
         assert_eq!(
             details.field_capture_preflight_reports[0].checks[1].issue_count,
             Some(2)
         );
         assert_eq!(
-            details.field_capture_preflight_reports[0].next_actions[1]
-                .waits_on,
+            details.field_capture_preflight_reports[0].next_actions[1].waits_on,
             vec!["bundle_path".to_string()]
         );
         assert!(details.artifacts.iter().any(|artifact| {
