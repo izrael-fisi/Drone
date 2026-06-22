@@ -966,6 +966,9 @@ proof-runbook phase counts, and next commands from
 `vision-nav-autonomy-readiness`. When proof is still missing, it also shows the
 ordered `./scripts/pi/run_autonomy_evidence_workflow.sh` as a guided workflow
 option that preserves partial artifacts while prerequisites are collected. Its
+field collection preview lists the next required condition, the remaining
+operator-readable conditions, and their expected `good_map`, `degraded`, or
+`wrong_map` behavior before real logs are registered. Its
 command list follows the proof runbook, so blocked method/threshold or
 final-audit work is shown as waiting on upstream phases instead of mixed into
 the runnable command list. It also prints a separate blocked follow-up command

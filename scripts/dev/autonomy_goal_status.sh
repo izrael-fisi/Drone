@@ -260,9 +260,106 @@ if [[ -n "$json_copy" ]]; then
   cp "$tmp_report" "$json_copy"
 fi
 
-"$python_bin" - "$tmp_report" <<'PY'
+PYTHONPATH="$repo_root/src" "$python_bin" - "$tmp_report" <<'PY'
 import json
 import sys
+
+try:
+    from vision_nav.field_conditions import (
+        REQUIRED_FIELD_CONDITIONS,
+        expected_behavior_for_condition,
+        label_for_condition,
+    )
+except Exception:  # pragma: no cover - keeps this formatter useful from partial checkouts.
+    REQUIRED_FIELD_CONDITIONS = [
+        "good_texture",
+        "low_texture",
+        "blur",
+        "seasonal_change",
+        "lighting_change",
+        "altitude_scale_change",
+        "repeated_patterns",
+        "wrong_map",
+    ]
+
+    def expected_behavior_for_condition(condition):
+        return "wrong_map" if condition == "wrong_map" else "degraded"
+
+    def label_for_condition(condition):
+        return str(condition).replace("_", " ").title()
+
+
+FIELD_COLLECTION_CHECKS = {"field_collection_plan", "field_evidence_proof", "threshold_tuning"}
+
+
+def unique_ordered(values):
+    seen = set()
+    ordered = []
+    for value in values:
+        if value is None:
+            continue
+        key = str(value)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        ordered.append(key)
+    return ordered
+
+
+def order_field_conditions(values):
+    values = unique_ordered(values)
+    known = [condition for condition in REQUIRED_FIELD_CONDITIONS if condition in values]
+    unknown = [condition for condition in values if condition not in REQUIRED_FIELD_CONDITIONS]
+    return known + unknown
+
+
+def field_condition_from_details(item):
+    details = item.get("details") if isinstance(item.get("details"), dict) else {}
+    next_condition = details.get("next_condition")
+    if isinstance(next_condition, dict) and next_condition.get("condition"):
+        return next_condition
+    return None
+
+
+def field_condition_names_from_report(report, external_blockers):
+    names = []
+    for item in report.get("checks") or []:
+        if not isinstance(item, dict) or item.get("name") not in FIELD_COLLECTION_CHECKS:
+            continue
+        details = item.get("details") if isinstance(item.get("details"), dict) else {}
+        names.extend(details.get("missing_conditions") or [])
+        names.extend(details.get("required_conditions") or [])
+    for blocker in external_blockers:
+        if not isinstance(blocker, dict) or blocker.get("name") not in FIELD_COLLECTION_CHECKS:
+            continue
+        names.extend(blocker.get("missing_conditions") or [])
+    return order_field_conditions(names)
+
+
+def find_next_field_condition(report, missing_conditions):
+    for item in report.get("checks") or []:
+        if not isinstance(item, dict) or item.get("name") != "field_collection_plan":
+            continue
+        next_condition = field_condition_from_details(item)
+        if next_condition:
+            return next_condition
+    if missing_conditions:
+        condition = missing_conditions[0]
+        return {
+            "condition": condition,
+            "label": label_for_condition(condition),
+            "expected": expected_behavior_for_condition(condition),
+        }
+    return None
+
+
+def print_multiline_command(prefix, command):
+    if not command:
+        return
+    print(prefix)
+    for line in str(command).splitlines():
+        print(f"  {line}")
+
 
 report_path = sys.argv[1]
 with open(report_path, "r", encoding="utf-8") as handle:
@@ -356,6 +453,43 @@ if external_blockers:
             print(f"  missing conditions: {visible}{extra}")
     if len(external_blockers) > 12:
         print(f"- ... {len(external_blockers) - 12} more")
+
+field_conditions = field_condition_names_from_report(report, external_blockers)
+next_field_condition = find_next_field_condition(report, field_conditions)
+if field_conditions or next_field_condition:
+    print()
+    print("Field collection preview:")
+    if next_field_condition:
+        condition = str(next_field_condition.get("condition") or "")
+        label = next_field_condition.get("label") or label_for_condition(condition)
+        expected = next_field_condition.get("expected") or expected_behavior_for_condition(condition)
+        status = next_field_condition.get("status")
+        suffix = f", status {status}" if status else ""
+        print(f"- next: {label} ({condition}), expected {expected}{suffix}")
+        capture_output_dir = next_field_condition.get("capture_output_dir")
+        runtime_status_path = next_field_condition.get("runtime_status_path")
+        source_log = next_field_condition.get("source_log")
+        if capture_output_dir:
+            print(f"  capture output: {capture_output_dir}")
+        if source_log:
+            print(f"  terrain log: {source_log}")
+        if runtime_status_path:
+            print(f"  runtime status: {runtime_status_path}")
+        print_multiline_command("  capture command:", next_field_condition.get("capture_command"))
+        print_multiline_command("  register command:", next_field_condition.get("register_command"))
+    remaining = [
+        condition
+        for condition in field_conditions
+        if not next_field_condition or condition != next_field_condition.get("condition")
+    ]
+    if remaining:
+        print("- remaining required conditions:")
+        for condition in remaining[:12]:
+            print(f"  - {label_for_condition(condition)} ({condition}), expected {expected_behavior_for_condition(condition)}")
+        if len(remaining) > 12:
+            print(f"  - ... {len(remaining) - 12} more")
+    if not next_field_condition or not next_field_condition.get("capture_command"):
+        print("- create or refresh the Pi field collection plan to get condition-specific capture/register commands.")
 
 px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
 if isinstance(px4_prereqs, dict):

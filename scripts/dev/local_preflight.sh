@@ -558,6 +558,9 @@ grep -q "method_thresholds \\[blocked\\]" "$goal_status_output"
 grep -q "ros2_replay \\[blocked\\]" "$goal_status_output"
 grep -q "waiting on: field_dataset=action_required" "$goal_status_output"
 grep -q "External proof blockers:" "$goal_status_output"
+grep -q "Field collection preview:" "$goal_status_output"
+grep -q "Good texture, matching map (good_texture), expected good_map" "$goal_status_output"
+grep -q "Wrong-map rejection (wrong_map), expected wrong_map" "$goal_status_output"
 grep -q "Guided workflow option:" "$goal_status_output"
 grep -q "./scripts/pi/run_autonomy_evidence_workflow.sh" "$goal_status_output"
 grep -q "Next commands:" "$goal_status_output"
@@ -667,6 +670,8 @@ grep -q "Diagnostics:" "$scanned_goal_status_output"
 grep -q "px4_autopilot_dir" "$scanned_goal_status_output"
 grep -q "PX4-Autopilot directory not found." "$scanned_goal_status_output"
 grep -q "fix command (Point the harness at an existing PX4 checkout)" "$scanned_goal_status_output"
+grep -q "Field collection preview:" "$scanned_goal_status_output"
+grep -q "Good texture, matching map (good_texture), expected good_map" "$scanned_goal_status_output"
 VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
