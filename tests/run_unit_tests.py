@@ -217,6 +217,14 @@ def create_minimal_terrain_bundle(root: Path, *, include_tile_index: bool = True
         descriptors=np.zeros((4, 32), dtype=np.uint8),
         offset_xy_px=np.array((0, 0), dtype=np.int32),
     )
+    (bundle / "features").mkdir(parents=True)
+    np.savez_compressed(
+        bundle / "features" / "map_features.npz",
+        method=np.array("orb"),
+        keypoints_xy=np.zeros((4, 2), dtype=np.float32),
+        descriptors=np.zeros((4, 32), dtype=np.uint8),
+        image_shape=np.array((60, 100), dtype=np.int32),
+    )
     if include_tile_index:
         index_path = bundle / "index" / "tiles.sqlite"
         with sqlite3.connect(index_path) as conn:
@@ -6036,8 +6044,7 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         if "VISION_NAV_FIELD_PREFLIGHT_COMMAND" not in selection_shell:
             raise AssertionError("Expected shell assignments to export preflight command")
 
-        ready_bundle = base / "mission_bundle"
-        ready_bundle.mkdir()
+        ready_bundle = create_minimal_terrain_bundle(base)
         ready_capture_root = base / "field-captures"
         ready_capture_root.mkdir()
         ready_manifest = base / "field_manifest_ready.json"
@@ -6068,6 +6075,17 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         )
         if "validate_terrain_bundle.sh" not in ready_preflight["bundle_validation_command"]:
             raise AssertionError("Expected preflight to include bundle validation command")
+        ready_bundle_check = next(check for check in ready_preflight["checks"] if check["name"] == "bundle_path")
+        assert_equal(
+            ready_bundle_check["status"],
+            "passed",
+            "field preflight validates the selected terrain bundle",
+        )
+        assert_equal(
+            (ready_bundle_check.get("details") or {}).get("validation", {}).get("terrain_bundle_status"),
+            "passed",
+            "field preflight reports terrain validation status",
+        )
         ready_actions = {item["id"]: item for item in ready_preflight["next_actions"]}
         assert_equal(
             ready_actions["capture_field_terrain_log"]["status"],
@@ -6156,6 +6174,40 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         )
         if "bundle_path" not in missing_capture_action.get("waits_on", []):
             raise AssertionError("Expected capture action to wait on bundle_path")
+
+        invalid_bundle = base / "invalid_bundle"
+        invalid_bundle.mkdir()
+        invalid_bundle_plan = json.loads(json.dumps(ready_plan))
+        invalid_bundle_plan["next_condition"]["bundle"] = str(invalid_bundle)
+        for item in invalid_bundle_plan["conditions"]:
+            if item["condition"] == "good_texture":
+                item["bundle"] = str(invalid_bundle)
+        invalid_bundle_plan_path = base / "field_collection_plan_invalid_bundle.json"
+        invalid_bundle_plan_path.write_text(json.dumps(invalid_bundle_plan))
+        invalid_bundle_preflight = evaluate_field_capture_preflight(
+            plan_path=invalid_bundle_plan_path,
+            repo_root=Path.cwd(),
+        )
+        assert_equal(invalid_bundle_preflight["status"], "failed", "field preflight fails invalid bundle")
+        assert_equal(
+            invalid_bundle_preflight["ready_for_capture"],
+            False,
+            "field preflight blocks capture while bundle validation fails",
+        )
+        invalid_bundle_check = next(
+            check for check in invalid_bundle_preflight["checks"] if check["name"] == "bundle_path"
+        )
+        if invalid_bundle_check["status"] != "failed":
+            raise AssertionError("Expected preflight to identify invalid bundle")
+        invalid_validation = (invalid_bundle_check.get("details") or {}).get("validation") or {}
+        if invalid_validation.get("status") != "failed":
+            raise AssertionError(f"Expected invalid bundle validation failure, got {invalid_validation}")
+        invalid_bundle_actions = {item["id"]: item for item in invalid_bundle_preflight["next_actions"]}
+        assert_equal(
+            invalid_bundle_actions["prepare_bundle"]["status"],
+            "action_required",
+            "field preflight orders bundle prep when validation fails",
+        )
 
         legacy_plan = json.loads(json.dumps(plan))
         legacy_command = (

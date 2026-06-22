@@ -332,9 +332,52 @@ def bundle_path_check(value: Any, validation_command: Any = None) -> dict[str, A
         "validation_command": command or None,
         "notes": "Build/upload the selected terrain bundle or set VISION_NAV_BUNDLE to the bundle used for this field plan.",
     }
-    if path and path.exists():
-        return passed("bundle_path", "Mission bundle exists.", details)
-    return failed("bundle_path", "Mission bundle is missing.", details)
+    if not path or not path.exists():
+        return failed("bundle_path", "Mission bundle is missing.", details)
+
+    validation = validate_selected_terrain_bundle(path)
+    details["validation"] = validation
+    if validation.get("status") != "passed":
+        return failed("bundle_path", "Mission bundle exists but did not pass terrain validation.", details)
+    return passed("bundle_path", "Mission terrain bundle exists and validates.", details)
+
+
+def validate_selected_terrain_bundle(path: Path) -> dict[str, Any]:
+    try:
+        from vision_nav.terrain_bundle import summarize_terrain_bundle
+        from vision_nav.validate_map_bundle import validate_bundle
+
+        map_summary = validate_bundle(str(path), require_features=True)
+        terrain_summary = summarize_terrain_bundle(path)
+        issues = []
+        for source, summary in (("map_bundle", map_summary), ("terrain_bundle", terrain_summary)):
+            for issue in summary.get("issues") or []:
+                if isinstance(issue, dict):
+                    issues.append(
+                        {
+                            "source": source,
+                            "severity": issue.get("severity"),
+                            "message": issue.get("message"),
+                        }
+                    )
+        status = "passed"
+        if map_summary.get("status") != "passed" or terrain_summary.get("status") != "passed":
+            status = "failed"
+        return {
+            "status": status,
+            "map_bundle_status": map_summary.get("status"),
+            "terrain_bundle_status": terrain_summary.get("status"),
+            "bundle_id": map_summary.get("bundle_id") or terrain_summary.get("bundle_id"),
+            "tile_count": terrain_summary.get("tile_count"),
+            "feature_count": terrain_summary.get("feature_count"),
+            "has_tile_index": terrain_summary.get("has_tile_index"),
+            "issues": issues[:12],
+        }
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "error": str(exc),
+        }
 
 
 def capture_output_parent_check(value: Any) -> dict[str, Any]:
