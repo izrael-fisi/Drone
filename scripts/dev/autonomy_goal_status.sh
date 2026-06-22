@@ -774,6 +774,17 @@ if bench_inputs or support_bundle_command or bench_actions:
             command = action.get("command")
             if command:
                 print(f"     command: {command}")
+            for label, key in (
+                ("field", "field_condition"),
+                ("bundle", "field_bundle"),
+                ("expected log", "field_source_log"),
+                ("output", "field_capture_output_dir"),
+                ("runtime status", "field_runtime_status_path"),
+                ("metadata update", "field_metadata_update_command"),
+            ):
+                value = action.get(key)
+                if value:
+                    print(f"     {label}: {value}")
         if len(bench_actions) > max_bench_actions:
             print(f"  - ... {len(bench_actions) - max_bench_actions} more")
     action_commands = {str(action.get("command") or "") for action in bench_actions}

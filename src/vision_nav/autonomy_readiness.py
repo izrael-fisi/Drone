@@ -330,11 +330,13 @@ def evaluate_autonomy_readiness(
     evidence_workflow_validation_report_path: str | Path | None = None,
     evidence_workflow_log_archive_path: str | Path | None = None,
 ) -> dict[str, Any]:
+    field_next_condition = field_collection_next_condition_from_path(field_collection_plan_path)
     support_report = evaluate_support_bundle(
         support_bundle_path,
         require_px4_evidence=px4_sitl_session_path is None and px4_sitl_report_path is None,
         require_feature_method_benchmark=feature_method_benchmark_report_path is None,
         require_field_evidence=field_evidence_report_path is None,
+        field_next_condition=field_next_condition,
     )
     support_checks = support_checks_by_name(support_report)
     support_manifest = support_report.get("manifest") if isinstance(support_report.get("manifest"), dict) else None
@@ -358,7 +360,7 @@ def evaluate_autonomy_readiness(
     status = readiness_status(checks)
     next_actions = next_actions_for_checks(
         checks,
-        field_collection_plan_path=field_collection_plan_path,
+        field_next_condition=field_next_condition,
     )
     plan_snapshot = build_plan_snapshot(
         research_doc_path=research_doc_path,
@@ -927,7 +929,21 @@ def compact_bench_evidence_actions(raw: Any) -> list[dict[str, str]]:
         if not isinstance(item, dict):
             continue
         compact: dict[str, str] = {}
-        for key in ("label", "desktop_action", "command", "blocked_by", "notes"):
+        for key in (
+            "label",
+            "desktop_action",
+            "command",
+            "blocked_by",
+            "notes",
+            "field_condition",
+            "field_label",
+            "field_expected",
+            "field_capture_output_dir",
+            "field_source_log",
+            "field_runtime_status_path",
+            "field_bundle",
+            "field_metadata_update_command",
+        ):
             value = item.get(key)
             if isinstance(value, str) and value:
                 compact[key] = value
@@ -1013,7 +1029,7 @@ def blocker_summary(item: dict[str, Any]) -> dict[str, Any]:
 def next_actions_for_checks(
     checks: list[dict[str, Any]],
     *,
-    field_collection_plan_path: str | Path | None = None,
+    field_next_condition: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     actions = {
         "research_doc": {
@@ -1083,7 +1099,6 @@ def next_actions_for_checks(
             "notes": "The final readiness gate requires a passed workflow validation report, including every ordered step and final proof marker.",
         },
     }
-    field_next_condition = field_collection_next_condition_from_path(field_collection_plan_path)
     next_actions: list[dict[str, Any]] = []
     for check in checks:
         name = str(check.get("name") or "")
@@ -1311,6 +1326,19 @@ def enrich_action_with_field_capture(
         action["notes"] = " ".join([str(action.get("notes") or ""), *detail_lines]).strip()
 
 
+def strict_support_bundle_actions(field_next_condition: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    actions = [dict(action) for action in STRICT_SUPPORT_BUNDLE_ACTIONS]
+    for action in actions:
+        if action.get("desktop_action") == "Module Setup > Field Log Capture, then Runtime Status":
+            enrich_action_with_field_capture(
+                action,
+                field_next_condition,
+                append_runtime_status_read=True,
+            )
+            break
+    return actions
+
+
 def next_action_missing_conditions(name: str, details: dict[str, Any]) -> list[str]:
     raw = details.get("missing_conditions")
     if raw is None and name in {"field_collection_plan", "field_evidence_proof", "threshold_tuning"}:
@@ -1326,11 +1354,13 @@ def evaluate_support_bundle(
     require_px4_evidence: bool = True,
     require_feature_method_benchmark: bool = True,
     require_field_evidence: bool = True,
+    field_next_condition: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    bench_evidence_actions = strict_support_bundle_actions(field_next_condition)
     if path is None:
         details = {
             "expected_bench_inputs": STRICT_SUPPORT_BUNDLE_INPUTS,
-            "bench_evidence_actions": STRICT_SUPPORT_BUNDLE_ACTIONS,
+            "bench_evidence_actions": bench_evidence_actions,
             "support_bundle_command": SUPPORT_BUNDLE_COMMAND,
         }
         return {
@@ -1366,7 +1396,7 @@ def evaluate_support_bundle(
         details.update(
             {
                 "expected_bench_inputs": STRICT_SUPPORT_BUNDLE_INPUTS,
-                "bench_evidence_actions": STRICT_SUPPORT_BUNDLE_ACTIONS,
+                "bench_evidence_actions": bench_evidence_actions,
                 "support_bundle_command": SUPPORT_BUNDLE_COMMAND,
             }
         )

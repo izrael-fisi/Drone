@@ -4654,6 +4654,32 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "blur",
             "autonomy readiness runtime-status action should name next field condition",
         )
+        field_support_check = next(
+            check
+            for check in missing_runtime_status_with_next_field["checks"]
+            if check.get("name") == "support_bundle_bench_readiness"
+        )
+        field_bench_actions = field_support_check["details"]["bench_evidence_actions"]
+        if not any(
+            action.get("command") == "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh"
+            and action.get("field_condition") == "blur"
+            for action in field_bench_actions
+            if isinstance(action, dict)
+        ):
+            raise AssertionError("autonomy readiness bench preview should use next field capture command")
+        field_support_blockers = [
+            blocker
+            for blocker in missing_runtime_status_with_next_field["evidence_manifest"]["external_blockers"]
+            if blocker.get("name") == "support_bundle_bench_readiness"
+        ]
+        assert_equal(len(field_support_blockers), 1, "autonomy readiness field support blocker")
+        if not any(
+            action.get("command") == "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh"
+            and action.get("field_condition") == "blur"
+            for action in field_support_blockers[0].get("bench_evidence_actions", [])
+            if isinstance(action, dict)
+        ):
+            raise AssertionError("autonomy readiness support blocker should preserve field capture hint")
         generic_support_actions = [
             action
             for action in missing_runtime_status_ready["next_actions"]

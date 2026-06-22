@@ -1172,6 +1172,9 @@ Status:
   plan's pending capture command for runtime-log/runtime-status bench evidence
   and show the matching field, bundle, log, output, and metadata update details
   in `autonomy_goal_status.sh`.
+- Done: strict bench-evidence previews and support-bundle external blockers now
+  reuse the same pending field capture/status command details, so readiness
+  handoffs do not drift back to generic runtime commands.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.
