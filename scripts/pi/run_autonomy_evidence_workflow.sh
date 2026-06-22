@@ -81,13 +81,14 @@ This wrapper attempts the ordered evidence collection path:
   4. load the next pending field collection condition when no explicit field
      case is provided
   5. register a field replay case only when capture metadata is complete
-  6. run feature-method benchmark when a replay log exists
-  7. run threshold tuning when a field manifest exists
-  8. export and validate ROS bag JSONL replay artifacts when a replay log exists
-  9. check whether native rosbag2 CLI review proof is available
-  10. check whether PX4 ODOMETRY receiver proof is available
-  11. create a support bundle
-  12. run the strict autonomy-readiness audit and evidence package
+  6. refresh the field collection plan after capture or registration
+  7. run feature-method benchmark when a replay log exists
+  8. run threshold tuning when a field manifest exists
+  9. export and validate ROS bag JSONL replay artifacts when a replay log exists
+  10. check whether native rosbag2 CLI review proof is available
+  11. check whether PX4 ODOMETRY receiver proof is available
+  12. create a support bundle
+  13. run the strict autonomy-readiness audit and evidence package
 
 Common optional overrides:
   VISION_NAV_EVIDENCE_WORKFLOW_REPORT     Default: $report
@@ -683,6 +684,12 @@ elif [[ -n "${VISION_NAV_FIELD_CASE_NAME:-}" && -n "${VISION_NAV_FIELD_EXPECTED:
   fi
 else
   skip_step "register_field_replay_case" "Set VISION_NAV_FIELD_CASE_NAME, VISION_NAV_FIELD_EXPECTED, and VISION_NAV_FIELD_CONDITION(S) after a real field log exists to register evidence."
+fi
+
+if [[ -f "$field_manifest" ]]; then
+  run_step "refresh_field_collection_plan" ./scripts/pi/create_field_collection_plan.sh
+else
+  skip_step "refresh_field_collection_plan" "Missing field manifest, so the workflow cannot refresh field_collection_plan.json after capture or registration: $field_manifest"
 fi
 
 if [[ "$field_log_ready" == "1" && -e "$bundle" ]]; then

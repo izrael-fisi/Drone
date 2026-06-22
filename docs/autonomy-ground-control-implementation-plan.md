@@ -766,6 +766,10 @@ Status:
   now bulk-copy pending field evidence work as a per-condition workflow, keeping
   capture, metadata update, and registration commands grouped in proof-safe
   order with app-route comments and traceability paths.
+- Done: the Pi Evidence Workflow now refreshes `field_collection_plan.json` and
+  its Markdown checklist after capture or registration, and the workflow
+  validator treats that refresh as an auditable required step before feature
+  benchmarking, support-bundle packaging, and final readiness audit.
 - Done: autonomy-readiness reports now include a strict
   `evidence_manifest` section with completion blockers, external proof
   blockers, missing field conditions, and failed/degraded bench subchecks so the

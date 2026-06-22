@@ -14,6 +14,7 @@ REQUIRED_WORKFLOW_STEPS = [
     "create_field_collection_plan",
     "capture_field_terrain_log",
     "register_field_replay_case",
+    "refresh_field_collection_plan",
     "run_feature_method_benchmark",
     "run_threshold_tuning_report",
     "validate_rosbag_export",
@@ -39,6 +40,10 @@ WORKFLOW_STEP_GUIDANCE = {
     "register_field_replay_case": {
         "command": "./scripts/pi/register_field_replay_case.sh",
         "desktop_action": "Module Setup > Field Evidence Case > Register",
+    },
+    "refresh_field_collection_plan": {
+        "command": "./scripts/pi/create_field_collection_plan.sh",
+        "desktop_action": "Module Setup > Field Collection Plan > Create Plan",
     },
     "run_feature_method_benchmark": {
         "command": "./scripts/pi/run_feature_method_benchmark.sh",
