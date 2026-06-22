@@ -625,6 +625,16 @@ pub struct AutonomyEvidenceWorkflowSummary {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyEvidenceWorkflowValidationCheck {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub message: Option<String>,
+    pub marker_count: Option<u64>,
+    pub missing_markers: Vec<String>,
+    pub present_markers: Vec<String>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyEvidenceWorkflowValidationSummary {
     pub status: Option<String>,
     pub workflow_status: Option<String>,
@@ -632,6 +642,7 @@ pub struct AutonomyEvidenceWorkflowValidationSummary {
     pub marker_count: Option<u64>,
     pub issue_count: u64,
     pub issues: Vec<String>,
+    pub checks: Vec<AutonomyEvidenceWorkflowValidationCheck>,
     pub log_archive: Option<String>,
 }
 
@@ -3368,6 +3379,37 @@ fn workflow_validation_summary_from_json(
         return None;
     }
     let issues = json_string_array(value.get("issues"));
+    let checks = value
+        .get("checks")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| {
+                    let details = item.get("details");
+                    let missing_markers = details
+                        .and_then(|details| details.get("missing_markers"))
+                        .or_else(|| item.get("missing_markers"));
+                    let present_markers = details
+                        .and_then(|details| details.get("present_markers"))
+                        .or_else(|| item.get("present_markers"));
+                    let marker_count = details
+                        .and_then(|details| details.get("marker_count"))
+                        .or_else(|| item.get("marker_count"))
+                        .and_then(|value| value.as_u64());
+                    AutonomyEvidenceWorkflowValidationCheck {
+                        name: json_string(item.get("name")),
+                        status: json_string(item.get("status")),
+                        message: json_string(item.get("message")),
+                        marker_count,
+                        missing_markers: json_string_array(missing_markers),
+                        present_markers: json_string_array(present_markers),
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     Some(AutonomyEvidenceWorkflowValidationSummary {
         status: json_string(value.get("status")),
         workflow_status: json_string(value.get("workflow_status")),
@@ -3375,6 +3417,7 @@ fn workflow_validation_summary_from_json(
         marker_count: value.get("marker_count").and_then(|value| value.as_u64()),
         issue_count: issues.len() as u64,
         issues,
+        checks,
         log_archive: json_string(value.get("log_archive")),
     })
 }
@@ -5107,7 +5150,31 @@ mod tests {
                 "step_count": 3,
                 "marker_count": 11,
                 "log_archive": "/tmp/autonomy_evidence_workflow.logs.tar.gz",
-                "issues": ["Workflow status is failed; the report is useful, but readiness proof is incomplete."]
+                "issues": ["Workflow status is failed; the report is useful, but readiness proof is incomplete."],
+                "checks": [
+                    {
+                        "name": "required_steps",
+                        "status": "passed",
+                        "message": "Required workflow steps were recorded.",
+                        "details": {"step_count": 3}
+                    },
+                    {
+                        "name": "final_proof_markers",
+                        "status": "degraded",
+                        "message": "Missing final proof artifact markers.",
+                        "details": {
+                            "marker_count": 11,
+                            "missing_markers": [
+                                "__VISION_NAV_FIELD_COLLECTION_PLAN__",
+                                "__VISION_NAV_ROSBAG2_CLI_REVIEW__"
+                            ],
+                            "present_markers": [
+                                "__VISION_NAV_SUPPORT_ZIP__",
+                                "__VISION_NAV_PX4_SITL_REPORT__"
+                            ]
+                        }
+                    }
+                ]
             })
             .to_string(),
         )
@@ -5185,6 +5252,27 @@ mod tests {
         assert_eq!(validation.marker_count, Some(11));
         assert_eq!(validation.issue_count, 1);
         assert_eq!(validation.issues.len(), 1);
+        assert_eq!(validation.checks.len(), 2);
+        assert_eq!(
+            validation.checks[1].name.as_deref(),
+            Some("final_proof_markers")
+        );
+        assert_eq!(validation.checks[1].status.as_deref(), Some("degraded"));
+        assert_eq!(validation.checks[1].marker_count, Some(11));
+        assert_eq!(
+            validation.checks[1].missing_markers,
+            vec![
+                "__VISION_NAV_FIELD_COLLECTION_PLAN__".to_string(),
+                "__VISION_NAV_ROSBAG2_CLI_REVIEW__".to_string()
+            ]
+        );
+        assert_eq!(
+            validation.checks[1].present_markers,
+            vec![
+                "__VISION_NAV_SUPPORT_ZIP__".to_string(),
+                "__VISION_NAV_PX4_SITL_REPORT__".to_string()
+            ]
+        );
         assert_eq!(
             reports[0].support_bundle_path.as_deref(),
             Some("/tmp/support.zip")

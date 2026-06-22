@@ -782,7 +782,11 @@ Status:
   the workflow report card for support notes, preferring the downloaded local
   artifact path when the app can resolve it. When the downloaded validation JSON
   is present, the card also shows validation status, workflow status, issue
-  count, and the first validation issue.
+  count, failed/degraded validation checks, missing final-proof markers, and the
+  first validation issue.
+- Done: saved Module Setup reports preserve bounded workflow-validation check
+  details, including missing and present final-proof marker arrays, so exported
+  setup reports keep the same support-review context as the workflow card.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

@@ -691,6 +691,14 @@ export interface AutonomyEvidenceWorkflowReportFile {
     marker_count?: number;
     issue_count: number;
     issues: string[];
+    checks: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "degraded" | string;
+      message?: string;
+      marker_count?: number;
+      missing_markers: string[];
+      present_markers: string[];
+    }>;
     log_archive?: string;
   };
   support_bundle_path?: string;

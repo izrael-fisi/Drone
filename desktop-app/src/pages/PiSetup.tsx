@@ -73,6 +73,9 @@ const FIELD_CASE_FORM_STORAGE_KEY = "drone_field_case_form";
 const SUPPORT_EVIDENCE_ENV =
   'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
 
+type WorkflowValidationSummary = NonNullable<AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"]>;
+type WorkflowValidationCheck = WorkflowValidationSummary["checks"][number];
+
 type AuthForm = "password" | "key";
 type StepStatus = "idle" | "running" | "passed" | "failed";
 type FieldExpected = "good_map" | "degraded" | "wrong_map";
@@ -753,6 +756,58 @@ function readinessIcon(status?: string) {
 function formatReadinessLabel(value?: string | number | null) {
   if (value === undefined || value === null || value === "") return "n/a";
   return String(value).replace(/_/g, " ");
+}
+
+function validationCheckDetail(check: WorkflowValidationCheck) {
+  if (check.missing_markers.length > 0) {
+    const missing = check.missing_markers.slice(0, 3).map(formatReadinessLabel).join(", ");
+    const extra = check.missing_markers.length > 3 ? ` +${check.missing_markers.length - 3}` : "";
+    return `missing ${missing}${extra}`;
+  }
+  if (check.message) return check.message;
+  if (check.marker_count !== undefined) return `markers ${check.marker_count}`;
+  return "";
+}
+
+function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidationSummary }) {
+  const highlightedChecks = summary.checks
+    .filter((check) => check.status && check.status !== "passed")
+    .slice(0, 3);
+  const firstIssue = summary.issues[0];
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+      <span className={cn(readinessBadgeClass(summary.status), "text-[10px]")}>
+        validation {formatReadinessLabel(summary.status)}
+      </span>
+      {summary.workflow_status && (
+        <span className="font-mono text-slate-600">workflow {formatReadinessLabel(summary.workflow_status)}</span>
+      )}
+      <span className="font-mono text-slate-600">issues {summary.issue_count}</span>
+      {highlightedChecks.map((check) => {
+        const detail = validationCheckDetail(check);
+        const title = [check.message, detail, ...check.missing_markers].filter(Boolean).join("\n");
+        return (
+          <span
+            key={`${check.name ?? "check"}-${check.status ?? "status"}`}
+            className="flex min-w-0 max-w-full items-center gap-1 rounded border border-slate-800 bg-slate-950/50 px-1.5 py-0.5"
+            title={title || undefined}
+          >
+            <span className={cn(readinessBadgeClass(check.status), "text-[9px] px-1 py-0")}>
+              {formatReadinessLabel(check.status)}
+            </span>
+            <span className="truncate font-mono text-slate-500">{formatReadinessLabel(check.name)}</span>
+            {detail && <span className="truncate text-slate-500">{detail}</span>}
+          </span>
+        );
+      })}
+      {firstIssue && (
+        <span className="truncate text-slate-500" title={firstIssue}>
+          {firstIssue}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function shortSha(value?: string) {
@@ -1699,24 +1754,7 @@ function AutonomyEvidenceWorkflowReportList({
                     </div>
                   )}
                   {report.workflow_validation_summary && (
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
-                      <span className={cn(readinessBadgeClass(report.workflow_validation_summary.status), "text-[10px]")}>
-                        validation {formatReadinessLabel(report.workflow_validation_summary.status)}
-                      </span>
-                      {report.workflow_validation_summary.workflow_status && (
-                        <span className="font-mono text-slate-600">
-                          workflow {formatReadinessLabel(report.workflow_validation_summary.workflow_status)}
-                        </span>
-                      )}
-                      <span className="font-mono text-slate-600">
-                        issues {report.workflow_validation_summary.issue_count}
-                      </span>
-                      {report.workflow_validation_summary.issues[0] && (
-                        <span className="truncate text-slate-500" title={report.workflow_validation_summary.issues[0]}>
-                          {report.workflow_validation_summary.issues[0]}
-                        </span>
-                      )}
-                    </div>
+                    <WorkflowValidationSummaryLine summary={report.workflow_validation_summary} />
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -4734,6 +4772,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   workflow_status: latestWorkflowReport.workflow_validation_summary.workflow_status ?? null,
                   issue_count: latestWorkflowReport.workflow_validation_summary.issue_count,
                   issues: latestWorkflowReport.workflow_validation_summary.issues.slice(0, 8),
+                  checks: latestWorkflowReport.workflow_validation_summary.checks.slice(0, 8).map((check) => ({
+                    name: check.name ?? null,
+                    status: check.status ?? null,
+                    message: check.message ?? null,
+                    marker_count: check.marker_count ?? null,
+                    missing_markers: check.missing_markers.slice(0, 16),
+                    present_markers: check.present_markers.slice(0, 16),
+                  })),
                   log_archive: latestWorkflowReport.workflow_validation_summary.log_archive ?? null,
                 }
               : null,
