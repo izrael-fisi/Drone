@@ -1479,15 +1479,27 @@ def enrich_action_with_field_capture(
 ) -> None:
     if not condition:
         return
-    capture_command = condition.get("capture_command")
-    if isinstance(capture_command, str) and capture_command.strip():
-        if append_runtime_status_read:
-            action["command"] = command_with_runtime_status_read(
-                capture_command,
-                runtime_status_root=str(condition.get("capture_output_dir") or "").strip() or None,
-            )
-        else:
-            action["command"] = capture_command
+    preflight_capture_command = condition.get("preflight_capture_command")
+    if isinstance(preflight_capture_command, str) and preflight_capture_command.strip():
+        action["command"] = preflight_capture_command
+        action["preflight_capture_command"] = preflight_capture_command
+        action["desktop_action"] = "Module Setup > Field Capture Preflight, then Field Log Capture"
+        action["notes"] = " ".join(
+            [
+                str(action.get("notes") or ""),
+                "Rerun field capture preflight immediately before runtime capture so the bundle and output path are checked in the same operator step.",
+            ]
+        ).strip()
+    else:
+        capture_command = condition.get("capture_command")
+        if isinstance(capture_command, str) and capture_command.strip():
+            if append_runtime_status_read:
+                action["command"] = command_with_runtime_status_read(
+                    capture_command,
+                    runtime_status_root=str(condition.get("capture_output_dir") or "").strip() or None,
+                )
+            else:
+                action["command"] = capture_command
 
     field_mappings = {
         "field_condition": "condition",
@@ -2382,6 +2394,7 @@ def compact_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
         "runtime_status_path",
         "bundle",
         "preflight_command",
+        "preflight_capture_command",
         "capture_command",
         "metadata_update_command",
         "register_command",
@@ -2407,6 +2420,14 @@ def condition_with_metadata_update_command(
             str(updated["capture_command"]),
             runtime_status_root=str(updated.get("capture_output_dir") or "").strip() or None,
         )
+    preflight_command = str(updated.get("preflight_command") or "").strip()
+    capture_command = str(updated.get("capture_command") or "").strip()
+    preflight_capture_command = str(updated.get("preflight_capture_command") or "").strip()
+    if preflight_command and capture_command and (
+        not preflight_capture_command
+        or ("read_runtime_status.sh" in capture_command and "read_runtime_status.sh" not in preflight_capture_command)
+    ):
+        updated["preflight_capture_command"] = f"{preflight_command} && {capture_command}"
     if not metadata_update_command_is_detailed(str(updated.get("metadata_update_command") or "")):
         manifest_path = plan.get("manifest_path")
         if condition_name and manifest_path:

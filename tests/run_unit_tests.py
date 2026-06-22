@@ -5382,6 +5382,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh",
             "autonomy readiness incomplete field collection next capture command",
         )
+        blur_preflight_capture_command = (
+            "./scripts/pi/preflight_field_capture.sh --condition blur && "
+            "./scripts/pi/run_terrain_nav_loop.sh --condition blur && "
+            "./scripts/pi/read_runtime_status.sh"
+        )
+        assert_equal(
+            next_condition["preflight_capture_command"],
+            blur_preflight_capture_command,
+            "autonomy readiness incomplete field collection next preflight-capture command",
+        )
         if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in next_condition["metadata_update_command"]:
             raise AssertionError("autonomy readiness incomplete field collection next metadata command should prompt operator")
         if "./scripts/pi/update_field_capture_metadata.sh" not in next_condition["metadata_update_command"]:
@@ -5423,6 +5433,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             not in field_plan_bundle["field_collection_capture_commands"]
         ):
             raise AssertionError("autonomy readiness JSON missing field capture command bundle")
+        if blur_preflight_capture_command not in field_plan_bundle["field_collection_preflight_capture_commands"]:
+            raise AssertionError("autonomy readiness JSON missing field preflight-capture command bundle")
         if not any(
             "VISION_NAV_FIELD_OPERATOR=TODO_operator" in command
             and "./scripts/pi/update_field_capture_metadata.sh" in command
@@ -5755,8 +5767,13 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(field_runtime_status_actions), 1, "autonomy readiness field runtime-status next action")
         assert_equal(
             field_runtime_status_actions[0]["command"],
-            "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh",
-            "autonomy readiness runtime-status action should capture then read status",
+            blur_preflight_capture_command,
+            "autonomy readiness runtime-status action should preflight, capture, then read status",
+        )
+        assert_equal(
+            field_runtime_status_actions[0]["desktop_action"],
+            "Module Setup > Field Capture Preflight, then Field Log Capture",
+            "autonomy readiness runtime-status action should route through preflight then capture",
         )
         assert_equal(
             field_runtime_status_actions[0]["field_condition"],
@@ -5770,12 +5787,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         field_bench_actions = field_support_check["details"]["bench_evidence_actions"]
         if not any(
-            action.get("command") == "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh"
+            action.get("command") == blur_preflight_capture_command
             and action.get("field_condition") == "blur"
             for action in field_bench_actions
             if isinstance(action, dict)
         ):
-            raise AssertionError("autonomy readiness bench preview should use next field capture command")
+            raise AssertionError("autonomy readiness bench preview should use next field preflight-capture command")
         field_support_blockers = [
             blocker
             for blocker in missing_runtime_status_with_next_field["evidence_manifest"]["external_blockers"]
@@ -5783,12 +5800,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         ]
         assert_equal(len(field_support_blockers), 1, "autonomy readiness field support blocker")
         if not any(
-            action.get("command") == "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh"
+            action.get("command") == blur_preflight_capture_command
             and action.get("field_condition") == "blur"
             for action in field_support_blockers[0].get("bench_evidence_actions", [])
             if isinstance(action, dict)
         ):
-            raise AssertionError("autonomy readiness support blocker should preserve field capture hint")
+            raise AssertionError("autonomy readiness support blocker should preserve field preflight-capture hint")
         generic_support_actions = [
             action
             for action in missing_runtime_status_ready["next_actions"]
