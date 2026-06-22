@@ -682,11 +682,17 @@ def field_collection_commands(path: str | Path | None, key: str) -> list[str]:
     conditions = plan.get("conditions")
     if not isinstance(conditions, list):
         return []
-    return unique_strings(
+    commands = [
         item.get(key)
         for item in conditions
         if isinstance(item, dict) and item.get("status") != "registered"
-    )
+    ]
+    if key == "capture_command":
+        commands = [
+            command_with_runtime_status_read(command) if isinstance(command, str) else command
+            for command in commands
+        ]
+    return unique_strings(commands)
 
 
 def unique_strings(values: Any) -> list[str]:
@@ -2027,13 +2033,15 @@ def compact_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def condition_with_metadata_update_command(condition: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
-    if condition.get("metadata_update_command"):
-        return condition
+    updated = dict(condition)
+    if updated.get("capture_command"):
+        updated["capture_command"] = command_with_runtime_status_read(str(updated["capture_command"]))
+    if updated.get("metadata_update_command"):
+        return updated
     condition_name = condition.get("condition")
     manifest_path = plan.get("manifest_path")
     if not condition_name or not manifest_path:
-        return condition
-    updated = dict(condition)
+        return updated
     updated["metadata_update_command"] = shell_command(
         {
             "VISION_NAV_FIELD_MANIFEST": str(manifest_path),

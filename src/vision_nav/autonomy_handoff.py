@@ -469,7 +469,7 @@ def field_collection_pending_conditions(plan: dict[str, Any]) -> list[dict[str, 
     if not isinstance(conditions, list):
         return []
     pending = [
-        item
+        normalize_field_collection_condition(item)
         for item in conditions
         if isinstance(item, dict) and item.get("status") != "registered"
     ]
@@ -489,8 +489,22 @@ def field_collection_next_condition(
 ) -> dict[str, Any] | None:
     next_condition = plan.get("next_condition")
     if isinstance(next_condition, dict):
-        return next_condition
+        return normalize_field_collection_condition(next_condition)
     return fallback
+
+
+def normalize_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    command = normalized.get("capture_command")
+    if isinstance(command, str) and command:
+        normalized["capture_command"] = command_with_runtime_status_read(command)
+    return normalized
+
+
+def command_with_runtime_status_read(command: str) -> str:
+    if "read_runtime_status.sh" in command:
+        return command
+    return f"{command} && ./scripts/pi/read_runtime_status.sh"
 
 
 def missing_condition_checklist(report: dict[str, Any]) -> list[str]:

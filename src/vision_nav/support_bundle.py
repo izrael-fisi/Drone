@@ -1091,12 +1091,18 @@ def summarize_field_collection_condition(item: dict[str, Any], *, include_comman
     }
     if include_commands:
         if item.get("capture_command"):
-            summary["capture_command"] = item.get("capture_command")
+            summary["capture_command"] = command_with_runtime_status_read(str(item.get("capture_command")))
         if item.get("metadata_update_command"):
             summary["metadata_update_command"] = item.get("metadata_update_command")
         if item.get("register_command"):
             summary["register_command"] = item.get("register_command")
     return summary
+
+
+def command_with_runtime_status_read(command: str) -> str:
+    if "read_runtime_status.sh" in command:
+        return command
+    return f"{command} && ./scripts/pi/read_runtime_status.sh"
 
 
 def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:

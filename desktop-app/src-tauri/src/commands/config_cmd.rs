@@ -3913,6 +3913,7 @@ fn field_collection_plan_condition_from_json(
     if !item.is_object() {
         return None;
     }
+    let capture_command = json_string(item.get("capture_command"));
     Some(FieldCollectionPlanCondition {
         condition: json_string(item.get("condition")),
         label: json_string(item.get("label")),
@@ -3944,9 +3945,19 @@ fn field_collection_plan_condition_from_json(
             .or_else(|| json_string(item.get("register_command")).map(|value| !value.is_empty())),
         bundle: json_string(item.get("bundle")),
         capture_metadata: item.get("capture_metadata").cloned(),
-        capture_command: json_string(item.get("capture_command")),
+        capture_command: capture_command_with_runtime_status(capture_command),
         metadata_update_command: json_string(item.get("metadata_update_command")),
         register_command: json_string(item.get("register_command")),
+    })
+}
+
+fn capture_command_with_runtime_status(command: Option<String>) -> Option<String> {
+    command.map(|value| {
+        if value.contains("read_runtime_status.sh") {
+            value
+        } else {
+            format!("{value} && ./scripts/pi/read_runtime_status.sh")
+        }
     })
 }
 
@@ -6025,7 +6036,7 @@ mod tests {
         assert_eq!(next_condition.condition.as_deref(), Some("blur"));
         assert_eq!(
             next_condition.capture_command.as_deref(),
-            Some("./scripts/pi/run_terrain_nav_loop.sh --condition blur")
+            Some("./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh")
         );
         assert_eq!(field_collection_plan.pending_conditions.len(), 2);
         assert_eq!(
@@ -6681,7 +6692,7 @@ mod tests {
         assert_eq!(next_condition.condition.as_deref(), Some("low_texture"));
         assert_eq!(
                 next_condition.capture_command.as_deref(),
-                Some("VISION_NAV_OUTPUT_DIR=/tmp/field-captures/low_texture ./scripts/pi/run_terrain_nav_loop.sh")
+                Some("VISION_NAV_OUTPUT_DIR=/tmp/field-captures/low_texture ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh")
             );
         assert_eq!(
             next_condition.metadata_update_command.as_deref(),
@@ -7606,6 +7617,10 @@ mod tests {
             .as_ref()
             .expect("support field collection next condition");
         assert_eq!(next_condition.condition.as_deref(), Some("blur"));
+        assert_eq!(
+            next_condition.capture_command.as_deref(),
+            Some("./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh")
+        );
         assert_eq!(
             next_condition.register_command.as_deref(),
             Some("./scripts/pi/register_field_replay_case.sh --condition blur")

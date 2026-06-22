@@ -2466,6 +2466,8 @@ RC8_OPTION,90
         field_collection_condition = manifest["field_collection_plans"]["reports"][0]["conditions"][0]
         if "run_terrain_nav_loop.sh" not in field_collection_condition.get("capture_command", ""):
             raise AssertionError("Expected support field collection condition to preserve capture command text")
+        if "read_runtime_status.sh" not in field_collection_condition.get("capture_command", ""):
+            raise AssertionError("Expected support field collection condition to normalize runtime status capture")
         if "update_field_capture_metadata.sh" not in field_collection_condition.get("metadata_update_command", ""):
             raise AssertionError("Expected support field collection condition to preserve metadata update command text")
         if "register_field_replay_case.sh" not in field_collection_condition.get("register_command", ""):
@@ -4355,7 +4357,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "expected": "degraded",
                             "case_name": "unit-blur",
                             "bundle": str(root / "map_bundles/unit_bundle"),
-                            "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh",
+                            "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
                             "metadata_update_command": "./scripts/pi/update_field_capture_metadata.sh --condition blur",
                             "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur",
                         },
