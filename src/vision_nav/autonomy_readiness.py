@@ -443,6 +443,10 @@ def evaluate_autonomy_readiness(
         ),
     }
     diagnostics = build_diagnostics(px4_sitl_prereq_diagnostic, field_capture_preflight_diagnostic)
+    enrich_next_actions_with_field_preflight_diagnostic(
+        next_actions,
+        field_capture_preflight_diagnostic,
+    )
     evidence_manifest = build_evidence_manifest(status, checks, inputs, next_actions, diagnostics=diagnostics)
     proof_runbook = build_proof_runbook(checks, next_actions, evidence_manifest)
     report = {
@@ -1012,6 +1016,9 @@ def compact_proof_runbook_action(action: dict[str, Any]) -> dict[str, Any]:
         value = action.get(key)
         if isinstance(value, str) and value:
             compact[key] = value
+    bundle_diagnostic = action.get("bundle_diagnostic")
+    if isinstance(bundle_diagnostic, dict):
+        compact["bundle_diagnostic"] = bundle_diagnostic
     missing_conditions = action.get("missing_conditions")
     if isinstance(missing_conditions, list):
         compact["missing_conditions"] = [str(item) for item in missing_conditions if str(item)]
@@ -1231,6 +1238,59 @@ def next_actions_for_checks(
                 )
             )
     return next_actions
+
+
+def enrich_next_actions_with_field_preflight_diagnostic(
+    next_actions: list[dict[str, Any]],
+    field_capture_preflight_diagnostic: dict[str, Any],
+) -> None:
+    bundle_diagnostic = field_preflight_bundle_action_diagnostic(field_capture_preflight_diagnostic)
+    if not bundle_diagnostic:
+        return
+    preflight_bundle = field_capture_preflight_diagnostic.get("bundle_path")
+    for action in next_actions:
+        if not isinstance(action, dict):
+            continue
+        check = str(action.get("check") or "")
+        if check not in {
+            "support_bundle_bench_readiness.bundle_health",
+            "support_bundle_bench_readiness.gnss_denied_plan",
+        }:
+            continue
+        action_bundle = action.get("field_bundle") or action.get("bundle_path")
+        if (
+            isinstance(preflight_bundle, str)
+            and preflight_bundle
+            and isinstance(action_bundle, str)
+            and action_bundle
+            and preflight_bundle != action_bundle
+        ):
+            continue
+        if not isinstance(action.get("bundle_diagnostic"), dict):
+            action["bundle_diagnostic"] = bundle_diagnostic
+        report_path = field_capture_preflight_diagnostic.get("path")
+        if isinstance(report_path, str) and report_path:
+            action["field_preflight_report"] = report_path
+
+
+def field_preflight_bundle_action_diagnostic(
+    field_capture_preflight_diagnostic: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not isinstance(field_capture_preflight_diagnostic, dict):
+        return None
+    for action in field_capture_preflight_diagnostic.get("next_actions") or []:
+        if not isinstance(action, dict) or action.get("id") != "prepare_bundle":
+            continue
+        diagnostic = action.get("bundle_diagnostic")
+        if isinstance(diagnostic, dict):
+            return diagnostic
+    for check in field_capture_preflight_diagnostic.get("failed_checks") or []:
+        if not isinstance(check, dict) or check.get("name") != "bundle_path":
+            continue
+        diagnostic = check.get("bundle_diagnostic")
+        if isinstance(diagnostic, dict):
+            return diagnostic
+    return None
 
 
 def normalize_bench_subchecks(raw: Any) -> list[dict[str, str]]:

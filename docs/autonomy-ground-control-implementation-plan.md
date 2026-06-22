@@ -440,6 +440,10 @@ Status:
   diagnostic onto `prepare_bundle` next actions from older field-preflight JSON
   files, so stale downloaded reports still show missing files and candidate
   bundles beside the repair command.
+- Done: final-readiness top-level bundle-health and GNSS-denied bundle actions
+  now inherit matching field-preflight bundle diagnostics, and
+  `autonomy_goal_status.sh` prints missing files and candidate bundles under
+  the main `Next commands` repair step.
 - Done: Module Setup, readiness report cards, support-bundle details, and
   handoff summaries preserve and copy field-capture preflight commands beside
   capture, metadata-update, and registration commands.

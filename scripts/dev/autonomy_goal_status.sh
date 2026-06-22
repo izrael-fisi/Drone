@@ -1131,6 +1131,7 @@ if phases:
                     "field_runtime_status_path",
                     "field_metadata_update_command",
                     "field_register_command",
+                    "bundle_diagnostic",
                     "notes",
                 )
                 if action.get(key)
@@ -1183,6 +1184,31 @@ if next_actions:
         notes = action.get("notes")
         if notes:
             print(f"   notes: {notes}")
+        diagnostic = action.get("bundle_diagnostic")
+        if isinstance(diagnostic, dict):
+            missing = diagnostic.get("missing_required_files") or []
+            if missing:
+                print(f"   missing bundle files: {', '.join(str(value) for value in missing[:8])}")
+            candidates = [
+                candidate
+                for candidate in diagnostic.get("bundle_candidates") or []
+                if isinstance(candidate, dict)
+            ]
+            if candidates:
+                print("   detected bundle candidates:")
+                for candidate in candidates[:3]:
+                    warning = " (example/synthetic only)" if candidate.get("field_proof_warning") else ""
+                    print(f"     - {candidate.get('path')}{warning}")
+            map_sources = [
+                source
+                for source in diagnostic.get("map_source_candidates") or []
+                if isinstance(source, dict)
+            ]
+            if map_sources:
+                print("   detected map sources:")
+                for source in map_sources[:3]:
+                    label = source.get("name") or "unnamed"
+                    print(f"     - {source.get('path')} [{label}]")
         for label, key in (
             ("field", "field_condition"),
             ("bundle", "field_bundle"),

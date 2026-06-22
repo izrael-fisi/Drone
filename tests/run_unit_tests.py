@@ -5188,6 +5188,13 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "Module Setup > Field Log Capture, then Runtime Status and Bench Report",
             "autonomy readiness runtime status desktop action",
         )
+        matching_field_capture_preflight = root / "field_capture_preflight_unit_bundle.json"
+        matching_field_capture_preflight.write_text(
+            field_capture_preflight.read_text().replace(
+                str(root / "missing-mission-bundle"),
+                str(root / "map_bundles/unit_bundle"),
+            )
+        )
         missing_bundle_manifest = root / "support_manifest_without_bundle.json"
         missing_bundle_data = json.loads(direct_report_support_manifest.read_text())
         missing_bundle_data.pop("bundle", None)
@@ -5199,6 +5206,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             px4_sitl_report_path=px4_receiver_report,
             field_evidence_report_path=field_report,
             field_collection_plan_path=incomplete_field_collection_plan,
+            field_capture_preflight_path=matching_field_capture_preflight,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
             evidence_workflow_report_path=workflow_report,
@@ -5216,6 +5224,23 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             expected_bundle_validate_command,
             "autonomy readiness bundle action should validate selected field bundle",
         )
+        field_bundle_action_diagnostic = field_bundle_health_actions[0].get("bundle_diagnostic") or {}
+        if "manifest.json" not in field_bundle_action_diagnostic.get("missing_required_files", []):
+            raise AssertionError("Autonomy readiness bundle action should inherit preflight missing-file diagnostics")
+        if not field_bundle_action_diagnostic.get("bundle_candidates"):
+            raise AssertionError("Autonomy readiness bundle action should inherit preflight bundle candidates")
+        bench_foundation_phase = next(
+            phase
+            for phase in missing_bundle_with_next_field["proof_runbook"]["phases"]
+            if phase.get("id") == "bench_foundation"
+        )
+        bundle_runbook_action = next(
+            action
+            for action in bench_foundation_phase["actions"]
+            if action.get("check") == "support_bundle_bench_readiness.bundle_health"
+        )
+        if "manifest.json" not in (bundle_runbook_action.get("bundle_diagnostic") or {}).get("missing_required_files", []):
+            raise AssertionError("Proof runbook should preserve inherited bundle diagnostics")
         missing_runtime_status_with_next_field = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
             implementation_plan_path=implementation_plan,
