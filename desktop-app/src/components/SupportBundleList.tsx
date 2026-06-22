@@ -47,6 +47,16 @@ function formatCounts(counts?: Record<string, number>) {
     .join(", ");
 }
 
+function countsRecord(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === "number");
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
+
 function formatVector(value: unknown) {
   if (!Array.isArray(value)) return "n/a";
   return value
@@ -140,16 +150,21 @@ function SupportBundleDetailPanel({
       {details.logs.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Log summaries</div>
-          {details.logs.slice(0, 3).map((log) => (
-            <div key={log.name} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
-              <div className="flex items-center justify-between gap-2 font-mono text-slate-400">
-                <span className="truncate">{log.name}</span>
-                <span>{log.total_records ?? 0} rec, {formatPercent(log.accepted_rate)} accepted</span>
+          {details.logs.slice(0, 3).map((log) => {
+            const externalPosition = asRecord(log.external_position);
+            const warningCounts = countsRecord(externalPosition?.warning_counts);
+            return (
+              <div key={log.name} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+                <div className="flex items-center justify-between gap-2 font-mono text-slate-400">
+                  <span className="truncate">{log.name}</span>
+                  <span>{log.total_records ?? 0} rec, {formatPercent(log.accepted_rate)} accepted</span>
+                </div>
+                <div className="font-mono text-slate-500">status {formatCounts(log.status_counts)}</div>
+                <div className="font-mono text-slate-500">reasons {formatCounts(log.reason_counts)}</div>
+                {warningCounts && <div className="font-mono text-amber-200/80">ext warnings {formatCounts(warningCounts)}</div>}
               </div>
-              <div className="font-mono text-slate-500">status {formatCounts(log.status_counts)}</div>
-              <div className="font-mono text-slate-500">reasons {formatCounts(log.reason_counts)}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -168,6 +183,7 @@ function SupportBundleDetailPanel({
             const bundleId = typeof activeMap?.bundle_id === "string" ? activeMap.bundle_id : undefined;
             const estimatorHealth = typeof estimator?.health === "string" ? estimator.health : undefined;
             const externalStatus = typeof externalPosition?.status === "string" ? externalPosition.status : null;
+            const externalWarnings = stringArray(externalPosition?.last_warnings);
             const logPath = typeof output?.log_path === "string" ? output.log_path : undefined;
             const sequence = typeof status.sequence === "number" || typeof status.sequence === "string" ? status.sequence : undefined;
             return (
@@ -185,6 +201,9 @@ function SupportBundleDetailPanel({
                   map {formatLabel(bundleId)} / estimator {formatLabel(estimatorHealth)}
                   {externalStatus ? ` / ext ${formatLabel(externalStatus)}` : ""}
                 </div>
+                {externalWarnings.length > 0 && (
+                  <div className="font-mono text-amber-200/80 truncate">ext warnings {externalWarnings.join(", ")}</div>
+                )}
                 <div className="font-mono text-slate-500 truncate">log {formatLabel(logPath)}</div>
               </div>
             );
@@ -219,6 +238,7 @@ function SupportBundleDetailPanel({
                     {record.reprojection_error_px != null ? `, reproj ${record.reprojection_error_px.toFixed(1)} px` : ""}
                     {record.external_position_status ? `, ext ${record.external_position_status}` : ""}
                     {record.external_position_message_type ? `/${record.external_position_message_type}` : ""}
+                    {record.external_position_warnings?.length ? `, warnings ${record.external_position_warnings.join(", ")}` : ""}
                   </div>
                 </div>
               ))}
@@ -254,6 +274,7 @@ function SupportBundleDetailPanel({
               <div className="grid grid-cols-2 gap-2 font-mono text-slate-500">
                 <span>status {formatCounts(timeline.status_counts)}</span>
                 <span>ext {formatCounts(timeline.external_position_status_counts)}</span>
+                {timeline.external_position_warning_counts && <span>ext warn {formatCounts(timeline.external_position_warning_counts)}</span>}
                 <span>conf {timeline.average_confidence != null ? timeline.average_confidence.toFixed(2) : "n/a"}</span>
                 <span>inliers {timeline.average_inliers != null ? timeline.average_inliers.toFixed(1) : "n/a"}</span>
                 <span>reproj {timeline.average_reprojection_error_px != null ? `${timeline.average_reprojection_error_px.toFixed(1)} px` : "n/a"}</span>

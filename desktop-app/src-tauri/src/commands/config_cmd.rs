@@ -668,6 +668,7 @@ pub struct SupportBundleLogRecordPreview {
     pub reprojection_error_px: Option<f64>,
     pub external_position_status: Option<String>,
     pub external_position_message_type: Option<String>,
+    pub external_position_warnings: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -701,6 +702,7 @@ pub struct SupportBundleLogTimeline {
     pub status_counts: Option<serde_json::Value>,
     pub reason_counts: Option<serde_json::Value>,
     pub external_position_status_counts: Option<serde_json::Value>,
+    pub external_position_warning_counts: Option<serde_json::Value>,
     pub first_sequence: Option<u64>,
     pub last_sequence: Option<u64>,
     pub first_timestamp_us: Option<u64>,
@@ -1998,6 +2000,7 @@ fn read_log_preview_entry(
                     reprojection_error_px: None,
                     external_position_status: None,
                     external_position_message_type: None,
+                    external_position_warnings: None,
                 });
                 continue;
             }
@@ -2017,6 +2020,9 @@ fn log_record_preview_from_json(
 ) -> SupportBundleLogRecordPreview {
     let result = value.get("result").unwrap_or(value);
     let external_position = value.get("external_position_health");
+    let external_position_warnings = external_position
+        .map(|value| json_string_array(value.get("last_warnings")))
+        .filter(|warnings| !warnings.is_empty());
     SupportBundleLogRecordPreview {
         line_number,
         sequence: value
@@ -2045,6 +2051,7 @@ fn log_record_preview_from_json(
             .and_then(|value| json_string(value.get("status"))),
         external_position_message_type: external_position
             .and_then(|value| json_string(value.get("message_type"))),
+        external_position_warnings,
     }
 }
 
@@ -2056,6 +2063,7 @@ struct TimelineAccumulator {
     status_counts: BTreeMap<String, u64>,
     reason_counts: BTreeMap<String, u64>,
     external_position_status_counts: BTreeMap<String, u64>,
+    external_position_warning_counts: BTreeMap<String, u64>,
     first_sequence: Option<u64>,
     last_sequence: Option<u64>,
     first_timestamp_us: Option<u64>,
@@ -2088,6 +2096,7 @@ struct TimelineRecordMetrics {
     status: String,
     reason: Option<String>,
     external_position_status: Option<String>,
+    external_position_warnings: Vec<String>,
     sequence: Option<u64>,
     timestamp_us: Option<u64>,
     confidence: Option<f64>,
@@ -2112,6 +2121,7 @@ fn read_log_timeline_entry(
             status_counts: None,
             reason_counts: None,
             external_position_status_counts: None,
+            external_position_warning_counts: None,
             first_sequence: None,
             last_sequence: None,
             first_timestamp_us: None,
@@ -2176,6 +2186,7 @@ fn read_log_timeline_entry(
         status_counts: counts_value(&accumulator.status_counts),
         reason_counts: counts_value(&accumulator.reason_counts),
         external_position_status_counts: counts_value(&accumulator.external_position_status_counts),
+        external_position_warning_counts: counts_value(&accumulator.external_position_warning_counts),
         first_sequence: accumulator.first_sequence,
         last_sequence: accumulator.last_sequence,
         first_timestamp_us: accumulator.first_timestamp_us,
@@ -2211,6 +2222,7 @@ fn timeline_record_metrics_from_line(
                 status: "invalid_json".to_string(),
                 reason: Some("Could not parse JSONL record".to_string()),
                 external_position_status: None,
+                external_position_warnings: vec![],
                 sequence: None,
                 timestamp_us: None,
                 confidence: None,
@@ -2228,6 +2240,9 @@ fn timeline_record_metrics_from_line(
         reason: json_string(result.get("reason")),
         external_position_status: external_position
             .and_then(|value| json_string(value.get("status"))),
+        external_position_warnings: external_position
+            .map(|value| json_string_array(value.get("last_warnings")))
+            .unwrap_or_default(),
         sequence: value
             .get("sequence")
             .or_else(|| result.get("sequence"))
@@ -2262,6 +2277,9 @@ fn update_timeline_accumulator(
     }
     if let Some(status) = &metrics.external_position_status {
         increment_count(&mut accumulator.external_position_status_counts, status);
+    }
+    for warning in &metrics.external_position_warnings {
+        increment_count(&mut accumulator.external_position_warning_counts, warning);
     }
     if accumulator.first_sequence.is_none() {
         accumulator.first_sequence = metrics.sequence;
@@ -5588,7 +5606,10 @@ mod tests {
                 serde_json::json!({
                     "total_records": 4,
                     "accepted_rate": 0.5,
-                    "status_counts": {"accepted": 2, "rejected": 2}
+                    "status_counts": {"accepted": 2, "rejected": 2},
+                    "external_position": {
+                        "warning_counts": {"velocity_covariance_missing": 1}
+                    }
                 })
                 .to_string()
                 .as_bytes(),
@@ -5609,7 +5630,8 @@ mod tests {
                         },
                         "external_position_health": {
                             "status": "healthy",
-                            "message_type": "odometry"
+                            "message_type": "odometry",
+                            "last_warnings": ["velocity_covariance_missing"]
                         }
                     })
                     .to_string(),
@@ -5909,6 +5931,14 @@ mod tests {
         assert_eq!(details.entry_count, 18);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
+        assert_eq!(
+            details.logs[0]
+                .external_position
+                .as_ref()
+                .and_then(|value| value.pointer("/warning_counts/velocity_covariance_missing"))
+                .and_then(|value| value.as_u64()),
+            Some(1)
+        );
         assert_eq!(details.runtime_statuses.len(), 1);
         assert_eq!(
             details.runtime_statuses[0]
@@ -5924,9 +5954,21 @@ mod tests {
         );
         assert_eq!(details.log_previews.len(), 1);
         assert_eq!(details.log_previews[0].records.len(), 2);
+        assert_eq!(
+            details.log_previews[0].records[0].external_position_warnings,
+            Some(vec!["velocity_covariance_missing".to_string()])
+        );
         assert_eq!(details.log_timelines.len(), 1);
         assert_eq!(details.log_timelines[0].total_records, Some(2));
         assert_eq!(details.log_timelines[0].accepted_rate, Some(0.5));
+        assert_eq!(
+            details.log_timelines[0]
+                .external_position_warning_counts
+                .as_ref()
+                .and_then(|value| value.pointer("/velocity_covariance_missing"))
+                .and_then(|value| value.as_u64()),
+            Some(1)
+        );
         assert_eq!(details.log_timelines[0].first_sequence, Some(1));
         assert_eq!(details.log_timelines[0].last_sequence, Some(2));
         assert_eq!(details.log_timelines[0].segments.len(), 2);

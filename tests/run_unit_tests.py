@@ -522,6 +522,11 @@ def test_summarize_match_records() -> None:
         {"match_not_accepted": 1},
         "summary external position skip reasons",
     )
+    assert_equal(
+        summary["external_position"]["warning_counts"],
+        {"match_not_accepted": 1},
+        "summary external position warnings",
+    )
     assert_equal(summary["external_position"]["send_rate_hz"]["mean"], 0.75, "summary external position rate")
     assert_equal(summary["external_position"]["latency_ms"]["mean"], 150.0, "summary external position latency")
     assert_equal(summary["external_position"]["reset_counter"]["max"], 1.0, "summary reset counter max")
@@ -2282,6 +2287,23 @@ RC8_OPTION,90
         runtime_checks = {check["name"]: check["status"] for check in runtime_degraded["checks"]}
         assert_equal(runtime_degraded["status"], "degraded", "bench readiness missing runtime status degrades")
         assert_equal(runtime_checks["runtime_status"], "degraded", "bench readiness runtime status degrade")
+
+        degraded_external = json.loads(json.dumps(manifest))
+        degraded_external["logs"]["runtime_statuses"][0]["external_position"] = {
+            "status": "degraded",
+            "message_type": "odometry",
+            "last_warnings": ["velocity_covariance_missing"],
+        }
+        external_degraded = evaluate_bench_readiness(degraded_external)
+        external_checks = {check["name"]: check["status"] for check in external_degraded["checks"]}
+        external_details = {check["name"]: check.get("details") or {} for check in external_degraded["checks"]}
+        assert_equal(external_degraded["status"], "degraded", "bench readiness degraded external health")
+        assert_equal(external_checks["runtime_status"], "degraded", "bench readiness external runtime status degrade")
+        assert_equal(
+            external_details["runtime_status"]["external_position_warnings"],
+            ["velocity_covariance_missing"],
+            "bench readiness external warning details",
+        )
 
         failed_ardupilot = dict(manifest)
         failed_ardupilot["ardupilot_params"] = {

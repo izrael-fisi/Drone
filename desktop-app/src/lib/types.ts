@@ -210,6 +210,7 @@ export interface SupportBundleDetails {
       reprojection_error_px?: number;
       external_position_status?: string;
       external_position_message_type?: string;
+      external_position_warnings?: string[];
     }>;
   }>;
   log_timelines: Array<{
@@ -222,6 +223,7 @@ export interface SupportBundleDetails {
     status_counts?: Record<string, number>;
     reason_counts?: Record<string, number>;
     external_position_status_counts?: Record<string, number>;
+    external_position_warning_counts?: Record<string, number>;
     first_sequence?: number;
     last_sequence?: number;
     first_timestamp_us?: number;

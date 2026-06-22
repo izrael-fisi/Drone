@@ -204,6 +204,7 @@ def check_runtime_status(manifest: dict[str, Any]) -> dict[str, Any]:
         if isinstance(latest.get("external_position_health"), dict)
         else {}
     )
+    external_warnings = external.get("last_warnings") if isinstance(external.get("last_warnings"), list) else []
     status_counts = latest.get("status_counts") if isinstance(latest.get("status_counts"), dict) else {}
     details = {
         "snapshot_count": len(statuses),
@@ -214,6 +215,8 @@ def check_runtime_status(manifest: dict[str, Any]) -> dict[str, Any]:
         "last_match_reason": last_match.get("reason"),
         "estimator_health": estimator.get("health") or estimator.get("status"),
         "external_position_status": external.get("status"),
+        "external_position_message_type": external.get("message_type"),
+        "external_position_warnings": external_warnings,
         "accepted_count": status_counts.get("accepted"),
         "rejected_count": status_counts.get("rejected"),
     }
@@ -231,6 +234,8 @@ def check_runtime_status(manifest: dict[str, Any]) -> dict[str, Any]:
         return failed("runtime_status", "Runtime last-match status is failed.", details)
     if external_status in {"failed", "error"}:
         return failed("runtime_status", "Runtime external-position health is failed.", details)
+    if external_status in WARNING or external_warnings:
+        return degraded("runtime_status", "Runtime external-position health is degraded.", details)
     if not details["output_path"] or not details["log_path"]:
         return degraded("runtime_status", "Runtime status is missing output or log path metadata.", details)
     return passed("runtime_status", "Runtime status snapshot is present and usable.", details)
