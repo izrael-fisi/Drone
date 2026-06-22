@@ -56,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mavlink-message",
         choices=["vision_position_estimate", "odometry"],
-        default="vision_position_estimate",
+        default="odometry",
         help="MAVLink external-position message to send when --mavlink-endpoint is set.",
     )
     parser.add_argument("--external-position-min-rate-hz", type=float, default=1.0)

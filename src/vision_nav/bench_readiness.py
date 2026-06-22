@@ -17,6 +17,7 @@ REQUIRED_GNSS_DENIED_CHECKS = {
     "heading",
     "estimator_health",
 }
+REQUIRED_PX4_RECEIVER_MESSAGE = "odometry"
 
 
 def parse_args() -> argparse.Namespace:
@@ -263,11 +264,18 @@ def check_px4_evidence(manifest: dict[str, Any], *, allow_missing: bool) -> dict
         "expected_message": evidence.get("expected_message"),
         "expected_rate_hz": config.get("expected_rate_hz"),
         "min_rate_ratio": config.get("min_rate_ratio"),
+        "required_message": REQUIRED_PX4_RECEIVER_MESSAGE,
     }
     if status in MISSING:
         if allow_missing:
             return degraded("px4_sitl_evidence", "PX4 receiver evidence was not provided.", details)
         return failed("px4_sitl_evidence", "PX4 receiver evidence is required for bench readiness.", details)
+    if str(details.get("expected_message") or "").lower() != REQUIRED_PX4_RECEIVER_MESSAGE:
+        return failed(
+            "px4_sitl_evidence",
+            "PX4 receiver evidence must prove the MAVLink ODOMETRY path for bench readiness.",
+            details,
+        )
     if status in PASSING:
         return passed("px4_sitl_evidence", "PX4 receiver evidence passed.", details)
     if status in WARNING:

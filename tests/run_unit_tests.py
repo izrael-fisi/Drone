@@ -554,7 +554,8 @@ def test_mavlink_endpoint_parsing_and_axis_mapping() -> None:
                 "yaw_rad": None,
                 "covariance": {"x_m2": 9.0, "y_m2": 16.0, "z_m2": None, "yaw_rad2": None},
             },
-        }
+        },
+        message_type="vision_position_estimate",
     )
     assert_equal(send_result.sent, True, "MAVLink send status")
     _, x_north, y_east, z_down, *_rest, covariance = calls[0]
@@ -2070,6 +2071,11 @@ RC8_OPTION,90
             5.0,
             "bench readiness px4 expected rate",
         )
+        assert_equal(
+            readiness_check_details["px4_sitl_evidence"]["required_message"],
+            "odometry",
+            "bench readiness px4 required message",
+        )
         assert_equal(readiness_checks["px4_params"], "degraded", "bench readiness px4 params")
         assert_equal(readiness_checks["ardupilot_params"], "passed", "bench readiness ardupilot params")
         assert_equal(readiness_checks["feature_method_benchmarks"], "passed", "bench readiness feature benchmarks")
@@ -2104,6 +2110,17 @@ RC8_OPTION,90
         assert_equal(failed["status"], "failed", "bench readiness missing px4 evidence")
         allowed = evaluate_bench_readiness(missing_px4, allow_missing_px4_evidence=True)
         assert_equal(allowed["status"], "degraded", "bench readiness allow missing px4 evidence")
+
+        compatibility_px4 = json.loads(json.dumps(manifest))
+        compatibility_px4["px4_sitl_evidence"]["expected_message"] = "vision_position_estimate"
+        compatibility_failed = evaluate_bench_readiness(compatibility_px4)
+        compatibility_checks = {check["name"]: check["status"] for check in compatibility_failed["checks"]}
+        assert_equal(compatibility_failed["status"], "failed", "bench readiness requires odometry px4 evidence")
+        assert_equal(
+            compatibility_checks["px4_sitl_evidence"],
+            "failed",
+            "bench readiness rejects compatibility-only px4 evidence",
+        )
 
         missing_runtime_status = json.loads(json.dumps(manifest))
         missing_runtime_status["logs"]["runtime_statuses"] = []
@@ -2610,6 +2627,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             5.0,
             "autonomy readiness direct px4 expected rate",
         )
+        assert_equal(
+            ready_check_details["px4_receiver_proof"]["required_message"],
+            "odometry",
+            "autonomy readiness direct px4 required message",
+        )
         assert_equal(ready_checks["field_evidence_proof"], "passed", "autonomy readiness field evidence")
         assert_equal(ready_checks["feature_method_benchmark"], "passed", "autonomy readiness feature benchmark")
         assert_equal(ready_checks["threshold_tuning"], "passed", "autonomy readiness threshold tuning")
@@ -2625,6 +2647,31 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             len(ready["evidence_manifest"]["external_blockers"]),
             0,
             "autonomy readiness evidence manifest no external blockers",
+        )
+
+        compatibility_receiver_report = root / "receiver_evidence_compatibility.json"
+        compatibility_receiver_data = json.loads(px4_receiver_report.read_text())
+        compatibility_receiver_data["expected_message"] = "vision_position_estimate"
+        compatibility_receiver_report.write_text(json.dumps(compatibility_receiver_data))
+        compatibility_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=direct_report_support_manifest,
+            px4_sitl_report_path=compatibility_receiver_report,
+            field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
+        )
+        compatibility_ready_checks = {check["name"]: check["status"] for check in compatibility_ready["checks"]}
+        assert_equal(compatibility_ready["status"], "failed", "autonomy readiness requires odometry px4 proof")
+        assert_equal(
+            compatibility_ready_checks["px4_receiver_proof"],
+            "failed",
+            "autonomy readiness rejects compatibility-only px4 proof",
         )
 
         missing_feature_direct = evaluate_autonomy_readiness(

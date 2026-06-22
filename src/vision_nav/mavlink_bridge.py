@@ -200,7 +200,7 @@ class MavlinkVisionBridge:
         self,
         result: dict[str, Any],
         *,
-        message_type: str = "vision_position_estimate",
+        message_type: str = "odometry",
     ) -> MavlinkSendResult:
         if message_type == "odometry":
             return self.send_odometry_match_result(result)
@@ -338,7 +338,7 @@ def send_log_once(
     endpoint: str,
     ev_delay_ms: int = 50,
     *,
-    message_type: str = "vision_position_estimate",
+    message_type: str = "odometry",
     rate_hz: float = 0.0,
     repeat: int = 1,
 ) -> dict[str, Any]:
@@ -367,7 +367,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--message-type",
         choices=["vision_position_estimate", "odometry"],
-        default="vision_position_estimate",
+        default="odometry",
         help="External-position MAVLink message to send.",
     )
     parser.add_argument("--rate-hz", type=float, default=0.0, help="Optional send rate. Default sends records as fast as possible.")

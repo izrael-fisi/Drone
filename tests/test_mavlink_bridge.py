@@ -39,7 +39,8 @@ def test_send_match_result_uses_px4_ned_axes():
                     "yaw_rad2": None,
                 },
             },
-        }
+        },
+        message_type="vision_position_estimate",
     )
 
     assert result.sent is True
@@ -82,7 +83,8 @@ def test_send_match_result_maps_optional_z_to_px4_down():
                     "yaw_rad2": 0.1,
                 },
             },
-        }
+        },
+        message_type="vision_position_estimate",
     )
 
     assert result.sent is True

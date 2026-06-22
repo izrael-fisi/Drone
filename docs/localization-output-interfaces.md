@@ -29,13 +29,15 @@ Recommended metadata:
 
 ### MAVLink ODOMETRY
 
-Preferred when the estimator can provide local pose, velocity, and covariance.
+Preferred and used by default for PX4 bench/product readiness when the
+estimator can provide local pose, velocity, and covariance.
 
 PX4 maps MAVLink `ODOMETRY` with `MAV_FRAME_LOCAL_FRD` into `vehicle_visual_odometry`. PX4 documentation notes that `ODOMETRY` is the only listed external-position message that can also send linear velocities to PX4.
 
 ### MAVLink VISION_POSITION_ESTIMATE
 
-Useful for simpler local pose-only external vision input.
+Useful for simpler local pose-only external vision input and compatibility
+debugging. It does not satisfy the strict PX4 bench/final readiness proof gate.
 
 PX4 maps `VISION_POSITION_ESTIMATE` into `vehicle_visual_odometry`.
 

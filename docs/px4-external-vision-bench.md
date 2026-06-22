@@ -14,25 +14,30 @@ Official references:
 
 The runtime supports two MAVLink external-position modes:
 
-- `VISION_POSITION_ESTIMATE`: default pose-only compatibility path.
-- `ODOMETRY`: richer PX4 path that can carry pose, covariance, velocity, reset
-  counter, estimator type, and quality.
+- `ODOMETRY`: default PX4 bench path that can carry pose, covariance, velocity,
+  reset counter, estimator type, and quality.
+- `VISION_POSITION_ESTIMATE`: pose-only compatibility path for older or simpler
+  setups.
 
 Use this environment variable in the Pi wrappers:
 
 ```bash
 VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600
-VISION_NAV_MAVLINK_MESSAGE=vision_position_estimate
+VISION_NAV_MAVLINK_MESSAGE=odometry
 VISION_NAV_EXTERNAL_POSITION_MIN_RATE_HZ=1.0
 VISION_NAV_EXTERNAL_POSITION_MAX_LATENCY_MS=500.0
 ```
 
-For PX4 `ODOMETRY` bench tests:
+To deliberately check the compatibility path instead:
 
 ```bash
 VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600
-VISION_NAV_MAVLINK_MESSAGE=odometry
+VISION_NAV_MAVLINK_MESSAGE=vision_position_estimate
 ```
+
+The final bench-readiness and autonomy-readiness gates require PX4 receiver
+evidence from the `ODOMETRY` path. Compatibility-path captures remain useful
+for debugging, but they do not prove the preferred product interface.
 
 ## Frame And Covariance Rules
 
@@ -147,20 +152,20 @@ default-looking camera-to-body offsets.
 
    The summary reports external-position health when MAVLink output was enabled.
 
-4. Enable MAVLink with the default pose-only path:
-
-   ```bash
-   VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600 \
-   VISION_NAV_MAVLINK_MESSAGE=vision_position_estimate \
-   VISION_NAV_COUNT=30 \
-   ./scripts/pi/run_terrain_nav_loop.sh
-   ```
-
-5. Repeat with `ODOMETRY` only after pose-only output looks sane:
+4. Enable MAVLink with the default `ODOMETRY` path:
 
    ```bash
    VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600 \
    VISION_NAV_MAVLINK_MESSAGE=odometry \
+   VISION_NAV_COUNT=30 \
+   ./scripts/pi/run_terrain_nav_loop.sh
+   ```
+
+5. If needed, repeat with the pose-only compatibility path for debugging:
+
+   ```bash
+   VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600 \
+   VISION_NAV_MAVLINK_MESSAGE=vision_position_estimate \
    VISION_NAV_COUNT=30 \
    ./scripts/pi/run_terrain_nav_loop.sh
    ```
@@ -265,7 +270,8 @@ It emits a JSON-compatible report through the
 means the SITL receiver requirement is not proven yet.
 The final autonomy-readiness audit accepts either the full session via
 `--px4-sitl-session` or the already generated receiver report via
-`--px4-sitl-report`.
+`--px4-sitl-report`. That report must show `expected_message: odometry` before
+it can satisfy final readiness.
 
 For loose capture files outside a session folder, use:
 

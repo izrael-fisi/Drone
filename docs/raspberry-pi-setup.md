@@ -278,6 +278,12 @@ VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600 \
 ./scripts/pi/check_mavlink_endpoint.sh
 ```
 
+When a runtime wrapper sends external vision to PX4, it now defaults to
+`VISION_NAV_MAVLINK_MESSAGE=odometry`. Override it with
+`VISION_NAV_MAVLINK_MESSAGE=vision_position_estimate` only for compatibility
+debugging; bench-readiness and final autonomy-readiness require receiver proof
+from the `ODOMETRY` path.
+
 After exporting PX4 parameters from QGroundControl or the PX4 shell, check the
 external-vision readiness settings without changing the flight controller:
 
@@ -763,7 +769,9 @@ directly through `VISION_NAV_PX4_SITL_REPORT`, which is useful when receiver
 proof has already been evaluated and does not need to be repackaged into a new
 support bundle. When that direct report is present, the wrapper prints
 `__VISION_NAV_PX4_SITL_REPORT__=...` so the desktop app can download and list
-the standalone receiver proof beside the final readiness report.
+the standalone receiver proof beside the final readiness report. Receiver
+reports must show `expected_message: odometry` to satisfy bench or final
+readiness; compatibility-path reports are treated as debug evidence only.
 
 To include the PX4 parameter readiness report in the same support bundle:
 

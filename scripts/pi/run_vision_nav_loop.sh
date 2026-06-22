@@ -21,7 +21,7 @@ mavlink_endpoint="${VISION_NAV_MAVLINK_ENDPOINT:-}"
 mavlink_ev_delay_ms="${VISION_NAV_MAVLINK_EV_DELAY_MS:-50}"
 mavlink_source_system="${VISION_NAV_MAVLINK_SOURCE_SYSTEM:-42}"
 mavlink_source_component="${VISION_NAV_MAVLINK_SOURCE_COMPONENT:-197}"
-mavlink_message="${VISION_NAV_MAVLINK_MESSAGE:-vision_position_estimate}"
+mavlink_message="${VISION_NAV_MAVLINK_MESSAGE:-odometry}"
 external_position_min_rate_hz="${VISION_NAV_EXTERNAL_POSITION_MIN_RATE_HZ:-1.0}"
 external_position_max_latency_ms="${VISION_NAV_EXTERNAL_POSITION_MAX_LATENCY_MS:-500.0}"
 

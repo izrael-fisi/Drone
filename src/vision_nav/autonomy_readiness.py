@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from vision_nav.bench_readiness import (
+    REQUIRED_PX4_RECEIVER_MESSAGE,
     degraded,
     evaluate_bench_readiness_file,
     failed,
@@ -389,7 +390,7 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "title": "Capture PX4 external-vision receiver proof.",
             "desktop_action": "PX4 SITL capture harness, then Module Setup > Autonomy Readiness",
             "command": "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
-            "notes": "The final report must show fresh vehicle_visual_odometry samples and covariance/variance fields.",
+            "notes": "The final report must show the MAVLink ODOMETRY path arriving as fresh vehicle_visual_odometry samples with covariance/variance fields.",
         },
         "field_evidence_proof": {
             "title": "Create the field evidence template, then register real replay cases.",
@@ -508,7 +509,7 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
             "title": "Capture PX4 external-vision receiver proof.",
             "desktop_action": "PX4 SITL capture harness, then Module Setup > Bench Report",
             "command": "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
-            "notes": "Receiver proof must show fresh vehicle_visual_odometry samples.",
+            "notes": "Receiver proof must use the MAVLink ODOMETRY path and show fresh vehicle_visual_odometry samples.",
         },
         "px4_params": {
             "title": "Export and check PX4 external-vision parameters.",
@@ -812,16 +813,30 @@ def check_px4_receiver_proof(
 
     support_check = support_checks.get("px4_sitl_evidence")
     if support_check and support_check.get("status") == "passed":
+        details = px4_receiver_details_from_support_check(support_check)
+        if str(details.get("expected_message") or "").lower() != REQUIRED_PX4_RECEIVER_MESSAGE:
+            return failed(
+                "px4_receiver_proof",
+                "PX4 receiver proof in the support bundle must use the MAVLink ODOMETRY path.",
+                details,
+            )
         return passed(
             "px4_receiver_proof",
             "PX4 receiver proof is present in the support bundle.",
-            px4_receiver_details_from_support_check(support_check),
+            details,
         )
     if support_check and support_check.get("status") == "degraded":
+        details = px4_receiver_details_from_support_check(support_check)
+        if str(details.get("expected_message") or "").lower() != REQUIRED_PX4_RECEIVER_MESSAGE:
+            return failed(
+                "px4_receiver_proof",
+                "PX4 receiver proof in the support bundle must use the MAVLink ODOMETRY path.",
+                details,
+            )
         return degraded(
             "px4_receiver_proof",
             "PX4 receiver proof in the support bundle is degraded.",
-            px4_receiver_details_from_support_check(support_check),
+            details,
         )
     return failed("px4_receiver_proof", "PX4 SITL or bench receiver proof is required.", {"source": "support_bundle"})
 
@@ -836,10 +851,17 @@ def px4_receiver_check_from_report(report: dict[str, Any], *, source: str) -> di
         "sample_count": listener.get("sample_count"),
         "observed_rate_hz": listener.get("observed_rate_hz"),
         "expected_message": report.get("expected_message"),
+        "required_message": REQUIRED_PX4_RECEIVER_MESSAGE,
         "expected_rate_hz": (report.get("config") or {}).get("expected_rate_hz"),
         "min_rate_ratio": (report.get("config") or {}).get("min_rate_ratio"),
         "latest_sample_age_s": listener.get("latest_sample_age_s"),
     }
+    if str(details.get("expected_message") or "").lower() != REQUIRED_PX4_RECEIVER_MESSAGE:
+        return failed(
+            "px4_receiver_proof",
+            "PX4 receiver proof must use the MAVLink ODOMETRY path for final autonomy readiness.",
+            details,
+        )
     if status == "passed":
         return passed("px4_receiver_proof", "PX4 receiver evidence passed.", details)
     if status == "degraded":
@@ -850,6 +872,7 @@ def px4_receiver_check_from_report(report: dict[str, Any], *, source: str) -> di
 def px4_receiver_details_from_support_check(support_check: dict[str, Any]) -> dict[str, Any]:
     details = dict(support_check.get("details") or {})
     details["source"] = "support_bundle"
+    details["required_message"] = REQUIRED_PX4_RECEIVER_MESSAGE
     return details
 
 

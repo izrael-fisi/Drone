@@ -21,6 +21,9 @@ Status:
 - In progress: `send_odometry_match_result()` and
   `VISION_NAV_MAVLINK_MESSAGE=odometry` are available for bench testing the
   richer PX4 external-vision path.
+- Done: Pi runtime wrappers and the MAVLink log sender default to the preferred
+  `ODOMETRY` path while keeping `VISION_POSITION_ESTIMATE` as an explicit
+  compatibility override.
 - In progress: `vision-nav-send-mavlink-log` now supports selectable
   `vision_position_estimate` or `odometry` output, rate limiting, repeated log
   sends, and skip-reason summaries for sender-side PX4 SITL smoke tests.
@@ -83,6 +86,10 @@ Status:
   session `rate_hz`, and surfaces the rate in desktop receiver/support-bundle
   views, bench-readiness details, and final autonomy-readiness details so proof
   covers timing as well as sample presence.
+- Done: bench-readiness and final autonomy-readiness now require PX4 receiver
+  evidence to prove the MAVLink `ODOMETRY` path. `VISION_POSITION_ESTIMATE`
+  captures can still be reviewed as compatibility debug evidence, but they do
+  not satisfy the preferred PX4 product-interface gate.
 
 Next tasks:
 
@@ -97,6 +104,8 @@ Acceptance checks:
 - Unit tests prove ENU to NED axis mapping, yaw conversion, and covariance
   placement.
 - Existing MAVLink pose output continues to pass.
+- PX4 bench/final readiness fails if receiver evidence only covers the
+  compatibility `VISION_POSITION_ESTIMATE` path.
 - Rejected or incomplete terrain matches are not sent.
 
 ### Track 2: ROS 2 Companion Runtime
