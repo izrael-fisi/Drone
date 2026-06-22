@@ -326,12 +326,13 @@ def copy_logs(logs: list[str], support_dir: Path, *, max_log_bytes: int) -> dict
     missing: list[str] = []
     logs_dir = support_dir / "logs"
     summaries_dir = support_dir / "summaries"
+    used_log_names: set[str] = set()
     for log in logs:
         src = Path(log).expanduser()
         if not src.exists():
             missing.append(str(src))
             continue
-        dst = logs_dir / src.name
+        dst = unique_log_destination(src, logs_dir, used_log_names)
         copied_info = copy_log(src, dst, max_bytes=max_log_bytes)
         copied.append(copied_info)
         try:
@@ -339,12 +340,12 @@ def copy_logs(logs: list[str], support_dir: Path, *, max_log_bytes: int) -> dict
         except Exception as exc:
             summary = {"log_path": str(src), "status": "failed", "error": str(exc)}
         summaries.append(summary)
-        summary_path = summaries_dir / f"{src.stem}.summary.json"
+        summary_path = summaries_dir / f"{dst.stem}.summary.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
         status_path = src.parent / "runtime_status.json"
         if status_path.exists() and status_path.is_file():
-            status_dst = logs_dir / f"{src.stem}.runtime_status.json"
+            status_dst = logs_dir / f"{dst.stem}.runtime_status.json"
             status_info = copy_file(status_path, status_dst)
             try:
                 status_summary = json.loads(status_path.read_text())
@@ -364,6 +365,93 @@ def copy_logs(logs: list[str], support_dir: Path, *, max_log_bytes: int) -> dict
                 }
             )
     return {"copied": copied, "summaries": summaries, "runtime_statuses": runtime_statuses, "missing": missing}
+
+
+def unique_log_destination(src: Path, logs_dir: Path, used_names: set[str]) -> Path:
+    base_name = src.name
+    if base_name not in used_names:
+        used_names.add(base_name)
+        return logs_dir / base_name
+
+    parent_slug = sanitize_filename(src.parent.name)
+    candidate = f"{parent_slug}-{base_name}"
+    if candidate not in used_names:
+        used_names.add(candidate)
+        return logs_dir / candidate
+
+    stem = Path(base_name).stem
+    suffix = Path(base_name).suffix
+    index = 2
+    while True:
+        candidate = f"{parent_slug}-{stem}-{index}{suffix}"
+        if candidate not in used_names:
+            used_names.add(candidate)
+            return logs_dir / candidate
+        index += 1
+
+
+def existing_field_collection_log_paths(paths: list[str]) -> list[str]:
+    results: list[str] = []
+    seen: set[str] = set()
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            continue
+        json_files = sorted(source.rglob("*.json")) if source.is_dir() else [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception:
+                continue
+            if not isinstance(report, dict) or report.get("schema_version") != "vision_nav_field_collection_plan_v1":
+                continue
+            for candidate in field_collection_log_candidates(report):
+                log_path = resolve_field_collection_log_path(candidate, base_dir=report_file.parent)
+                if not log_path.is_file():
+                    continue
+                key = str(log_path.resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(str(log_path))
+    return results
+
+
+def field_collection_log_candidates(report: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    top_level_log = report.get("source_log")
+    if isinstance(top_level_log, str) and top_level_log.strip():
+        candidates.append(top_level_log)
+    for item in report.get("conditions") or []:
+        if not isinstance(item, dict):
+            continue
+        for key in ("source_log", "manifest_log_path"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                candidates.append(value)
+    return candidates
+
+
+def resolve_field_collection_log_path(raw_path: str, *, base_dir: Path) -> Path:
+    path = Path(raw_path).expanduser()
+    if path.is_absolute():
+        return path
+    return base_dir / path
+
+
+def unique_existing_logs(explicit_logs: list[str], discovered_logs: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in [*explicit_logs, *discovered_logs]:
+        if not isinstance(raw, str) or not raw:
+            continue
+        path = Path(raw).expanduser()
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(str(path))
+    return result
 
 
 def copy_extras(extras: list[str], support_dir: Path) -> dict[str, Any]:
@@ -1434,7 +1522,21 @@ def create_support_bundle(
     if bundle:
         bundle_summary = copy_bundle_metadata(bundle, support_dir, include_map_assets=include_map_assets)
 
-    log_summary = copy_logs(logs, support_dir, max_log_bytes=max_log_bytes)
+    field_collection_log_paths = existing_field_collection_log_paths(field_collection_plan_paths or [])
+    all_logs = unique_existing_logs(logs, field_collection_log_paths)
+    log_summary = copy_logs(all_logs, support_dir, max_log_bytes=max_log_bytes)
+    if field_collection_log_paths:
+        explicit_log_keys = {
+            str(Path(log).expanduser().resolve()) if Path(log).expanduser().exists() else str(Path(log).expanduser())
+            for log in logs
+        }
+        auto_added = [
+            path
+            for path in field_collection_log_paths
+            if str(Path(path).expanduser().resolve()) not in explicit_log_keys
+        ]
+        log_summary["field_collection_plan_logs"] = field_collection_log_paths
+        log_summary["auto_added_field_collection_log_count"] = len(auto_added)
     extra_summary = copy_extras(extras, support_dir)
     replay_cases = load_replay_cases(
         replay_case_manifest=replay_case_manifest_path,

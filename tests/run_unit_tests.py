@@ -2119,6 +2119,46 @@ RC8_OPTION,90
             )
         )
         field_collection_plan.with_suffix(".md").write_text("# Field Evidence Collection Plan\n")
+        field_capture_log = root / "field-captures" / "good_texture" / "terrain_matches.jsonl"
+        field_capture_log.parent.mkdir(parents=True)
+        field_capture_log.write_text(
+            json.dumps(
+                {
+                    "result": {
+                        "status": "accepted",
+                        "confidence": 0.81,
+                        "inliers": 21,
+                        "reprojection_error_px": 1.4,
+                        "scale_confidence": 0.72,
+                        "covariance": {"x_m2": 3.0, "y_m2": 3.0, "z_m2": None, "yaw_rad2": None},
+                    },
+                    "external_position_health": {"status": "healthy", "message_type": "odometry"},
+                }
+            )
+            + "\n"
+        )
+        field_capture_status = runtime_status_snapshot(
+            bundle=terrain_bundle,
+            output_dir=field_capture_log.parent,
+            log_path=field_capture_log,
+            sequence=1,
+            record={
+                "timestamp_utc": "2026-06-21T00:05:00Z",
+                "external_position_health": {"status": "healthy", "message_type": "odometry"},
+                "result": {
+                    "status": "accepted",
+                    "tile_id": "tile_000001",
+                    "confidence": 0.81,
+                    "scale_confidence": 0.72,
+                    "inliers": 21,
+                    "covariance": {"x_m2": 3.0, "y_m2": 3.0, "z_m2": None},
+                    "estimator": {"initialized": True, "health": "tracking"},
+                },
+            },
+            status_counts={"accepted": 1},
+            started_at_utc="2026-06-21T00:05:00+00:00",
+        )
+        write_runtime_status(field_capture_log.parent / "runtime_status.json", field_capture_status)
         threshold_tuning_report = root / "threshold_tuning_report.json"
         threshold_tuning_report.write_text(
             json.dumps(
@@ -2245,7 +2285,10 @@ RC8_OPTION,90
             "bundle/elevation/dsm.tif",
             "logs/terrain_matches.jsonl",
             "logs/terrain_matches.runtime_status.json",
+            "logs/good_texture-terrain_matches.jsonl",
+            "logs/good_texture-terrain_matches.runtime_status.json",
             "summaries/terrain_matches.summary.json",
+            "summaries/good_texture-terrain_matches.summary.json",
             "summaries/replay_gates/unit-good.gate.json",
             "summaries/px4_sitl_evidence/receiver_evidence.json",
             "summaries/px4_sitl_prereqs/px4_sitl_capture_prereqs.json",
@@ -2279,6 +2322,18 @@ RC8_OPTION,90
         assert_equal(manifest["bundle"]["mission_plan"]["status"], "loaded", "support mission plan loaded")
         assert_equal(manifest["bundle"]["mission_plan"]["gnss_denied"]["status"], "ready", "support gnss denied status")
         assert_equal(manifest["logs"]["summaries"][0]["accepted_rate"], 1.0, "support log accepted rate")
+        assert_equal(
+            manifest["logs"]["auto_added_field_collection_log_count"],
+            1,
+            "support auto-added field collection log count",
+        )
+        assert_equal(
+            len(manifest["logs"]["field_collection_plan_logs"]),
+            2,
+            "support field collection plan discovered log count",
+        )
+        assert_equal(len(manifest["logs"]["copied"]), 2, "support copied explicit plus field collection logs")
+        assert_equal(len(manifest["logs"]["runtime_statuses"]), 2, "support copied runtime statuses for field logs")
         assert_equal(manifest["field_collection_plans"]["status"], "passed", "support field collection plan status")
         assert_equal(manifest["field_collection_plans"]["report_count"], 1, "support field collection plan count")
         assert_equal(
@@ -2433,6 +2488,28 @@ RC8_OPTION,90
         assert_equal(manifest["rosbag2_cli_reviews"]["report_count"], 1, "support rosbag2 cli review count")
         assert_equal(manifest["bench_readiness"]["status"], "degraded", "support bench readiness status")
         assert_equal(manifest["bench_readiness"]["summary"]["degraded"], 1, "support bench readiness degraded count")
+        auto_logs_result = create_support_bundle(
+            repo=".",
+            output_dir=root / "support-auto-field-logs",
+            name="unit-support-auto-field-logs",
+            field_collection_plan_paths=[str(field_collection_plan)],
+        )
+        auto_logs_manifest = json.loads(Path(auto_logs_result["manifest_path"]).read_text())
+        assert_equal(
+            len(auto_logs_manifest["logs"]["copied"]),
+            2,
+            "support auto-ingests field collection source logs without explicit log args",
+        )
+        assert_equal(
+            auto_logs_manifest["logs"]["auto_added_field_collection_log_count"],
+            2,
+            "support auto-only field collection log count",
+        )
+        assert_equal(
+            len(auto_logs_manifest["logs"]["runtime_statuses"]),
+            2,
+            "support auto-ingests runtime statuses beside field collection logs",
+        )
         readiness = evaluate_bench_readiness_file(zip_path)
         assert_equal(readiness["status"], "degraded", "bench readiness degraded on px4 param warning")
         readiness_checks = {check["name"]: check["status"] for check in readiness["checks"]}
@@ -2512,7 +2589,7 @@ RC8_OPTION,90
         assert_equal(runtime_checks["runtime_status"], "degraded", "bench readiness runtime status degrade")
 
         degraded_external = json.loads(json.dumps(manifest))
-        degraded_external["logs"]["runtime_statuses"][0]["external_position"] = {
+        degraded_external["logs"]["runtime_statuses"][-1]["external_position"] = {
             "status": "degraded",
             "message_type": "odometry",
             "last_warnings": ["velocity_covariance_missing"],

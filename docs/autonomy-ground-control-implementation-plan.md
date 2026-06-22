@@ -578,6 +578,10 @@ Status:
   Markdown checklist under `extras/field_collection_plans/`, publish parsed
   plan JSON under `summaries/field_collection_plans/`, and preserve the
   intended field-coverage plan for support review.
+- Done: support bundles now auto-ingest existing runtime logs referenced by
+  field collection plans, including sibling `runtime_status.json` snapshots, so
+  per-condition field captures are included in bench evidence without requiring
+  a separate `--log` argument for each condition.
 - Done: support-bundle field-collection summaries now preserve capture root,
   per-condition source-log/capture-output/runtime-status paths,
   capture/metadata-update/register command presence, and pending command counts
