@@ -371,13 +371,17 @@ altitude/speed context keep the final readiness proof failed.
 
 Module Setup can also register the latest Pi terrain runtime log as a field
 evidence case after capture. The operator selects expected behavior, condition
-tags, notes, and whether to replace an existing case. The app runs
+tags, capture metadata, notes, and whether to replace an existing case. The app runs
 `scripts/pi/register_field_replay_case.sh` over SSH, which updates the Pi-side
 field replay manifest and writes the field-evidence report that the next
 support bundle will include automatically. The same action downloads
 `field_evidence_report.json` to `~/DroneTransfer/from-pi/replay-cases/` and the
 Field Evidence Coverage list shows which required real-world conditions are
 covered or still missing.
+The Field Evidence Case form sends `VISION_NAV_FIELD_CAPTURE_METADATA` during
+registration. The Evidence Workflow only includes the optional registration
+step when that metadata is complete, so it does not create field cases that are
+known to fail the proof gate.
 
 Module Setup can run `Threshold Tuning` after enough field cases are registered.
 The action runs `scripts/pi/run_threshold_tuning_report.sh` over SSH, writes the

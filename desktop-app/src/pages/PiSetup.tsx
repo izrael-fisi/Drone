@@ -116,6 +116,19 @@ interface FieldCaseForm {
   caseName: string;
   expected: FieldExpected;
   conditions: string;
+  siteName: string;
+  operator: string;
+  captureDateUtc: string;
+  locationLabel: string;
+  flightAltitudeAglM: string;
+  speedMps: string;
+  lighting: string;
+  weather: string;
+  terrainTexture: string;
+  mapAgeOrSeasonNotes: string;
+  cameraFocusExposureNotes: string;
+  imuPx4StateNotes: string;
+  safetyNotes: string;
   notes: string;
   replace: boolean;
   strict: boolean;
@@ -394,6 +407,68 @@ function numberField(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function compactUtcNow() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function firstFieldCondition(conditions: string) {
+  return conditions.split(/[,\s]+/).map((value) => value.trim()).find(Boolean) ?? "";
+}
+
+function parseOptionalFloat(value: string) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function fieldCaptureMetadata(remoteBundle: string, fieldCase: FieldCaseForm) {
+  return {
+    schema_version: "vision_nav_field_capture_metadata_v1",
+    site_name: fieldCase.siteName.trim(),
+    condition: firstFieldCondition(fieldCase.conditions),
+    expected_behavior: fieldCase.expected,
+    bundle: remoteBundle,
+    operator: fieldCase.operator.trim(),
+    capture_date_utc: fieldCase.captureDateUtc.trim(),
+    location_label: fieldCase.locationLabel.trim(),
+    flight_altitude_agl_m: parseOptionalFloat(fieldCase.flightAltitudeAglM),
+    speed_mps: parseOptionalFloat(fieldCase.speedMps),
+    lighting: fieldCase.lighting.trim(),
+    weather: fieldCase.weather.trim(),
+    terrain_texture: fieldCase.terrainTexture.trim(),
+    map_age_or_season_notes: fieldCase.mapAgeOrSeasonNotes.trim(),
+    camera_focus_exposure_notes: fieldCase.cameraFocusExposureNotes.trim(),
+    imu_px4_state_notes: fieldCase.imuPx4StateNotes.trim(),
+    safety_notes: fieldCase.safetyNotes.trim(),
+    notes: fieldCase.notes.trim(),
+  };
+}
+
+function fieldCaptureMetadataReady(fieldCase: FieldCaseForm) {
+  const altitude = parseOptionalFloat(fieldCase.flightAltitudeAglM);
+  const speed = parseOptionalFloat(fieldCase.speedMps);
+  const requiredText = [
+    fieldCase.siteName,
+    fieldCase.operator,
+    fieldCase.captureDateUtc,
+    fieldCase.locationLabel,
+    fieldCase.lighting,
+    fieldCase.weather,
+    fieldCase.terrainTexture,
+    fieldCase.mapAgeOrSeasonNotes,
+    fieldCase.cameraFocusExposureNotes,
+    fieldCase.imuPx4StateNotes,
+    fieldCase.safetyNotes,
+  ];
+  return (
+    Boolean(firstFieldCondition(fieldCase.conditions)) &&
+    requiredText.every((value) => value.trim() && !value.trim().toLowerCase().startsWith("todo")) &&
+    altitude !== null &&
+    altitude > 0 &&
+    speed !== null &&
+    speed >= 0
+  );
+}
+
 function readModuleSetupHandoff(): ModuleSetupHandoff | null {
   try {
     const raw = sessionStorage.getItem(MODULE_SETUP_HANDOFF_KEY);
@@ -424,11 +499,13 @@ function benchReportCommand(remoteProject: string, remoteBundle: string, mavlink
 }
 
 function fieldEvidenceCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {
+  const captureMetadata = JSON.stringify(fieldCaptureMetadata(remoteBundle, fieldCase));
   const env = [
     `VISION_NAV_FIELD_CASE_NAME=${shellQuote(fieldCase.caseName)}`,
     `VISION_NAV_FIELD_EXPECTED=${shellQuote(fieldCase.expected)}`,
     `VISION_NAV_FIELD_CONDITIONS=${shellQuote(fieldCase.conditions)}`,
     `VISION_NAV_FIELD_BUNDLE=${shellQuote(remoteBundle)}`,
+    `VISION_NAV_FIELD_CAPTURE_METADATA=${shellQuote(captureMetadata)}`,
     fieldCase.notes ? `VISION_NAV_FIELD_NOTES=${shellQuote(fieldCase.notes)}` : "",
     fieldCase.replace ? "VISION_NAV_FIELD_REPLACE=1" : "",
     fieldCase.strict ? "VISION_NAV_FIELD_GATE_STRICT=1" : "",
@@ -464,15 +541,18 @@ function featureMethodBenchmarkCommand(remoteProject: string, remoteBundle: stri
 }
 
 function autonomyEvidenceWorkflowCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {
+  const captureMetadata = JSON.stringify(fieldCaptureMetadata(remoteBundle, fieldCase));
+  const includeFieldRegistration = fieldCase.caseName.trim() && firstFieldCondition(fieldCase.conditions) && fieldCaptureMetadataReady(fieldCase);
   const env = [
     `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)}`,
     `VISION_NAV_FIELD_BUNDLE=${shellQuote(remoteBundle)}`,
     `VISION_NAV_FEATURE_BENCH_BUNDLE=${shellQuote(remoteBundle)}`,
-    `VISION_NAV_FIELD_CASE_NAME=${shellQuote(fieldCase.caseName)}`,
-    `VISION_NAV_FIELD_EXPECTED=${shellQuote(fieldCase.expected)}`,
-    `VISION_NAV_FIELD_CONDITIONS=${shellQuote(fieldCase.conditions)}`,
-    fieldCase.notes ? `VISION_NAV_FIELD_NOTES=${shellQuote(fieldCase.notes)}` : "",
-    fieldCase.replace ? "VISION_NAV_FIELD_REPLACE=1" : "",
+    includeFieldRegistration ? `VISION_NAV_FIELD_CASE_NAME=${shellQuote(fieldCase.caseName)}` : "",
+    includeFieldRegistration ? `VISION_NAV_FIELD_EXPECTED=${shellQuote(fieldCase.expected)}` : "",
+    includeFieldRegistration ? `VISION_NAV_FIELD_CONDITIONS=${shellQuote(fieldCase.conditions)}` : "",
+    includeFieldRegistration ? `VISION_NAV_FIELD_CAPTURE_METADATA=${shellQuote(captureMetadata)}` : "",
+    includeFieldRegistration && fieldCase.notes ? `VISION_NAV_FIELD_NOTES=${shellQuote(fieldCase.notes)}` : "",
+    includeFieldRegistration && fieldCase.replace ? "VISION_NAV_FIELD_REPLACE=1" : "",
     "VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED=1",
   ].filter(Boolean).join(" ");
   return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_autonomy_evidence_workflow.sh`;
@@ -502,6 +582,19 @@ function defaultFieldCaseForm(): FieldCaseForm {
     caseName: "field-good-texture",
     expected: "good_map",
     conditions: "good_texture",
+    siteName: "",
+    operator: "",
+    captureDateUtc: compactUtcNow(),
+    locationLabel: "",
+    flightAltitudeAglM: "",
+    speedMps: "",
+    lighting: "",
+    weather: "",
+    terrainTexture: "",
+    mapAgeOrSeasonNotes: "",
+    cameraFocusExposureNotes: "",
+    imuPx4StateNotes: "",
+    safetyNotes: "",
     notes: "",
     replace: false,
     strict: false,
@@ -2596,6 +2689,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const defaultRemoteBundle = `/home/${form.username || "user"}/drone-data/map_bundles/mission_bundle`;
   const activeHandoff = setupHandoff?.device_id === selectedDeviceId ? setupHandoff : null;
   const remoteBundle = activeHandoff?.remote_bundle_dir || defaultRemoteBundle;
+  const fieldMetadataReady = fieldCaptureMetadataReady(fieldCase);
 
   const setResult = (id: string, result: SetupResult) => {
     setResults((prev) => ({ ...prev, [id]: result }));
@@ -3656,6 +3750,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const registerFieldEvidenceCase = async () => {
     if (!fieldCase.caseName.trim() || !fieldCase.conditions.trim()) {
       setError("Field case name and condition tags are required.");
+      return;
+    }
+    if (!fieldCaptureMetadataReady(fieldCase)) {
+      setError("Complete the field capture metadata before registering evidence.");
       return;
     }
     const resolvedAuth = auth();
@@ -4800,13 +4898,19 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   </button>
                   <button
                     onClick={registerFieldEvidenceCase}
-                    disabled={!connectionReady || !!runningStep || !fieldCase.caseName.trim() || !fieldCase.conditions.trim()}
+                    disabled={!connectionReady || !!runningStep || !fieldCase.caseName.trim() || !fieldCase.conditions.trim() || !fieldMetadataReady}
                     className="btn-secondary text-xs py-1 px-3"
                   >
                     {runningStep === "field-evidence" ? <Loader2 size={11} className="animate-spin" /> : <ShieldCheck size={11} />}
                     Register
                   </button>
                 </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+                <span className={fieldMetadataReady ? "badge-green" : "badge-yellow"}>
+                  {fieldMetadataReady ? "metadata ready" : "metadata incomplete"}
+                </span>
+                <span className="text-slate-500">condition {firstFieldCondition(fieldCase.conditions) || "n/a"}</span>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -4850,6 +4954,131 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                     value={fieldCase.notes}
                     onChange={(event) => setFieldCase((value) => ({ ...value, notes: event.target.value }))}
                   />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Capture Metadata</div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="label">Site name</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.siteName}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, siteName: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Operator</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.operator}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, operator: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Captured UTC</label>
+                    <div className="flex gap-1">
+                      <input
+                        className="input-field font-mono text-xs"
+                        value={fieldCase.captureDateUtc}
+                        onChange={(event) => setFieldCase((value) => ({ ...value, captureDateUtc: event.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFieldCase((value) => ({ ...value, captureDateUtc: compactUtcNow() }))}
+                        className="btn-secondary px-2"
+                        title="Set current UTC time"
+                      >
+                        <RefreshCw size={11} />
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">Location label</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.locationLabel}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, locationLabel: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Altitude AGL m</label>
+                    <input
+                      className="input-field font-mono text-xs"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={fieldCase.flightAltitudeAglM}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, flightAltitudeAglM: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Speed m/s</label>
+                    <input
+                      className="input-field font-mono text-xs"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={fieldCase.speedMps}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, speedMps: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Lighting</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.lighting}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, lighting: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Weather</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.weather}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, weather: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Terrain texture</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.terrainTexture}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, terrainTexture: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Map age notes</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.mapAgeOrSeasonNotes}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, mapAgeOrSeasonNotes: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Focus/exposure</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.cameraFocusExposureNotes}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, cameraFocusExposureNotes: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="label">IMU/PX4 state</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.imuPx4StateNotes}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, imuPx4StateNotes: event.target.value }))}
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <label className="label">Safety notes</label>
+                    <input
+                      className="input-field text-xs"
+                      value={fieldCase.safetyNotes}
+                      onChange={(event) => setFieldCase((value) => ({ ...value, safetyNotes: event.target.value }))}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="flex flex-wrap gap-3 text-[11px] text-slate-400">

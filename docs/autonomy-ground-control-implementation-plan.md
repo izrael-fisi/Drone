@@ -452,6 +452,10 @@ Status:
 - Done: field-evidence and threshold-tuning proof gates now require completed
   capture metadata on real field replay cases, with metadata issue counts
   carried into support/readiness summaries.
+- Done: Module Setup's Field Evidence Case form now captures proof-grade field
+  metadata and passes it through `VISION_NAV_FIELD_CAPTURE_METADATA`; the full
+  Evidence Workflow skips optional field registration until that metadata is
+  complete.
 - Done: `scripts/pi/create_field_evidence_template.sh` wraps the template
   generator on the Pi, writes the starter manifest into the transfer folder,
   and emits a stable marker for desktop/support collection.
