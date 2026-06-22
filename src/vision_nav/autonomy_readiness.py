@@ -473,6 +473,10 @@ def build_command_bundle(
         ]
     )
     field_collection_capture_commands = field_collection_commands(field_collection_plan_path, "capture_command")
+    field_collection_metadata_update_commands = field_collection_commands(
+        field_collection_plan_path,
+        "metadata_update_command",
+    )
     field_collection_registration_commands = field_collection_commands(field_collection_plan_path, "register_command")
     prerequisite_fix_commands = diagnostic_fix_commands(diagnostics)
     return {
@@ -482,6 +486,7 @@ def build_command_bundle(
         "immediate_next_action_commands": immediate_next_action_commands,
         "blocked_follow_up_commands": blocked_follow_up_commands,
         "field_collection_capture_commands": field_collection_capture_commands,
+        "field_collection_metadata_update_commands": field_collection_metadata_update_commands,
         "field_collection_registration_commands": field_collection_registration_commands,
         "command_count": len(
             unique_strings(
@@ -490,6 +495,7 @@ def build_command_bundle(
                     *prerequisite_fix_commands,
                     *next_action_commands,
                     *field_collection_capture_commands,
+                    *field_collection_metadata_update_commands,
                     *field_collection_registration_commands,
                 ]
             )

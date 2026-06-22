@@ -111,6 +111,17 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
                 )
                 if next_condition.get("capture_command"):
                     lines.extend(["", "Capture command:", "", "```bash", str(next_condition["capture_command"]), "```"])
+                if next_condition.get("metadata_update_command"):
+                    lines.extend(
+                        [
+                            "",
+                            "Metadata update command:",
+                            "",
+                            "```bash",
+                            str(next_condition["metadata_update_command"]),
+                            "```",
+                        ]
+                    )
                 if next_condition.get("register_command"):
                     lines.extend(["", "Register command:", "", "```bash", str(next_condition["register_command"]), "```"])
             lines.extend(["", "Pending collection items:", ""])
@@ -280,6 +291,11 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         if field_capture_commands:
             lines.extend(["", "Field collection capture commands:", "", "```bash"])
             lines.extend(field_capture_commands)
+            lines.append("```")
+        field_metadata_commands = command_groups.get("field_collection_metadata_update") or []
+        if field_metadata_commands:
+            lines.extend(["", "Field collection metadata update commands:", "", "```bash"])
+            lines.extend(field_metadata_commands)
             lines.append("```")
         field_commands = command_groups.get("field_collection") or []
         if field_commands:
@@ -546,14 +562,26 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
         ]
     )
     field_capture_commands = json_string_list(report_bundle.get("field_collection_capture_commands"))
+    field_metadata_commands = json_string_list(report_bundle.get("field_collection_metadata_update_commands"))
     field_commands = json_string_list(report_bundle.get("field_collection_registration_commands"))
     if field_plan is not None:
+        pending_conditions = field_collection_pending_conditions(field_plan)
         field_capture_commands = unique_strings(
             [
                 *field_capture_commands,
                 *[
                     item.get("capture_command")
-                    for item in field_collection_pending_conditions(field_plan)
+                    for item in pending_conditions
+                    if isinstance(item, dict)
+                ],
+            ]
+        )
+        field_metadata_commands = unique_strings(
+            [
+                *field_metadata_commands,
+                *[
+                    item.get("metadata_update_command")
+                    for item in pending_conditions
                     if isinstance(item, dict)
                 ],
             ]
@@ -563,7 +591,7 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
                 *field_commands,
                 *[
                     item.get("register_command")
-                    for item in field_collection_pending_conditions(field_plan)
+                    for item in pending_conditions
                     if isinstance(item, dict)
                 ],
             ]
@@ -581,6 +609,8 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
         result["next_actions"] = next_action_commands
     if field_capture_commands:
         result["field_collection_capture"] = field_capture_commands
+    if field_metadata_commands:
+        result["field_collection_metadata_update"] = field_metadata_commands
     if field_commands:
         result["field_collection"] = field_commands
     return result

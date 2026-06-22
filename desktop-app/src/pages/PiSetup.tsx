@@ -948,8 +948,13 @@ function formatReportTime(ms?: number) {
 }
 
 function fieldCollectionCommands(
-  conditions: Array<{ capture_command?: string; register_command?: string; status?: string }>,
-  key: "capture_command" | "register_command",
+  conditions: Array<{
+    capture_command?: string;
+    metadata_update_command?: string;
+    register_command?: string;
+    status?: string;
+  }>,
+  key: "capture_command" | "metadata_update_command" | "register_command",
 ) {
   return uniqueCommands(
     conditions
@@ -1200,6 +1205,10 @@ function AutonomyReadinessReportList({
               ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "capture_command"),
               ...(commandBundle?.field_collection_capture_commands ?? []),
             ]);
+            const fieldPlanMetadataUpdateCommands = uniqueCommands([
+              ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "metadata_update_command"),
+              ...(commandBundle?.field_collection_metadata_update_commands ?? []),
+            ]);
             const fieldPlanRegisterCommands = uniqueCommands([
               ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "register_command"),
               ...(commandBundle?.field_collection_registration_commands ?? []),
@@ -1438,6 +1447,17 @@ function AutonomyReadinessReportList({
                           >
                             <Copy size={9} />
                             capture
+                          </button>
+                        )}
+                        {fieldPlanMetadataUpdateCommands.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(fieldPlanMetadataUpdateCommands.join("\n"))}
+                            className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                            title="Copy pending metadata update commands"
+                          >
+                            <Copy size={9} />
+                            metadata
                           </button>
                         )}
                         {fieldPlanRegisterCommands.length > 0 && (
@@ -2410,6 +2430,7 @@ function FieldCollectionPlanList({
               (file.summary.registered_missing_log_count ?? 0);
             const revealPath = file.markdown_path ?? file.path;
             const captureCommands = fieldCollectionCommands(file.conditions, "capture_command");
+            const metadataUpdateCommands = fieldCollectionCommands(file.conditions, "metadata_update_command");
             const registerCommands = fieldCollectionCommands(file.conditions, "register_command");
             return (
               <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
@@ -2437,6 +2458,17 @@ function FieldCollectionPlanList({
                         >
                           <Copy size={9} />
                           capture
+                        </button>
+                      )}
+                      {metadataUpdateCommands.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(metadataUpdateCommands.join("\n"))}
+                          className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                          title="Copy pending metadata update commands"
+                        >
+                          <Copy size={9} />
+                          metadata
                         </button>
                       )}
                       {registerCommands.length > 0 && (

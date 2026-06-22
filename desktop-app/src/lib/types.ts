@@ -108,8 +108,10 @@ export interface FieldCollectionPlanCondition {
   capture_output_dir?: string;
   runtime_status_path?: string;
   has_capture_command?: boolean;
+  has_metadata_update_command?: boolean;
   has_register_command?: boolean;
   capture_command?: string;
+  metadata_update_command?: string;
   bundle?: string;
   capture_metadata?: Record<string, unknown>;
   register_command?: string;
@@ -554,6 +556,7 @@ export interface AutonomyReadinessReportFile {
       immediate_next_action_commands?: string[];
       blocked_follow_up_commands?: string[];
       field_collection_capture_commands?: string[];
+      field_collection_metadata_update_commands?: string[];
       field_collection_registration_commands: string[];
       command_count?: number;
     };
@@ -636,6 +639,7 @@ export interface AutonomyReadinessReportFile {
     immediate_next_action_commands?: string[];
     blocked_follow_up_commands?: string[];
     field_collection_capture_commands?: string[];
+    field_collection_metadata_update_commands?: string[];
     field_collection_registration_commands: string[];
     command_count?: number;
   };

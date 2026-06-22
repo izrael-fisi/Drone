@@ -3843,10 +3843,39 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         ):
             raise AssertionError("autonomy readiness JSON missing field capture command bundle")
         if (
+            "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+            not in field_plan_bundle["field_collection_metadata_update_commands"]
+        ):
+            raise AssertionError("autonomy readiness JSON missing field metadata update command bundle")
+        if (
             "./scripts/pi/register_field_replay_case.sh --condition blur"
             not in field_plan_bundle["field_collection_registration_commands"]
         ):
             raise AssertionError("autonomy readiness JSON missing field registration command bundle")
+        incomplete_handoff = render_handoff_markdown(incomplete_field_plan_ready)
+        if "Field collection metadata update commands:" not in incomplete_handoff:
+            raise AssertionError("autonomy handoff missing field metadata update command section")
+        if "./scripts/pi/update_field_capture_metadata.sh --condition blur" not in incomplete_handoff:
+            raise AssertionError("autonomy handoff missing field metadata update command")
+        incomplete_report = root / "autonomy_readiness_incomplete_field_plan.json"
+        incomplete_handoff_path = root / "autonomy_readiness_incomplete_field_plan.md"
+        incomplete_report.write_text(json.dumps(incomplete_field_plan_ready))
+        incomplete_handoff_path.write_text(incomplete_handoff)
+        incomplete_package = create_evidence_package(
+            incomplete_report,
+            handoff_path=incomplete_handoff_path,
+            output_path=root / "autonomy_evidence_package_incomplete_field_plan.zip",
+        )
+        with zipfile.ZipFile(Path(incomplete_package["zip_path"])) as archive:
+            incomplete_package_manifest = json.loads(archive.read("manifest.json"))
+            incomplete_package_bundle = incomplete_package_manifest.get("command_bundle")
+            if not isinstance(incomplete_package_bundle, dict):
+                raise AssertionError("autonomy evidence package missing incomplete field plan command bundle")
+            if "./scripts/pi/update_field_capture_metadata.sh --condition blur" not in incomplete_package_bundle.get(
+                "field_collection_metadata_update_commands",
+                [],
+            ):
+                raise AssertionError("autonomy evidence package missing field metadata update command group")
 
         missing_rosbag_manifest = root / "support_manifest_without_rosbag_validation.json"
         missing_rosbag_data = json.loads(direct_report_support_manifest.read_text())

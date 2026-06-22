@@ -252,6 +252,9 @@ def build_command_bundle_summary(report: dict[str, Any]) -> dict[str, Any] | Non
         "immediate_next_action_commands": string_list(bundle.get("immediate_next_action_commands")),
         "blocked_follow_up_commands": string_list(bundle.get("blocked_follow_up_commands")),
         "field_collection_capture_commands": string_list(bundle.get("field_collection_capture_commands")),
+        "field_collection_metadata_update_commands": string_list(
+            bundle.get("field_collection_metadata_update_commands")
+        ),
         "field_collection_registration_commands": string_list(bundle.get("field_collection_registration_commands")),
     }
     command_count = bundle.get("command_count")

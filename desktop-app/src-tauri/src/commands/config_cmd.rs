@@ -289,10 +289,12 @@ pub struct FieldCollectionPlanCondition {
     pub capture_output_dir: Option<String>,
     pub runtime_status_path: Option<String>,
     pub has_capture_command: Option<bool>,
+    pub has_metadata_update_command: Option<bool>,
     pub has_register_command: Option<bool>,
     pub bundle: Option<String>,
     pub capture_metadata: Option<serde_json::Value>,
     pub capture_command: Option<String>,
+    pub metadata_update_command: Option<String>,
     pub register_command: Option<String>,
 }
 
@@ -656,6 +658,7 @@ pub struct AutonomyReadinessCommandBundle {
     pub immediate_next_action_commands: Vec<String>,
     pub blocked_follow_up_commands: Vec<String>,
     pub field_collection_capture_commands: Vec<String>,
+    pub field_collection_metadata_update_commands: Vec<String>,
     pub field_collection_registration_commands: Vec<String>,
     pub command_count: Option<u64>,
 }
@@ -3206,6 +3209,9 @@ fn autonomy_readiness_command_bundle_from_bundle_json(
         field_collection_capture_commands: json_string_array(
             bundle.get("field_collection_capture_commands"),
         ),
+        field_collection_metadata_update_commands: json_string_array(
+            bundle.get("field_collection_metadata_update_commands"),
+        ),
         field_collection_registration_commands: json_string_array(
             bundle.get("field_collection_registration_commands"),
         ),
@@ -3854,6 +3860,10 @@ fn field_collection_plan_condition_from_json(
             .get("has_capture_command")
             .and_then(|value| value.as_bool())
             .or_else(|| json_string(item.get("capture_command")).map(|value| !value.is_empty())),
+        has_metadata_update_command: item
+            .get("has_metadata_update_command")
+            .and_then(|value| value.as_bool())
+            .or_else(|| json_string(item.get("metadata_update_command")).map(|value| !value.is_empty())),
         has_register_command: item
             .get("has_register_command")
             .and_then(|value| value.as_bool())
@@ -3861,6 +3871,7 @@ fn field_collection_plan_condition_from_json(
         bundle: json_string(item.get("bundle")),
         capture_metadata: item.get("capture_metadata").cloned(),
         capture_command: json_string(item.get("capture_command")),
+        metadata_update_command: json_string(item.get("metadata_update_command")),
         register_command: json_string(item.get("register_command")),
     })
 }
@@ -4947,10 +4958,13 @@ mod tests {
                     "field_collection_capture_commands": [
                         "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
                     ],
+                    "field_collection_metadata_update_commands": [
+                        "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+                    ],
                     "field_collection_registration_commands": [
                         "./scripts/pi/register_field_replay_case.sh --condition blur"
                     ],
-                    "command_count": 7
+                    "command_count": 8
                 },
                 "plan_snapshot": {
                     "schema_version": "vision_nav_autonomy_plan_snapshot_v1",
@@ -5320,10 +5334,13 @@ mod tests {
                         "field_collection_capture_commands": [
                             "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
                         ],
+                        "field_collection_metadata_update_commands": [
+                            "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+                        ],
                         "field_collection_registration_commands": [
                             "./scripts/pi/register_field_replay_case.sh --condition blur"
                         ],
-                        "command_count": 7
+                        "command_count": 8
                     },
                     "workflow_validation_summary": {
                         "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
@@ -5580,7 +5597,11 @@ mod tests {
             package_command_bundle.blocked_follow_up_commands[0],
             "./scripts/pi/run_threshold_tuning_report.sh"
         );
-        assert_eq!(package_command_bundle.command_count, Some(7));
+        assert_eq!(
+            package_command_bundle.field_collection_metadata_update_commands[0],
+            "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+        );
+        assert_eq!(package_command_bundle.command_count, Some(8));
         let package_validation = package_summary
             .workflow_validation_summary
             .as_ref()
@@ -5735,10 +5756,14 @@ mod tests {
             "./scripts/pi/run_terrain_nav_loop.sh --condition blur"
         );
         assert_eq!(
+            command_bundle.field_collection_metadata_update_commands[0],
+            "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+        );
+        assert_eq!(
             command_bundle.field_collection_registration_commands[0],
             "./scripts/pi/register_field_replay_case.sh --condition blur"
         );
-        assert_eq!(command_bundle.command_count, Some(7));
+        assert_eq!(command_bundle.command_count, Some(8));
         let field_collection_plan = reports[0]
             .field_collection_plan
             .as_ref()

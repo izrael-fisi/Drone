@@ -584,6 +584,11 @@ Status:
   so proof-grade site, weather, camera, IMU/PX4, altitude, speed, and safety
   metadata can be filled before registration instead of being buried in the
   long registration command.
+- Done: autonomy-readiness command bundles, evidence-package summaries,
+  Markdown handoffs, and Module Setup field-plan cards now expose pending
+  metadata-update commands as their own copyable command group between capture
+  and registration, so proof-grade field metadata is no longer hidden in the
+  registration command blob.
 - Done: support-bundle summary cards now surface field-plan source-log counts
   next to capture-output and runtime-status counts, matching the final
   autonomy-readiness traceability gate.
@@ -682,14 +687,17 @@ Status:
   `command_bundle` with the guided evidence-workflow command,
   prerequisite fix commands, dependency-ordered next-action commands,
   immediately runnable next-action commands, blocked follow-up commands,
-  pending field replay capture commands, and pending field replay registration
-  commands for downstream support tooling, and Module Setup consumes that
-  bundle for split bulk command copy plus saved setup-report exports.
+  pending field replay capture commands, pending capture-metadata update
+  commands, and pending field replay registration commands for downstream
+  support tooling, and Module Setup consumes that bundle for split bulk command
+  copy plus saved setup-report exports.
 - Done: the Tauri report parser now preserves
-  `field_collection_capture_commands` from downloaded autonomy-readiness
+  `field_collection_capture_commands`,
+  `field_collection_metadata_update_commands`, and
+  `field_collection_registration_commands` from downloaded autonomy-readiness
   reports, so Module Setup bulk-copy and saved setup reports retain the exact
-  per-condition capture commands even when the sibling field collection plan is
-  unavailable.
+  per-condition capture, metadata, and registration commands even when the
+  sibling field collection plan is unavailable.
 - Done: field-evidence readiness next actions now point to the guided Evidence
   Workflow, which creates or refreshes the field collection plan, auto-loads
   the next pending condition, captures into the condition-specific output

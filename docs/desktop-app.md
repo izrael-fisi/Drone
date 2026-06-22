@@ -657,13 +657,14 @@ counts, capture-command/runtime-status path coverage, per-condition
 placeholder/missing/registered status, and lets support extract the
 JSON/Markdown plan artifacts from the ZIP.
 Pending field-collection condition pills and command buttons in Module Setup
-copy individual or batched generated capture and registration commands when the
-plan includes them, which keeps real replay-case collection and registration
-out of manual retyping. The first pending condition is shown separately as the
-next field-capture target in downloaded plan and readiness cards.
+copy individual or batched generated capture, metadata update, and registration
+commands when the plan includes them, which keeps real replay-case collection,
+proof metadata entry, and registration out of manual retyping. The first
+pending condition is shown separately as the next field-capture target in
+downloaded plan and readiness cards.
 The Markdown handoff mirrors that workflow with a copy-friendly command bundle
 for guided workflow, immediate next-action, blocked follow-up, and pending
-field replay capture/registration commands. It also
+field replay capture/metadata-update/registration commands. It also
 summarizes the research/implementation source-doc snapshot that the final audit
 used, including required marker coverage and implementation track/task counts.
 It also renders the readiness report's proof runbook so support can see which

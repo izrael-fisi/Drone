@@ -1229,7 +1229,10 @@ snapshot with handoff path, evidence package path, goal-completion flag,
 plan source snapshot, external blockers, next actions, the readiness
 `command_bundle` or evidence-package command-bundle fallback, and the
 evidence-package workflow-validation summary plus referenced field collection
-plan summary when they are available locally.
+plan summary when they are available locally. The command bundle preserves
+pending field capture, metadata-update, and registration commands separately so
+operators can fill proof-grade capture metadata before replay-case
+registration.
 The same Module Setup panel lists the latest downloaded feature-method
 benchmark JSON reports
 with recommended method and accepted rates, lists field-evidence JSON reports
