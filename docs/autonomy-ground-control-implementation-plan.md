@@ -589,6 +589,10 @@ Status:
   goal-completion proof summary, including external blocker count and the first
   missing PX4, field, feature-benchmark, threshold, ROS replay validation, or
   support-bundle evidence items.
+- Done: Module Setup renders the readiness `proof_runbook` in downloaded
+  Autonomy Readiness report cards, including phase counts, dependency state,
+  proof checks, and copyable phase commands, with evidence-package summary
+  fallback for older downloaded report cards.
 - Done: field-evidence and threshold-tuning next actions carry the missing
   required condition keys so operators can see which real-world cases still
   need to be collected.
@@ -699,9 +703,9 @@ Status:
   `plan_snapshot`, showing research marker/reference coverage and implementation
   track/task/done counts directly in the desktop app.
 - Done: saved Module Setup reports now include bounded final-audit proof items,
-  proof pass counts, plan snapshots, completion blockers, and external blockers
-  so exported support archives preserve both passing and missing research-plan
-  evidence.
+  proof pass counts, proof-runbook phases, plan snapshots, completion blockers,
+  and external blockers so exported support archives preserve both passing,
+  ordered, and missing research-plan evidence.
 - Done: Module Setup exposes that wrapper as `Evidence Workflow`, downloads the
   workflow JSON, workflow-log archive, validation JSON, and any support bundle,
   field-evidence report, feature-method benchmark, threshold-tuning report,

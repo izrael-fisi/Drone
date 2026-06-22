@@ -450,6 +450,10 @@ work into source-plan, bench, field dataset, method/threshold, ROS replay, and
 final-audit phases. This keeps downstream support tooling from treating all
 missing evidence as parallel work when some gates depend on real field logs
 first.
+The Autonomy Readiness Reports card renders that runbook as phase counts,
+per-phase status chips, upstream dependency status, proof checks, and copyable
+phase commands, falling back to the evidence package's bounded runbook summary
+when the direct report field is unavailable.
 The same card renders the report `plan_snapshot` when present, showing research
 marker/reference coverage and implementation track/task/done counts without
 opening the JSON report.

@@ -386,6 +386,58 @@ pub struct AutonomyReadinessEvidenceManifest {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyReadinessProofRunbookCheck {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessProofRunbookAction {
+    pub check: Option<String>,
+    pub status: Option<String>,
+    pub title: Option<String>,
+    pub desktop_action: Option<String>,
+    pub command: Option<String>,
+    pub notes: Option<String>,
+    pub missing_conditions: Vec<String>,
+    pub bench_subcheck: Option<String>,
+    pub bench_message: Option<String>,
+    pub bench_subchecks: Vec<AutonomyReadinessBenchSubcheck>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessProofRunbookPhase {
+    pub id: Option<String>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub depends_on: Vec<String>,
+    pub dependency_status: BTreeMap<String, String>,
+    pub checks: Vec<AutonomyReadinessProofRunbookCheck>,
+    pub actions: Vec<AutonomyReadinessProofRunbookAction>,
+    pub actions_truncated: Option<bool>,
+    pub commands: Vec<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessProofRunbookSummary {
+    pub phase_count: Option<u64>,
+    pub passed: Option<u64>,
+    pub action_required: Option<u64>,
+    pub blocked: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessProofRunbook {
+    pub schema_version: Option<String>,
+    pub ready_for_goal_completion: Option<bool>,
+    pub phases_truncated: Option<bool>,
+    pub summary: AutonomyReadinessProofRunbookSummary,
+    pub phases: Vec<AutonomyReadinessProofRunbookPhase>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyReadinessPlanSourceSnapshot {
     pub path: Option<String>,
     pub exists: Option<bool>,
@@ -447,6 +499,7 @@ pub struct AutonomyEvidencePackageSummary {
     pub included_count: Option<u64>,
     pub missing_count: Option<u64>,
     pub skipped_count: Option<u64>,
+    pub proof_runbook_summary: Option<AutonomyReadinessProofRunbook>,
     pub proof_items: Vec<AutonomyReadinessEvidenceBlocker>,
     pub included_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
     pub missing_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
@@ -477,6 +530,7 @@ pub struct AutonomyReadinessReportFile {
     pub next_actions: Vec<AutonomyReadinessNextAction>,
     pub command_bundle: Option<AutonomyReadinessCommandBundle>,
     pub evidence_manifest: Option<AutonomyReadinessEvidenceManifest>,
+    pub proof_runbook: Option<AutonomyReadinessProofRunbook>,
     pub plan_snapshot: Option<AutonomyReadinessPlanSnapshot>,
     pub field_collection_plan: Option<AutonomyReadinessFieldCollectionPlan>,
 }
@@ -1058,6 +1112,7 @@ pub fn list_autonomy_readiness_reports(
             };
         let command_bundle = autonomy_readiness_command_bundle_from_json(&value);
         let plan_snapshot = autonomy_readiness_plan_snapshot_from_json(value.get("plan_snapshot"));
+        let proof_runbook = autonomy_readiness_proof_runbook_from_json(value.get("proof_runbook"));
         let field_collection_plan = autonomy_readiness_field_collection_plan_from_json(&value, &p);
         let modified_unix_ms = metadata
             .modified()
@@ -1128,6 +1183,7 @@ pub fn list_autonomy_readiness_reports(
             next_actions,
             command_bundle,
             evidence_manifest,
+            proof_runbook,
             plan_snapshot,
             field_collection_plan,
         });
@@ -1717,6 +1773,9 @@ fn read_autonomy_evidence_package_summary(path: &Path) -> Option<AutonomyEvidenc
         included_count: json_array_count(manifest.get("included")),
         missing_count: json_array_count(manifest.get("missing")),
         skipped_count: json_array_count(manifest.get("skipped")),
+        proof_runbook_summary: autonomy_readiness_proof_runbook_from_json(
+            manifest.get("proof_runbook_summary"),
+        ),
         proof_items: autonomy_evidence_blockers_from_value(
             proof_summary.and_then(|value| value.get("proof_items")),
         ),
@@ -2704,6 +2763,140 @@ fn autonomy_evidence_manifest_from_json(
         ),
         external_blockers: autonomy_evidence_blockers_from_value(value.get("external_blockers")),
     })
+}
+
+fn autonomy_readiness_proof_runbook_from_json(
+    value: Option<&serde_json::Value>,
+) -> Option<AutonomyReadinessProofRunbook> {
+    let value = value?;
+    if !value.is_object() {
+        return None;
+    }
+    Some(AutonomyReadinessProofRunbook {
+        schema_version: json_string(value.get("schema_version")),
+        ready_for_goal_completion: value
+            .get("ready_for_goal_completion")
+            .and_then(|value| value.as_bool()),
+        phases_truncated: value
+            .get("phases_truncated")
+            .and_then(|value| value.as_bool()),
+        summary: autonomy_readiness_proof_runbook_summary_from_json(value.get("summary")),
+        phases: autonomy_readiness_proof_runbook_phases_from_json(value.get("phases")),
+    })
+}
+
+fn autonomy_readiness_proof_runbook_summary_from_json(
+    value: Option<&serde_json::Value>,
+) -> AutonomyReadinessProofRunbookSummary {
+    AutonomyReadinessProofRunbookSummary {
+        phase_count: value
+            .and_then(|value| value.get("phase_count"))
+            .and_then(|value| value.as_u64()),
+        passed: value
+            .and_then(|value| value.get("passed"))
+            .and_then(|value| value.as_u64()),
+        action_required: value
+            .and_then(|value| value.get("action_required"))
+            .and_then(|value| value.as_u64()),
+        blocked: value
+            .and_then(|value| value.get("blocked"))
+            .and_then(|value| value.as_u64()),
+    }
+}
+
+fn autonomy_readiness_proof_runbook_phases_from_json(
+    value: Option<&serde_json::Value>,
+) -> Vec<AutonomyReadinessProofRunbookPhase> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| AutonomyReadinessProofRunbookPhase {
+                    id: json_string(item.get("id")),
+                    title: json_string(item.get("title")),
+                    status: json_string(item.get("status")),
+                    depends_on: json_string_array(item.get("depends_on")),
+                    dependency_status: autonomy_readiness_dependency_status_from_json(
+                        item.get("dependency_status"),
+                    ),
+                    checks: autonomy_readiness_proof_runbook_checks_from_json(item.get("checks")),
+                    actions: autonomy_readiness_proof_runbook_actions_from_json(
+                        item.get("actions"),
+                    ),
+                    actions_truncated: item
+                        .get("actions_truncated")
+                        .and_then(|value| value.as_bool()),
+                    commands: json_string_array(item.get("commands")),
+                    notes: json_string(item.get("notes")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn autonomy_readiness_dependency_status_from_json(
+    value: Option<&serde_json::Value>,
+) -> BTreeMap<String, String> {
+    value
+        .and_then(|value| value.as_object())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|(key, value)| {
+                    value.as_str().map(|text| (key.clone(), text.to_string()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default()
+}
+
+fn autonomy_readiness_proof_runbook_checks_from_json(
+    value: Option<&serde_json::Value>,
+) -> Vec<AutonomyReadinessProofRunbookCheck> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| AutonomyReadinessProofRunbookCheck {
+                    name: json_string(item.get("name")),
+                    status: json_string(item.get("status")),
+                    message: json_string(item.get("message")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn autonomy_readiness_proof_runbook_actions_from_json(
+    value: Option<&serde_json::Value>,
+) -> Vec<AutonomyReadinessProofRunbookAction> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| AutonomyReadinessProofRunbookAction {
+                    check: json_string(item.get("check")),
+                    status: json_string(item.get("status")),
+                    title: json_string(item.get("title")),
+                    desktop_action: json_string(item.get("desktop_action")),
+                    command: json_string(item.get("command")),
+                    notes: json_string(item.get("notes")),
+                    missing_conditions: json_string_array(item.get("missing_conditions")),
+                    bench_subcheck: json_string(item.get("bench_subcheck")),
+                    bench_message: json_string(item.get("bench_message")),
+                    bench_subchecks: autonomy_bench_subchecks_from_value(
+                        item.get("bench_subchecks"),
+                    ),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
 }
 
 fn autonomy_readiness_plan_snapshot_from_json(
@@ -3985,6 +4178,53 @@ mod tests {
                             "missing_conditions": ["good_texture", "wrong_map"]
                         }
                     ]
+                },
+                "proof_runbook": {
+                    "schema_version": "vision_nav_autonomy_proof_runbook_v1",
+                    "ready_for_goal_completion": false,
+                    "summary": {
+                        "phase_count": 2,
+                        "passed": 1,
+                        "action_required": 1,
+                        "blocked": 0
+                    },
+                    "phases": [
+                        {
+                            "id": "plan_source",
+                            "title": "Confirm source plan coverage",
+                            "status": "passed",
+                            "depends_on": [],
+                            "dependency_status": {},
+                            "checks": [
+                                {"name": "research_doc", "status": "passed", "message": "Research doc ready."}
+                            ],
+                            "actions": [],
+                            "commands": [],
+                            "notes": "Keep source docs present."
+                        },
+                        {
+                            "id": "bench_foundation",
+                            "title": "Create bench evidence package",
+                            "status": "action_required",
+                            "depends_on": ["plan_source"],
+                            "dependency_status": {"plan_source": "passed"},
+                            "checks": [
+                                {"name": "support_bundle_bench_readiness", "status": "failed", "message": "Support bundle missing."},
+                                {"name": "px4_receiver_proof", "status": "failed", "message": "Receiver proof missing."}
+                            ],
+                            "actions": [
+                                {
+                                    "check": "support_bundle_bench_readiness",
+                                    "status": "failed",
+                                    "desktop_action": "Module Setup > Bench Report",
+                                    "command": "./scripts/pi/create_support_bundle.sh",
+                                    "missing_conditions": ["good_texture"]
+                                }
+                            ],
+                            "commands": ["./scripts/pi/create_support_bundle.sh"],
+                            "notes": "Capture bench proof."
+                        }
+                    ]
                 }
             })
             .to_string(),
@@ -4067,6 +4307,47 @@ mod tests {
                             }
                         ]
                     },
+                    "proof_runbook_summary": {
+                        "schema_version": "vision_nav_autonomy_proof_runbook_v1",
+                        "ready_for_goal_completion": false,
+                        "phases_truncated": false,
+                        "summary": {
+                            "phase_count": 2,
+                            "passed": 1,
+                            "action_required": 1,
+                            "blocked": 0
+                        },
+                        "phases": [
+                            {
+                                "id": "plan_source",
+                                "title": "Confirm source plan coverage",
+                                "status": "passed",
+                                "depends_on": [],
+                                "checks": [
+                                    {"name": "research_doc", "status": "passed", "message": "Research doc ready."}
+                                ],
+                                "commands": []
+                            },
+                            {
+                                "id": "bench_foundation",
+                                "title": "Create bench evidence package",
+                                "status": "action_required",
+                                "depends_on": ["plan_source"],
+                                "checks": [
+                                    {"name": "support_bundle_bench_readiness", "status": "failed", "message": "Support bundle missing."}
+                                ],
+                                "actions": [
+                                    {
+                                        "check": "support_bundle_bench_readiness",
+                                        "status": "failed",
+                                        "desktop_action": "Module Setup > Bench Report",
+                                        "command": "./scripts/pi/create_support_bundle.sh"
+                                    }
+                                ],
+                                "commands": ["./scripts/pi/create_support_bundle.sh"]
+                            }
+                        ]
+                    },
                     "included": [
                         {"label": "autonomy_report"},
                         {"label": "autonomy_handoff"},
@@ -4144,6 +4425,26 @@ mod tests {
                 .and_then(|snapshot| snapshot.track_count),
             Some(6)
         );
+        let proof_runbook = reports[0].proof_runbook.as_ref().expect("proof runbook");
+        assert_eq!(
+            proof_runbook.schema_version.as_deref(),
+            Some("vision_nav_autonomy_proof_runbook_v1")
+        );
+        assert_eq!(proof_runbook.summary.phase_count, Some(2));
+        assert_eq!(proof_runbook.summary.action_required, Some(1));
+        assert_eq!(proof_runbook.phases.len(), 2);
+        assert_eq!(
+            proof_runbook.phases[1].dependency_status.get("plan_source"),
+            Some(&"passed".to_string())
+        );
+        assert_eq!(
+            proof_runbook.phases[1].commands[0],
+            "./scripts/pi/create_support_bundle.sh"
+        );
+        assert_eq!(
+            proof_runbook.phases[1].actions[0].missing_conditions,
+            vec!["good_texture".to_string()]
+        );
         let package_summary = reports[0]
             .evidence_package_summary
             .as_ref()
@@ -4166,6 +4467,16 @@ mod tests {
         assert_eq!(
             package_summary.proof_items[2].missing_conditions,
             vec!["good_texture".to_string(), "wrong_map".to_string()]
+        );
+        let package_runbook = package_summary
+            .proof_runbook_summary
+            .as_ref()
+            .expect("package proof runbook summary");
+        assert_eq!(package_runbook.phases_truncated, Some(false));
+        assert_eq!(package_runbook.summary.passed, Some(1));
+        assert_eq!(
+            package_runbook.phases[1].actions[0].command.as_deref(),
+            Some("./scripts/pi/create_support_bundle.sh")
         );
         assert_eq!(package_summary.included_count, Some(3));
         assert_eq!(package_summary.missing_count, Some(1));

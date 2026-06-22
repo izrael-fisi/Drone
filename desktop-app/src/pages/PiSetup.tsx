@@ -533,13 +533,13 @@ function StatusIcon({ status }: { status: StepStatus }) {
 
 function readinessBadgeClass(status?: string) {
   if (status === "passed" || status === "healthy" || status === "covered") return "badge-green";
-  if (status === "failed" || status === "missing" || status === "error") return "badge-red";
+  if (status === "failed" || status === "missing" || status === "error" || status === "blocked") return "badge-red";
   return "badge-yellow";
 }
 
 function readinessIcon(status?: string) {
   if (status === "passed" || status === "healthy" || status === "covered") return <CheckCircle2 size={11} />;
-  if (status === "failed" || status === "missing" || status === "error") return <XCircle size={11} />;
+  if (status === "failed" || status === "missing" || status === "error" || status === "blocked") return <XCircle size={11} />;
   return <Terminal size={11} />;
 }
 
@@ -834,6 +834,7 @@ function AutonomyReadinessReportList({
             const planSnapshot = report.plan_snapshot ?? report.evidence_package_summary?.plan_snapshot;
             const researchSnapshot = planSnapshot?.research_doc;
             const implementationSnapshot = planSnapshot?.implementation_plan;
+            const proofRunbook = report.proof_runbook ?? report.evidence_package_summary?.proof_runbook_summary;
             return (
             <div key={report.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
               <div className="flex items-start justify-between gap-3">
@@ -1138,6 +1139,7 @@ function AutonomyReadinessReportList({
                   )}
                 </div>
               )}
+              {proofRunbook && <ProofRunbookPanel runbook={proofRunbook} idPrefix={report.path} />}
               {report.evidence_manifest && (
                 <div className="rounded-md border border-border bg-slate-950/30 px-2 py-1.5 space-y-1">
                   <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
@@ -1280,6 +1282,93 @@ function AutonomyReadinessReportList({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function ProofRunbookPanel({
+  runbook,
+  idPrefix,
+}: {
+  runbook: NonNullable<AutonomyReadinessReportFile["proof_runbook"]>;
+  idPrefix: string;
+}) {
+  const phaseCommands = uniqueCommands(runbook.phases.flatMap((phase) => phase.commands));
+  return (
+    <div className="rounded-md border border-border bg-slate-950/30 px-2 py-1.5 space-y-1">
+      <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+        <span className={readinessBadgeClass(runbook.ready_for_goal_completion ? "passed" : "degraded")}>
+          proof runbook
+        </span>
+        <span className="font-mono text-slate-500">passed {runbook.summary.passed ?? 0}</span>
+        <span className="font-mono text-slate-500">action {runbook.summary.action_required ?? 0}</span>
+        <span className="font-mono text-slate-500">blocked {runbook.summary.blocked ?? 0}</span>
+        {runbook.phases_truncated && <span className="font-mono text-amber-300">truncated</span>}
+        {phaseCommands.length > 0 && (
+          <button
+            type="button"
+            onClick={() => navigator.clipboard.writeText(phaseCommands.join("\n"))}
+            className="btn-secondary px-1.5 py-0.5 text-[10px]"
+            title="Copy proof-runbook commands"
+          >
+            <Copy size={9} />
+            commands
+          </button>
+        )}
+      </div>
+      <div className="space-y-1">
+        {runbook.phases.slice(0, 6).map((phase, index) => (
+          <div key={`${idPrefix}-runbook-${phase.id ?? index}`} className="space-y-1">
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+              <span className={cn(readinessBadgeClass(phase.status), "text-[10px]")}>
+                {formatReadinessLabel(phase.status)}
+              </span>
+              <span className="font-mono text-slate-300">{formatReadinessLabel(phase.title ?? phase.id)}</span>
+              {phase.depends_on.length > 0 && (
+                <span className="font-mono text-slate-500">
+                  after{" "}
+                  {phase.depends_on
+                    .slice(0, 3)
+                    .map((dependency) => {
+                      const status = phase.dependency_status[dependency];
+                      return status ? `${formatReadinessLabel(dependency)}:${formatReadinessLabel(status)}` : formatReadinessLabel(dependency);
+                    })
+                    .join(", ")}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {phase.checks.slice(0, 5).map((check, checkIndex) => (
+                <span
+                  key={`${idPrefix}-runbook-${phase.id ?? index}-check-${check.name ?? checkIndex}`}
+                  className="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-400"
+                  title={check.message ?? check.name ?? "proof check"}
+                >
+                  <span className={cn(readinessBadgeClass(check.status), "text-[9px] px-1 py-0")}>
+                    {formatReadinessLabel(check.status)}
+                  </span>
+                  {formatReadinessLabel(check.name)}
+                </span>
+              ))}
+            </div>
+            {phase.commands.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {phase.commands.slice(0, 2).map((command) => (
+                  <button
+                    key={`${idPrefix}-runbook-${phase.id ?? index}-${command}`}
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(command)}
+                    className="font-mono text-[10px] text-cyan-400 hover:text-cyan-300 truncate max-w-full"
+                    title="Copy phase command"
+                  >
+                    {command}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -4095,6 +4184,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     const latestExternalBlockers = latestAutonomyReport?.evidence_manifest?.external_blockers ?? [];
     const latestProofItems = latestAutonomyReport?.evidence_manifest?.proof_items ?? [];
     const latestCompletionBlockers = latestAutonomyReport?.evidence_manifest?.completion_blockers ?? [];
+    const latestProofRunbook =
+      latestAutonomyReport?.proof_runbook ?? latestAutonomyReport?.evidence_package_summary?.proof_runbook_summary ?? null;
     const report = {
       version: "0.1.0",
       generated_at: new Date().toISOString(),
@@ -4207,6 +4298,15 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             proof_item_count: latestProofItems.length,
             proof_item_passed_count: latestProofItems.filter((item) => item.status === "passed").length,
             proof_items: latestProofItems.slice(0, 12),
+            proof_runbook: latestProofRunbook
+              ? {
+                  schema_version: latestProofRunbook.schema_version ?? null,
+                  ready_for_goal_completion: latestProofRunbook.ready_for_goal_completion ?? null,
+                  phases_truncated: latestProofRunbook.phases_truncated ?? null,
+                  summary: latestProofRunbook.summary,
+                  phases: latestProofRunbook.phases.slice(0, 8),
+                }
+              : null,
             completion_blocker_count: latestCompletionBlockers.length,
             completion_blockers: latestCompletionBlockers.slice(0, 8),
             external_blocker_count: latestExternalBlockers.length,

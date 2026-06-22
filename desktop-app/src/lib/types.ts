@@ -411,6 +411,49 @@ export interface AutonomyReadinessPlanSnapshot {
   implementation_plan?: AutonomyReadinessPlanSourceSnapshot;
 }
 
+export interface AutonomyReadinessProofRunbook {
+  schema_version?: string;
+  ready_for_goal_completion?: boolean;
+  phases_truncated?: boolean;
+  summary: {
+    phase_count?: number;
+    passed?: number;
+    action_required?: number;
+    blocked?: number;
+  };
+  phases: Array<{
+    id?: string;
+    title?: string;
+    status?: "passed" | "failed" | "degraded" | "action_required" | "blocked" | string;
+    depends_on: string[];
+    dependency_status: Record<string, string>;
+    checks: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "degraded" | "action_required" | "blocked" | string;
+      message?: string;
+    }>;
+    actions: Array<{
+      check?: string;
+      status?: "passed" | "failed" | "degraded" | "action_required" | "blocked" | string;
+      title?: string;
+      desktop_action?: string;
+      command?: string;
+      notes?: string;
+      missing_conditions: string[];
+      bench_subcheck?: string;
+      bench_message?: string;
+      bench_subchecks: Array<{
+        name?: string;
+        status?: "passed" | "failed" | "degraded" | string;
+        message?: string;
+      }>;
+    }>;
+    actions_truncated?: boolean;
+    commands: string[];
+    notes?: string;
+  }>;
+}
+
 export interface AutonomyReadinessReportFile {
   name: string;
   path: string;
@@ -434,6 +477,7 @@ export interface AutonomyReadinessReportFile {
     included_count?: number;
     missing_count?: number;
     skipped_count?: number;
+    proof_runbook_summary?: AutonomyReadinessProofRunbook;
     proof_items: Array<{
       name?: string;
       status?: "passed" | "failed" | "degraded" | string;
@@ -568,6 +612,7 @@ export interface AutonomyReadinessReportFile {
       register_command?: string;
     }>;
   };
+  proof_runbook?: AutonomyReadinessProofRunbook;
 }
 
 export interface AutonomyEvidenceWorkflowReportFile {
