@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+python_bin="${VISION_NAV_PYTHON:-python3}"
 px4_dir="${VISION_NAV_PX4_AUTOPILOT_DIR:-$HOME/PX4-Autopilot}"
 px4_target="${VISION_NAV_PX4_SITL_TARGET:-px4_sitl gz_x500}"
 session_dir="${VISION_NAV_SITL_SMOKE_DIR:-$PWD/px4-sitl-evidence}"
@@ -16,8 +17,126 @@ capture_dir="$session_dir/receiver_capture"
 listener_capture="$capture_dir/vehicle_visual_odometry.txt"
 mavlink_status_capture="$capture_dir/mavlink_status.txt"
 receiver_report="$session_dir/receiver_evidence.json"
+prereq_report="$session_dir/px4_sitl_capture_prereqs.json"
 
 mkdir -p "$capture_dir"
+
+write_prereq_report() {
+  local report_status="$1"
+  local tmux_status="$2"
+  local tmux_message="$3"
+  local px4_status="$4"
+  local px4_message="$5"
+  local session_status="$6"
+  local session_message="$7"
+  PYTHONPATH="$repo_root/src" "$python_bin" - \
+    "$prereq_report" \
+    "$report_status" \
+    "$session_dir" \
+    "$capture_dir" \
+    "$px4_dir" \
+    "$px4_target" \
+    "$tmux_session" \
+    "$receiver_report" \
+    "$tmux_status" \
+    "$tmux_message" \
+    "$px4_status" \
+    "$px4_message" \
+    "$session_status" \
+    "$session_message" <<'PY'
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+import sys
+
+(
+    report_path,
+    status,
+    session_dir,
+    capture_dir,
+    px4_dir,
+    px4_target,
+    tmux_session,
+    receiver_report,
+    tmux_status,
+    tmux_message,
+    px4_status,
+    px4_message,
+    session_status,
+    session_message,
+) = sys.argv[1:]
+path = Path(report_path)
+checks = [
+    {"name": "tmux_installed", "status": tmux_status, "message": tmux_message},
+    {"name": "px4_autopilot_dir", "status": px4_status, "message": px4_message},
+    {"name": "tmux_session_available", "status": session_status, "message": session_message},
+]
+report = {
+    "schema_version": "vision_nav_px4_sitl_capture_prereqs_v1",
+    "generated_at": datetime.now(timezone.utc).isoformat(),
+    "status": status,
+    "session_dir": session_dir,
+    "capture_dir": capture_dir,
+    "px4_dir": px4_dir,
+    "px4_target": px4_target,
+    "tmux_session": tmux_session,
+    "receiver_report": receiver_report,
+    "checks": checks,
+    "next_actions": [check["message"] for check in checks if check["status"] == "failed"],
+    "markers": {
+        "__VISION_NAV_PX4_SITL_SESSION__": session_dir,
+        "__VISION_NAV_PX4_SITL_PREREQS__": str(path),
+        "__VISION_NAV_PX4_SITL_REPORT__": receiver_report,
+    },
+}
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
+check_capture_prereqs() {
+  local tmux_status="passed"
+  local tmux_message="tmux is installed."
+  local px4_status="passed"
+  local px4_message="PX4-Autopilot directory exists: $px4_dir"
+  local session_status="passed"
+  local session_message="tmux session name is available: $tmux_session"
+  local report_status="passed"
+  local tmux_available=1
+
+  if ! command -v tmux >/dev/null 2>&1; then
+    tmux_available=0
+    tmux_status="failed"
+    tmux_message="tmux is required for automated PX4 SITL shell capture. Install tmux or use receiver_capture/README.md for manual PX4 shell captures."
+    session_status="skipped"
+    session_message="tmux session availability was not checked because tmux is missing."
+    report_status="failed"
+  fi
+
+  if [[ ! -d "$px4_dir" ]]; then
+    px4_status="failed"
+    px4_message="PX4-Autopilot directory not found: $px4_dir. Set VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot if it lives elsewhere."
+    report_status="failed"
+  fi
+
+  if [[ "$tmux_available" == "1" ]] && tmux has-session -t "$tmux_session" 2>/dev/null; then
+    session_status="failed"
+    session_message="tmux session already exists: $tmux_session. Set VISION_NAV_PX4_TMUX_SESSION to another name or close the existing session."
+    report_status="failed"
+  fi
+
+  write_prereq_report \
+    "$report_status" \
+    "$tmux_status" \
+    "$tmux_message" \
+    "$px4_status" \
+    "$px4_message" \
+    "$session_status" \
+    "$session_message"
+  [[ "$report_status" == "passed" ]]
+}
 
 prepare_session_scaffold() {
   if VISION_NAV_SITL_DRY_RUN=1 \
@@ -31,18 +150,18 @@ prepare_session_scaffold() {
 
 print_session_markers() {
   echo "__VISION_NAV_PX4_SITL_SESSION__=$session_dir"
+  echo "__VISION_NAV_PX4_SITL_PREREQS__=$prereq_report"
   echo "__VISION_NAV_PX4_SITL_REPORT__=$receiver_report"
 }
 
 fail_prereq() {
-  local message="$1"
-  echo "$message" >&2
   prepare_session_scaffold >/dev/null 2>&1 || true
   cat <<EOF >&2
 
 PX4 SITL receiver capture prerequisites are not ready.
 Prepared a reusable evidence-session scaffold when possible:
   session: $session_dir
+  prerequisite report: $prereq_report
   capture instructions: $capture_dir/README.md
   expected receiver report: $receiver_report
 
@@ -55,6 +174,14 @@ EOF
 
 if [[ "$dry_run" == "1" ]]; then
   prepare_session_scaffold
+  write_prereq_report \
+    "not_checked" \
+    "not_checked" \
+    "Dry run prepared the evidence-session scaffold without requiring tmux." \
+    "not_checked" \
+    "Dry run prepared the evidence-session scaffold without requiring PX4." \
+    "not_checked" \
+    "Dry run did not inspect tmux session availability."
   cat <<EOF
 PX4 SITL capture dry run prepared:
   session: $session_dir
@@ -66,16 +193,8 @@ EOF
   exit 0
 fi
 
-if ! command -v tmux >/dev/null 2>&1; then
-  fail_prereq "tmux is required for automated PX4 SITL shell capture. Install tmux or use the scaffolded manual PX4 shell capture instructions."
-fi
-
-if [[ ! -d "$px4_dir" ]]; then
-  fail_prereq "PX4-Autopilot directory not found: $px4_dir. Set VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot if it lives elsewhere."
-fi
-
-if tmux has-session -t "$tmux_session" 2>/dev/null; then
-  fail_prereq "tmux session already exists: $tmux_session. Set VISION_NAV_PX4_TMUX_SESSION to another name or close the existing session."
+if ! check_capture_prereqs; then
+  fail_prereq
 fi
 
 cleanup() {

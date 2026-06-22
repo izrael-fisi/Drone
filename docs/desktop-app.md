@@ -414,7 +414,10 @@ Evidence list. The local readiness re-audit also scans that folder for
 `receiver_evidence.json`. If the local workstation is missing PX4 or `tmux`,
 the action still prepares the evidence-session folder, synthetic sender log, and
 manual capture README, then exits failed so the operator can fix the prerequisite
-without losing the capture instructions.
+without losing the capture instructions. The same folder includes
+`px4_sitl_capture_prereqs.json` and the
+`__VISION_NAV_PX4_SITL_PREREQS__=...` marker with the missing prerequisite
+checks.
 
 Module Setup can run `ROS Bag Validation` after a terrain runtime/replay log
 exists. The action runs `scripts/pi/run_rosbag_export_validation.sh` over SSH,

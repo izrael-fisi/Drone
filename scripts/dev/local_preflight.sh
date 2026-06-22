@@ -538,9 +538,23 @@ VISION_NAV_SITL_CAPTURE_DRY_RUN=1 \
 VISION_NAV_SITL_SMOKE_DIR="$capture_smoke_dir" \
 ./scripts/dev/run_px4_sitl_external_vision_capture.sh >"$capture_output"
 grep -q "__VISION_NAV_PX4_SITL_SESSION__=" "$capture_output"
+grep -q "__VISION_NAV_PX4_SITL_PREREQS__=" "$capture_output"
 grep -q "__VISION_NAV_PX4_SITL_REPORT__=" "$capture_output"
 test -f "$capture_smoke_dir/px4_sitl_evidence_session.json"
+test -f "$capture_smoke_dir/px4_sitl_capture_prereqs.json"
 test -f "$capture_smoke_dir/receiver_capture/README.md"
+python3 - "$capture_smoke_dir/px4_sitl_capture_prereqs.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text())
+assert report["schema_version"] == "vision_nav_px4_sitl_capture_prereqs_v1"
+assert report["status"] == "not_checked"
+assert "__VISION_NAV_PX4_SITL_PREREQS__" in report["markers"]
+PY
 capture_prereq_dir="$(mktemp -d "$preflight_tmp_dir/sitl-capture-prereq.XXXXXX")"
 if VISION_NAV_PX4_AUTOPILOT_DIR="$preflight_tmp_dir/missing-px4-autopilot" \
   VISION_NAV_SITL_SMOKE_DIR="$capture_prereq_dir" \
@@ -550,9 +564,26 @@ if VISION_NAV_PX4_AUTOPILOT_DIR="$preflight_tmp_dir/missing-px4-autopilot" \
 fi
 grep -q "PX4 SITL receiver capture prerequisites are not ready" "$capture_prereq_output"
 grep -q "__VISION_NAV_PX4_SITL_SESSION__=" "$capture_prereq_output"
+grep -q "__VISION_NAV_PX4_SITL_PREREQS__=" "$capture_prereq_output"
 grep -q "__VISION_NAV_PX4_SITL_REPORT__=" "$capture_prereq_output"
 test -f "$capture_prereq_dir/px4_sitl_evidence_session.json"
+test -f "$capture_prereq_dir/px4_sitl_capture_prereqs.json"
 test -f "$capture_prereq_dir/receiver_capture/README.md"
+python3 - "$capture_prereq_dir/px4_sitl_capture_prereqs.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text())
+checks = {check["name"]: check for check in report["checks"]}
+assert report["schema_version"] == "vision_nav_px4_sitl_capture_prereqs_v1"
+assert report["status"] == "failed"
+assert checks["px4_autopilot_dir"]["status"] == "failed"
+assert "__VISION_NAV_PX4_SITL_PREREQS__" in report["markers"]
+assert report["next_actions"]
+PY
 if VISION_NAV_ALLOW_DEGRADED=1 ./scripts/dev/evaluate_px4_sitl_session.sh "$smoke_dir" >"$session_missing_capture_output"; then
   echo "Expected PX4 SITL session evaluation to fail before receiver captures exist." >&2
   exit 1

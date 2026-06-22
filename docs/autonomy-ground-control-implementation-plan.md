@@ -46,14 +46,16 @@ Status:
   external-vision stream, capture PX4 shell receiver output, and run the session
   evaluator when a local PX4 checkout is available.
 - Done: the automated PX4 SITL capture harness now leaves behind the
-  evidence-session scaffold, synthetic sender log, and manual capture README
-  even when local prerequisites such as PX4 or `tmux` are missing, while still
-  exiting nonzero so missing prerequisites cannot be mistaken for receiver
-  proof.
+  evidence-session scaffold, synthetic sender log, manual capture README, and
+  `px4_sitl_capture_prereqs.json` even when local prerequisites such as PX4 or
+  `tmux` are missing, while still exiting nonzero so missing prerequisites
+  cannot be mistaken for receiver proof.
 - Done: the PX4 SITL smoke script, automated capture harness, and session
   evaluator emit stable `__VISION_NAV_PX4_SITL_SESSION__` /
-  `__VISION_NAV_PX4_SITL_REPORT__` markers so receiver proof artifacts can be
-  copied into support bundles and final readiness audits without path guessing.
+  `__VISION_NAV_PX4_SITL_PREREQS__` /
+  `__VISION_NAV_PX4_SITL_REPORT__` markers so receiver proof artifacts and
+  prerequisite diagnostics can be copied into support bundles and final
+  readiness audits without path guessing.
 - Done: support bundles can package PX4 SITL receiver captures and the generated
   receiver-evidence report so bench verification can be reviewed later from the
   desktop app.
