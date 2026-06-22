@@ -304,6 +304,12 @@ if external_blockers:
     if len(external_blockers) > 12:
         print(f"- ... {len(external_blockers) - 12} more")
 
+if external_blockers:
+    print()
+    print("Guided workflow option:")
+    print("1. Run the ordered Pi evidence workflow and preserve partial artifacts.")
+    print("   ./scripts/pi/run_autonomy_evidence_workflow.sh")
+
 phase_commands = []
 blocked_phase_commands = []
 if phases:

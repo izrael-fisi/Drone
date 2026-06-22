@@ -747,6 +747,10 @@ Status:
   commands separately from immediate next commands, so method/threshold and ROS
   replay actions remain visible without being presented as runnable before
   their field-dataset prerequisite is satisfied.
+- Done: `scripts/dev/autonomy_goal_status.sh` also shows
+  `./scripts/pi/run_autonomy_evidence_workflow.sh` as the guided all-in-one
+  workflow option, while keeping the exact proof-runbook commands below it for
+  operators who want to run each prerequisite manually.
 - Done: `scripts/mac/goal_status.sh` now embeds that autonomy proof summary
   before its transfer-folder and Pi connectivity checks so one operator command
   reports both missing proof gates and setup connectivity.
