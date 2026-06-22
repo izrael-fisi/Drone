@@ -1555,14 +1555,14 @@ export function MissionPlanner() {
     if (activeDevice.kind === "pi5") await uploadBundle(bundle);
   };
 
-  const openBenchReportSetup = () => {
+  const openModuleSetupHandoff = (action: "bench-report" | "field-capture-preflight") => {
     if (!activeDevice || activeDevice.kind !== "pi5") return;
     sessionStorage.setItem(
       MODULE_SETUP_HANDOFF_KEY,
       JSON.stringify({
         version: 1,
         source: "mission-planner",
-        action: "bench-report",
+        action,
         created_at: new Date().toISOString(),
         device_id: activeDevice.id,
         device_name: activeDevice.name,
@@ -1578,6 +1578,9 @@ export function MissionPlanner() {
     );
     navigate("/devices");
   };
+
+  const openBenchReportSetup = () => openModuleSetupHandoff("bench-report");
+  const openFieldPreflightSetup = () => openModuleSetupHandoff("field-capture-preflight");
 
   const runPiCommand = async (label: string, command: string) => {
     if (!activeDevice || activeDevice.kind !== "pi5" || !activeDevice.host || !activeDevice.auth) return;
@@ -2295,14 +2298,24 @@ export function MissionPlanner() {
               {activeDevice.kind === "pi5" ? "Build and Upload Mission Bundle" : "Build Mission Bundle"}
             </button>
             {activeDevice.kind === "pi5" && (
-              <button
-                onClick={openBenchReportSetup}
-                disabled={missionPlanStateStatus !== "uploaded" || !bundleResult}
-                className="btn-secondary w-full justify-center"
-              >
-                <Archive size={14} />
-                Open Bench Report In Module Setup
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={openFieldPreflightSetup}
+                  disabled={missionPlanStateStatus !== "uploaded" || !bundleResult}
+                  className="btn-secondary justify-center text-xs px-2"
+                >
+                  <ClipboardCheck size={14} />
+                  Open Preflight
+                </button>
+                <button
+                  onClick={openBenchReportSetup}
+                  disabled={missionPlanStateStatus !== "uploaded" || !bundleResult}
+                  className="btn-secondary justify-center text-xs px-2"
+                >
+                  <Archive size={14} />
+                  Open Bench Report
+                </button>
+              </div>
             )}
             {uploading && Object.keys(fileProgress).length > 0 && (
               <div className="space-y-2 max-h-40 overflow-y-auto">

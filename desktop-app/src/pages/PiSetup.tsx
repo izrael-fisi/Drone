@@ -157,7 +157,7 @@ interface SetupStep {
 interface ModuleSetupHandoff {
   version: number;
   source: "mission-planner";
-  action: "bench-report";
+  action: "bench-report" | "field-capture-preflight";
   created_at: string;
   device_id: string;
   device_name?: string;
@@ -610,7 +610,12 @@ function readModuleSetupHandoff(): ModuleSetupHandoff | null {
     const raw = sessionStorage.getItem(MODULE_SETUP_HANDOFF_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ModuleSetupHandoff;
-    if (parsed.source !== "mission-planner" || parsed.action !== "bench-report") return null;
+    if (
+      parsed.source !== "mission-planner" ||
+      !["bench-report", "field-capture-preflight"].includes(parsed.action)
+    ) {
+      return null;
+    }
     return parsed;
   } catch {
     return null;
@@ -6205,7 +6210,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                     <Archive size={15} className="text-cyan-400" /> Mission Bundle Handoff
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Mission Planner uploaded this bundle for bench validation.
+                    Mission Planner uploaded this bundle for field preflight and bench validation.
                   </p>
                 </div>
                 <button onClick={clearSetupHandoff} className="btn-ghost text-xs py-1 px-2">
@@ -6223,14 +6228,18 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 </div>
                 <div className="text-[10px] font-mono text-slate-500 truncate">{remoteBundle}</div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={runBundleDiagnostic} disabled={!connectionReady || !!runningStep} className="btn-secondary justify-center">
+              <div className="grid grid-cols-3 gap-2">
+                <button onClick={runBundleDiagnostic} disabled={!connectionReady || !!runningStep} className="btn-secondary justify-center text-xs px-2">
                   {runningStep === "bundle-diagnostic" ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                  Diagnose Bundle
+                  Diagnose
                 </button>
-                <button onClick={createBenchReport} disabled={!connectionReady || !!runningStep} className="btn-primary justify-center">
+                <button onClick={runFieldCapturePreflight} disabled={!connectionReady || !!runningStep} className="btn-secondary justify-center text-xs px-2">
+                  {runningStep === "field-capture-preflight" ? <Loader2 size={14} className="animate-spin" /> : <TestTube2 size={14} />}
+                  Preflight
+                </button>
+                <button onClick={createBenchReport} disabled={!connectionReady || !!runningStep} className="btn-primary justify-center text-xs px-2">
                   {runningStep === "bench-report" ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
-                  Bench Report
+                  Bench
                 </button>
               </div>
             </div>
