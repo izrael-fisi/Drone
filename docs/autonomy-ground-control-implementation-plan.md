@@ -423,6 +423,9 @@ Status:
   Markdown checklist under `extras/field_collection_plans/`, publish parsed
   plan JSON under `summaries/field_collection_plans/`, and preserve the
   intended field-coverage plan for support review.
+- Done: downloaded support-bundle details show bundled field collection plan
+  status, registered-vs-required counts, per-condition collection state, and
+  extractable JSON/Markdown checklist artifacts.
 - Done: autonomy readiness audits record field collection plan/checklist paths
   when present so `autonomy_readiness_report.evidence.zip` includes the
   operator plan beside the final handoff and machine-readable report.

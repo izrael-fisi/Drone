@@ -471,6 +471,41 @@ function SupportBundleDetailPanel({
         </div>
       )}
 
+      {details.field_collection_plan_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Field collection plan</div>
+          {details.field_collection_plan_reports.slice(0, 2).map((report, index) => (
+            <div key={`${report.manifest_path}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(report.status)}>
+                  {statusIcon(report.status)}
+                  {formatLabel(report.status)}
+                </span>
+                <span className="font-mono text-slate-400 truncate">{formatLabel(report.site_name)}</span>
+                <span className="font-mono text-slate-500">
+                  registered {report.summary.registered_count ?? 0}/{report.summary.required_count ?? 0}
+                </span>
+                <span className="font-mono text-slate-500">placeholder {report.summary.placeholder_count ?? 0}</span>
+                <span className="font-mono text-slate-500">missing {report.summary.missing_count ?? 0}</span>
+              </div>
+              <div className="font-mono text-slate-500 truncate">
+                manifest {formatLabel(report.manifest_path)} / log {formatLabel(report.source_log)}
+              </div>
+              {report.conditions.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {report.conditions.slice(0, 8).map((condition) => (
+                    <span key={`${report.manifest_path}-${condition.condition}`} className={statusClass(condition.status)}>
+                      {statusIcon(condition.status)}
+                      {formatLabel(condition.condition)} {formatLabel(condition.status)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {details.threshold_tuning_reports.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Threshold tuning</div>
@@ -691,6 +726,12 @@ export function SupportBundleList({
                     field {formatLabel(bundle.summary.field_evidence_status)}
                   </span>
                 )}
+                {bundle.summary.field_collection_plan_status && bundle.summary.field_collection_plan_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.field_collection_plan_status)}>
+                    {statusIcon(bundle.summary.field_collection_plan_status)}
+                    plan {formatLabel(bundle.summary.field_collection_plan_status)}
+                  </span>
+                )}
                 {bundle.summary.threshold_tuning_status && bundle.summary.threshold_tuning_status !== "not_provided" && (
                   <span className={statusClass(bundle.summary.threshold_tuning_status)}>
                     {statusIcon(bundle.summary.threshold_tuning_status)}
@@ -745,6 +786,11 @@ export function SupportBundleList({
                   <span>pick {formatLabel(bundle.summary.feature_method_benchmark_recommended)}</span>
                   <span>field {formatLabel(bundle.summary.field_evidence_status)}</span>
                   <span>field cases {bundle.summary.field_evidence_field_case_count ?? 0}</span>
+                  <span>plan {formatLabel(bundle.summary.field_collection_plan_status)}</span>
+                  <span>
+                    plan registered {bundle.summary.field_collection_plan_registered_count ?? 0}/
+                    {bundle.summary.field_collection_plan_required_count ?? 0}
+                  </span>
                   <span>thresholds {formatLabel(bundle.summary.threshold_tuning_status)}</span>
                   <span>threshold cases {bundle.summary.threshold_tuning_field_case_count ?? 0}</span>
                   <span>ready {formatLabel(bundle.summary.bench_readiness_status)}</span>

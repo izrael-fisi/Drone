@@ -2271,6 +2271,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff missing condition checklist")
         if "## Artifact Availability" not in handoff:
             raise AssertionError("autonomy handoff artifact availability")
+        if "## Field Collection Plan" not in handoff:
+            raise AssertionError("autonomy handoff field collection plan")
+        if "- Registered: 1/8" not in handoff:
+            raise AssertionError("autonomy handoff field collection plan summary")
+        if "field_collection_plan.json" not in handoff:
+            raise AssertionError("autonomy handoff field collection plan path")
         missing_threshold_report = root / "autonomy_readiness_missing_threshold.json"
         missing_threshold_handoff = root / "autonomy_readiness_missing_threshold.md"
         missing_threshold_report.write_text(json.dumps(missing_threshold))

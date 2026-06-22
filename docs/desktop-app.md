@@ -429,6 +429,10 @@ exposes copy and reveal controls for both artifacts. When the evidence ZIP has
 the expected `manifest.json`, the list also shows included, missing, and
 skipped artifact counts plus the first missing/skipped artifact labels so
 support can tell what proof is absent without opening the archive.
+Downloaded support-bundle details also surface bundled field collection plans:
+the card shows plan pass/degraded state, registered-vs-required condition
+counts, per-condition placeholder/missing/registered status, and lets support
+extract the JSON/Markdown plan artifacts from the ZIP.
 
 ## MAVLink
 

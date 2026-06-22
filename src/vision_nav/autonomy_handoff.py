@@ -53,6 +53,43 @@ def render_handoff_markdown(report: dict[str, Any]) -> str:
             )
         )
 
+    field_plan = load_field_collection_plan(report)
+    if field_plan is not None:
+        lines.extend(["", "## Field Collection Plan", ""])
+        summary = field_plan.get("summary") if isinstance(field_plan.get("summary"), dict) else {}
+        lines.extend(
+            [
+                f"- Status: {format_cell(field_plan.get('status'))}",
+                f"- Site: {format_cell(field_plan.get('site_name'))}",
+                f"- Manifest: {format_cell(field_plan.get('manifest_path'))}",
+                (
+                    "- Registered: "
+                    f"{int(summary.get('registered_count') or 0)}/"
+                    f"{int(summary.get('required_count') or 0)}"
+                ),
+                f"- Placeholder: {int(summary.get('placeholder_count') or 0)}",
+                f"- Registered missing log: {int(summary.get('registered_missing_log_count') or 0)}",
+                f"- Missing: {int(summary.get('missing_count') or 0)}",
+            ]
+        )
+        pending_conditions = field_collection_pending_conditions(field_plan)
+        if pending_conditions:
+            lines.extend(["", "Pending collection items:", ""])
+            lines.extend(
+                table(
+                    ["Condition", "Status", "Expected", "Case"],
+                    [
+                        [
+                            item.get("condition"),
+                            item.get("status"),
+                            item.get("expected"),
+                            item.get("case_name"),
+                        ]
+                        for item in pending_conditions[:12]
+                    ],
+                )
+            )
+
     lines.extend(["", "## Checks", ""])
     checks = report.get("checks") if isinstance(report.get("checks"), list) else []
     if checks:
@@ -176,6 +213,41 @@ def looks_like_path(value: str) -> bool:
         or value.startswith("../")
         or "/" in value
         or "\\" in value
+    )
+
+
+def load_field_collection_plan(report: dict[str, Any]) -> dict[str, Any] | None:
+    inputs = report.get("inputs") if isinstance(report.get("inputs"), dict) else {}
+    path_value = inputs.get("field_collection_plan")
+    if not isinstance(path_value, str) or not path_value:
+        return None
+    path = Path(path_value).expanduser()
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        plan = json.loads(path.read_text())
+    except Exception:
+        return None
+    if not isinstance(plan, dict) or plan.get("schema_version") != "vision_nav_field_collection_plan_v1":
+        return None
+    return plan
+
+
+def field_collection_pending_conditions(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    conditions = plan.get("conditions")
+    if not isinstance(conditions, list):
+        return []
+    pending = [
+        item
+        for item in conditions
+        if isinstance(item, dict) and item.get("status") != "registered"
+    ]
+    return sorted(
+        pending,
+        key=lambda item: (
+            str(item.get("status") or ""),
+            str(item.get("condition") or ""),
+        ),
     )
 
 

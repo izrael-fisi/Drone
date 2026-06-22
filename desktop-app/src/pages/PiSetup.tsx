@@ -207,6 +207,7 @@ function supportBundleDiagnosticsSnapshot(bundle: SupportBundleFile, details: Su
     ardupilot_param_reports: details.ardupilot_param_reports.slice(0, 4),
     feature_method_benchmark_reports: details.feature_method_benchmark_reports.slice(0, 4),
     field_evidence_reports: details.field_evidence_reports.slice(0, 4),
+    field_collection_plan_reports: details.field_collection_plan_reports.slice(0, 4),
     threshold_tuning_reports: details.threshold_tuning_reports.slice(0, 4),
   };
 }

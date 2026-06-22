@@ -881,7 +881,9 @@ Module Setup action or shell command to run next. Field-evidence and
 threshold-tuning next actions include the missing real-world condition keys.
 The Markdown handoff turns those missing condition keys and failed/degraded
 bench subchecks into checkbox lists for field collection and support review.
-It also includes an artifact-availability table when the referenced evidence
+When a field collection plan is present, the handoff also summarizes registered
+vs required field conditions and the pending placeholder/missing cases. It
+also includes an artifact-availability table when the referenced evidence
 paths are visible from the machine rendering the handoff.
 
 The desktop Module Setup `Bench Report` action runs the terrain bundle validator

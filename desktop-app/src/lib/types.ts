@@ -146,6 +146,10 @@ export interface SupportBundleFile {
     field_evidence_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     field_evidence_field_case_count?: number;
     field_evidence_report_count?: number;
+    field_collection_plan_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    field_collection_plan_registered_count?: number;
+    field_collection_plan_required_count?: number;
+    field_collection_plan_report_count?: number;
     threshold_tuning_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     threshold_tuning_field_case_count?: number;
     threshold_tuning_report_count?: number;
@@ -296,6 +300,30 @@ export interface SupportBundleDetails {
       status?: "covered" | "missing" | "synthetic_only" | "failed" | string;
       case_count?: number;
       field_case_count?: number;
+    }>;
+  }>;
+  field_collection_plan_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    site_name?: string;
+    manifest_path?: string;
+    bundle?: string;
+    source_log?: string;
+    summary: {
+      required_count?: number;
+      registered_count?: number;
+      registered_missing_log_count?: number;
+      placeholder_count?: number;
+      missing_count?: number;
+    };
+    conditions: Array<{
+      condition?: string;
+      label?: string;
+      expected?: string;
+      status?: "registered" | "registered_missing_log" | "placeholder" | "missing" | string;
+      case_name?: string;
+      manifest_log_path?: string;
+      manifest_log_exists?: boolean;
+      register_command?: string;
     }>;
   }>;
   threshold_tuning_reports: Array<{

@@ -45,6 +45,10 @@ pub struct SupportBundleSummary {
     pub field_evidence_status: Option<String>,
     pub field_evidence_field_case_count: Option<u64>,
     pub field_evidence_report_count: Option<u64>,
+    pub field_collection_plan_status: Option<String>,
+    pub field_collection_plan_registered_count: Option<u64>,
+    pub field_collection_plan_required_count: Option<u64>,
+    pub field_collection_plan_report_count: Option<u64>,
     pub threshold_tuning_status: Option<String>,
     pub threshold_tuning_field_case_count: Option<u64>,
     pub threshold_tuning_report_count: Option<u64>,
@@ -233,6 +237,17 @@ pub struct FieldCollectionPlanFile {
     pub site_name: Option<String>,
     pub manifest_path: Option<String>,
     pub bundle: Option<String>,
+    pub summary: FieldCollectionPlanSummary,
+    pub conditions: Vec<FieldCollectionPlanCondition>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleFieldCollectionPlanReport {
+    pub status: Option<String>,
+    pub site_name: Option<String>,
+    pub manifest_path: Option<String>,
+    pub bundle: Option<String>,
+    pub source_log: Option<String>,
     pub summary: FieldCollectionPlanSummary,
     pub conditions: Vec<FieldCollectionPlanCondition>,
 }
@@ -506,6 +521,7 @@ pub struct SupportBundleDetails {
     pub ardupilot_param_reports: Vec<SupportBundleArduPilotParamReport>,
     pub feature_method_benchmark_reports: Vec<SupportBundleFeatureMethodBenchmarkReport>,
     pub field_evidence_reports: Vec<SupportBundleFieldEvidenceReport>,
+    pub field_collection_plan_reports: Vec<SupportBundleFieldCollectionPlanReport>,
     pub threshold_tuning_reports: Vec<SupportBundleThresholdTuningReport>,
     pub bench_readiness: Option<SupportBundleBenchReadinessReport>,
     pub artifacts: Vec<SupportBundleArtifactEntry>,
@@ -640,6 +656,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut ardupilot_param_reports = Vec::new();
     let mut feature_method_benchmark_reports = Vec::new();
     let mut field_evidence_reports = Vec::new();
+    let mut field_collection_plan_reports = Vec::new();
     let mut threshold_tuning_reports = Vec::new();
     let mut artifacts = Vec::new();
     let mut bench_readiness = manifest
@@ -700,6 +717,12 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 field_evidence_reports.push(field_evidence_report_from_json(&value));
             }
+        } else if name.starts_with("summaries/field_collection_plans/") && name.ends_with(".json") {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                if let Some(report) = field_collection_plan_report_from_json(&value) {
+                    field_collection_plan_reports.push(report);
+                }
+            }
         } else if name.starts_with("summaries/threshold_tuning/") && name.ends_with(".json") {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 threshold_tuning_reports.push(threshold_tuning_report_from_json(&value));
@@ -730,6 +753,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         ardupilot_param_reports,
         feature_method_benchmark_reports,
         field_evidence_reports,
+        field_collection_plan_reports,
         threshold_tuning_reports,
         bench_readiness,
         artifacts,
@@ -2356,6 +2380,21 @@ fn field_collection_plan_from_json(value: &serde_json::Value) -> Option<FieldCol
     })
 }
 
+fn field_collection_plan_report_from_json(
+    value: &serde_json::Value,
+) -> Option<SupportBundleFieldCollectionPlanReport> {
+    let plan = field_collection_plan_from_json(value)?;
+    Some(SupportBundleFieldCollectionPlanReport {
+        status: plan.status,
+        site_name: plan.site_name,
+        manifest_path: plan.manifest_path,
+        bundle: plan.bundle,
+        source_log: json_string(value.get("source_log")),
+        summary: plan.summary,
+        conditions: plan.conditions,
+    })
+}
+
 fn autonomy_evidence_blockers_from_value(
     value: Option<&serde_json::Value>,
 ) -> Vec<AutonomyReadinessEvidenceBlocker> {
@@ -2540,6 +2579,10 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
     if lower_name.starts_with("summaries/field_evidence/") && lower_name.ends_with(".json") {
         return Some("field evidence report".to_string());
     }
+    if lower_name.starts_with("summaries/field_collection_plans/") && lower_name.ends_with(".json")
+    {
+        return Some("field collection plan".to_string());
+    }
     if lower_name.starts_with("summaries/threshold_tuning/") && lower_name.ends_with(".json") {
         return Some("threshold tuning report".to_string());
     }
@@ -2556,11 +2599,14 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
         && has_extension(
             lower_name,
             &[
-                "json", "jsonl", "txt", "log", "csv", "yaml", "yml", "params", "ulg", "px4log",
-                "png", "jpg", "jpeg", "webp", "bmp",
+                "json", "jsonl", "txt", "log", "csv", "md", "yaml", "yml", "params", "ulg",
+                "px4log", "png", "jpg", "jpeg", "webp", "bmp",
             ],
         )
     {
+        if lower_name.starts_with("extras/field_collection_plans/") {
+            return Some("field collection artifact".to_string());
+        }
         return Some("extra artifact".to_string());
     }
     if lower_name.starts_with("bundle/")
@@ -2751,6 +2797,18 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         field_evidence_report_count: manifest
             .pointer("/field_evidence/report_count")
             .and_then(|value| value.as_u64()),
+        field_collection_plan_status: json_string(
+            manifest.pointer("/field_collection_plans/status"),
+        ),
+        field_collection_plan_registered_count: manifest
+            .pointer("/field_collection_plans/registered_count")
+            .and_then(|value| value.as_u64()),
+        field_collection_plan_required_count: manifest
+            .pointer("/field_collection_plans/required_count")
+            .and_then(|value| value.as_u64()),
+        field_collection_plan_report_count: manifest
+            .pointer("/field_collection_plans/report_count")
+            .and_then(|value| value.as_u64()),
         threshold_tuning_status: json_string(manifest.pointer("/threshold_tuning/status")),
         threshold_tuning_field_case_count: manifest
             .pointer("/threshold_tuning/field_case_count")
@@ -2776,6 +2834,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.ardupilot_params_status.is_none()
         && summary.feature_method_benchmark_status.is_none()
         && summary.field_evidence_status.is_none()
+        && summary.field_collection_plan_status.is_none()
         && summary.threshold_tuning_status.is_none()
         && summary.bench_readiness_status.is_none()
     {
@@ -2886,6 +2945,12 @@ mod tests {
                 "report_count": 1,
                 "field_case_count": 8
             },
+            "field_collection_plans": {
+                "status": "degraded",
+                "report_count": 1,
+                "registered_count": 3,
+                "required_count": 8
+            },
             "threshold_tuning": {
                 "status": "passed",
                 "report_count": 1,
@@ -2931,6 +2996,13 @@ mod tests {
         assert_eq!(summary.field_evidence_status.as_deref(), Some("passed"));
         assert_eq!(summary.field_evidence_field_case_count, Some(8));
         assert_eq!(summary.field_evidence_report_count, Some(1));
+        assert_eq!(
+            summary.field_collection_plan_status.as_deref(),
+            Some("degraded")
+        );
+        assert_eq!(summary.field_collection_plan_registered_count, Some(3));
+        assert_eq!(summary.field_collection_plan_required_count, Some(8));
+        assert_eq!(summary.field_collection_plan_report_count, Some(1));
         assert_eq!(summary.threshold_tuning_status.as_deref(), Some("passed"));
         assert_eq!(summary.threshold_tuning_field_case_count, Some(8));
         assert_eq!(summary.threshold_tuning_report_count, Some(1));
@@ -3842,6 +3914,35 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write field evidence");
+            zip.start_file(
+                "summaries/field_collection_plans/field_manifest-01.json",
+                options,
+            )
+            .expect("field collection plan entry");
+            zip.write_all(
+                serde_json::json!({
+                    "schema_version": "vision_nav_field_collection_plan_v1",
+                    "status": "degraded",
+                    "site_name": "unit-field",
+                    "manifest_path": "field_manifest.json",
+                    "bundle": "mission-bundle",
+                    "source_log": "terrain_matches.jsonl",
+                    "summary": {
+                        "required_count": 3,
+                        "registered_count": 1,
+                        "registered_missing_log_count": 1,
+                        "placeholder_count": 1,
+                        "missing_count": 0
+                    },
+                    "conditions": [
+                        {"condition": "good_texture", "label": "Good texture", "expected": "good_map", "status": "registered", "case_name": "unit-good", "manifest_log_exists": true},
+                        {"condition": "blur", "label": "Blur", "expected": "degraded", "status": "placeholder", "case_name": "unit-blur", "manifest_log_exists": false}
+                    ]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write field collection plan");
             zip.start_file("summaries/threshold_tuning/field_manifest-01.json", options)
                 .expect("threshold tuning entry");
             zip.write_all(
@@ -3885,6 +3986,13 @@ mod tests {
             zip.start_file("extras/camera-health/frame.png", options)
                 .expect("image entry");
             zip.write_all(TINY_PNG).expect("write image");
+            zip.start_file(
+                "extras/field_collection_plans/field_collection_plan.md",
+                options,
+            )
+            .expect("field collection markdown entry");
+            zip.write_all(b"# Field Evidence Collection Plan\n")
+                .expect("write field collection markdown");
             zip.start_file("bundle/ortho/map.png", options)
                 .expect("map asset entry");
             zip.write_all(TINY_PNG).expect("write map asset");
@@ -3892,7 +4000,7 @@ mod tests {
         }
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
-        assert_eq!(details.entry_count, 13);
+        assert_eq!(details.entry_count, 15);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(details.runtime_statuses.len(), 1);
@@ -4023,6 +4131,32 @@ mod tests {
                 .as_deref(),
             Some("covered")
         );
+        assert_eq!(details.field_collection_plan_reports.len(), 1);
+        assert_eq!(
+            details.field_collection_plan_reports[0].status.as_deref(),
+            Some("degraded")
+        );
+        assert_eq!(
+            details.field_collection_plan_reports[0]
+                .site_name
+                .as_deref(),
+            Some("unit-field")
+        );
+        assert_eq!(
+            details.field_collection_plan_reports[0]
+                .summary
+                .registered_count,
+            Some(1)
+        );
+        assert_eq!(details.field_collection_plan_reports[0].conditions.len(), 2);
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "summaries/field_collection_plans/field_manifest-01.json"
+                && artifact.kind == "field collection plan"
+        }));
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "extras/field_collection_plans/field_collection_plan.md"
+                && artifact.kind == "field collection artifact"
+        }));
         assert_eq!(details.threshold_tuning_reports.len(), 1);
         assert_eq!(
             details.threshold_tuning_reports[0].status.as_deref(),
