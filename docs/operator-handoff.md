@@ -114,6 +114,11 @@ From the Mac, this repo now has a status helper:
 ./scripts/mac/goal_status.sh
 ```
 
+That status helper also runs the autonomy proof summary from
+`scripts/dev/autonomy_goal_status.sh`, so it shows the current proof-item
+counts, external blockers, and next evidence commands before checking Pi
+connectivity. Missing proof does not stop the connectivity checks.
+
 If the Pi has a known address, pass it explicitly:
 
 ```bash

@@ -719,6 +719,9 @@ Status:
   with the repo-local Python path and prints a concise goal-status summary with
   proof-item counts, external blockers, proof-runbook phase counts, and next
   commands without creating a new handoff package.
+- Done: `scripts/mac/goal_status.sh` now embeds that autonomy proof summary
+  before its transfer-folder and Pi connectivity checks so one operator command
+  reports both missing proof gates and setup connectivity.
 - Done: Module Setup exposes `Local Readiness Re-Audit` as a local-only action
   that runs the desktop wrapper against already downloaded `from-pi` evidence,
   then refreshes final readiness, workflow, field, feature, threshold, ROS bag,

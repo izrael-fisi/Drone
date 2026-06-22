@@ -128,6 +128,12 @@ for path in "${required_mac_scripts[@]}"; do
   require_executable "$path"
 done
 
+if rg -q "Autonomy Goal Proof" scripts/mac/goal_status.sh && rg -q "scripts/dev/autonomy_goal_status.sh" scripts/mac/goal_status.sh; then
+  ok "Mac goal status includes autonomy proof summary"
+else
+  fail "scripts/mac/goal_status.sh does not include the autonomy proof summary"
+fi
+
 echo
 echo "== Python entrypoints =="
 entrypoints=(

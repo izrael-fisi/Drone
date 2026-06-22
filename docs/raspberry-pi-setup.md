@@ -1033,6 +1033,9 @@ The desktop app exposes the same offline check as Module Setup >
 the downloaded `~/DroneTransfer/from-pi/` evidence folders, and refreshes the
 final readiness, workflow, field, feature, threshold, ROS bag, PX4, and support
 bundle lists without opening a new SSH session.
+The Mac-side `./scripts/mac/goal_status.sh` helper also embeds the same
+autonomy proof summary before its transfer-folder and Pi connectivity checks,
+so operators can see proof blockers and SSH readiness from one command.
 
 It uses the latest downloaded support bundle, downloaded field-evidence and
 feature-method benchmark reports, downloaded threshold-tuning reports,

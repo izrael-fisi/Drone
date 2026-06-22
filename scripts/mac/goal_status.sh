@@ -61,6 +61,21 @@ else
   info "GitHub CLI is unavailable or not authenticated; skipping PR lookup."
 fi
 
+section "Autonomy Goal Proof"
+if [[ -x "$repo_root/scripts/dev/autonomy_goal_status.sh" ]]; then
+  set +e
+  VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT=1 "$repo_root/scripts/dev/autonomy_goal_status.sh"
+  autonomy_status=$?
+  set -e
+  if [[ "$autonomy_status" -eq 0 ]]; then
+    ok "Autonomy goal proof is complete."
+  else
+    warn "Autonomy goal proof is incomplete; review the blockers above."
+  fi
+else
+  warn "Autonomy goal status helper is missing. Expected scripts/dev/autonomy_goal_status.sh"
+fi
+
 section "Mac SSH And Transfer"
 if [[ -d "$HOME/DroneTransfer/to-pi" && -d "$HOME/DroneTransfer/from-pi" ]]; then
   ok "Mac transfer folders exist under $HOME/DroneTransfer"

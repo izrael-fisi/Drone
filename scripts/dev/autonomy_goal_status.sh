@@ -4,8 +4,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python_bin="${VISION_NAV_PYTHON:-python3}"
 json_copy="${VISION_NAV_AUTONOMY_GOAL_STATUS_JSON:-}"
-tmp_report="$(mktemp "${TMPDIR:-/tmp}/vision-nav-goal-status.XXXXXX.json")"
-trap 'rm -f "$tmp_report"' EXIT
+quiet_exit="${VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT:-0}"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-goal-status.XXXXXX")"
+tmp_report="$tmp_dir/report.json"
+trap 'rm -rf "$tmp_dir"' EXIT
 
 set +e
 PYTHONPATH="$repo_root/src" "$python_bin" -m vision_nav.autonomy_readiness --json >"$tmp_report"
@@ -93,7 +95,9 @@ if next_actions:
 PY
 
 if [[ "$audit_status" -ne 0 ]]; then
-  echo
-  echo "Autonomy goal is not complete yet; run the commands above to collect the missing proof artifacts." >&2
+  if [[ "$quiet_exit" != "1" && "$quiet_exit" != "true" ]]; then
+    echo
+    echo "Autonomy goal is not complete yet; run the commands above to collect the missing proof artifacts." >&2
+  fi
   exit "$audit_status"
 fi
