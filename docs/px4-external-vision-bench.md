@@ -331,6 +331,13 @@ VISION_NAV_SITL_SMOKE_DIR="$PWD/px4-sitl-evidence" \
 ./scripts/dev/run_px4_sitl_external_vision_capture.sh
 ```
 
+If the workstation is missing PX4 or `tmux`, the harness exits nonzero but
+still prepares the evidence-session scaffold, including the synthetic sender
+log, `px4_sitl_evidence_session.json`, and
+`receiver_capture/README.md`. Fix the prerequisite and rerun the same command;
+the scaffold is not receiver proof until `receiver_evidence.json` is generated
+from real `vehicle_visual_odometry` and `mavlink status` captures.
+
 Useful overrides:
 
 ```text

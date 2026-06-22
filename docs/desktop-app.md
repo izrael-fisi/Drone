@@ -411,7 +411,10 @@ desktop/PX4 workstation. The action runs
 `scripts/dev/run_px4_sitl_external_vision_capture.sh`, stores the session under
 `~/DroneTransfer/from-pi/px4-sitl-evidence/`, and refreshes the PX4 Receiver
 Evidence list. The local readiness re-audit also scans that folder for
-`receiver_evidence.json`.
+`receiver_evidence.json`. If the local workstation is missing PX4 or `tmux`,
+the action still prepares the evidence-session folder, synthetic sender log, and
+manual capture README, then exits failed so the operator can fix the prerequisite
+without losing the capture instructions.
 
 Module Setup can run `ROS Bag Validation` after a terrain runtime/replay log
 exists. The action runs `scripts/pi/run_rosbag_export_validation.sh` over SSH,

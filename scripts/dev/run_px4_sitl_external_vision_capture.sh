@@ -19,10 +19,42 @@ receiver_report="$session_dir/receiver_evidence.json"
 
 mkdir -p "$capture_dir"
 
+prepare_session_scaffold() {
+  if VISION_NAV_SITL_DRY_RUN=1 \
+    VISION_NAV_SITL_SMOKE_DIR="$session_dir" \
+    "$repo_root/scripts/dev/px4_sitl_external_vision_smoke.sh" >/dev/null; then
+    return 0
+  fi
+  echo "Warning: could not prepare PX4 evidence-session scaffold." >&2
+  return 1
+}
+
+print_session_markers() {
+  echo "__VISION_NAV_PX4_SITL_SESSION__=$session_dir"
+  echo "__VISION_NAV_PX4_SITL_REPORT__=$receiver_report"
+}
+
+fail_prereq() {
+  local message="$1"
+  echo "$message" >&2
+  prepare_session_scaffold >/dev/null 2>&1 || true
+  cat <<EOF >&2
+
+PX4 SITL receiver capture prerequisites are not ready.
+Prepared a reusable evidence-session scaffold when possible:
+  session: $session_dir
+  capture instructions: $capture_dir/README.md
+  expected receiver report: $receiver_report
+
+After fixing the prerequisite, rerun:
+  VISION_NAV_SITL_SMOKE_DIR="$session_dir" $repo_root/scripts/dev/run_px4_sitl_external_vision_capture.sh
+EOF
+  print_session_markers
+  exit 2
+}
+
 if [[ "$dry_run" == "1" ]]; then
-  VISION_NAV_SITL_DRY_RUN=1 \
-  VISION_NAV_SITL_SMOKE_DIR="$session_dir" \
-  "$repo_root/scripts/dev/px4_sitl_external_vision_smoke.sh" >/dev/null
+  prepare_session_scaffold
   cat <<EOF
 PX4 SITL capture dry run prepared:
   session: $session_dir
@@ -30,27 +62,20 @@ PX4 SITL capture dry run prepared:
   PX4 dir: $px4_dir
   PX4 target: $px4_target
 EOF
-  echo "__VISION_NAV_PX4_SITL_SESSION__=$session_dir"
-  echo "__VISION_NAV_PX4_SITL_REPORT__=$receiver_report"
+  print_session_markers
   exit 0
 fi
 
 if ! command -v tmux >/dev/null 2>&1; then
-  echo "tmux is required for automated PX4 SITL shell capture." >&2
-  echo "Install tmux or use scripts/dev/px4_sitl_external_vision_smoke.sh with manual PX4 shell captures." >&2
-  exit 2
+  fail_prereq "tmux is required for automated PX4 SITL shell capture. Install tmux or use the scaffolded manual PX4 shell capture instructions."
 fi
 
 if [[ ! -d "$px4_dir" ]]; then
-  echo "PX4-Autopilot directory not found: $px4_dir" >&2
-  echo "Set VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot if it lives elsewhere." >&2
-  exit 2
+  fail_prereq "PX4-Autopilot directory not found: $px4_dir. Set VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot if it lives elsewhere."
 fi
 
 if tmux has-session -t "$tmux_session" 2>/dev/null; then
-  echo "tmux session already exists: $tmux_session" >&2
-  echo "Set VISION_NAV_PX4_TMUX_SESSION to another name or close the existing session." >&2
-  exit 2
+  fail_prereq "tmux session already exists: $tmux_session. Set VISION_NAV_PX4_TMUX_SESSION to another name or close the existing session."
 fi
 
 cleanup() {

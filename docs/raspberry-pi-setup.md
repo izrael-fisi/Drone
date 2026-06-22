@@ -800,7 +800,10 @@ The desktop SITL smoke and capture scripts print
 session. Module Setup `PX4 SITL Receiver Capture` runs that desktop capture
 wrapper and saves the session under `~/DroneTransfer/from-pi/px4-sitl-evidence/`
 so local readiness re-audits can find it. Use the session marker as
-`VISION_NAV_PX4_SITL_SESSION`. The session folder is copied under
+`VISION_NAV_PX4_SITL_SESSION`. If the desktop workstation is missing PX4 or
+`tmux`, the capture wrapper still creates the session scaffold, synthetic sender
+log, and manual capture README before exiting failed; rerun the same command
+after fixing the prerequisite. The session folder is copied under
 `extras/px4_sitl_session/`, and the parsed pass/fail report is still written
 under `summaries/px4_sitl_evidence/`. Session-based receiver reports also
 compare the observed `vehicle_visual_odometry` listener rate against the smoke

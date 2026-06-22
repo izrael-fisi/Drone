@@ -522,6 +522,7 @@ rm -rf "$local_audit_dir"
 echo "[7/8] Preparing PX4 SITL evidence session dry-run"
 smoke_output="$preflight_tmp_dir/px4_sitl_smoke_dry_run.txt"
 capture_output="$preflight_tmp_dir/px4_sitl_capture_dry_run.txt"
+capture_prereq_output="$preflight_tmp_dir/px4_sitl_capture_missing_prereq.txt"
 session_missing_capture_output="$preflight_tmp_dir/px4_sitl_session_missing_capture.txt"
 smoke_dir="$(mktemp -d "$preflight_tmp_dir/sitl-smoke.XXXXXX")"
 VISION_NAV_SITL_DRY_RUN=1 \
@@ -540,12 +541,25 @@ grep -q "__VISION_NAV_PX4_SITL_SESSION__=" "$capture_output"
 grep -q "__VISION_NAV_PX4_SITL_REPORT__=" "$capture_output"
 test -f "$capture_smoke_dir/px4_sitl_evidence_session.json"
 test -f "$capture_smoke_dir/receiver_capture/README.md"
+capture_prereq_dir="$(mktemp -d "$preflight_tmp_dir/sitl-capture-prereq.XXXXXX")"
+if VISION_NAV_PX4_AUTOPILOT_DIR="$preflight_tmp_dir/missing-px4-autopilot" \
+  VISION_NAV_SITL_SMOKE_DIR="$capture_prereq_dir" \
+  ./scripts/dev/run_px4_sitl_external_vision_capture.sh >"$capture_prereq_output" 2>&1; then
+  echo "Expected PX4 SITL receiver capture to fail when prerequisites are missing." >&2
+  exit 1
+fi
+grep -q "PX4 SITL receiver capture prerequisites are not ready" "$capture_prereq_output"
+grep -q "__VISION_NAV_PX4_SITL_SESSION__=" "$capture_prereq_output"
+grep -q "__VISION_NAV_PX4_SITL_REPORT__=" "$capture_prereq_output"
+test -f "$capture_prereq_dir/px4_sitl_evidence_session.json"
+test -f "$capture_prereq_dir/receiver_capture/README.md"
 if VISION_NAV_ALLOW_DEGRADED=1 ./scripts/dev/evaluate_px4_sitl_session.sh "$smoke_dir" >"$session_missing_capture_output"; then
   echo "Expected PX4 SITL session evaluation to fail before receiver captures exist." >&2
   exit 1
 fi
 rm -rf "$smoke_dir"
 rm -rf "$capture_smoke_dir"
+rm -rf "$capture_prereq_dir"
 
 echo "[8/8] Checking unrelated agent/chatbot scope is absent"
 scope_pattern="M""CP|L""LM|Chat""GPT"
