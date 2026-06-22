@@ -14,6 +14,8 @@ rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTran
 rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
+px4_params="${VISION_NAV_PX4_PARAMS:-}"
+ardupilot_params="${VISION_NAV_ARDUPILOT_PARAMS:-}"
 
 if [[ -z "$px4_sitl_session" && -f "$HOME/px4-sitl-evidence/px4_sitl_evidence_session.json" ]]; then
   px4_sitl_session="$HOME/px4-sitl-evidence"
@@ -21,6 +23,14 @@ fi
 
 if [[ -z "$px4_sitl_report" && -f "$HOME/px4-sitl-evidence/receiver_evidence.json" ]]; then
   px4_sitl_report="$HOME/px4-sitl-evidence/receiver_evidence.json"
+fi
+
+if [[ -z "$px4_params" && -f "$HOME/px4.params" ]]; then
+  px4_params="$HOME/px4.params"
+fi
+
+if [[ -z "$ardupilot_params" && -f "$HOME/ardupilot.params" ]]; then
+  ardupilot_params="$HOME/ardupilot.params"
 fi
 
 if [[ "$venv_python" == */* ]]; then
@@ -75,12 +85,12 @@ if [[ -n "$px4_sitl_report" && -f "$px4_sitl_report" ]]; then
   args+=(--px4-sitl-report "$px4_sitl_report")
 fi
 
-if [[ -n "${VISION_NAV_PX4_PARAMS:-}" && -f "${VISION_NAV_PX4_PARAMS}" ]]; then
-  args+=(--px4-params "$VISION_NAV_PX4_PARAMS")
+if [[ -n "$px4_params" && -f "$px4_params" ]]; then
+  args+=(--px4-params "$px4_params")
 fi
 
-if [[ -n "${VISION_NAV_ARDUPILOT_PARAMS:-}" && -f "${VISION_NAV_ARDUPILOT_PARAMS}" ]]; then
-  args+=(--ardupilot-params "$VISION_NAV_ARDUPILOT_PARAMS")
+if [[ -n "$ardupilot_params" && -f "$ardupilot_params" ]]; then
+  args+=(--ardupilot-params "$ardupilot_params")
 fi
 
 if [[ -n "${VISION_NAV_SITL_MAVLINK_MESSAGE:-}" ]]; then

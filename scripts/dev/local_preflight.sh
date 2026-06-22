@@ -210,7 +210,34 @@ cat >"$support_autodetect_home/px4-sitl-evidence/receiver_evidence.json" <<'EOF'
   "issues": []
 }
 EOF
-env -u VISION_NAV_PX4_SITL_SESSION -u VISION_NAV_PX4_SITL_REPORT \
+cat >"$support_autodetect_home/px4.params" <<'EOF'
+1 1 EKF2_EV_CTRL 1 6
+1 1 EKF2_HGT_REF 0 6
+1 1 EKF2_GPS_CTRL 7 6
+1 1 EKF2_EV_NOISE_MD 0 6
+1 1 EKF2_EV_DELAY 80 9
+1 1 EKF2_EV_POS_X 0.0 9
+1 1 EKF2_EV_POS_Y 0.0 9
+1 1 EKF2_EV_POS_Z 0.0 9
+EOF
+cat >"$support_autodetect_home/ardupilot.params" <<'EOF'
+EK3_ENABLE,1
+EK2_ENABLE,0
+AHRS_EKF_TYPE,3
+VISO_TYPE,3
+VISO_POS_X,0.02
+VISO_POS_Y,0.01
+VISO_POS_Z,-0.04
+EK3_SRC1_POSXY,6
+EK3_SRC1_VELXY,0
+EK3_SRC1_POSZ,1
+EK3_SRC1_VELZ,0
+EK3_SRC1_YAW,1
+EK3_SRC_OPTIONS,0
+GPS_TYPE,0
+RC8_OPTION,90
+EOF
+env -u VISION_NAV_PX4_SITL_SESSION -u VISION_NAV_PX4_SITL_REPORT -u VISION_NAV_PX4_PARAMS -u VISION_NAV_ARDUPILOT_PARAMS \
 HOME="$support_autodetect_home" \
 VISION_NAV_PYTHON=python3 \
 VISION_NAV_SUPPORT_OUTPUT_DIR="$support_autodetect_dir" \
@@ -231,10 +258,16 @@ manifest = json.loads((support_dir / zips[0].stem / "support_manifest.json").rea
 assert manifest["px4_sitl_evidence"]["status"] == "passed"
 assert manifest["px4_sitl_evidence"]["source"] == "px4_sitl_report"
 assert manifest["px4_sitl_evidence"]["source_report_path"].endswith("px4-sitl-evidence/receiver_evidence.json")
+assert manifest["px4_params"]["status"] in {"passed", "degraded"}
+assert manifest["px4_params"]["param_copy"]["source"].endswith("px4.params")
+assert manifest["ardupilot_params"]["status"] == "passed"
+assert manifest["ardupilot_params"]["param_copy"]["source"].endswith("ardupilot.params")
 with zipfile.ZipFile(zips[0]) as archive:
     names = set(archive.namelist())
 assert "summaries/px4_sitl_evidence/receiver_evidence.json" in names
 assert "extras/px4_sitl_evidence/receiver_evidence.json" in names
+assert "extras/px4_params/px4.params" in names
+assert "extras/ardupilot_params/ardupilot.params" in names
 PY
 rosbag_smoke_dir="$workflow_smoke_dir/rosbag-smoke"
 mkdir -p "$rosbag_smoke_dir"

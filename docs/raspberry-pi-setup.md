@@ -828,7 +828,8 @@ VISION_NAV_PX4_PARAMS="$HOME/px4.params" \
 ```
 
 The raw parameter export is copied under `extras/px4_params/`, and the parsed
-report is written under `summaries/px4_params/`.
+report is written under `summaries/px4_params/`. If the export already exists
+at `~/px4.params`, `create_support_bundle.sh` includes it automatically.
 
 To include the optional ArduPilot ExternalNav parameter readiness report in the
 same support bundle:
@@ -839,7 +840,9 @@ VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" \
 ```
 
 The raw parameter export is copied under `extras/ardupilot_params/`, and the
-parsed report is written under `summaries/ardupilot_params/`.
+parsed report is written under `summaries/ardupilot_params/`. If the export
+already exists at `~/ardupilot.params`, `create_support_bundle.sh` includes it
+automatically.
 
 If feature-method benchmark reports exist under
 `~/DroneTransfer/outgoing/feature-method-bench`, the Pi wrapper includes them
