@@ -144,6 +144,9 @@ Status:
 - Done: `vision-nav-ros2-replay-log --export-rosbag2` writes a native rosbag2
   directory with serialized ROS messages when run in a sourced ROS 2 Python
   environment with `rosbag2_py` and message packages available.
+- Done: `vision-nav-review-rosbag2-cli` creates a native rosbag2 workstation
+  review artifact by combining strict export validation with captured
+  `ros2 bag info` output, degrading cleanly when the ROS 2 CLI is unavailable.
 - Done: `ros2/drone_vision_nav/` provides a thin `ament_python` package wrapper
   with package metadata, installed launch profiles, and `terrain_nav_live` /
   `terrain_nav_replay` console scripts for colcon-based ROS 2 workstations.

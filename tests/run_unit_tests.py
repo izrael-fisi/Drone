@@ -53,6 +53,7 @@ from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.px4_params import check_px4_external_vision_params, evaluate_px4_param_file, params_from_text
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
 from vision_nav.ros2_bridge import export_rosbag_jsonl, export_rosbag_mcap, export_rosbag2, ros_records_from_log
+from vision_nav.rosbag2_cli_review import review_rosbag2_cli
 from vision_nav.rosbag_export_check import validate_rosbag_export
 from vision_nav.runtime_status import runtime_status_snapshot, write_runtime_status
 from vision_nav.replay_case_manifest import evaluate_replay_case_manifest
@@ -1251,6 +1252,30 @@ def test_ros2_bag_jsonl_export_writes_topic_records() -> None:
         rosbag2_validation = validate_rosbag_export(rosbag2_result["output_dir"])
         assert_equal(rosbag2_validation["status"], "passed", "rosbag2 validation status")
         assert_equal(rosbag2_validation["details"]["storage_files"], ["rosbag2_0.db3"], "rosbag2 validation storage files")
+        fake_ros2 = root / "fake-ros2"
+        fake_ros2.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "print('ros2 bag info review')\n"
+            "print(' '.join(sys.argv[1:]))\n"
+        )
+        fake_ros2.chmod(0o755)
+        cli_review_path = root / "rosbag2-cli-review.json"
+        cli_review = review_rosbag2_cli(
+            rosbag2_result["output_dir"],
+            output_path=cli_review_path,
+            ros2_command=str(fake_ros2),
+        )
+        assert_equal(cli_review["status"], "passed", "rosbag2 cli review status")
+        assert_equal(cli_review["ros2_cli"]["exit_code"], 0, "rosbag2 cli review exit")
+        if "ros2 bag info review" not in cli_review["ros2_cli"]["stdout"]:
+            raise AssertionError("Expected rosbag2 CLI review to capture ros2 bag info output")
+        written_review = json.loads(cli_review_path.read_text())
+        assert_equal(written_review["schema_version"], "vision_nav_rosbag2_cli_review_v1", "rosbag2 cli review schema")
+        skipped_review = review_rosbag2_cli(rosbag2_result["output_dir"], skip_ros2=True)
+        assert_equal(skipped_review["status"], "degraded", "rosbag2 skipped cli review status")
+        non_native_review = review_rosbag2_cli(root / "rosbag-jsonl", skip_ros2=True)
+        assert_equal(non_native_review["status"], "failed", "rosbag2 cli review rejects non-native export")
 
 
 def test_ros2_launch_profiles_static() -> None:

@@ -167,6 +167,7 @@ entrypoints=(
   "vision-nav-export-rosbag-jsonl"
   "vision-nav-ros2-replay-log"
   "vision-nav-validate-rosbag-export"
+  "vision-nav-review-rosbag2-cli"
   "vision-nav-summarize-match-log"
   "vision-nav-support-bundle"
   "vision-nav-tune-replay-thresholds"

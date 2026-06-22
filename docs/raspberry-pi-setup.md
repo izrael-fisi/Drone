@@ -659,6 +659,19 @@ and `/diagnostics` topics. The default support-bundle wrapper auto-includes
 exists; set `VISION_NAV_ROSBAG_EXPORT_VALIDATION` or
 `VISION_NAV_MCAP_EXPORT_VALIDATION` to package another validation report.
 
+On a sourced ROS 2 workstation, save a native rosbag2 CLI review artifact after
+exporting a rosbag2 directory:
+
+```bash
+vision-nav-review-rosbag2-cli \
+  --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag2-native \
+  --output ~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json
+```
+
+This command records both the strict validation result and `ros2 bag info`
+output. If the `ros2` CLI is not sourced, the report degrades by default; add
+`--require-ros2` when the workstation review must fail closed.
+
 ## Create A Support Bundle
 
 After every bench run or failed field check, package the active map metadata,

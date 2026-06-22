@@ -307,6 +307,17 @@ native serialized rosbag2 directory for `ros2 bag info/play`. The validator
 checks metadata, topic/message counts, MCAP sidecars, and native rosbag2 storage
 files without requiring ROS 2 to be installed, and fails closed unless the
 export includes non-empty `/vision_nav/odometry` and `/diagnostics` topics.
+After creating a native rosbag2 directory on a sourced workstation, save a
+CLI review artifact with:
+
+```bash
+vision-nav-review-rosbag2-cli \
+  --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag2-native \
+  --output ~/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json
+```
+
+That review wraps the strict validator and captures `ros2 bag info` output so
+support can confirm the bag is readable by standard ROS 2 tooling.
 When a validation report exists at the normal Pi transfer path,
 `scripts/pi/create_support_bundle.sh` packages it so desktop support-bundle
 diagnostics show the ROS replay artifact health beside PX4, replay-gate,
