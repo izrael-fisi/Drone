@@ -2253,6 +2253,8 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                         "__VISION_NAV_SUPPORT_ZIP__": str(root / "support.zip"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN__": str(root / "field_collection_plan.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__": str(root / "field_collection_plan.md"),
+                        "__VISION_NAV_TERRAIN_LOG__": str(root / "terrain_matches.jsonl"),
+                        "__VISION_NAV_RUNTIME_STATUS__": str(root / "runtime_status.json"),
                         "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__": str(root / "rosbag-jsonl-validation.json"),
                         "__VISION_NAV_AUTONOMY_REPORT__": str(root / "autonomy_readiness_report.json"),
                     },

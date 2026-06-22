@@ -14,6 +14,8 @@ field_manifest="${VISION_NAV_FIELD_MANIFEST:-$HOME/DroneTransfer/outgoing/replay
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$(dirname "$field_manifest")/field_collection_plan.json}"
 field_collection_plan_md="${VISION_NAV_FIELD_COLLECTION_PLAN_MD:-${field_collection_plan%.json}.md}"
 field_log="${VISION_NAV_FIELD_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}"
+field_capture_output_dir="${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR:-$(dirname "$field_log")}"
+field_capture_count="${VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT:-30}"
 rosbag_export_dir="${VISION_NAV_ROSBAG_EXPORT_DIR:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
@@ -30,13 +32,15 @@ Usage:
 
 This wrapper attempts the ordered evidence collection path:
   1. create/seed the field evidence template
-  2. optionally register a field replay case when VISION_NAV_FIELD_CASE_NAME,
+  2. create/update the field collection plan
+  3. verify an existing terrain log or run a bounded terrain capture
+  4. optionally register a field replay case when VISION_NAV_FIELD_CASE_NAME,
      VISION_NAV_FIELD_EXPECTED, and VISION_NAV_FIELD_CONDITION(S) are provided
-  3. run feature-method benchmark when a replay log exists
-  4. run threshold tuning when a field manifest exists
-  5. export and validate ROS bag JSONL replay artifacts when a replay log exists
-  6. create a support bundle
-  7. run the strict autonomy-readiness audit and evidence package
+  5. run feature-method benchmark when a replay log exists
+  6. run threshold tuning when a field manifest exists
+  7. export and validate ROS bag JSONL replay artifacts when a replay log exists
+  8. create a support bundle
+  9. run the strict autonomy-readiness audit and evidence package
 
 Common optional overrides:
   VISION_NAV_EVIDENCE_WORKFLOW_REPORT     Default: $report
@@ -47,6 +51,8 @@ Common optional overrides:
   VISION_NAV_FIELD_COLLECTION_PLAN       Default: $field_collection_plan
   VISION_NAV_FIELD_COLLECTION_PLAN_MD    Default: $field_collection_plan_md
   VISION_NAV_FIELD_LOG                    Default: $field_log
+  VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR     Default: $field_capture_output_dir
+  VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT=30
   VISION_NAV_ROSBAG_EXPORT_DIR            Default: $rosbag_export_dir
   VISION_NAV_ROSBAG_EXPORT_VALIDATION     Default: $rosbag_export_validation
   VISION_NAV_BUNDLE                       Default: $bundle
@@ -231,6 +237,23 @@ skip_step() {
   record_step "$name" "skipped" 0 "$log_path" "$notes"
 }
 
+pass_step() {
+  local name="$1"
+  local notes="$2"
+  local log_path="$log_dir/${name}.log"
+  shift 2 || true
+  {
+    printf '%s\n' "$notes"
+    for line in "$@"; do
+      printf '%s\n' "$line"
+    done
+  } >"$log_path"
+  echo
+  echo "== $name =="
+  cat "$log_path"
+  record_step "$name" "passed" 0 "$log_path" "$notes"
+}
+
 if [[ -f "$field_template" && -f "$field_manifest" && "${VISION_NAV_EVIDENCE_WORKFLOW_REFRESH_TEMPLATE:-0}" != "1" ]]; then
   skip_step "create_field_evidence_template" "Field template and active manifest already exist. Set VISION_NAV_EVIDENCE_WORKFLOW_REFRESH_TEMPLATE=1 and template force variables if you need to regenerate them."
 else
@@ -238,6 +261,28 @@ else
 fi
 
 run_step "create_field_collection_plan" ./scripts/pi/create_field_collection_plan.sh
+
+runtime_status="$(dirname "$field_log")/runtime_status.json"
+if [[ -f "$field_log" ]]; then
+  marker_lines=("__VISION_NAV_TERRAIN_LOG__=$field_log")
+  if [[ -f "$runtime_status" ]]; then
+    marker_lines+=("__VISION_NAV_RUNTIME_STATUS__=$runtime_status")
+  fi
+  pass_step "capture_field_terrain_log" "Existing terrain runtime log is available for workflow evidence." "${marker_lines[@]}"
+elif [[ -e "$bundle" ]]; then
+  (
+    export VISION_NAV_COUNT="$field_capture_count"
+    export VISION_NAV_OUTPUT_DIR="$field_capture_output_dir"
+    run_step "capture_field_terrain_log" ./scripts/pi/run_terrain_nav_loop.sh
+  )
+  captured_field_log="$field_capture_output_dir/terrain_matches.jsonl"
+  if [[ -f "$captured_field_log" ]]; then
+    field_log="$captured_field_log"
+    export VISION_NAV_FIELD_LOG="$field_log"
+  fi
+else
+  skip_step "capture_field_terrain_log" "Missing terrain replay log and bundle. Expected log: $field_log ; bundle: $bundle"
+fi
 
 if [[ -n "${VISION_NAV_FIELD_CASE_NAME:-}" && -n "${VISION_NAV_FIELD_EXPECTED:-}" && -n "${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}" ]]; then
   VISION_NAV_FIELD_GATE_STRICT=0 run_step "register_field_replay_case" ./scripts/pi/register_field_replay_case.sh

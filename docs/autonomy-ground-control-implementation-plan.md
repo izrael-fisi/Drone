@@ -690,6 +690,11 @@ Status:
   `scripts/pi/run_rosbag_export_validation.sh` wrapper for its ROS bag
   validation step, so direct operator runs and full workflow runs generate the
   same marker/report shape.
+- Done: the evidence workflow now includes an explicit
+  `capture_field_terrain_log` step that either records an existing terrain log
+  and runtime-status snapshot or runs a bounded terrain capture before field
+  case registration, feature benchmarking, threshold tuning, and ROS replay
+  validation.
 - Done: the evidence workflow writes a compressed workflow-log archive and
   emits `__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=...`, so full per-step logs can
   be downloaded with the workflow report instead of relying only on bounded

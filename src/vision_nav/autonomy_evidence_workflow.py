@@ -12,6 +12,7 @@ SCHEMA_VERSION = "vision_nav_autonomy_evidence_workflow_v1"
 REQUIRED_WORKFLOW_STEPS = [
     "create_field_evidence_template",
     "create_field_collection_plan",
+    "capture_field_terrain_log",
     "register_field_replay_case",
     "run_feature_method_benchmark",
     "run_threshold_tuning_report",
@@ -25,6 +26,8 @@ IMPORTANT_MARKERS = [
     "__VISION_NAV_SUPPORT_ZIP__",
     "__VISION_NAV_FIELD_COLLECTION_PLAN__",
     "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__",
+    "__VISION_NAV_TERRAIN_LOG__",
+    "__VISION_NAV_RUNTIME_STATUS__",
     "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__",
     "__VISION_NAV_AUTONOMY_REPORT__",
 ]

@@ -108,6 +108,9 @@ mkdir -p "$workflow_smoke_dir"
 cat >"$workflow_smoke_dir/terrain_matches.jsonl" <<'EOF'
 {"sequence": 1, "result": {"status": "accepted", "timestamp_us": 1000000, "measurement": {"frame": "local_enu", "x_m": 1.0, "y_m": 2.0, "covariance": {"x_m2": 1.0, "y_m2": 1.0}}}}
 EOF
+cat >"$workflow_smoke_dir/runtime_status.json" <<'EOF'
+{"active_map":{"bundle_id":"preflight"},"last_match":{"status":"accepted"},"estimator":{"health":"healthy"},"external_position_health":{"status":"not_configured"}}
+EOF
 VISION_NAV_PYTHON=python3 \
 VISION_NAV_EVIDENCE_WORKFLOW_DIR="$workflow_smoke_dir/workflow" \
 VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" \
@@ -151,6 +154,7 @@ assert report["schema_version"] == "vision_nav_autonomy_evidence_workflow_v1"
 steps = {step["name"]: step for step in report["steps"]}
 assert "create_field_evidence_template" in steps
 assert "create_field_collection_plan" in steps
+assert "capture_field_terrain_log" in steps
 assert "validate_rosbag_export" in steps
 assert "run_autonomy_readiness_audit" in steps
 assert "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__" in report["markers"]
@@ -158,6 +162,8 @@ assert "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__" in report["markers"]
 assert "__VISION_NAV_SUPPORT_ZIP__" in report["markers"]
 assert "__VISION_NAV_FIELD_COLLECTION_PLAN__" in report["markers"]
 assert "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__" in report["markers"]
+assert "__VISION_NAV_TERRAIN_LOG__" in report["markers"]
+assert "__VISION_NAV_RUNTIME_STATUS__" in report["markers"]
 assert "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__" in report["markers"]
 assert report["status"] in {"passed", "degraded", "failed"}
 assert Path(report["markers"]["__VISION_NAV_ROSBAG_EXPORT_VALIDATION__"]).exists()
@@ -167,6 +173,7 @@ with tarfile.open(log_archive, "r:gz") as archive:
     names = set(archive.getnames())
 assert "logs/create_field_evidence_template.log" in names
 assert "logs/create_field_collection_plan.log" in names
+assert "logs/capture_field_terrain_log.log" in names
 assert "logs/validate_rosbag_export.log" in names
 assert "logs/run_autonomy_readiness_audit.log" in names
 PY
