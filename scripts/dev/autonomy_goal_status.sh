@@ -174,6 +174,27 @@ first_existing_workflow_log_archive() {
   done
 }
 
+refresh_evidence_workflow_validation_report() {
+  if [[ ! -f "$evidence_workflow_report" ]]; then
+    return 0
+  fi
+  local refreshed="${evidence_workflow_validation_report:-${evidence_workflow_report%.json}.validation.json}"
+  if [[ -z "$refreshed" ]]; then
+    return 0
+  fi
+  set +e
+  PYTHONPATH="$repo_root/src" "$python_bin" -m vision_nav.autonomy_evidence_workflow \
+    --report "$evidence_workflow_report" \
+    --output "$refreshed" >/dev/null 2>&1
+  local refresh_status=$?
+  set -e
+  if [[ -f "$refreshed" ]]; then
+    evidence_workflow_validation_report="$refreshed"
+  elif [[ "$refresh_status" -ne 0 && -z "$evidence_workflow_validation_report" ]]; then
+    evidence_workflow_validation_report="$(first_existing_workflow_validation_report || true)"
+  fi
+}
+
 if [[ -z "$support_bundle" ]]; then
   support_bundle="$(latest_glob "$support_dir/*.zip")"
   if [[ -z "$support_bundle" ]]; then
@@ -231,6 +252,8 @@ fi
 if [[ -z "$evidence_workflow_log_archive" ]]; then
   evidence_workflow_log_archive="$(first_existing_workflow_log_archive || true)"
 fi
+
+refresh_evidence_workflow_validation_report
 
 args=(
   -m vision_nav.autonomy_readiness
@@ -406,6 +429,17 @@ def check_details(report, name):
     return {}
 
 
+def load_json_file(path):
+    if not path:
+        return None
+    try:
+        with open(str(path), "r", encoding="utf-8") as handle:
+            value = json.load(handle)
+    except Exception:
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def print_multiline_command(prefix, command, desktop_action=None):
     if not command:
         return
@@ -573,6 +607,36 @@ if present_inputs:
         print(f"- {key}: {value}")
     if len(present_inputs) > 12:
         print(f"- ... {len(present_inputs) - 12} more")
+
+workflow_validation = load_json_file(inputs.get("evidence_workflow_validation_report"))
+if workflow_validation:
+    validation_status = str(workflow_validation.get("status") or "unknown")
+    workflow_status = str(workflow_validation.get("workflow_status") or "unknown")
+    next_step = (
+        workflow_validation.get("next_required_step")
+        if isinstance(workflow_validation.get("next_required_step"), dict)
+        else None
+    )
+    issues = workflow_validation.get("issues") if isinstance(workflow_validation.get("issues"), list) else []
+    should_print_workflow = validation_status != "passed" or workflow_status != "passed" or next_step or issues
+    if should_print_workflow:
+        print()
+        print("Workflow validation:")
+        print(
+            f"- status {validation_status}, workflow {workflow_status}, "
+            f"steps {workflow_validation.get('step_count', 'unknown')}, "
+            f"issues {workflow_validation.get('issue_count', len(issues))}"
+        )
+        if next_step:
+            name = next_step.get("name") or "unknown"
+            status = next_step.get("status") or "unknown"
+            print(f"- next required step: {name} [{status}]")
+            if next_step.get("desktop_action"):
+                print(f"  app: {next_step.get('desktop_action')}")
+            if next_step.get("command"):
+                print(f"  command: {next_step.get('command')}")
+        for issue in issues[:4]:
+            print(f"- issue: {issue}")
 
 if phases:
     print()

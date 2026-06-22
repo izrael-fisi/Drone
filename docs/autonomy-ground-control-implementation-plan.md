@@ -770,6 +770,11 @@ Status:
   its Markdown checklist after capture or registration, and the workflow
   validator treats that refresh as an auditable required step before feature
   benchmarking, support-bundle packaging, and final readiness audit.
+- Done: local and goal-status autonomy audits now regenerate workflow
+  validation from the current `autonomy_evidence_workflow.json` when available,
+  then surface non-passing workflow validation status, next required step,
+  desktop action, and command so stale downloaded validation cannot hide a new
+  required evidence step.
 - Done: autonomy-readiness reports now include a strict
   `evidence_manifest` section with completion blockers, external proof
   blockers, missing field conditions, and failed/degraded bench subchecks so the

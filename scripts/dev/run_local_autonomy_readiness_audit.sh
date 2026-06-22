@@ -173,6 +173,27 @@ first_existing_workflow_log_archive() {
   done
 }
 
+refresh_evidence_workflow_validation_report() {
+  if [[ ! -f "$evidence_workflow_report" ]]; then
+    return 0
+  fi
+  local refreshed="${evidence_workflow_validation_report:-${evidence_workflow_report%.json}.validation.json}"
+  if [[ -z "$refreshed" ]]; then
+    return 0
+  fi
+  set +e
+  PYTHONPATH="$repo_root/src" "$python_bin" -m vision_nav.autonomy_evidence_workflow \
+    --report "$evidence_workflow_report" \
+    --output "$refreshed" >/dev/null 2>&1
+  local refresh_status=$?
+  set -e
+  if [[ -f "$refreshed" ]]; then
+    evidence_workflow_validation_report="$refreshed"
+  elif [[ "$refresh_status" -ne 0 && -z "$evidence_workflow_validation_report" ]]; then
+    evidence_workflow_validation_report="$(first_existing_workflow_validation_report || true)"
+  fi
+}
+
 if [[ -z "$support_bundle" ]]; then
   support_bundle="$(latest_glob "$support_dir/*.zip")"
   if [[ -z "$support_bundle" ]]; then
@@ -230,6 +251,8 @@ fi
 if [[ -z "$evidence_workflow_log_archive" ]]; then
   evidence_workflow_log_archive="$(first_existing_workflow_log_archive || true)"
 fi
+
+refresh_evidence_workflow_validation_report
 
 mkdir -p "$(dirname "$output_report")"
 
