@@ -3261,6 +3261,8 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy readiness should not mix prereq fixes into proof next actions")
         if missing_proof_next_commands.index(px4_capture_command) > missing_proof_next_commands.index(support_bundle_command):
             raise AssertionError("autonomy command bundle should order PX4 receiver proof before support bundle")
+        if "./scripts/pi/register_field_replay_case.sh" in missing_proof_next_commands:
+            raise AssertionError("autonomy command bundle should not expose the bare replay-case registration wrapper")
         field_bootstrap_command = "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh"
         guided_workflow_command = "./scripts/pi/run_autonomy_evidence_workflow.sh"
         if missing_proof_next_commands.index(field_bootstrap_command) > missing_proof_next_commands.index(

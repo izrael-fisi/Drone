@@ -71,6 +71,7 @@ BENCH_SUBCHECK_ACTION_ORDER = {
     "ardupilot_params": 130,
 }
 BENCH_SUBCHECKS_DELEGATED_TO_LATER_PHASES = {
+    "replay_gates",
     "field_evidence",
     "feature_method_benchmarks",
     "threshold_tuning",
@@ -1028,10 +1029,10 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
             "notes": "Field Log Capture writes runtime_status.json beside the terrain log; Runtime Status verifies the latest snapshot before the bench report.",
         },
         "replay_gates": {
-            "title": "Evaluate replay gates for the bench log.",
-            "desktop_action": "Module Setup > Bench Report",
-            "command": "./scripts/pi/register_field_replay_case.sh",
-            "notes": "Replay-gate evidence should show accepted, degraded, and wrong-map behavior before final readiness.",
+            "title": "Run the guided field workflow for replay-gate evidence.",
+            "desktop_action": "Module Setup > Load Next Field Condition, then Evidence Workflow",
+            "command": GUIDED_EVIDENCE_WORKFLOW_COMMAND,
+            "notes": "The field workflow captures, validates, and registers condition-specific logs. Generated field plans carry the exact registration commands; support bundles auto-ingest replay-gate reports from the field manifest.",
         },
         "px4_sitl_evidence": {
             "title": "Capture PX4 external-vision receiver proof.",

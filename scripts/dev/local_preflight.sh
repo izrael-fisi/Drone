@@ -624,6 +624,7 @@ workflow = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", next_com
 assert px4 < support
 assert field_plan < workflow < support
 blocked_followups = text.index("Blocked follow-up commands:")
+assert "./scripts/pi/register_field_replay_case.sh" not in text[next_commands:blocked_followups]
 assert "./scripts/pi/run_feature_method_benchmark.sh" not in text[next_commands:blocked_followups]
 assert "./scripts/pi/run_feature_method_benchmark.sh" in text[blocked_followups:]
 assert "./scripts/pi/run_rosbag_export_validation.sh" not in text[next_commands:blocked_followups]

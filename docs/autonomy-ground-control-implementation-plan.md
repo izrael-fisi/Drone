@@ -833,6 +833,10 @@ Status:
   the specific bench and field evidence collection steps, and delegates feature
   benchmarking, threshold tuning, and ROS replay proof to their blocked
   follow-up phases until the real field dataset phase passes.
+- Done: replay-gate support-bundle failures now point through the guided field
+  evidence workflow instead of exposing a bare `register_field_replay_case.sh`
+  command without the required case, condition, expected-behavior, and metadata
+  environment.
 - Done: `scripts/dev/autonomy_goal_status.sh` now prints PX4 SITL capture
   prerequisite diagnostics when a `px4_sitl_capture_prereqs.json` report is
   available, including failed check names and next-action messages, so operators
