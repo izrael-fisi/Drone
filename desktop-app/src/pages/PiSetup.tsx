@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Archive,
   CheckCircle2,
+  ClipboardCheck,
   Copy,
   Camera,
   Eye,
@@ -6228,10 +6229,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 </div>
                 <div className="text-[10px] font-mono text-slate-500 truncate">{remoteBundle}</div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 <button onClick={runBundleDiagnostic} disabled={!connectionReady || !!runningStep} className="btn-secondary justify-center text-xs px-2">
                   {runningStep === "bundle-diagnostic" ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
                   Diagnose
+                </button>
+                <button onClick={createFieldCollectionPlan} disabled={!connectionReady || !!runningStep} className="btn-secondary justify-center text-xs px-2">
+                  {runningStep === "field-collection-plan" ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
+                  Plan
                 </button>
                 <button onClick={runFieldCapturePreflight} disabled={!connectionReady || !!runningStep} className="btn-secondary justify-center text-xs px-2">
                   {runningStep === "field-capture-preflight" ? <Loader2 size={14} className="animate-spin" /> : <TestTube2 size={14} />}
