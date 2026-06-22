@@ -158,6 +158,8 @@ export interface SupportBundleFile {
     rosbag_export_validation_report_count?: number;
     rosbag_export_validation_message_count?: number;
     rosbag_export_validation_topic_count?: number;
+    rosbag2_cli_review_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    rosbag2_cli_review_report_count?: number;
     bench_readiness_status?: "passed" | "failed" | "degraded" | string;
     bench_readiness_failed_count?: number;
     bench_readiness_degraded_count?: number;
@@ -351,6 +353,17 @@ export interface SupportBundleDetails {
     message_count?: number;
     topic_count?: number;
     topics: string[];
+    issues: string[];
+  }>;
+  rosbag2_cli_review_reports: Array<{
+    path?: string;
+    status?: "passed" | "failed" | "degraded" | string;
+    artifact_path?: string;
+    bag_dir?: string;
+    validation_status?: "passed" | "failed" | "degraded" | string;
+    validation_format?: string;
+    ros2_cli_status?: "passed" | "failed" | "degraded" | string;
+    ros2_cli_exit_code?: number;
     issues: string[];
   }>;
   bench_readiness?: {

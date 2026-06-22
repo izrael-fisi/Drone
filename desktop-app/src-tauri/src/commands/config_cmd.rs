@@ -57,6 +57,8 @@ pub struct SupportBundleSummary {
     pub rosbag_export_validation_report_count: Option<u64>,
     pub rosbag_export_validation_message_count: Option<u64>,
     pub rosbag_export_validation_topic_count: Option<u64>,
+    pub rosbag2_cli_review_status: Option<String>,
+    pub rosbag2_cli_review_report_count: Option<u64>,
     pub bench_readiness_status: Option<String>,
     pub bench_readiness_failed_count: Option<u64>,
     pub bench_readiness_degraded_count: Option<u64>,
@@ -287,6 +289,19 @@ pub struct SupportBundleRosbagExportValidationReport {
     pub message_count: Option<u64>,
     pub topic_count: Option<u64>,
     pub topics: Vec<String>,
+    pub issues: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct SupportBundleRosbag2CliReviewReport {
+    pub path: Option<String>,
+    pub status: Option<String>,
+    pub artifact_path: Option<String>,
+    pub bag_dir: Option<String>,
+    pub validation_status: Option<String>,
+    pub validation_format: Option<String>,
+    pub ros2_cli_status: Option<String>,
+    pub ros2_cli_exit_code: Option<i64>,
     pub issues: Vec<String>,
 }
 
@@ -654,6 +669,7 @@ pub struct SupportBundleDetails {
     pub field_collection_plan_reports: Vec<SupportBundleFieldCollectionPlanReport>,
     pub threshold_tuning_reports: Vec<SupportBundleThresholdTuningReport>,
     pub rosbag_export_validation_reports: Vec<SupportBundleRosbagExportValidationReport>,
+    pub rosbag2_cli_review_reports: Vec<SupportBundleRosbag2CliReviewReport>,
     pub bench_readiness: Option<SupportBundleBenchReadinessReport>,
     pub artifacts: Vec<SupportBundleArtifactEntry>,
     pub entry_count: usize,
@@ -834,6 +850,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut field_collection_plan_reports = Vec::new();
     let mut threshold_tuning_reports = Vec::new();
     let mut rosbag_export_validation_reports = Vec::new();
+    let mut rosbag2_cli_review_reports = Vec::new();
     let mut artifacts = Vec::new();
     let mut bench_readiness = manifest
         .get("bench_readiness")
@@ -910,6 +927,10 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
                 rosbag_export_validation_reports
                     .push(rosbag_export_validation_report_from_json(&value));
             }
+        } else if name.starts_with("summaries/rosbag2_cli_reviews/") && name.ends_with(".json") {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                rosbag2_cli_review_reports.push(rosbag2_cli_review_report_from_json(&value));
+            }
         } else if name == "summaries/bench_readiness.json" {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 bench_readiness = Some(bench_readiness_report_from_json(&value));
@@ -939,6 +960,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         field_collection_plan_reports,
         threshold_tuning_reports,
         rosbag_export_validation_reports,
+        rosbag2_cli_review_reports,
         bench_readiness,
         artifacts,
         entry_count,
@@ -2465,6 +2487,38 @@ fn rosbag_export_validation_report_from_json(
     }
 }
 
+fn rosbag2_cli_review_report_from_json(
+    value: &serde_json::Value,
+) -> SupportBundleRosbag2CliReviewReport {
+    let issues = value
+        .get("issues")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    json_string(item.get("message")).or_else(|| json_string(Some(item)))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    SupportBundleRosbag2CliReviewReport {
+        path: json_string(value.get("path")),
+        status: json_string(value.get("status")),
+        artifact_path: json_string(value.get("artifact_path")),
+        bag_dir: json_string(value.get("bag_dir")),
+        validation_status: json_string(value.get("validation_status")),
+        validation_format: json_string(value.get("validation_format")),
+        ros2_cli_status: json_string(value.pointer("/ros2_cli/status"))
+            .or_else(|| json_string(value.get("ros2_cli_status"))),
+        ros2_cli_exit_code: value
+            .pointer("/ros2_cli/exit_code")
+            .or_else(|| value.get("ros2_cli_exit_code"))
+            .and_then(|value| value.as_i64()),
+        issues,
+    }
+}
+
 fn bench_readiness_report_from_json(
     value: &serde_json::Value,
 ) -> SupportBundleBenchReadinessReport {
@@ -3183,6 +3237,9 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
     {
         return Some("rosbag export validation".to_string());
     }
+    if lower_name.starts_with("summaries/rosbag2_cli_reviews/") && lower_name.ends_with(".json") {
+        return Some("rosbag2 cli review".to_string());
+    }
     if lower_name == "summaries/bench_readiness.json" {
         return Some("bench readiness report".to_string());
     }
@@ -3203,6 +3260,9 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
     {
         if lower_name.starts_with("extras/field_collection_plans/") {
             return Some("field collection artifact".to_string());
+        }
+        if lower_name.starts_with("extras/rosbag2_cli_reviews/") {
+            return Some("rosbag2 cli artifact".to_string());
         }
         return Some("extra artifact".to_string());
     }
@@ -3455,6 +3515,10 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         rosbag_export_validation_topic_count: manifest
             .pointer("/rosbag_export_validations/topic_count")
             .and_then(|value| value.as_u64()),
+        rosbag2_cli_review_status: json_string(manifest.pointer("/rosbag2_cli_reviews/status")),
+        rosbag2_cli_review_report_count: manifest
+            .pointer("/rosbag2_cli_reviews/report_count")
+            .and_then(|value| value.as_u64()),
         bench_readiness_status: json_string(manifest.pointer("/bench_readiness/status")),
         bench_readiness_failed_count: manifest
             .pointer("/bench_readiness/summary/failed")
@@ -3477,6 +3541,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.field_collection_plan_status.is_none()
         && summary.threshold_tuning_status.is_none()
         && summary.rosbag_export_validation_status.is_none()
+        && summary.rosbag2_cli_review_status.is_none()
         && summary.bench_readiness_status.is_none()
     {
         return None;
@@ -3641,6 +3706,10 @@ mod tests {
                 "message_count": 4,
                 "topic_count": 3
             },
+            "rosbag2_cli_reviews": {
+                "status": "passed",
+                "report_count": 1
+            },
             "bench_readiness": {
                 "status": "degraded",
                 "summary": {
@@ -3705,6 +3774,8 @@ mod tests {
         assert_eq!(summary.rosbag_export_validation_report_count, Some(1));
         assert_eq!(summary.rosbag_export_validation_message_count, Some(4));
         assert_eq!(summary.rosbag_export_validation_topic_count, Some(3));
+        assert_eq!(summary.rosbag2_cli_review_status.as_deref(), Some("passed"));
+        assert_eq!(summary.rosbag2_cli_review_report_count, Some(1));
         assert_eq!(summary.bench_readiness_status.as_deref(), Some("degraded"));
         assert_eq!(summary.bench_readiness_failed_count, Some(0));
         assert_eq!(summary.bench_readiness_degraded_count, Some(1));
@@ -5138,6 +5209,29 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write rosbag export validation");
+            zip.start_file(
+                "summaries/rosbag2_cli_reviews/rosbag2-native-01.json",
+                options,
+            )
+            .expect("rosbag2 cli review entry");
+            zip.write_all(
+                serde_json::json!({
+                    "schema_version": "vision_nav_rosbag2_cli_review_v1",
+                    "status": "passed",
+                    "artifact_path": "/tmp/rosbag2-native",
+                    "bag_dir": "/tmp/rosbag2-native",
+                    "validation_status": "passed",
+                    "validation_format": "vision_nav_rosbag2_v1",
+                    "ros2_cli": {
+                        "status": "passed",
+                        "exit_code": 0
+                    },
+                    "issues": []
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write rosbag2 cli review");
             zip.start_file("summaries/bench_readiness.json", options)
                 .expect("bench readiness entry");
             zip.write_all(
@@ -5163,6 +5257,13 @@ mod tests {
             .expect("field collection markdown entry");
             zip.write_all(b"# Field Evidence Collection Plan\n")
                 .expect("write field collection markdown");
+            zip.start_file(
+                "extras/rosbag2_cli_reviews/rosbag2-cli-review.json",
+                options,
+            )
+            .expect("rosbag2 cli artifact entry");
+            zip.write_all(br#"{"status":"passed"}"#)
+                .expect("write rosbag2 cli artifact");
             zip.start_file("bundle/ortho/map.png", options)
                 .expect("map asset entry");
             zip.write_all(TINY_PNG).expect("write map asset");
@@ -5170,7 +5271,7 @@ mod tests {
         }
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
-        assert_eq!(details.entry_count, 16);
+        assert_eq!(details.entry_count, 18);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(details.runtime_statuses.len(), 1);
@@ -5372,6 +5473,39 @@ mod tests {
             artifact.path
                 == "summaries/rosbag_export_validations/vision_nav_rosbag_jsonl_v1-01.json"
                 && artifact.kind == "rosbag export validation"
+        }));
+        assert_eq!(details.rosbag2_cli_review_reports.len(), 1);
+        assert_eq!(
+            details.rosbag2_cli_review_reports[0].status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            details.rosbag2_cli_review_reports[0].bag_dir.as_deref(),
+            Some("/tmp/rosbag2-native")
+        );
+        assert_eq!(
+            details.rosbag2_cli_review_reports[0]
+                .validation_format
+                .as_deref(),
+            Some("vision_nav_rosbag2_v1")
+        );
+        assert_eq!(
+            details.rosbag2_cli_review_reports[0]
+                .ros2_cli_status
+                .as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            details.rosbag2_cli_review_reports[0].ros2_cli_exit_code,
+            Some(0)
+        );
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "summaries/rosbag2_cli_reviews/rosbag2-native-01.json"
+                && artifact.kind == "rosbag2 cli review"
+        }));
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "extras/rosbag2_cli_reviews/rosbag2-cli-review.json"
+                && artifact.kind == "rosbag2 cli artifact"
         }));
         let readiness = details.bench_readiness.expect("bench readiness report");
         assert_eq!(readiness.status.as_deref(), Some("degraded"));

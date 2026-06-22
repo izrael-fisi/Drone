@@ -576,6 +576,34 @@ function SupportBundleDetailPanel({
         </div>
       )}
 
+      {details.rosbag2_cli_review_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">rosbag2 CLI reviews</div>
+          {details.rosbag2_cli_review_reports.slice(0, 2).map((report, index) => (
+            <div key={`${report.artifact_path ?? report.path}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(report.status)}>
+                  {statusIcon(report.status)}
+                  {formatLabel(report.status)}
+                </span>
+                <span className="font-mono text-slate-400 truncate">{formatLabel(report.validation_format)}</span>
+                <span className="font-mono text-slate-500">validation {formatLabel(report.validation_status)}</span>
+                <span className="font-mono text-slate-500">cli {formatLabel(report.ros2_cli_status)}</span>
+                <span className="font-mono text-slate-500">exit {report.ros2_cli_exit_code ?? "n/a"}</span>
+              </div>
+              <div className="font-mono text-slate-500 truncate">
+                {formatLabel(report.bag_dir ?? report.artifact_path ?? report.path)}
+              </div>
+              {report.issues.slice(0, 2).map((issue) => (
+                <div key={issue} className="text-amber-200/80 truncate">
+                  {issue}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
       {details.replay_reports.length > 0 && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Replay gates</div>
@@ -789,6 +817,12 @@ export function SupportBundleList({
                     rosbag {formatLabel(bundle.summary.rosbag_export_validation_status)}
                   </span>
                 )}
+                {bundle.summary.rosbag2_cli_review_status && bundle.summary.rosbag2_cli_review_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.rosbag2_cli_review_status)}>
+                    {statusIcon(bundle.summary.rosbag2_cli_review_status)}
+                    rosbag2 {formatLabel(bundle.summary.rosbag2_cli_review_status)}
+                  </span>
+                )}
                 {bundle.summary.elevation_status && (
                   <span className={bundle.summary.vertical_sanity_ready ? "badge-green" : statusClass(bundle.summary.elevation_status)}>
                     {statusIcon(bundle.summary.vertical_sanity_ready ? "passed" : bundle.summary.elevation_status)}
@@ -850,6 +884,8 @@ export function SupportBundleList({
                     rosbag {bundle.summary.rosbag_export_validation_message_count ?? 0} msg /
                     {" "}{bundle.summary.rosbag_export_validation_topic_count ?? 0} topics
                   </span>
+                  <span>rosbag2 cli {formatLabel(bundle.summary.rosbag2_cli_review_status)}</span>
+                  <span>rosbag2 cli reports {bundle.summary.rosbag2_cli_review_report_count ?? 0}</span>
                   <span>ready {formatLabel(bundle.summary.bench_readiness_status)}</span>
                   <span>
                     gate {bundle.summary.bench_readiness_failed_count ?? 0} fail / {bundle.summary.bench_readiness_degraded_count ?? 0} degrade
