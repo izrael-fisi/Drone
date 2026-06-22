@@ -42,6 +42,7 @@ field_template_schema_output="$preflight_tmp_dir/field_template_schema_preflight
 field_register_output="$preflight_tmp_dir/field_register_preflight.txt"
 evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_preflight.txt"
 evidence_workflow_validation_output="$preflight_tmp_dir/evidence_workflow_validation_preflight.txt"
+invalid_evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_invalid_log.txt"
 support_autodetect_output="$preflight_tmp_dir/support_autodetect_px4_report.txt"
 rosbag_validation_output="$preflight_tmp_dir/rosbag_validation_preflight.txt"
 rosbag2_review_output="$preflight_tmp_dir/rosbag2_cli_review_dry_run.txt"
@@ -270,6 +271,57 @@ assert validation["schema_version"] == "vision_nav_autonomy_evidence_workflow_va
 assert validation["status"] in {"passed", "degraded"}
 checks = {check["name"]: check["status"] for check in validation["checks"]}
 assert checks["log_archive"] == "passed"
+PY
+invalid_workflow_dir="$field_smoke_dir/workflow-invalid-log"
+mkdir -p "$invalid_workflow_dir"
+cat >"$invalid_workflow_dir/terrain_matches.jsonl" <<'EOF'
+{"sequence": 1, "result": {"status": "unknown"}}
+EOF
+VISION_NAV_PYTHON=python3 \
+VISION_NAV_EVIDENCE_WORKFLOW_DIR="$invalid_workflow_dir/workflow" \
+VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$invalid_workflow_dir/workflow/autonomy_evidence_workflow.json" \
+VISION_NAV_FIELD_TEMPLATE="$invalid_workflow_dir/field_manifest.template.json" \
+VISION_NAV_FIELD_MANIFEST="$invalid_workflow_dir/field_manifest.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN="$invalid_workflow_dir/replay-cases/field_collection_plan.json" \
+VISION_NAV_FIELD_COLLECTION_PLAN_MD="$invalid_workflow_dir/replay-cases/field_collection_plan.md" \
+VISION_NAV_FIELD_SITE_NAME=preflight-invalid-log \
+VISION_NAV_FIELD_BUNDLE=preflight-bundle \
+VISION_NAV_BUNDLE="$invalid_workflow_dir/missing-bundle" \
+VISION_NAV_FIELD_LOG="$invalid_workflow_dir/terrain_matches.jsonl" \
+VISION_NAV_ROSBAG_EXPORT_DIR="$invalid_workflow_dir/terrain-match/rosbag-jsonl" \
+VISION_NAV_ROSBAG_EXPORT_VALIDATION="$invalid_workflow_dir/terrain-match/rosbag-jsonl-validation.json" \
+VISION_NAV_ROSBAG2_CLI_REVIEW="$invalid_workflow_dir/terrain-match/rosbag2-cli-review.json" \
+VISION_NAV_FIELD_EVIDENCE_REPORT="$invalid_workflow_dir/replay-cases/field_evidence_report.json" \
+VISION_NAV_FIELD_CASE_REPORT_DIR="$invalid_workflow_dir/replay-cases/field_evidence_cases" \
+VISION_NAV_FEATURE_METHOD_BENCHMARK="$invalid_workflow_dir/feature-method-bench" \
+VISION_NAV_THRESHOLD_TUNING_REPORT="$invalid_workflow_dir/replay-cases/threshold_tuning_report.json" \
+VISION_NAV_THRESHOLD_CASE_REPORT_DIR="$invalid_workflow_dir/replay-cases/threshold_tuning_cases" \
+VISION_NAV_SUPPORT_OUTPUT_DIR="$invalid_workflow_dir/support-bundles" \
+VISION_NAV_AUTONOMY_READINESS_REPORT="$invalid_workflow_dir/replay-cases/autonomy_readiness_report.json" \
+VISION_NAV_AUTONOMY_HANDOFF="$invalid_workflow_dir/replay-cases/autonomy_readiness_report.md" \
+VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE="$invalid_workflow_dir/replay-cases/autonomy_readiness_report.evidence.zip" \
+VISION_NAV_PX4_SITL_SESSION="$invalid_workflow_dir/px4-sitl-session" \
+VISION_NAV_PX4_SITL_REPORT="$invalid_workflow_dir/px4-sitl-session/receiver_evidence.json" \
+VISION_NAV_PX4_SITL_PREREQS="$invalid_workflow_dir/px4-sitl-session/px4_sitl_capture_prereqs.json" \
+./scripts/pi/run_autonomy_evidence_workflow.sh >"$invalid_evidence_workflow_output" 2>&1
+python3 - "$invalid_workflow_dir/workflow/autonomy_evidence_workflow.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text())
+steps = {step["name"]: step for step in report["steps"]}
+assert steps["capture_field_terrain_log"]["status"] == "failed"
+assert "no accepted/rejected/degraded" in steps["capture_field_terrain_log"]["notes"]
+assert steps["register_field_replay_case"]["status"] == "skipped"
+assert "not validated" in steps["register_field_replay_case"]["notes"]
+assert steps["run_feature_method_benchmark"]["status"] == "skipped"
+assert "not validated" in steps["run_feature_method_benchmark"]["notes"]
+assert steps["validate_rosbag_export"]["status"] == "skipped"
+assert "not validated" in steps["validate_rosbag_export"]["notes"]
+assert report["status"] == "failed"
 PY
 support_autodetect_home="$workflow_smoke_dir/support-autodetect-home"
 support_autodetect_dir="$workflow_smoke_dir/support-autodetect-bundles"

@@ -836,6 +836,10 @@ Status:
   JSONL, or logs without accepted/rejected/degraded match statuses fail the
   step, while a valid log without `runtime_status.json` is kept as degraded
   evidence until the runtime snapshot is generated or downloaded.
+- Done: downstream workflow steps that consume a field terrain log now require
+  the same validated-log state from this workflow run. Field-case registration,
+  feature-method benchmarking, and ROS replay export skip instead of consuming
+  an existing file that failed parse/status validation.
 - Done: the evidence workflow writes a compressed workflow-log archive and
   emits `__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=...`, so full per-step logs can
   be downloaded with the workflow report instead of relying only on bounded

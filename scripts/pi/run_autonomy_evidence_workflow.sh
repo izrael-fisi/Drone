@@ -25,6 +25,7 @@ px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-$px4_sitl_session/receiver_eviden
 px4_sitl_prereqs="${VISION_NAV_PX4_SITL_PREREQS:-$px4_sitl_session/px4_sitl_capture_prereqs.json}"
 autonomy_readiness_report="${VISION_NAV_AUTONOMY_READINESS_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/autonomy_readiness_report.json}"
 steps_jsonl=""
+field_log_ready=0
 
 export VISION_NAV_FIELD_COLLECTION_PLAN="$field_collection_plan"
 export VISION_NAV_FIELD_COLLECTION_PLAN_MD="$field_collection_plan_md"
@@ -306,6 +307,46 @@ fail_step() {
   record_step "$name" "failed" 1 "$log_path" "$notes"
 }
 
+evaluate_terrain_log() {
+  local log_path="$1"
+  PYTHONPATH="$repo_root/src" "$venv_python" - "$log_path" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from vision_nav.summarize_match_log import summarize_log
+
+
+def emit(status: str, message: str) -> None:
+    print(f"{status}|{message}")
+
+
+path = Path(sys.argv[1]).expanduser()
+try:
+    summary = summarize_log(path)
+except Exception as exc:
+    emit("failed", f"Could not parse terrain runtime log: {exc}")
+    raise SystemExit(0)
+total = int(summary.get("total_records") or 0)
+status_counts = summary.get("status_counts") if isinstance(summary.get("status_counts"), dict) else {}
+known = sum(int(status_counts.get(name) or 0) for name in ("accepted", "rejected", "degraded"))
+if total <= 0:
+    emit("failed", "Terrain runtime log is empty; capture a bounded runtime log before using it as workflow evidence.")
+elif known <= 0:
+    emit("failed", f"Terrain runtime log has {total} records but no accepted/rejected/degraded match statuses.")
+else:
+    accepted = int(status_counts.get("accepted") or 0)
+    rejected = int(status_counts.get("rejected") or 0)
+    degraded = int(status_counts.get("degraded") or 0)
+    emit(
+        "passed",
+        f"Terrain runtime log is parseable with {total} records "
+        f"(accepted={accepted}, rejected={rejected}, degraded={degraded}).",
+    )
+PY
+}
+
 sync_readiness_step_status() {
   local readiness_report="$1"
   if [[ ! -f "$readiness_report" ]]; then
@@ -368,49 +409,14 @@ if [[ -f "$field_log" ]]; then
   if [[ -f "$runtime_status" ]]; then
     marker_lines+=("__VISION_NAV_RUNTIME_STATUS__=$runtime_status")
   fi
-  terrain_log_eval="$(
-    PYTHONPATH="$repo_root/src" "$venv_python" - "$field_log" <<'PY'
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-from vision_nav.summarize_match_log import summarize_log
-
-
-def emit(status: str, message: str) -> None:
-    print(f"{status}|{message}")
-
-
-path = Path(sys.argv[1]).expanduser()
-try:
-    summary = summarize_log(path)
-except Exception as exc:
-    emit("failed", f"Could not parse terrain runtime log: {exc}")
-    raise SystemExit(0)
-total = int(summary.get("total_records") or 0)
-status_counts = summary.get("status_counts") if isinstance(summary.get("status_counts"), dict) else {}
-known = sum(int(status_counts.get(name) or 0) for name in ("accepted", "rejected", "degraded"))
-if total <= 0:
-    emit("failed", "Terrain runtime log is empty; capture a bounded runtime log before using it as workflow evidence.")
-elif known <= 0:
-    emit("failed", f"Terrain runtime log has {total} records but no accepted/rejected/degraded match statuses.")
-else:
-    accepted = int(status_counts.get("accepted") or 0)
-    rejected = int(status_counts.get("rejected") or 0)
-    degraded = int(status_counts.get("degraded") or 0)
-    emit(
-        "passed",
-        f"Terrain runtime log is parseable with {total} records "
-        f"(accepted={accepted}, rejected={rejected}, degraded={degraded}).",
-    )
-PY
-  )"
+  terrain_log_eval="$(evaluate_terrain_log "$field_log")"
   terrain_log_status="${terrain_log_eval%%|*}"
   terrain_log_message="${terrain_log_eval#*|}"
   if [[ "$terrain_log_status" == "passed" && -f "$runtime_status" ]]; then
+    field_log_ready=1
     pass_step "capture_field_terrain_log" "$terrain_log_message" "${marker_lines[@]}"
   elif [[ "$terrain_log_status" == "passed" ]]; then
+    field_log_ready=1
     degraded_step "capture_field_terrain_log" \
       "$terrain_log_message Runtime status snapshot is missing; fetch or generate runtime_status.json before final bench evidence." \
       "${marker_lines[@]}"
@@ -427,19 +433,32 @@ elif [[ -e "$bundle" ]]; then
   if [[ -f "$captured_field_log" ]]; then
     field_log="$captured_field_log"
     export VISION_NAV_FIELD_LOG="$field_log"
+    captured_log_eval="$(evaluate_terrain_log "$field_log")"
+    captured_log_status="${captured_log_eval%%|*}"
+    captured_log_message="${captured_log_eval#*|}"
+    if [[ "$captured_log_status" == "passed" ]]; then
+      field_log_ready=1
+      pass_step "validate_captured_field_terrain_log" "$captured_log_message" "__VISION_NAV_TERRAIN_LOG__=$field_log"
+    else
+      fail_step "validate_captured_field_terrain_log" "$captured_log_message" "__VISION_NAV_TERRAIN_LOG__=$field_log"
+    fi
   fi
 else
   skip_step "capture_field_terrain_log" "Missing terrain replay log and bundle. Expected log: $field_log ; bundle: $bundle"
 fi
 
-if [[ -n "${VISION_NAV_FIELD_CASE_NAME:-}" && -n "${VISION_NAV_FIELD_EXPECTED:-}" && -n "${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}" ]]; then
+if [[ "$field_log_ready" != "1" ]]; then
+  skip_step "register_field_replay_case" "Terrain log was not validated in this workflow run; capture or provide a parseable log before registering field evidence."
+elif [[ -n "${VISION_NAV_FIELD_CASE_NAME:-}" && -n "${VISION_NAV_FIELD_EXPECTED:-}" && -n "${VISION_NAV_FIELD_CONDITIONS:-${VISION_NAV_FIELD_CONDITION:-}}" ]]; then
   VISION_NAV_FIELD_GATE_STRICT=0 run_step "register_field_replay_case" ./scripts/pi/register_field_replay_case.sh
 else
   skip_step "register_field_replay_case" "Set VISION_NAV_FIELD_CASE_NAME, VISION_NAV_FIELD_EXPECTED, and VISION_NAV_FIELD_CONDITION(S) after a real field log exists to register evidence."
 fi
 
-if [[ -f "$field_log" && -e "$bundle" ]]; then
+if [[ "$field_log_ready" == "1" && -e "$bundle" ]]; then
   VISION_NAV_FEATURE_BENCH_ALLOW_FAILED=1 run_step "run_feature_method_benchmark" ./scripts/pi/run_feature_method_benchmark.sh
+elif [[ "$field_log_ready" != "1" ]]; then
+  skip_step "run_feature_method_benchmark" "Terrain log was not validated in this workflow run. Expected a parseable log with accepted/rejected/degraded match statuses: $field_log"
 else
   skip_step "run_feature_method_benchmark" "Missing replay log or bundle. Expected log: $field_log ; bundle: $bundle"
 fi
@@ -450,7 +469,7 @@ else
   skip_step "run_threshold_tuning_report" "Missing field manifest: $field_manifest"
 fi
 
-if [[ -f "$field_log" ]]; then
+if [[ "$field_log_ready" == "1" ]]; then
   (
     export VISION_NAV_PYTHON="$venv_python"
     export VISION_NAV_ROSBAG_SOURCE_LOG="$field_log"
@@ -459,7 +478,7 @@ if [[ -f "$field_log" ]]; then
     run_step "validate_rosbag_export" ./scripts/pi/run_rosbag_export_validation.sh
   )
 else
-  skip_step "validate_rosbag_export" "Missing terrain match replay log: $field_log"
+  skip_step "validate_rosbag_export" "Terrain log was not validated in this workflow run; ROS replay export waits for a parseable terrain match log: $field_log"
 fi
 
 if [[ -f "$rosbag2_cli_review" ]]; then
