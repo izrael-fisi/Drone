@@ -122,12 +122,132 @@ def evaluate_field_capture_preflight(
         "checks": checks,
         "summary": summarize_checks(checks),
     }
+    report["next_actions"] = build_next_actions(
+        selected,
+        checks,
+        ready_for_capture=ready_for_capture,
+        ready_for_registration=ready_for_registration,
+    )
     if output_path is not None:
         output = Path(output_path).expanduser()
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         report["output_path"] = str(output)
     return report
+
+
+def build_next_actions(
+    condition: dict[str, Any] | None,
+    checks: list[dict[str, Any]],
+    *,
+    ready_for_capture: bool,
+    ready_for_registration: bool,
+) -> list[dict[str, Any]]:
+    if condition is None:
+        return []
+    actions: list[dict[str, Any]] = []
+    statuses = {str(item.get("name")): str(item.get("status") or "") for item in checks}
+
+    if statuses.get("bundle_path") != "passed" and condition.get("bundle_validation_command"):
+        actions.append(
+            action_item(
+                "prepare_bundle",
+                "action_required",
+                "Build, upload, or validate the selected terrain bundle.",
+                "Mission Planner > Build Bundle, Upload Bundle",
+                command=str(condition["bundle_validation_command"]),
+                bundle_path=str(condition.get("bundle") or ""),
+                notes="Field capture cannot start until the selected mission bundle exists on the runtime module.",
+            )
+        )
+
+    capture_waits_on = [
+        name
+        for name in (
+            "plan",
+            "condition",
+            "bundle_path",
+            "capture_output_parent",
+            "terrain_runtime_wrapper",
+            "runtime_status_wrapper",
+            "capture_command",
+        )
+        if statuses.get(name) != "passed"
+    ]
+    if condition.get("capture_command"):
+        actions.append(
+            action_item(
+                "capture_field_terrain_log",
+                "ready" if ready_for_capture else "blocked",
+                "Capture the terrain log and runtime status for this condition.",
+                "Module Setup > Field Log Capture",
+                command=str(condition["capture_command"]),
+                waits_on=capture_waits_on,
+                source_log=str(condition.get("source_log") or ""),
+                runtime_status_path=str(condition.get("runtime_status_path") or ""),
+                capture_output_dir=str(condition.get("capture_output_dir") or ""),
+            )
+        )
+
+    metadata_status = statuses.get("capture_metadata")
+    metadata_command_status = statuses.get("metadata_update_command")
+    if (
+        condition.get("metadata_update_command")
+        and (metadata_status != "passed" or metadata_command_status not in {"passed", ""})
+    ):
+        actions.append(
+            action_item(
+                "complete_capture_metadata",
+                "action_required" if metadata_command_status == "passed" else "blocked",
+                "Fill proof-grade field metadata for the selected condition.",
+                "Module Setup > Field Evidence Case > Update Metadata",
+                command=str(condition["metadata_update_command"]),
+                waits_on=[] if metadata_command_status == "passed" else ["metadata_update_command"],
+                notes="Registration remains blocked until operator, site, lighting, weather, camera, IMU/PX4, altitude, speed, and safety metadata are complete.",
+            )
+        )
+
+    registration_waits_on = list((check_details(checks, "registration_inputs") or {}).get("missing") or [])
+    if condition.get("register_command"):
+        actions.append(
+            action_item(
+                "register_field_replay_case",
+                "ready" if ready_for_registration else "blocked",
+                "Register the captured terrain log as field evidence.",
+                "Module Setup > Field Evidence Case > Register",
+                command=str(condition["register_command"]),
+                waits_on=registration_waits_on,
+                source_log=str(condition.get("source_log") or ""),
+                runtime_status_path=str(condition.get("runtime_status_path") or ""),
+            )
+        )
+    return actions
+
+
+def action_item(
+    action_id: str,
+    status: str,
+    title: str,
+    desktop_action: str,
+    *,
+    command: str | None = None,
+    waits_on: list[str] | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "id": action_id,
+        "status": status,
+        "title": title,
+        "desktop_action": desktop_action,
+    }
+    if command:
+        item["command"] = command
+    if waits_on:
+        item["waits_on"] = waits_on
+    for key, value in extra.items():
+        if value not in (None, "", []):
+            item[key] = value
+    return item
 
 
 def select_condition(plan: dict[str, Any], condition: str | None) -> dict[str, Any] | None:
@@ -334,6 +454,13 @@ def check_status(checks: list[dict[str, Any]], name: str) -> str | None:
     return None
 
 
+def check_details(checks: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    for item in checks:
+        if item.get("name") == name and isinstance(item.get("details"), dict):
+            return item["details"]
+    return None
+
+
 def check(status: str, name: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
     item: dict[str, Any] = {"name": name, "status": status, "message": message}
     if details:
@@ -383,6 +510,16 @@ def print_human(report: dict[str, Any]) -> None:
     if report.get("register_command"):
         print("Register command:")
         print(report["register_command"])
+    if report.get("next_actions"):
+        print("Next actions:")
+        for action in report["next_actions"]:
+            print(f"- {action.get('id')} [{action.get('status')}]: {action.get('title')}")
+            if action.get("desktop_action"):
+                print(f"  app: {action['desktop_action']}")
+            if action.get("waits_on"):
+                print(f"  waits on: {', '.join(str(item) for item in action['waits_on'])}")
+            if action.get("command"):
+                print(f"  command: {action['command']}")
     if report.get("output_path"):
         print(f"Report: {report['output_path']}")
     print(f"__VISION_NAV_FIELD_CAPTURE_PREFLIGHT_STATUS__={report['status']}")

@@ -451,7 +451,10 @@ blocking capture prerequisite such as the mission bundle, output path, or Pi
 runtime wrapper is missing. When the selected mission bundle is missing, the
 JSON report includes `bundle_path`, `bundle_validation_command`, and a desktop
 action hint so the operator can return to Mission Planner, build/upload the
-bundle, then rerun preflight. It does not create or register field evidence.
+bundle, then rerun preflight. The same report includes ordered `next_actions`
+for bundle prep, capture, metadata completion, and registration, with blocked
+steps listing the prerequisite checks they are waiting on. It does not create
+or register field evidence.
 
 `runtime_status.json` is the quick operator snapshot. It names the active map
 bundle, output path, latest frame, estimator health, last match status/reason,

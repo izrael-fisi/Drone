@@ -5800,6 +5800,22 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         )
         if "validate_terrain_bundle.sh" not in ready_preflight["bundle_validation_command"]:
             raise AssertionError("Expected preflight to include bundle validation command")
+        ready_actions = {item["id"]: item for item in ready_preflight["next_actions"]}
+        assert_equal(
+            ready_actions["capture_field_terrain_log"]["status"],
+            "ready",
+            "field preflight marks capture action ready",
+        )
+        assert_equal(
+            ready_actions["complete_capture_metadata"]["status"],
+            "action_required",
+            "field preflight marks metadata action required",
+        )
+        assert_equal(
+            ready_actions["register_field_replay_case"]["status"],
+            "blocked",
+            "field preflight keeps registration blocked until proof files exist",
+        )
         if ready_preflight["condition"] != "good_texture":
             raise AssertionError("Expected preflight to select next field condition")
         if not any(check["name"] == "registration_inputs" and check["status"] == "degraded" for check in ready_preflight["checks"]):
@@ -5853,6 +5869,25 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected missing bundle check to include validation command")
         if (missing_bundle_check.get("details") or {}).get("desktop_action") != "Mission Planner > Build Bundle, Upload Bundle":
             raise AssertionError("Expected missing bundle check to include desktop action hint")
+        missing_bundle_actions = missing_bundle_preflight["next_actions"]
+        assert_equal(
+            missing_bundle_actions[0]["id"],
+            "prepare_bundle",
+            "field preflight orders bundle prep first",
+        )
+        assert_equal(
+            missing_bundle_actions[0]["status"],
+            "action_required",
+            "field preflight marks missing bundle prep action required",
+        )
+        missing_capture_action = next(item for item in missing_bundle_actions if item["id"] == "capture_field_terrain_log")
+        assert_equal(
+            missing_capture_action["status"],
+            "blocked",
+            "field preflight blocks capture while bundle is missing",
+        )
+        if "bundle_path" not in missing_capture_action.get("waits_on", []):
+            raise AssertionError("Expected capture action to wait on bundle_path")
 
         legacy_plan = json.loads(json.dumps(plan))
         legacy_command = (
