@@ -544,6 +544,9 @@ Status:
   metadata for a selected field condition in the active manifest, then
   regenerate the field collection plan so terminal-only field collection can
   advance from captured log to registration without editing JSON by hand.
+- Done: the field collection plan terminal output now prints the next
+  metadata-update command between the capture and registration commands,
+  matching the Markdown checklist, Module Setup, and strict metadata gate flow.
 - Done: the Pi template wrapper can seed the active field manifest, and
   replay-case registration replaces matching template placeholders by condition
   tag when real field logs are collected.

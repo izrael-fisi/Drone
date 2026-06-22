@@ -49,7 +49,11 @@ from vision_nav.field_capture_metadata import (
     CAPTURE_METADATA_SCHEMA_VERSION,
 )
 from vision_nav.field_capture_metadata_update import update_field_capture_metadata
-from vision_nav.field_collection_plan import create_field_collection_plan, render_field_collection_markdown
+from vision_nav.field_collection_plan import (
+    create_field_collection_plan,
+    print_human as print_field_collection_human,
+    render_field_collection_markdown,
+)
 from vision_nav.field_evidence_template import create_field_evidence_template
 from vision_nav.field_evidence_gate import evaluate_field_evidence_gate
 from vision_nav.field_workflow_selection import select_next_field_condition, shell_assignments
@@ -5379,6 +5383,18 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected generated metadata update command")
         if "VISION_NAV_FIELD_CONDITION=good_texture" not in good_texture["metadata_update_command"]:
             raise AssertionError("Expected metadata update command to target the condition")
+        human_output = io.StringIO()
+        with contextlib.redirect_stdout(human_output):
+            print_field_collection_human(plan)
+        human_text = human_output.getvalue()
+        if "Next metadata update command:" not in human_text:
+            raise AssertionError("Expected human field collection output to include metadata update command")
+        if "update_field_capture_metadata.sh" not in human_text:
+            raise AssertionError("Expected human field collection output to include the metadata helper")
+        if human_text.index("Next capture command:") > human_text.index("Next metadata update command:"):
+            raise AssertionError("Expected capture command before metadata update command")
+        if human_text.index("Next metadata update command:") > human_text.index("Next register command:"):
+            raise AssertionError("Expected metadata update command before register command")
         capture_metadata = good_texture.get("capture_metadata") or {}
         assert_equal(
             capture_metadata.get("schema_version"),

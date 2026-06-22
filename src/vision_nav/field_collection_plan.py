@@ -431,6 +431,9 @@ def print_human(plan: dict[str, Any]) -> None:
         if next_condition.get("capture_command"):
             print("Next capture command:")
             print(next_condition["capture_command"])
+        if next_condition.get("metadata_update_command"):
+            print("Next metadata update command:")
+            print(next_condition["metadata_update_command"])
         if next_condition.get("register_command"):
             print("Next register command:")
             print(next_condition["register_command"])
