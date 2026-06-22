@@ -435,6 +435,21 @@ malformed or lacks active-map, last-match, output, or log-path metadata, the
 workflow also degrades the capture step; the validated terrain log can still be
 used by replay/export follow-up steps.
 
+Before a field capture, run the condition preflight against the generated field
+collection plan:
+
+```bash
+cd Drone
+./scripts/pi/preflight_field_capture.sh
+```
+
+Set `VISION_NAV_FIELD_CONDITION=low_texture` to check a specific condition
+instead of the plan's next pending one. The preflight writes
+`~/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json`, prints
+`ready_for_capture` and `ready_for_registration` status, and fails only when a
+blocking capture prerequisite such as the mission bundle, output path, or Pi
+runtime wrapper is missing. It does not create or register field evidence.
+
 `runtime_status.json` is the quick operator snapshot. It names the active map
 bundle, output path, latest frame, estimator health, last match status/reason,
 external-position health, and accepted/rejected counts without opening the full

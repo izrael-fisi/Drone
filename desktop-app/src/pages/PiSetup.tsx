@@ -990,7 +990,7 @@ function formatReportTime(ms?: number) {
 
 function fieldCollectionCommands(
   conditions: FieldCollectionPlanCondition[],
-  key: "capture_command" | "metadata_update_command" | "register_command",
+  key: "preflight_command" | "capture_command" | "metadata_update_command" | "register_command",
 ) {
   return uniqueCommands(
     conditions
@@ -1039,6 +1039,7 @@ function commandAppHint(commandBundle: AutonomyCommandBundle | undefined, group:
 }
 
 const FIELD_COLLECTION_APP_HINTS: Record<string, string> = {
+  field_collection_preflight: "Module Setup > Field Capture Preflight",
   field_collection_capture: "Module Setup > Field Log Capture",
   field_collection_metadata_update: "Module Setup > Field Evidence Case > Update Metadata",
   field_collection_registration: "Module Setup > Field Evidence Case > Register",
@@ -1060,6 +1061,7 @@ function fieldCollectionWorkflowText(
       if (condition.source_log) lines.push(`# terrain log: ${condition.source_log}`);
       if (condition.runtime_status_path) lines.push(`# runtime status: ${condition.runtime_status_path}`);
       for (const [group, command] of [
+        ["field_collection_preflight", condition.preflight_command],
         ["field_collection_capture", condition.capture_command],
         ["field_collection_metadata_update", condition.metadata_update_command],
         ["field_collection_registration", condition.register_command],
@@ -1133,6 +1135,7 @@ function FieldCollectionConditionBadge({
     capture_command?: string;
     metadata_update_command?: string;
     register_command?: string;
+    preflight_command?: string;
   };
   idPrefix: string;
 }) {
@@ -1147,6 +1150,16 @@ function FieldCollectionConditionBadge({
     >
       <span>{label}</span>
       <span>{status}</span>
+      {condition.preflight_command && (
+        <button
+          type="button"
+          onClick={() => navigator.clipboard.writeText(condition.preflight_command ?? "")}
+          className="text-cyan-300 hover:text-cyan-100"
+          title={`Copy preflight command: ${condition.preflight_command}`}
+        >
+          pre
+        </button>
+      )}
       {condition.capture_command && (
         <button
           type="button"
@@ -1336,6 +1349,10 @@ function AutonomyReadinessReportList({
         <div className="space-y-2">
           {reports.slice(0, 4).map((report) => {
             const commandBundle = report.command_bundle ?? report.evidence_package_summary?.command_bundle;
+            const fieldPlanPreflightCommands = uniqueCommands([
+              ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "preflight_command"),
+              ...(commandBundle?.field_collection_preflight_commands ?? []),
+            ]);
             const fieldPlanCaptureCommands = uniqueCommands([
               ...fieldCollectionCommands(report.field_collection_plan?.pending_conditions ?? [], "capture_command"),
               ...(commandBundle?.field_collection_capture_commands ?? []),
@@ -1591,6 +1608,25 @@ function AutonomyReadinessReportList({
                           >
                             <Copy size={9} />
                             workflow
+                          </button>
+                        )}
+                        {fieldPlanPreflightCommands.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigator.clipboard.writeText(
+                                commandGroupText(
+                                  commandBundle,
+                                  "field_collection_preflight",
+                                  fieldPlanPreflightCommands,
+                                ),
+                              )
+                            }
+                            className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                            title="Copy pending field capture preflight commands"
+                          >
+                            <Copy size={9} />
+                            preflight
                           </button>
                         )}
                         {fieldPlanCaptureCommands.length > 0 && (
@@ -2631,6 +2667,7 @@ function FieldCollectionPlanList({
               (file.summary.missing_count ?? 0) +
               (file.summary.registered_missing_log_count ?? 0);
             const revealPath = file.markdown_path ?? file.path;
+            const preflightCommands = fieldCollectionCommands(file.conditions, "preflight_command");
             const captureCommands = fieldCollectionCommands(file.conditions, "capture_command");
             const metadataUpdateCommands = fieldCollectionCommands(file.conditions, "metadata_update_command");
             const registerCommands = fieldCollectionCommands(file.conditions, "register_command");
@@ -2660,6 +2697,17 @@ function FieldCollectionPlanList({
                         >
                           <Copy size={9} />
                           workflow
+                        </button>
+                      )}
+                      {preflightCommands.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(preflightCommands.join("\n"))}
+                          className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                          title="Copy pending field capture preflight commands"
+                        >
+                          <Copy size={9} />
+                          preflight
                         </button>
                       )}
                       {captureCommands.length > 0 && (

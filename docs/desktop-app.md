@@ -383,8 +383,12 @@ expected behavior, notes, site, and any non-placeholder capture metadata. This
 keeps the generated checklist and the registration form aligned while still
 letting the operator complete site-specific metadata before registering the log.
 The plan and readiness cards also promote the next pending condition with its
-capture, metadata-update, and registration command buttons, and the plan list
-can load that next condition directly into the Field Evidence Case form.
+preflight, capture, metadata-update, and registration command buttons, and the
+plan list can load that next condition directly into the Field Evidence Case
+form. The preflight command runs `scripts/pi/preflight_field_capture.sh`; it
+does not create evidence, but it checks that the selected mission bundle,
+condition output folder, runtime wrappers, metadata command, and registration
+inputs are ready or clearly marked as still missing.
 The local-only `Load Next Field Condition` setup action performs the same load
 from the newest downloaded plan, so the operator can move from `Create Plan` to
 metadata entry without scrolling through the plan list. Loading a condition only
@@ -668,10 +672,10 @@ counts, capture-command/metadata-command/runtime-status path coverage,
 per-condition placeholder/missing/registered status, and lets support extract the
 JSON/Markdown plan artifacts from the ZIP.
 Pending field-collection condition pills and command buttons in Module Setup
-copy individual or batched generated capture, metadata update, and registration
-commands when the plan includes them, which keeps real replay-case collection,
-proof metadata entry, and registration out of manual retyping. The first
-pending condition is shown separately as the next field-capture target in
+copy individual or batched generated preflight, capture, metadata update, and
+registration commands when the plan includes them, which keeps real replay-case
+collection, proof metadata entry, and registration out of manual retyping. The
+first pending condition is shown separately as the next field-capture target in
 downloaded plan and readiness cards.
 The Markdown handoff mirrors that workflow with a copy-friendly command bundle
 for guided workflow, immediate next-action, blocked follow-up, and pending

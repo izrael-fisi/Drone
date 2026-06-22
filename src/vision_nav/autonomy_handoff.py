@@ -11,6 +11,7 @@ from vision_nav.field_collection_plan import metadata_update_command_for_conditi
 COMMAND_GROUP_DESKTOP_ACTIONS = {
     "guided_workflow": "Module Setup > Evidence Workflow",
     "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
+    "field_collection_preflight": "Module Setup > Field Capture Preflight",
     "field_collection_capture": "Module Setup > Field Log Capture",
     "field_collection_metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
     "field_collection_registration": "Module Setup > Field Evidence Case > Register",
@@ -120,6 +121,8 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
                         ),
                     ]
                 )
+                if next_condition.get("preflight_command"):
+                    lines.extend(["", "Preflight command:", "", "```bash", str(next_condition["preflight_command"]), "```"])
                 if next_condition.get("capture_command"):
                     lines.extend(["", "Capture command:", "", "```bash", str(next_condition["capture_command"]), "```"])
                 if next_condition.get("metadata_update_command"):
@@ -298,6 +301,11 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         if blocked_commands:
             lines.extend(["", "Blocked follow-up commands:", "", "```bash"])
             lines.extend(annotated_command_lines(blocked_commands, app_hints))
+            lines.append("```")
+        field_preflight_commands = command_groups.get("field_collection_preflight") or []
+        if field_preflight_commands:
+            lines.extend(["", "Field collection preflight commands:", "", "```bash"])
+            lines.extend(annotated_command_lines(field_preflight_commands, app_hints))
             lines.append("```")
         field_capture_commands = command_groups.get("field_collection_capture") or []
         if field_capture_commands:
@@ -598,11 +606,22 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
             ],
         ]
     )
+    field_preflight_commands = json_string_list(report_bundle.get("field_collection_preflight_commands"))
     field_capture_commands = json_string_list(report_bundle.get("field_collection_capture_commands"))
     field_metadata_commands = json_string_list(report_bundle.get("field_collection_metadata_update_commands"))
     field_commands = json_string_list(report_bundle.get("field_collection_registration_commands"))
     if field_plan is not None:
         pending_conditions = field_collection_pending_conditions(field_plan)
+        field_preflight_commands = unique_strings(
+            [
+                *field_preflight_commands,
+                *[
+                    item.get("preflight_command")
+                    for item in pending_conditions
+                    if isinstance(item, dict)
+                ],
+            ]
+        )
         field_capture_commands = unique_strings(
             [
                 *field_capture_commands,
@@ -644,6 +663,8 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
         result["blocked_follow_ups"] = blocked_follow_up_commands
     if next_action_commands:
         result["next_actions"] = next_action_commands
+    if field_preflight_commands:
+        result["field_collection_preflight"] = field_preflight_commands
     if field_capture_commands:
         result["field_collection_capture"] = field_capture_commands
     if field_metadata_commands:

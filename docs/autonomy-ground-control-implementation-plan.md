@@ -408,6 +408,14 @@ Status:
 - Done: local goal-status and readiness-audit summaries also display the
   enriched field metadata update command for stale workflow-validation reports
   without mutating the archived evidence files.
+- Done: field collection plans now include a per-condition preflight command,
+  backed by `vision-nav-preflight-field-capture` and
+  `scripts/pi/preflight_field_capture.sh`, so operators can check bundle,
+  output-path, runtime-wrapper, metadata, and registration readiness before
+  collecting the next real field log.
+- Done: Module Setup, readiness report cards, support-bundle details, and
+  handoff summaries preserve and copy field-capture preflight commands beside
+  capture, metadata-update, and registration commands.
 - Done: readiness reports, support-bundle summaries, Markdown handoffs, and the
   desktop parser normalize older field collection plans so stale capture-only
   commands are shown with the required runtime-status read step.
@@ -640,6 +648,9 @@ Status:
   metadata-update commands alongside pending capture and registration commands,
   making the capture -> metadata -> registration handoff auditable in summary
   cards and parsed support ZIPs.
+- Done: field collection plans and support-bundle summaries now also count
+  pending preflight commands, making the preflight -> capture -> metadata ->
+  registration handoff auditable before field evidence exists.
 - Done: support-bundle summary cards now surface field-plan source-log counts
   next to capture-output and runtime-status counts, matching the final
   autonomy-readiness traceability gate.

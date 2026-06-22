@@ -149,6 +149,7 @@ function fieldConditionCommandRecords(conditions: FieldCollectionPlanCondition[]
   return conditions.flatMap((condition) => {
     const label = condition.label || condition.condition || "condition";
     return [
+      condition.preflight_command ? { stage: "preflight", label, command: condition.preflight_command } : null,
       condition.capture_command ? { stage: "capture", label, command: condition.capture_command } : null,
       condition.metadata_update_command ? { stage: "metadata", label, command: condition.metadata_update_command } : null,
       condition.register_command ? { stage: "register", label, command: condition.register_command } : null,

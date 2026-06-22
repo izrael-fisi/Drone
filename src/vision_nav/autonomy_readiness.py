@@ -61,6 +61,7 @@ SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
 COMMAND_GROUP_DESKTOP_ACTIONS = {
     "guided_workflow": "Module Setup > Evidence Workflow",
     "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
+    "field_collection_preflight": "Module Setup > Field Capture Preflight",
     "field_collection_capture": "Module Setup > Field Log Capture",
     "field_collection_metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
     "field_collection_registration": "Module Setup > Field Evidence Case > Register",
@@ -516,6 +517,7 @@ def build_command_bundle(
             *raw_next_action_commands,
         ]
     )
+    field_collection_preflight_commands = field_collection_commands(field_collection_plan_path, "preflight_command")
     field_collection_capture_commands = field_collection_commands(field_collection_plan_path, "capture_command")
     field_collection_metadata_update_commands = field_collection_commands(
         field_collection_plan_path,
@@ -529,6 +531,7 @@ def build_command_bundle(
         "next_action": next_action_commands,
         "immediate_next_action": immediate_next_action_commands,
         "blocked_follow_up": blocked_follow_up_commands,
+        "field_collection_preflight": field_collection_preflight_commands,
         "field_collection_capture": field_collection_capture_commands,
         "field_collection_metadata_update": field_collection_metadata_update_commands,
         "field_collection_registration": field_collection_registration_commands,
@@ -539,6 +542,7 @@ def build_command_bundle(
         "next_action_commands": next_action_commands,
         "immediate_next_action_commands": immediate_next_action_commands,
         "blocked_follow_up_commands": blocked_follow_up_commands,
+        "field_collection_preflight_commands": field_collection_preflight_commands,
         "field_collection_capture_commands": field_collection_capture_commands,
         "field_collection_metadata_update_commands": field_collection_metadata_update_commands,
         "field_collection_registration_commands": field_collection_registration_commands,
@@ -549,6 +553,7 @@ def build_command_bundle(
                     *guided_workflow_commands,
                     *prerequisite_fix_commands,
                     *next_action_commands,
+                    *field_collection_preflight_commands,
                     *field_collection_capture_commands,
                     *field_collection_metadata_update_commands,
                     *field_collection_registration_commands,
@@ -2022,6 +2027,7 @@ def compact_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
         "capture_output_dir",
         "runtime_status_path",
         "bundle",
+        "preflight_command",
         "capture_command",
         "metadata_update_command",
         "register_command",

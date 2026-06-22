@@ -60,6 +60,7 @@ from vision_nav.field_capture_metadata import (
     CAPTURE_METADATA_SCHEMA_VERSION,
 )
 from vision_nav.field_capture_metadata_update import update_field_capture_metadata
+from vision_nav.field_capture_preflight import evaluate_field_capture_preflight
 from vision_nav.field_collection_plan import (
     create_field_collection_plan,
     print_human as print_field_collection_human,
@@ -4380,6 +4381,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "expected": "degraded",
                             "case_name": "unit-blur",
                             "bundle": str(root / "map_bundles/unit_bundle"),
+                            "preflight_command": "./scripts/pi/preflight_field_capture.sh --condition blur",
                             "capture_command": "./scripts/pi/run_terrain_nav_loop.sh --condition blur",
                             "metadata_update_command": "./scripts/pi/update_field_capture_metadata.sh --condition blur",
                             "register_command": "./scripts/pi/register_field_replay_case.sh --condition blur",
@@ -4452,6 +4454,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         ):
             raise AssertionError("autonomy readiness JSON missing field collection bootstrap command")
         if (
+            "./scripts/pi/preflight_field_capture.sh --condition blur"
+            not in field_plan_bundle["field_collection_preflight_commands"]
+        ):
+            raise AssertionError("autonomy readiness JSON missing field preflight command bundle")
+        if (
             "./scripts/pi/run_terrain_nav_loop.sh --condition blur && ./scripts/pi/read_runtime_status.sh"
             not in field_plan_bundle["field_collection_capture_commands"]
         ):
@@ -4493,6 +4500,14 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         if not isinstance(field_plan_command_items, list):
             raise AssertionError("autonomy readiness JSON missing structured field command items")
         if not any(
+            item.get("group") == "field_collection_preflight"
+            and item.get("command") == "./scripts/pi/preflight_field_capture.sh --condition blur"
+            and item.get("desktop_action") == "Module Setup > Field Capture Preflight"
+            for item in field_plan_command_items
+            if isinstance(item, dict)
+        ):
+            raise AssertionError("autonomy readiness JSON missing structured field preflight command item")
+        if not any(
             item.get("group") == "field_collection_metadata_update"
             and "VISION_NAV_FIELD_OPERATOR=TODO_operator" in item.get("command", "")
             and item.get("desktop_action") == "Module Setup > Field Evidence Case > Update Metadata"
@@ -4501,8 +4516,12 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         ):
             raise AssertionError("autonomy readiness JSON missing structured field metadata command item")
         incomplete_handoff = render_handoff_markdown(incomplete_field_plan_ready)
+        if "Field collection preflight commands:" not in incomplete_handoff:
+            raise AssertionError("autonomy handoff missing field preflight command section")
         if "Field collection metadata update commands:" not in incomplete_handoff:
             raise AssertionError("autonomy handoff missing field metadata update command section")
+        if "./scripts/pi/preflight_field_capture.sh --condition blur" not in incomplete_handoff:
+            raise AssertionError("autonomy handoff missing field preflight command")
         if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in incomplete_handoff:
             raise AssertionError("autonomy handoff missing field metadata update command")
         incomplete_report = root / "autonomy_readiness_incomplete_field_plan.json"
@@ -4520,6 +4539,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             if not isinstance(incomplete_package_bundle, dict):
                 raise AssertionError("autonomy evidence package missing incomplete field plan command bundle")
             if not any(
+                "./scripts/pi/preflight_field_capture.sh --condition blur" in command
+                for command in incomplete_package_bundle.get("field_collection_preflight_commands", [])
+            ):
+                raise AssertionError("autonomy evidence package missing field preflight command group")
+            if not any(
                 "VISION_NAV_FIELD_OPERATOR=TODO_operator" in command
                 for command in incomplete_package_bundle.get("field_collection_metadata_update_commands", [])
             ):
@@ -4527,6 +4551,14 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             incomplete_command_items = incomplete_package_bundle.get("command_items")
             if not isinstance(incomplete_command_items, list):
                 raise AssertionError("autonomy evidence package missing structured command items")
+            if not any(
+                item.get("group") == "field_collection_preflight"
+                and item.get("command") == "./scripts/pi/preflight_field_capture.sh --condition blur"
+                and item.get("desktop_action") == "Module Setup > Field Capture Preflight"
+                for item in incomplete_command_items
+                if isinstance(item, dict)
+            ):
+                raise AssertionError("autonomy evidence package missing structured field preflight command item")
             if not any(
                 item.get("group") == "field_collection_metadata_update"
                 and "VISION_NAV_FIELD_OPERATOR=TODO_operator" in item.get("command", "")
@@ -5589,6 +5621,11 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "field collection pending capture command count",
         )
         assert_equal(
+            plan["pending_preflight_command_count"],
+            len(REQUIRED_FIELD_CONDITIONS),
+            "field collection pending preflight command count",
+        )
+        assert_equal(
             plan["pending_metadata_update_command_count"],
             len(REQUIRED_FIELD_CONDITIONS),
             "field collection pending metadata update command count",
@@ -5600,6 +5637,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         )
         if "Site-A-good_texture" not in plan["next_condition"]["capture_command"]:
             raise AssertionError("Expected next condition to preserve capture command")
+        if "preflight_field_capture.sh" not in plan["next_condition"]["preflight_command"]:
+            raise AssertionError("Expected next condition to include field capture preflight command")
         assert_equal(
             plan["runtime_status_path_count"],
             len(REQUIRED_FIELD_CONDITIONS),
@@ -5624,6 +5663,10 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         )
         if "VISION_NAV_OUTPUT_DIR" not in good_texture["capture_command"]:
             raise AssertionError("Expected generated capture command to include output directory")
+        if "VISION_NAV_FIELD_COLLECTION_PLAN" not in good_texture["preflight_command"]:
+            raise AssertionError("Expected generated preflight command to include collection plan path")
+        if "VISION_NAV_FIELD_CONDITION=good_texture" not in good_texture["preflight_command"]:
+            raise AssertionError("Expected generated preflight command to target the condition")
         if "VISION_NAV_COUNT=30" not in good_texture["capture_command"]:
             raise AssertionError("Expected generated capture command to be bounded")
         if "read_runtime_status.sh" not in good_texture["capture_command"]:
@@ -5642,6 +5685,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         with contextlib.redirect_stdout(human_output):
             print_field_collection_human(plan)
         human_text = human_output.getvalue()
+        if "Next preflight command:" not in human_text:
+            raise AssertionError("Expected human field collection output to include preflight command")
         if "Next metadata update command:" not in human_text:
             raise AssertionError("Expected human field collection output to include metadata update command")
         if "Next runtime status path:" not in human_text:
@@ -5679,6 +5724,10 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         markdown_text = (base / "field_collection_plan.md").read_text()
         if "Update capture metadata:" not in markdown_text:
             raise AssertionError("Expected Markdown plan to include the next metadata update command")
+        if "Preflight:" not in markdown_text:
+            raise AssertionError("Expected Markdown plan to include the next preflight command")
+        if "preflight_field_capture.sh" not in markdown_text:
+            raise AssertionError("Expected Markdown plan to include the preflight helper")
         if "Runtime status:" not in markdown_text:
             raise AssertionError("Expected Markdown plan to include the next runtime status path")
         if "read_runtime_status.sh" not in markdown_text:
@@ -5714,6 +5763,51 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected shell assignments to mark the selected field condition")
         if "VISION_NAV_FIELD_METADATA_UPDATE_COMMAND" not in selection_shell:
             raise AssertionError("Expected shell assignments to export metadata update command")
+
+        ready_bundle = base / "mission_bundle"
+        ready_bundle.mkdir()
+        ready_capture_root = base / "field-captures"
+        ready_capture_root.mkdir()
+        ready_manifest = base / "field_manifest_ready.json"
+        create_field_evidence_template(
+            output_path=base / "field_manifest_ready.template.json",
+            site_name="Site A",
+            bundle=str(ready_bundle),
+            seed_manifest_path=ready_manifest,
+        )
+        ready_plan = create_field_collection_plan(
+            manifest_path=ready_manifest,
+            output_path=base / "field_collection_plan_ready_capture.json",
+            site_name="Site A",
+            bundle=str(ready_bundle),
+            capture_root=str(ready_capture_root),
+        )
+        ready_preflight = evaluate_field_capture_preflight(
+            plan_path=base / "field_collection_plan_ready_capture.json",
+            repo_root=Path.cwd(),
+        )
+        assert_equal(ready_preflight["status"], "degraded", "field preflight waits for log and metadata")
+        assert_equal(ready_preflight["ready_for_capture"], True, "field preflight capture readiness")
+        assert_equal(ready_preflight["ready_for_registration"], False, "field preflight registration readiness")
+        if ready_preflight["condition"] != "good_texture":
+            raise AssertionError("Expected preflight to select next field condition")
+        if not any(check["name"] == "registration_inputs" and check["status"] == "degraded" for check in ready_preflight["checks"]):
+            raise AssertionError("Expected preflight to flag missing registration inputs")
+        missing_bundle_plan = json.loads(json.dumps(ready_plan))
+        missing_bundle_plan["next_condition"]["bundle"] = str(base / "missing_bundle")
+        for item in missing_bundle_plan["conditions"]:
+            if item["condition"] == "good_texture":
+                item["bundle"] = str(base / "missing_bundle")
+        missing_bundle_plan_path = base / "field_collection_plan_missing_bundle.json"
+        missing_bundle_plan_path.write_text(json.dumps(missing_bundle_plan))
+        missing_bundle_preflight = evaluate_field_capture_preflight(
+            plan_path=missing_bundle_plan_path,
+            repo_root=Path.cwd(),
+        )
+        assert_equal(missing_bundle_preflight["status"], "failed", "field preflight fails missing bundle")
+        assert_equal(missing_bundle_preflight["ready_for_capture"], False, "field preflight blocks missing bundle capture")
+        if not any(check["name"] == "bundle_path" and check["status"] == "failed" for check in missing_bundle_preflight["checks"]):
+            raise AssertionError("Expected preflight to identify missing bundle")
 
         legacy_plan = json.loads(json.dumps(plan))
         legacy_command = (

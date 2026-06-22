@@ -100,6 +100,7 @@ def create_field_collection_plan(
         condition_plan(
             condition=condition,
             manifest_path=manifest,
+            collection_plan_path=Path(output_path).expanduser() if output_path is not None else None,
             cases=cases,
             site_name=site_name,
             bundle=bundle,
@@ -129,6 +130,7 @@ def create_field_collection_plan(
         "source_log": source_log,
         "capture_root": capture_root,
         "pending_capture_command_count": sum(1 for item in pending_conditions if item.get("capture_command")),
+        "pending_preflight_command_count": sum(1 for item in pending_conditions if item.get("preflight_command")),
         "pending_metadata_update_command_count": sum(
             1 for item in pending_conditions if item.get("metadata_update_command")
         ),
@@ -168,6 +170,7 @@ def condition_plan(
     *,
     condition: str,
     manifest_path: Path,
+    collection_plan_path: Path | None,
     cases: list[dict[str, Any]],
     site_name: str,
     bundle: str,
@@ -235,6 +238,9 @@ def condition_plan(
     )
     metadata_update_command = shell_command(metadata_update_env, "./scripts/pi/update_field_capture_metadata.sh")
     capture_command = shell_command(capture_env, "./scripts/pi/run_terrain_nav_loop.sh")
+    preflight_env = {"VISION_NAV_FIELD_CONDITION": condition}
+    if collection_plan_path is not None:
+        preflight_env["VISION_NAV_FIELD_COLLECTION_PLAN"] = str(collection_plan_path)
     return {
         "condition": condition,
         "label": label_for_condition(condition),
@@ -252,6 +258,7 @@ def condition_plan(
         "capture_metadata": capture_metadata,
         "capture_checklist": capture_checklist,
         "capture_env": capture_env,
+        "preflight_command": shell_command(preflight_env, "./scripts/pi/preflight_field_capture.sh"),
         "capture_command": command_with_runtime_status_read(capture_command),
         "metadata_update_env": metadata_update_env,
         "metadata_update_command": metadata_update_command,
@@ -405,6 +412,12 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 f"- Terrain log: `{next_condition.get('source_log')}`",
                 f"- Runtime status: `{next_condition.get('runtime_status_path')}`",
                 "",
+                "Preflight:",
+                "",
+                "```bash",
+                str(next_condition.get("preflight_command") or ""),
+                "```",
+                "",
                 "Capture:",
                 "",
                 "```bash",
@@ -441,6 +454,12 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 f"- Terrain log: `{item.get('source_log')}`",
                 f"- Runtime status: `{item.get('runtime_status_path')}`",
                 f"- Notes: {item.get('notes') or 'n/a'}",
+                "",
+                "Preflight the capture setup:",
+                "",
+                "```bash",
+                str(item.get("preflight_command") or ""),
+                "```",
                 "",
                 "Capture metadata to fill before registration:",
                 "",
@@ -510,6 +529,9 @@ def print_human(plan: dict[str, Any]) -> None:
             f"{next_condition.get('condition')} "
             f"({next_condition.get('status')}, expected={next_condition.get('expected')})"
         )
+        if next_condition.get("preflight_command"):
+            print("Next preflight command:")
+            print(next_condition["preflight_command"])
         if next_condition.get("capture_command"):
             print("Next capture command:")
             print(next_condition["capture_command"])

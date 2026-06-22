@@ -1083,6 +1083,7 @@ def summarize_field_collection_condition(item: dict[str, Any], *, include_comman
         "source_log": item.get("source_log"),
         "capture_output_dir": item.get("capture_output_dir"),
         "runtime_status_path": item.get("runtime_status_path"),
+        "has_preflight_command": bool(item.get("preflight_command") or item.get("has_preflight_command")),
         "has_capture_command": bool(item.get("capture_command") or item.get("has_capture_command")),
         "has_metadata_update_command": bool(
             item.get("metadata_update_command") or item.get("has_metadata_update_command")
@@ -1090,6 +1091,8 @@ def summarize_field_collection_condition(item: dict[str, Any], *, include_comman
         "has_register_command": bool(item.get("register_command") or item.get("has_register_command")),
     }
     if include_commands:
+        if item.get("preflight_command"):
+            summary["preflight_command"] = item.get("preflight_command")
         if item.get("capture_command"):
             summary["capture_command"] = command_with_runtime_status_read(str(item.get("capture_command")))
         if item.get("metadata_update_command"):
@@ -1132,6 +1135,7 @@ def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path
         "registered_missing_log_count": summary.get("registered_missing_log_count"),
         "placeholder_count": summary.get("placeholder_count"),
         "missing_count": summary.get("missing_count"),
+        "pending_preflight_command_count": sum(1 for item in pending_conditions if item.get("has_preflight_command")),
         "pending_capture_command_count": sum(1 for item in pending_conditions if item.get("has_capture_command")),
         "pending_metadata_update_command_count": sum(
             1 for item in pending_conditions if item.get("has_metadata_update_command")
@@ -1201,6 +1205,9 @@ def copy_field_collection_plans(paths: list[str], support_dir: Path) -> dict[str
         "reports": reports,
         "registered_count": max((int(report.get("registered_count") or 0) for report in reports), default=0),
         "required_count": max((int(report.get("required_count") or 0) for report in reports), default=0),
+        "pending_preflight_command_count": sum(
+            int(report.get("pending_preflight_command_count") or 0) for report in reports
+        ),
         "pending_capture_command_count": sum(int(report.get("pending_capture_command_count") or 0) for report in reports),
         "pending_metadata_update_command_count": sum(
             int(report.get("pending_metadata_update_command_count") or 0) for report in reports

@@ -20,6 +20,7 @@ MAX_MANIFEST_WORKFLOW_CHECKS = 8
 COMMAND_GROUP_DESKTOP_ACTIONS = {
     "guided_workflow": "Module Setup > Evidence Workflow",
     "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
+    "field_collection_preflight": "Module Setup > Field Capture Preflight",
     "field_collection_capture": "Module Setup > Field Log Capture",
     "field_collection_metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
     "field_collection_registration": "Module Setup > Field Evidence Case > Register",
@@ -259,6 +260,7 @@ def build_command_bundle_summary(report: dict[str, Any]) -> dict[str, Any] | Non
         "next_action_commands": string_list(bundle.get("next_action_commands")),
         "immediate_next_action_commands": string_list(bundle.get("immediate_next_action_commands")),
         "blocked_follow_up_commands": string_list(bundle.get("blocked_follow_up_commands")),
+        "field_collection_preflight_commands": string_list(bundle.get("field_collection_preflight_commands")),
         "field_collection_capture_commands": string_list(bundle.get("field_collection_capture_commands")),
         "field_collection_metadata_update_commands": string_list(
             bundle.get("field_collection_metadata_update_commands")
@@ -283,6 +285,7 @@ def command_bundle_items(report: dict[str, Any], bundle: dict[str, Any]) -> list
         ("next_action", "next_action_commands"),
         ("immediate_next_action", "immediate_next_action_commands"),
         ("blocked_follow_up", "blocked_follow_up_commands"),
+        ("field_collection_preflight", "field_collection_preflight_commands"),
         ("field_collection_capture", "field_collection_capture_commands"),
         ("field_collection_metadata_update", "field_collection_metadata_update_commands"),
         ("field_collection_registration", "field_collection_registration_commands"),
