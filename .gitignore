@@ -25,6 +25,7 @@ map_bundles/*
 !map_bundles/example/manifest.json
 *.bag/
 *.mcap
+px4-sitl-evidence/
 
 # Local Pi runtime overrides
 config/pi/vision-nav.env

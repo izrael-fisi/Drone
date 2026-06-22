@@ -788,6 +788,29 @@ export interface Px4ReceiverReportFile {
   };
 }
 
+export interface Px4PrereqReportFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  report: {
+    status?: "passed" | "failed" | "degraded" | "not_checked" | string;
+    generated_at?: string;
+    session_dir?: string;
+    capture_dir?: string;
+    receiver_report?: string;
+    px4_dir?: string;
+    px4_target?: string;
+    tmux_session?: string;
+    checks: Array<{
+      name?: string;
+      status?: "passed" | "failed" | "skipped" | "not_checked" | string;
+      message?: string;
+    }>;
+    next_actions: string[];
+  };
+}
+
 export interface FieldEvidenceReportFile {
   name: string;
   path: string;

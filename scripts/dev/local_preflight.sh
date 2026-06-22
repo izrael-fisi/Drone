@@ -540,7 +540,7 @@ if PYTHONPATH=src python3 -m vision_nav.autonomy_readiness --json >"$autonomy_re
 fi
 tail -n 18 "$autonomy_readiness_output"
 goal_status_output="$preflight_tmp_dir/autonomy_goal_status_preflight.txt"
-if ./scripts/dev/autonomy_goal_status.sh >"$goal_status_output" 2>&1; then
+if VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL=1 ./scripts/dev/autonomy_goal_status.sh >"$goal_status_output" 2>&1; then
   echo "Expected autonomy goal status to fail before final proof evidence exists." >&2
   exit 1
 fi
@@ -637,6 +637,7 @@ if VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
 VISION_NAV_PX4_SITL_REPORT="$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" \
+VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL=1 \
 VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT=1 \
 ./scripts/dev/autonomy_goal_status.sh >"$scanned_goal_status_output" 2>&1; then
   echo "Expected scanned autonomy goal status to fail before final proof evidence exists." >&2
@@ -654,6 +655,7 @@ VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
 VISION_NAV_PX4_SITL_REPORT="$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" \
+VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL=1 \
 VISION_NAV_AUTONOMY_ALLOW_FAILED=1 \
 ./scripts/dev/run_local_autonomy_readiness_audit.sh >"$local_autonomy_output" 2>&1
 grep -q "No support bundle ZIP found" "$local_autonomy_output"

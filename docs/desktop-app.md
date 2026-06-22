@@ -429,15 +429,17 @@ field-case count, and the main acceptance-rate margins.
 Module Setup can run the local-only `PX4 SITL Receiver Capture` action on the
 desktop/PX4 workstation. The action runs
 `scripts/dev/run_px4_sitl_external_vision_capture.sh`, stores the session under
-`~/DroneTransfer/from-pi/px4-sitl-evidence/`, and refreshes the PX4 Receiver
-Evidence list. The local readiness re-audit also scans that folder for
-`receiver_evidence.json`. If the local workstation is missing PX4 or `tmux`,
-the action still prepares the evidence-session folder, synthetic sender log, and
-manual capture README, then exits failed so the operator can fix the prerequisite
-without losing the capture instructions. The same folder includes
+`~/DroneTransfer/from-pi/px4-sitl-evidence/`, refreshes the PX4 Capture
+Prerequisites list, and refreshes the PX4 Receiver Evidence list. The local
+readiness re-audit also scans that folder for `receiver_evidence.json`. If the
+local workstation is missing PX4 or `tmux`, the action still prepares the
+evidence-session folder, synthetic sender log, and manual capture README, then
+exits failed so the operator can fix the prerequisite without losing the capture
+instructions. The same folder includes
 `px4_sitl_capture_prereqs.json` and the
 `__VISION_NAV_PX4_SITL_PREREQS__=...` marker with the missing prerequisite
-checks. Support bundles ingest that prerequisite report under
+checks. Module Setup lists those checks and copyable next actions separately
+from receiver proof. Support bundles ingest that prerequisite report under
 `px4_sitl_prereqs` and show it as a separate `px4 prereqs` status, while PX4
 receiver proof still requires `receiver_evidence.json`.
 

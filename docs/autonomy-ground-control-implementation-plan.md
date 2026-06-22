@@ -83,6 +83,9 @@ Status:
 - Done: Module Setup lists downloaded standalone PX4 receiver-evidence JSON
   reports from `~/DroneTransfer/from-pi/px4-sitl-evidence/` with sample counts,
   latest sample age, MAVLink version, and report issues.
+- Done: Module Setup lists downloaded PX4 SITL capture prerequisite JSON
+  reports from the same folder, showing failed setup checks and copyable next
+  actions separately from receiver proof.
 - Done: `vision-nav-check-px4-params` and `scripts/pi/check_px4_params.sh`
   evaluate exported PX4 parameter files for external-vision bench readiness
   without modifying the flight controller.

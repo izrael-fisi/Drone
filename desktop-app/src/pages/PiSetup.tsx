@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import {
+  AlertTriangle,
   Archive,
   CheckCircle2,
   Copy,
@@ -52,6 +53,7 @@ import type {
   FeatureMethodBenchmarkReportFile,
   LocalNetworkHint,
   PiDiscoveryCandidate,
+  Px4PrereqReportFile,
   Px4ReceiverReportFile,
   RosbagExportValidationReportFile,
   SupportBundleDetails,
@@ -2446,6 +2448,128 @@ function formatPosition(value: unknown) {
     .join(", ");
 }
 
+function Px4PrereqReportList({
+  reports,
+  downloadDir,
+  onRefresh,
+}: {
+  reports: Px4PrereqReportFile[];
+  downloadDir: string;
+  onRefresh: () => void;
+}) {
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reveal = async (path: string) => {
+    setBusyPath(path);
+    setActionError(null);
+    try {
+      await cmd.revealSupportBundle(path);
+    } catch (err) {
+      setActionError(String(err));
+    } finally {
+      setBusyPath(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="text-xs font-medium text-slate-300 flex items-center gap-2">
+            <AlertTriangle size={13} className="text-amber-400" /> PX4 Capture Prerequisites
+          </h4>
+          <p className="text-[10px] text-slate-500 font-mono truncate">{downloadDir}</p>
+        </div>
+        <button onClick={onRefresh} className="btn-secondary text-xs py-1 px-2">
+          <RefreshCw size={11} />
+          Refresh
+        </button>
+      </div>
+      {actionError && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
+      {reports.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-slate-500">
+          No PX4 prerequisite diagnostic report yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {reports.slice(0, 3).map((file) => (
+            <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={readinessBadgeClass(file.report.status)}>
+                      {readinessIcon(file.report.status)}
+                      {formatReadinessLabel(file.report.status)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      checks {file.report.checks.length}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500 truncate">
+                      {formatReadinessLabel(file.report.px4_target)}
+                    </span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
+                    {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
+                    session {file.report.session_dir ?? "n/a"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(file.path)}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Copy prerequisite report path"
+                  >
+                    <Copy size={11} />
+                  </button>
+                  <button
+                    onClick={() => reveal(file.path)}
+                    disabled={busyPath === file.path}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Show prerequisite report file"
+                  >
+                    {busyPath === file.path ? <Loader2 size={11} className="animate-spin" /> : <FolderOpen size={11} />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                {file.report.checks.slice(0, 5).map((check, index) => (
+                  <div key={`${file.path}-${check.name ?? index}`} className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <span className={cn(readinessBadgeClass(check.status), "text-[10px]")}>
+                      {formatReadinessLabel(check.status)}
+                    </span>
+                    <span className="font-mono text-slate-500">{formatReadinessLabel(check.name)}</span>
+                    {check.message && <span className="text-slate-500 truncate">{check.message}</span>}
+                  </div>
+                ))}
+              </div>
+              {file.report.next_actions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(file.report.next_actions.join("\n"))}
+                    className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                    title="Copy PX4 capture prerequisite next actions"
+                  >
+                    <Copy size={9} />
+                    next actions
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Px4ReceiverReportList({
   reports,
   downloadDir,
@@ -2938,6 +3062,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [supportBundles, setSupportBundles] = useState<SupportBundleFile[]>([]);
   const [autonomyReports, setAutonomyReports] = useState<AutonomyReadinessReportFile[]>([]);
   const [autonomyWorkflowReports, setAutonomyWorkflowReports] = useState<AutonomyEvidenceWorkflowReportFile[]>([]);
+  const [px4PrereqReports, setPx4PrereqReports] = useState<Px4PrereqReportFile[]>([]);
   const [px4ReceiverReports, setPx4ReceiverReports] = useState<Px4ReceiverReportFile[]>([]);
   const [fieldEvidenceTemplates, setFieldEvidenceTemplates] = useState<FieldEvidenceTemplateFile[]>([]);
   const [fieldCollectionPlans, setFieldCollectionPlans] = useState<FieldCollectionPlanFile[]>([]);
@@ -3026,6 +3151,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const refreshPx4PrereqReports = async () => {
+    try {
+      setPx4PrereqReports(await cmd.listPx4PrereqReports(PX4_RECEIVER_DOWNLOAD_DIR));
+    } catch {
+      setPx4PrereqReports([]);
+    }
+  };
+
   const refreshFieldEvidenceReports = async () => {
     try {
       setFieldEvidenceReports(await cmd.listFieldEvidenceReports(AUTONOMY_REPORT_DOWNLOAD_DIR));
@@ -3078,6 +3211,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     refreshSupportBundles();
     refreshAutonomyReports();
     refreshAutonomyWorkflowReports();
+    refreshPx4PrereqReports();
     refreshPx4ReceiverReports();
     refreshFieldEvidenceTemplates();
     refreshFieldCollectionPlans();
@@ -3749,6 +3883,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       await refreshThresholdTuningReports();
       await refreshRosbagValidationReports();
       await refreshFieldCollectionPlans();
+      await refreshPx4PrereqReports();
       await refreshPx4ReceiverReports();
     } catch (err) {
       setResult("autonomy-readiness", { status: "failed", output: `$ autonomy readiness\nERROR: ${err}` });
@@ -3807,6 +3942,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       await refreshThresholdTuningReports();
       await refreshRosbagValidationReports();
       await refreshFieldCollectionPlans();
+      await refreshPx4PrereqReports();
       await refreshPx4ReceiverReports();
       await refreshSupportBundles();
     } catch (err) {
@@ -4117,6 +4253,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       await refreshRosbagValidationReports();
       await refreshFieldCollectionPlans();
       await refreshAutonomyReports();
+      await refreshPx4PrereqReports();
       await refreshPx4ReceiverReports();
     } catch (err) {
       setResult("autonomy-evidence-workflow", { status: "failed", output: `$ autonomy evidence workflow\nERROR: ${err}` });
@@ -4281,12 +4418,20 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const result = await cmd.runLocalPx4SitlReceiverCapture(repoPath, DESKTOP_TRANSFER_FROM_PI_DIR);
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const localPx4Report = parsePx4SitlReport(output);
-      const localPx4Notes = localPx4Report ? `\nPX4 receiver report: ${localPx4Report}` : "";
+      const localPx4Prereqs = parsePx4SitlPrereqs(output);
+      const localPx4Notes = [
+        localPx4Report ? `PX4 receiver report: ${localPx4Report}` : "",
+        localPx4Prereqs ? `PX4 prerequisite report: ${localPx4Prereqs}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const localPx4Summary = localPx4Notes ? `\n${localPx4Notes}` : "";
       setResult("local-px4-sitl-receiver", {
         status: result.exit_code === 0 && localPx4Report ? "passed" : "failed",
-        output: `$ PX4 SITL receiver capture\n${output || "(no output)"}${localPx4Notes}\n[exit ${result.exit_code}]`,
+        output: `$ PX4 SITL receiver capture\n${output || "(no output)"}${localPx4Summary}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
+      await refreshPx4PrereqReports();
       await refreshPx4ReceiverReports();
     } catch (err) {
       setResult("local-px4-sitl-receiver", { status: "failed", output: `$ PX4 SITL receiver capture\nERROR: ${err}` });
@@ -5083,6 +5228,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         : null,
       downloaded_autonomy_workflow_reports: autonomyWorkflowReports.slice(0, 5),
       downloaded_autonomy_reports: autonomyReports.slice(0, 5),
+      downloaded_px4_prereq_reports: px4PrereqReports.slice(0, 5),
       downloaded_px4_receiver_reports: px4ReceiverReports.slice(0, 5),
       downloaded_field_evidence_templates: fieldEvidenceTemplates.slice(0, 5),
       downloaded_field_collection_plans: fieldCollectionPlans.slice(0, 5),
@@ -5970,6 +6116,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               </div>
             )}
             <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} onChanged={refreshSupportBundles} />
+            <Px4PrereqReportList
+              reports={px4PrereqReports}
+              downloadDir={PX4_RECEIVER_DOWNLOAD_DIR}
+              onRefresh={refreshPx4PrereqReports}
+            />
             <Px4ReceiverReportList
               reports={px4ReceiverReports}
               downloadDir={PX4_RECEIVER_DOWNLOAD_DIR}

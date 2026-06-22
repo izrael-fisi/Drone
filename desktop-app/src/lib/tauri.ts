@@ -19,6 +19,7 @@ import type {
   LocalNetworkHint,
   PiDiscoveryCandidate,
   Profile,
+  Px4PrereqReportFile,
   Px4ReceiverReportFile,
   RosbagExportValidationReportFile,
   Region,
@@ -139,6 +140,8 @@ export const cmd = {
     invoke<FieldEvidenceTemplateFile[]>("list_field_evidence_templates", { dir }),
   listFeatureMethodBenchmarkReports: (dir: string) =>
     invoke<FeatureMethodBenchmarkReportFile[]>("list_feature_method_benchmark_reports", { dir }),
+  listPx4PrereqReports: (dir: string) =>
+    invoke<Px4PrereqReportFile[]>("list_px4_prereq_reports", { dir }),
   listPx4ReceiverReports: (dir: string) =>
     invoke<Px4ReceiverReportFile[]>("list_px4_receiver_reports", { dir }),
   listRosbagExportValidationReports: (dir: string) =>

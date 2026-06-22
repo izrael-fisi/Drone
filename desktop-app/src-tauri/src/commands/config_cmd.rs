@@ -131,6 +131,36 @@ pub struct Px4ReceiverReportFile {
 }
 
 #[derive(Serialize)]
+pub struct Px4PrereqCheck {
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct Px4PrereqReport {
+    pub status: Option<String>,
+    pub generated_at: Option<String>,
+    pub session_dir: Option<String>,
+    pub capture_dir: Option<String>,
+    pub receiver_report: Option<String>,
+    pub px4_dir: Option<String>,
+    pub px4_target: Option<String>,
+    pub tmux_session: Option<String>,
+    pub checks: Vec<Px4PrereqCheck>,
+    pub next_actions: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct Px4PrereqReportFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub report: Px4PrereqReport,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundlePx4ParamReport {
     pub status: Option<String>,
     pub ev_ctrl: Option<i64>,
@@ -1807,6 +1837,61 @@ pub fn list_px4_receiver_reports(dir: String) -> Result<Vec<Px4ReceiverReportFil
 }
 
 #[tauri::command]
+pub fn list_px4_prereq_reports(dir: String) -> Result<Vec<Px4PrereqReportFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let Some(report) = px4_prereq_report_from_json(&value) else {
+            continue;
+        };
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(Px4PrereqReportFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("px4_sitl_capture_prereqs.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            report,
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
+#[tauri::command]
 pub fn list_threshold_tuning_reports(
     dir: String,
 ) -> Result<Vec<ThresholdTuningReportFile>, String> {
@@ -2550,6 +2635,40 @@ fn px4_evidence_report_from_json(value: &serde_json::Value) -> SupportBundlePx4E
             .and_then(|value| value.as_bool()),
         issues,
     }
+}
+
+fn px4_prereq_report_from_json(value: &serde_json::Value) -> Option<Px4PrereqReport> {
+    if value.get("schema_version").and_then(|value| value.as_str())
+        != Some("vision_nav_px4_sitl_capture_prereqs_v1")
+    {
+        return None;
+    }
+    let checks = value
+        .get("checks")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| Px4PrereqCheck {
+                    name: json_string(item.get("name")),
+                    status: json_string(item.get("status")),
+                    message: json_string(item.get("message")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Some(Px4PrereqReport {
+        status: json_string(value.get("status")),
+        generated_at: json_string(value.get("generated_at")),
+        session_dir: json_string(value.get("session_dir")),
+        capture_dir: json_string(value.get("capture_dir")),
+        receiver_report: json_string(value.get("receiver_report")),
+        px4_dir: json_string(value.get("px4_dir")),
+        px4_target: json_string(value.get("px4_target")),
+        tmux_session: json_string(value.get("tmux_session")),
+        checks,
+        next_actions: json_string_array(value.get("next_actions")),
+    })
 }
 
 fn px4_param_report_from_json(value: &serde_json::Value) -> SupportBundlePx4ParamReport {
@@ -4235,11 +4354,11 @@ mod tests {
         delete_support_bundle, expand_local_path, extract_support_bundle_artifact,
         list_autonomy_evidence_workflow_reports, list_autonomy_readiness_reports,
         list_feature_method_benchmark_reports, list_field_collection_plans,
-        list_field_evidence_reports, list_field_evidence_templates, list_px4_receiver_reports,
-        list_rosbag_export_validation_reports, list_threshold_tuning_reports,
-        read_support_bundle_details, run_local_autonomy_readiness_audit_inner,
-        run_local_px4_sitl_receiver_capture_inner, run_local_rosbag2_cli_review_inner,
-        support_summary_from_manifest,
+        list_field_evidence_reports, list_field_evidence_templates, list_px4_prereq_reports,
+        list_px4_receiver_reports, list_rosbag_export_validation_reports,
+        list_threshold_tuning_reports, read_support_bundle_details,
+        run_local_autonomy_readiness_audit_inner, run_local_px4_sitl_receiver_capture_inner,
+        run_local_rosbag2_cli_review_inner, support_summary_from_manifest,
     };
     use std::fs::{self, File};
     use std::io::Write;
@@ -6095,6 +6214,58 @@ mod tests {
         assert_eq!(reports[0].report.observed_rate_hz, Some(5.0));
         assert_eq!(reports[0].report.mavlink_version, Some(2));
         assert_eq!(reports[0].report.has_udp_14550, Some(true));
+    }
+
+    #[test]
+    fn lists_px4_prereq_reports_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-px4-prereq-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create px4 report dir");
+        std::fs::write(
+            dir.join("px4_sitl_capture_prereqs.json"),
+            serde_json::json!({
+                "schema_version": "vision_nav_px4_sitl_capture_prereqs_v1",
+                "status": "failed",
+                "generated_at": "2026-06-22T11:28:21Z",
+                "session_dir": "/tmp/px4-sitl-evidence",
+                "capture_dir": "/tmp/px4-sitl-evidence/receiver_capture",
+                "receiver_report": "/tmp/px4-sitl-evidence/receiver_evidence.json",
+                "px4_dir": "/tmp/PX4-Autopilot",
+                "px4_target": "px4_sitl gz_x500",
+                "tmux_session": "vision-nav-px4-sitl",
+                "checks": [
+                    {"name": "tmux_installed", "status": "failed", "message": "Install tmux."},
+                    {"name": "px4_autopilot_dir", "status": "passed", "message": "PX4 found."}
+                ],
+                "next_actions": ["Install tmux."]
+            })
+            .to_string(),
+        )
+        .expect("write prereq report");
+        std::fs::write(
+            dir.join("receiver_evidence.json"),
+            serde_json::json!({"status": "passed", "listener": {"sample_count": 1}}).to_string(),
+        )
+        .expect("write unrelated receiver report");
+        let reports =
+            list_px4_prereq_reports(dir.to_string_lossy().into_owned()).expect("list reports");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].name, "px4_sitl_capture_prereqs.json");
+        assert_eq!(reports[0].report.status.as_deref(), Some("failed"));
+        assert_eq!(
+            reports[0].report.px4_target.as_deref(),
+            Some("px4_sitl gz_x500")
+        );
+        assert_eq!(reports[0].report.checks.len(), 2);
+        assert_eq!(
+            reports[0].report.checks[0].name.as_deref(),
+            Some("tmux_installed")
+        );
+        assert_eq!(reports[0].report.next_actions, vec!["Install tmux."]);
     }
 
     #[test]

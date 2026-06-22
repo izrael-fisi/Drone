@@ -20,6 +20,7 @@ evidence_workflow_log_archive="${VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE:-}"
 px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 px4_sitl_prereqs="${VISION_NAV_PX4_SITL_PREREQS:-}"
+skip_conventional_px4="${VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL:-0}"
 json_copy="${VISION_NAV_AUTONOMY_GOAL_STATUS_JSON:-}"
 quiet_exit="${VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT:-0}"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-goal-status.XXXXXX")"
@@ -39,6 +40,9 @@ latest_glob() {
 }
 
 first_existing_px4_session() {
+  if [[ "$skip_conventional_px4" == "1" ]]; then
+    return 0
+  fi
   local candidates=(
     "$repo_root/px4-sitl-evidence"
     "$PWD/px4-sitl-evidence"
@@ -55,6 +59,9 @@ first_existing_px4_session() {
 }
 
 first_existing_px4_report() {
+  if [[ "$skip_conventional_px4" == "1" ]]; then
+    return 0
+  fi
   local candidates=(
     "$repo_root/px4-sitl-evidence/receiver_evidence.json"
     "$PWD/px4-sitl-evidence/receiver_evidence.json"
@@ -78,12 +85,17 @@ first_existing_px4_prereqs() {
   if [[ -n "$px4_sitl_report" ]]; then
     candidates+=("$(dirname "$px4_sitl_report")/px4_sitl_capture_prereqs.json")
   fi
-  candidates+=(
-    "$repo_root/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
-    "$PWD/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
-    "$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
-    "$download_root/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
-  )
+  if [[ "$skip_conventional_px4" != "1" ]]; then
+    candidates+=(
+      "$repo_root/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+      "$PWD/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+      "$HOME/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+      "$download_root/px4-sitl-evidence/px4_sitl_capture_prereqs.json"
+    )
+  fi
+  if ((${#candidates[@]} == 0)); then
+    return 0
+  fi
   local candidate
   for candidate in "${candidates[@]}"; do
     if [[ -f "$candidate" ]]; then
