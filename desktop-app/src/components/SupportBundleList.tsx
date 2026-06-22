@@ -1144,6 +1144,16 @@ function SupportBundleDetailPanel({
                             ))}
                           </div>
                         )}
+                        {diagnostic.search_roots.length > 0 && (
+                          <div className="space-y-0.5">
+                            <div className="text-slate-500">searched roots {diagnostic.search_root_count ?? diagnostic.search_roots.length}</div>
+                            {diagnostic.search_roots.slice(0, 3).map((root) => (
+                              <div key={`${report.condition}-search-root-${root}`} className="font-mono text-slate-300 truncate">
+                                {formatLabel(root)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {diagnostic.recommended_actions.length > 0 && (
                           <div className="space-y-0.5">
                             {diagnostic.recommended_actions.slice(0, 2).map((action, actionIndex) => (

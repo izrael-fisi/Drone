@@ -119,15 +119,33 @@ def compact_bundle_diagnostic(report: Any, *, max_items: int = 3) -> dict[str, A
         for item in report.get("recommended_actions") or []
         if isinstance(item, dict)
     ]
+    search_roots = [str(item) for item in report.get("search_roots") or [] if str(item)]
     return {
         "bundle_exists": report.get("bundle_exists"),
         "missing_required_files": report.get("missing_required_files") or [],
+        "search_root_count": len(search_roots),
+        "search_roots": compact_search_roots(search_roots, max_items=max_items),
         "bundle_candidate_count": len(bundle_candidates),
         "map_source_candidate_count": len(map_sources),
         "bundle_candidates": bundle_candidates[:max_items],
         "map_source_candidates": map_sources[:max_items],
         "recommended_actions": actions[:max_items],
     }
+
+
+def compact_search_roots(search_roots: list[str], *, max_items: int) -> list[str]:
+    def priority(path: str) -> tuple[int, str]:
+        lowered = path.lower().replace("\\", "/")
+        if "dronevisionnav/maps" in lowered:
+            return 0, path
+        if "map_bundles" in lowered or "map-bundles" in lowered:
+            return 1, path
+        if "dronetransfer" in lowered:
+            return 2, path
+        return 3, path
+
+    deduped = list(dict.fromkeys(search_roots))
+    return sorted(deduped, key=priority)[:max_items]
 
 
 def default_search_roots(bundle: Path, extra_roots: list[str | Path] | None = None) -> list[Path]:
@@ -509,6 +527,10 @@ def print_human(report: dict[str, Any]) -> None:
             if item.get("requires_import"):
                 label_parts.append("import required")
             print(f"- {item.get('path')} [{'; '.join(label_parts)}]")
+    if report.get("search_roots"):
+        print("Searched roots:")
+        for root in report["search_roots"][:8]:
+            print(f"- {root}")
     print("Recommended actions:")
     for action in report.get("recommended_actions") or []:
         print(f"- {action.get('id')}: {action.get('title')}")

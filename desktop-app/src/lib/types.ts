@@ -413,6 +413,8 @@ export interface SupportBundleDetails {
       bundle_diagnostic?: {
         bundle_exists?: boolean;
         missing_required_files: string[];
+        search_root_count?: number;
+        search_roots: string[];
         bundle_candidate_count?: number;
         map_source_candidate_count?: number;
         bundle_candidates: Array<{
@@ -455,6 +457,8 @@ export interface SupportBundleDetails {
       bundle_diagnostic?: {
         bundle_exists?: boolean;
         missing_required_files: string[];
+        search_root_count?: number;
+        search_roots: string[];
         bundle_candidate_count?: number;
         map_source_candidate_count?: number;
         bundle_candidates: Array<{

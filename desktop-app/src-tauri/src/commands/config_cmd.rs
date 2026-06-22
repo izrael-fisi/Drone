@@ -391,6 +391,8 @@ pub struct SupportBundleDiagnosticAction {
 pub struct SupportBundleDiagnostic {
     pub bundle_exists: Option<bool>,
     pub missing_required_files: Vec<String>,
+    pub search_root_count: Option<u64>,
+    pub search_roots: Vec<String>,
     pub bundle_candidate_count: Option<u64>,
     pub map_source_candidate_count: Option<u64>,
     pub bundle_candidates: Vec<SupportBundleDiagnosticBundleCandidate>,
@@ -4182,9 +4184,15 @@ fn support_bundle_diagnostic_from_json(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let search_roots = json_string_array(value.get("search_roots"));
     Some(SupportBundleDiagnostic {
         bundle_exists: value.get("bundle_exists").and_then(|value| value.as_bool()),
         missing_required_files: json_string_array(value.get("missing_required_files")),
+        search_root_count: value
+            .get("search_root_count")
+            .and_then(|value| value.as_u64())
+            .or_else(|| (!search_roots.is_empty()).then_some(search_roots.len() as u64)),
+        search_roots,
         bundle_candidate_count: value
             .get("bundle_candidate_count")
             .and_then(|value| value.as_u64()),
@@ -7656,6 +7664,7 @@ mod tests {
                             "bundle_diagnostic": {
                                 "bundle_exists": false,
                                 "missing_required_files": ["manifest.json", "ortho/map.png", "features/map_features.npz", "index/tiles.sqlite"],
+                                "search_roots": ["/home/user/DroneVisionNav/maps", "/home/user/drone-data/map_bundles"],
                                 "bundle_candidate_count": 1,
                                 "map_source_candidate_count": 1,
                                 "bundle_candidates": [
@@ -7708,6 +7717,7 @@ mod tests {
                             "bundle_diagnostic": {
                                 "bundle_exists": false,
                                 "missing_required_files": ["manifest.json", "ortho/map.png"],
+                                "search_roots": ["/home/user/DroneVisionNav/maps", "/home/user/drone-data/map_bundles"],
                                 "bundle_candidate_count": 1,
                                 "map_source_candidate_count": 1,
                                 "bundle_candidates": [
@@ -8180,6 +8190,11 @@ mod tests {
                 "index/tiles.sqlite".to_string()
             ]
         );
+        assert_eq!(
+            bundle_diagnostic.search_roots[0],
+            "/home/user/DroneVisionNav/maps"
+        );
+        assert_eq!(bundle_diagnostic.search_root_count, Some(2));
         assert_eq!(bundle_diagnostic.bundle_candidate_count, Some(1));
         assert_eq!(
             bundle_diagnostic.bundle_candidates[0].field_proof_warning.as_deref(),

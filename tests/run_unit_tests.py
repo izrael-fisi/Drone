@@ -1754,6 +1754,8 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
         compact = compact_bundle_diagnostic(report, max_items=8)
         if compact["bundle_candidate_count"] < 1:
             raise AssertionError("Expected compact diagnostic to count bundle candidates")
+        if not compact.get("search_roots"):
+            raise AssertionError("Expected compact diagnostic to preserve searched roots")
         if compact["map_source_candidate_count"] < 4:
             raise AssertionError("Expected compact diagnostic to count map source candidates")
         if not any(item.get("requires_import") for item in compact["map_source_candidates"]):
@@ -1805,6 +1807,11 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
         default_source_paths = {item["path"] for item in default_root_report["map_source_candidates"]}
         if str(desktop_map_source) not in default_source_paths:
             raise AssertionError(f"Expected default search roots to include desktop map library, got {default_source_paths}")
+        default_compact = compact_bundle_diagnostic(default_root_report, max_items=3) or {}
+        if default_compact.get("search_root_count", 0) < 1:
+            raise AssertionError("Expected compact diagnostic to report searched-root count")
+        if not any("DroneVisionNav/maps" in root for root in default_compact.get("search_roots", [])):
+            raise AssertionError(f"Expected compact searched roots to prioritize desktop map library, got {default_compact.get('search_roots')}")
 
 
 def test_geospatial_health_report_validates_stac_tiles_and_bounds() -> None:
@@ -6589,6 +6596,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected field preflight output to include recommended bundle actions")
         if "Build and upload the selected Mission Planner terrain bundle." not in missing_bundle_text:
             raise AssertionError("Expected field preflight output to include build/upload recommendation")
+        if "searched roots:" not in missing_bundle_text:
+            raise AssertionError("Expected field preflight output to include searched roots")
 
         invalid_bundle = base / "invalid_bundle"
         invalid_bundle.mkdir()

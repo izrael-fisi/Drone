@@ -946,6 +946,9 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
             if source.get("requires_import"):
                 label_parts.append("import required")
             lines.append(f"Detected map source: {source.get('path')} [{'; '.join(label_parts)}]")
+        search_roots = [str(item) for item in diagnostic.get("search_roots") or [] if str(item)]
+        for root in search_roots[:5]:
+            lines.append(f"Searched bundle/map root: {root}")
         recommendations = [
             item
             for item in diagnostic.get("recommended_actions") or []

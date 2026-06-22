@@ -448,6 +448,10 @@ Status:
   terminal output, and Module Setup cards now render those recommended bundle
   repair actions directly, including copyable validation commands and raw map
   import/build guidance.
+- Done: bundle diagnostics now carry bounded searched-root lists through
+  field-preflight reports, workflow validation, goal-status output, and desktop
+  support/preflight cards so operators can see where map and bundle candidates
+  were looked for.
 - Done: support-bundle and final-readiness parsers backfill that bundle
   diagnostic onto `prepare_bundle` next actions from older field-preflight JSON
   files, so stale downloaded reports still show missing files and candidate

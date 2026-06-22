@@ -6688,6 +6688,18 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                                     ))}
                                   </div>
                                 )}
+                                {action.bundle_diagnostic.search_roots.length > 0 && (
+                                  <div className="space-y-0.5">
+                                    <div className="text-slate-500">
+                                      searched roots {action.bundle_diagnostic.search_root_count ?? action.bundle_diagnostic.search_roots.length}
+                                    </div>
+                                    {action.bundle_diagnostic.search_roots.slice(0, 4).map((root) => (
+                                      <div key={`${action.id ?? "action"}-search-root-${root}`} className="font-mono text-slate-300 break-all">
+                                        {root}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                                 {action.bundle_diagnostic.recommended_actions.length > 0 && (
                                   <div className="space-y-0.5">
                                     <div className="text-slate-500">recommended actions</div>

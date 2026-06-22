@@ -609,6 +609,11 @@ def print_human(report: dict[str, Any]) -> None:
                         if source.get("requires_import"):
                             label_parts.append("import required")
                         print(f"    - {source.get('path')} [{'; '.join(label_parts)}]")
+                search_roots = [str(item) for item in diagnostic.get("search_roots") or [] if str(item)]
+                if search_roots:
+                    print("  searched roots:")
+                    for root in search_roots[:5]:
+                        print(f"    - {root}")
                 recommended = [
                     item
                     for item in diagnostic.get("recommended_actions") or []
