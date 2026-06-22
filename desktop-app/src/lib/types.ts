@@ -808,6 +808,11 @@ export interface Px4PrereqReportFile {
       message?: string;
     }>;
     next_actions: string[];
+    fix_commands?: Array<{
+      label?: string;
+      command?: string;
+      condition?: string;
+    }>;
   };
 }
 

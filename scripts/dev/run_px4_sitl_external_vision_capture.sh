@@ -34,6 +34,7 @@ write_prereq_report() {
     "$report_status" \
     "$session_dir" \
     "$capture_dir" \
+    "$repo_root" \
     "$px4_dir" \
     "$px4_target" \
     "$tmux_session" \
@@ -47,6 +48,7 @@ write_prereq_report() {
 from __future__ import annotations
 
 import json
+import shlex
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
@@ -56,6 +58,7 @@ import sys
     status,
     session_dir,
     capture_dir,
+    repo_root,
     px4_dir,
     px4_target,
     tmux_session,
@@ -73,6 +76,65 @@ checks = [
     {"name": "px4_autopilot_dir", "status": px4_status, "message": px4_message},
     {"name": "tmux_session_available", "status": session_status, "message": session_message},
 ]
+
+
+def fix_command(label: str, command: str, condition: str) -> dict[str, str]:
+    return {"label": label, "command": command, "condition": condition}
+
+
+def q(value: str) -> str:
+    return shlex.quote(value)
+
+
+fix_commands = []
+if tmux_status == "failed":
+    fix_commands.extend(
+        [
+            fix_command("Install tmux with Homebrew", "brew install tmux", "tmux_installed"),
+            fix_command(
+                "Install tmux on Ubuntu/Debian",
+                "sudo apt update && sudo apt install -y tmux",
+                "tmux_installed",
+            ),
+        ]
+    )
+if px4_status == "failed":
+    fix_commands.extend(
+        [
+            fix_command(
+                "Clone PX4-Autopilot to the default path",
+                f"git clone https://github.com/PX4/PX4-Autopilot.git {q(str(Path.home() / 'PX4-Autopilot'))}",
+                "px4_autopilot_dir",
+            ),
+            fix_command(
+                "Point the harness at an existing PX4 checkout",
+                "export VISION_NAV_PX4_AUTOPILOT_DIR=/path/to/PX4-Autopilot",
+                "px4_autopilot_dir",
+            ),
+        ]
+    )
+if session_status == "failed":
+    fix_commands.append(
+        fix_command(
+            "Use a different tmux session name",
+            "export VISION_NAV_PX4_TMUX_SESSION=vision-nav-px4-sitl-2",
+            "tmux_session_available",
+        )
+    )
+if status != "passed":
+    fix_commands.append(
+        fix_command(
+            "Rerun PX4 receiver capture harness",
+            " ".join(
+                [
+                    f"VISION_NAV_SITL_SMOKE_DIR={q(session_dir)}",
+                    f"VISION_NAV_PX4_AUTOPILOT_DIR={q(px4_dir)}",
+                    q(str(Path(repo_root) / "scripts/dev/run_px4_sitl_external_vision_capture.sh")),
+                ]
+            ),
+            "rerun_capture",
+        )
+    )
 report = {
     "schema_version": "vision_nav_px4_sitl_capture_prereqs_v1",
     "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -85,6 +147,7 @@ report = {
     "receiver_report": receiver_report,
     "checks": checks,
     "next_actions": [check["message"] for check in checks if check["status"] == "failed"],
+    "fix_commands": fix_commands,
     "markers": {
         "__VISION_NAV_PX4_SITL_SESSION__": session_dir,
         "__VISION_NAV_PX4_SITL_PREREQS__": str(path),

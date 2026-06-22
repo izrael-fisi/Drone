@@ -138,6 +138,13 @@ pub struct Px4PrereqCheck {
 }
 
 #[derive(Serialize)]
+pub struct Px4PrereqFixCommand {
+    pub label: Option<String>,
+    pub command: Option<String>,
+    pub condition: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct Px4PrereqReport {
     pub status: Option<String>,
     pub generated_at: Option<String>,
@@ -149,6 +156,7 @@ pub struct Px4PrereqReport {
     pub tmux_session: Option<String>,
     pub checks: Vec<Px4PrereqCheck>,
     pub next_actions: Vec<String>,
+    pub fix_commands: Vec<Px4PrereqFixCommand>,
 }
 
 #[derive(Serialize)]
@@ -2657,6 +2665,20 @@ fn px4_prereq_report_from_json(value: &serde_json::Value) -> Option<Px4PrereqRep
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let fix_commands = value
+        .get("fix_commands")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| Px4PrereqFixCommand {
+                    label: json_string(item.get("label")),
+                    command: json_string(item.get("command")),
+                    condition: json_string(item.get("condition")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     Some(Px4PrereqReport {
         status: json_string(value.get("status")),
         generated_at: json_string(value.get("generated_at")),
@@ -2668,6 +2690,7 @@ fn px4_prereq_report_from_json(value: &serde_json::Value) -> Option<Px4PrereqRep
         tmux_session: json_string(value.get("tmux_session")),
         checks,
         next_actions: json_string_array(value.get("next_actions")),
+        fix_commands,
     })
 }
 
@@ -6240,7 +6263,14 @@ mod tests {
                     {"name": "tmux_installed", "status": "failed", "message": "Install tmux."},
                     {"name": "px4_autopilot_dir", "status": "passed", "message": "PX4 found."}
                 ],
-                "next_actions": ["Install tmux."]
+                "next_actions": ["Install tmux."],
+                "fix_commands": [
+                    {
+                        "label": "Install tmux with Homebrew",
+                        "command": "brew install tmux",
+                        "condition": "tmux_installed"
+                    }
+                ]
             })
             .to_string(),
         )
@@ -6266,6 +6296,11 @@ mod tests {
             Some("tmux_installed")
         );
         assert_eq!(reports[0].report.next_actions, vec!["Install tmux."]);
+        assert_eq!(reports[0].report.fix_commands.len(), 1);
+        assert_eq!(
+            reports[0].report.fix_commands[0].command.as_deref(),
+            Some("brew install tmux")
+        );
     }
 
     #[test]

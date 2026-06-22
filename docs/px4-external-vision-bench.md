@@ -344,9 +344,12 @@ log, `px4_sitl_evidence_session.json`, and
 `receiver_capture/README.md`. It also writes
 `px4_sitl_capture_prereqs.json` and prints
 `__VISION_NAV_PX4_SITL_PREREQS__=...` so the missing checks are visible in app
-logs and setup notes. Fix the prerequisite and rerun the same command; the
-scaffold is not receiver proof until `receiver_evidence.json` is generated from
-real `vehicle_visual_odometry` and `mavlink status` captures.
+logs and setup notes. That JSON includes copyable `fix_commands` for common
+cases such as installing `tmux`, cloning PX4, pointing the harness at an
+existing PX4 checkout, or rerunning the same evidence session. Fix the
+prerequisite and rerun the same command; the scaffold is not receiver proof
+until `receiver_evidence.json` is generated from real `vehicle_visual_odometry`
+and `mavlink status` captures.
 
 Useful overrides:
 

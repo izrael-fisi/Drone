@@ -84,8 +84,8 @@ Status:
   reports from `~/DroneTransfer/from-pi/px4-sitl-evidence/` with sample counts,
   latest sample age, MAVLink version, and report issues.
 - Done: Module Setup lists downloaded PX4 SITL capture prerequisite JSON
-  reports from the same folder, showing failed setup checks and copyable next
-  actions separately from receiver proof.
+  reports from the same folder, showing failed setup checks, copyable next
+  actions, and copyable fix commands separately from receiver proof.
 - Done: `vision-nav-check-px4-params` and `scripts/pi/check_px4_params.sh`
   evaluate exported PX4 parameter files for external-vision bench readiness
   without modifying the flight controller.
@@ -765,7 +765,7 @@ Status:
 - Done: Module Setup parses `__VISION_NAV_PX4_SITL_PREREQS__=...` from
   autonomy-readiness and evidence-workflow output, downloads the prerequisite
   JSON beside PX4 receiver reports, and shows it as a copyable `px4 prereqs`
-  workflow artifact.
+  workflow artifact with setup fix commands when present.
 - Done: `scripts/dev/run_local_autonomy_readiness_audit.sh` scans the
   conventional downloaded desktop artifact folders, writes the same strict
   autonomy-readiness report locally, includes the latest downloaded

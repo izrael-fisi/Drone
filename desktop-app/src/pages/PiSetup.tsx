@@ -2562,6 +2562,38 @@ function Px4PrereqReportList({
                   </button>
                 </div>
               )}
+              {(file.report.fix_commands ?? []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigator.clipboard.writeText(
+                        (file.report.fix_commands ?? [])
+                          .map((fix) => fix.command)
+                          .filter((command): command is string => Boolean(command))
+                          .join("\n"),
+                      )
+                    }
+                    className="btn-secondary px-1.5 py-0.5 text-[10px]"
+                    title="Copy PX4 prerequisite fix commands"
+                  >
+                    <Terminal size={9} />
+                    fix commands
+                  </button>
+                  {(file.report.fix_commands ?? []).slice(0, 4).map((fix, index) => (
+                    <button
+                      key={`${file.path}-fix-${fix.condition ?? index}`}
+                      type="button"
+                      onClick={() => fix.command && navigator.clipboard.writeText(fix.command)}
+                      className="btn-secondary px-1.5 py-0.5 text-[10px] max-w-full"
+                      title={fix.command ?? "PX4 prerequisite command"}
+                    >
+                      <Copy size={9} />
+                      <span className="truncate">{formatReadinessLabel(fix.label ?? fix.condition ?? "command")}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
