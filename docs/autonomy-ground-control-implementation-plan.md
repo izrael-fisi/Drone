@@ -624,10 +624,10 @@ Status:
 - Done: Module Setup can copy all shell commands from an autonomy-readiness
   report's next actions in one click, while preserving per-action command copy.
 - Done: autonomy-readiness JSON reports include a machine-readable
-  `command_bundle` with next-action commands, pending field replay capture
-  commands, and pending field replay registration commands for downstream
-  support tooling, and Module Setup consumes that bundle for bulk command copy
-  plus saved setup-report exports.
+  `command_bundle` with the guided evidence-workflow command, next-action
+  commands, pending field replay capture commands, and pending field replay
+  registration commands for downstream support tooling, and Module Setup
+  consumes that bundle for bulk command copy plus saved setup-report exports.
 - Done: the Tauri report parser now preserves
   `field_collection_capture_commands` from downloaded autonomy-readiness
   reports, so Module Setup bulk-copy and saved setup reports retain the exact
@@ -751,6 +751,10 @@ Status:
   `./scripts/pi/run_autonomy_evidence_workflow.sh` as the guided all-in-one
   workflow option, while keeping the exact proof-runbook commands below it for
   operators who want to run each prerequisite manually.
+- Done: autonomy-readiness handoffs and Module Setup report cards now preserve
+  that guided workflow command from `command_bundle.guided_workflow_commands`,
+  so downloaded reports keep both the all-in-one workflow and the individual
+  proof-runbook commands.
 - Done: `scripts/mac/goal_status.sh` now embeds that autonomy proof summary
   before its transfer-folder and Pi connectivity checks so one operator command
   reports both missing proof gates and setup connectivity.

@@ -3666,9 +3666,15 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         if "./scripts/pi/run_threshold_tuning_report.sh" not in missing_threshold_phases["method_thresholds"]["commands"]:
             raise AssertionError("autonomy readiness proof runbook missing threshold command")
         command_bundle = missing_threshold["command_bundle"]
+        if "./scripts/pi/run_autonomy_evidence_workflow.sh" not in command_bundle["guided_workflow_commands"]:
+            raise AssertionError("autonomy readiness JSON missing guided workflow command bundle")
         if "./scripts/pi/run_threshold_tuning_report.sh" not in command_bundle["next_action_commands"]:
             raise AssertionError("autonomy readiness JSON missing next-action command bundle")
         handoff = render_handoff_markdown(missing_threshold)
+        if "Guided workflow command:" not in handoff:
+            raise AssertionError("autonomy handoff missing guided workflow command section")
+        if "./scripts/pi/run_autonomy_evidence_workflow.sh" not in handoff:
+            raise AssertionError("autonomy handoff missing guided workflow command")
         if "Goal completion: waiting on proof" not in handoff:
             raise AssertionError("autonomy handoff waiting state")
         if "Proof items:" not in handoff:

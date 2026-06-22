@@ -229,9 +229,14 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
     command_groups = command_bundle(report, field_plan)
     if command_groups:
         lines.extend(["", "## Command Bundle", ""])
+        guided_workflow_commands = command_groups.get("guided_workflow") or []
+        if guided_workflow_commands:
+            lines.extend(["Guided workflow command:", "", "```bash"])
+            lines.extend(guided_workflow_commands)
+            lines.append("```")
         next_action_commands = command_groups.get("next_actions") or []
         if next_action_commands:
-            lines.extend(["Next-action commands:", "", "```bash"])
+            lines.extend(["", "Next-action commands:", "", "```bash"])
             lines.extend(next_action_commands)
             lines.append("```")
         field_capture_commands = command_groups.get("field_collection_capture") or []
@@ -422,6 +427,7 @@ def bench_subcheck_checklist(report: dict[str, Any]) -> list[dict[str, str]]:
 def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) -> dict[str, list[str]]:
     report_bundle = report.get("command_bundle") if isinstance(report.get("command_bundle"), dict) else {}
     actions = report.get("next_actions") if isinstance(report.get("next_actions"), list) else []
+    guided_workflow_commands = json_string_list(report_bundle.get("guided_workflow_commands"))
     next_action_commands = unique_strings(
         [
             *json_string_list(report_bundle.get("next_action_commands")),
@@ -456,6 +462,8 @@ def command_bundle(report: dict[str, Any], field_plan: dict[str, Any] | None) ->
             ]
         )
     result: dict[str, list[str]] = {}
+    if guided_workflow_commands:
+        result["guided_workflow"] = guided_workflow_commands
     if next_action_commands:
         result["next_actions"] = next_action_commands
     if field_capture_commands:

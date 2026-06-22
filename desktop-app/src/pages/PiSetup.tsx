@@ -1146,6 +1146,7 @@ function AutonomyReadinessReportList({
               ...uniqueActionCommands(report.next_actions),
               ...(report.command_bundle?.next_action_commands ?? []),
             ]);
+            const guidedWorkflowCommands = uniqueCommands(report.command_bundle?.guided_workflow_commands ?? []);
             const readinessWorkflowArtifacts = [
               {
                 label: "workflow",
@@ -1570,8 +1571,23 @@ function AutonomyReadinessReportList({
                   {check.message && <span className="text-slate-400 truncate">{check.message}</span>}
                 </div>
               ))}
-              {(report.next_actions.length > 0 || nextActionCommands.length > 0) && (
+              {(guidedWorkflowCommands.length > 0 || report.next_actions.length > 0 || nextActionCommands.length > 0) && (
                 <div className="space-y-1 border-t border-border pt-2">
+                  {guidedWorkflowCommands.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-cyan-500/20 bg-cyan-500/5 px-2 py-1">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-cyan-300">
+                        Guided workflow
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(guidedWorkflowCommands.join("\n"))}
+                        className="font-mono text-[10px] text-cyan-400 hover:text-cyan-300 truncate max-w-full"
+                        title="Copy guided evidence workflow command"
+                      >
+                        {guidedWorkflowCommands[0]}
+                      </button>
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-1.5">
                     <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
                       Next actions

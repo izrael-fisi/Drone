@@ -330,6 +330,7 @@ def build_command_bundle(
     *,
     field_collection_plan_path: str | Path | None = None,
 ) -> dict[str, Any]:
+    guided_workflow_commands = ["./scripts/pi/run_autonomy_evidence_workflow.sh"] if next_actions else []
     next_action_commands = unique_strings(
         action.get("command")
         for action in next_actions
@@ -338,11 +339,13 @@ def build_command_bundle(
     field_collection_capture_commands = field_collection_commands(field_collection_plan_path, "capture_command")
     field_collection_registration_commands = field_collection_commands(field_collection_plan_path, "register_command")
     return {
+        "guided_workflow_commands": guided_workflow_commands,
         "next_action_commands": next_action_commands,
         "field_collection_capture_commands": field_collection_capture_commands,
         "field_collection_registration_commands": field_collection_registration_commands,
         "command_count": (
-            len(next_action_commands)
+            len(guided_workflow_commands)
+            + len(next_action_commands)
             + len(field_collection_capture_commands)
             + len(field_collection_registration_commands)
         ),
