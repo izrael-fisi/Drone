@@ -7,7 +7,11 @@ import shlex
 from typing import Any
 
 from vision_nav.field_capture_metadata import audit_capture_metadata
-from vision_nav.field_collection_plan import metadata_update_command_for_condition, metadata_update_command_is_detailed
+from vision_nav.field_collection_plan import (
+    metadata_update_command_for_condition,
+    metadata_update_command_is_detailed,
+    preflight_command_for_condition,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,6 +71,9 @@ def select_next_field_condition(plan_path: str | Path) -> dict[str, Any]:
             condition=condition_key,
             capture_metadata=metadata if isinstance(metadata, dict) else None,
         )
+    preflight_command = str(condition.get("preflight_command") or "").strip()
+    if not preflight_command and condition_key:
+        preflight_command = preflight_command_for_condition(plan_path=path, condition=condition_key)
     return {
         "status": "selected",
         "plan_path": str(path),
@@ -76,6 +83,7 @@ def select_next_field_condition(plan_path: str | Path) -> dict[str, Any]:
         "capture_output_dir": condition.get("capture_output_dir"),
         "source_log": condition.get("source_log"),
         "runtime_status_path": condition.get("runtime_status_path"),
+        "preflight_command": preflight_command,
         "capture_command": condition.get("capture_command"),
         "register_command": condition.get("register_command"),
         "capture_metadata_status": "passed" if not metadata_issues else "failed",
@@ -136,6 +144,10 @@ def shell_assignments(selection: dict[str, Any]) -> str:
                 shell_assignment(
                     "VISION_NAV_FIELD_METADATA_UPDATE_COMMAND",
                     str(selection.get("metadata_update_command") or ""),
+                ),
+                shell_assignment(
+                    "VISION_NAV_FIELD_PREFLIGHT_COMMAND",
+                    str(selection.get("preflight_command") or ""),
                 ),
             ]
         )

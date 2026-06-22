@@ -5754,6 +5754,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
         )
         if "update_field_capture_metadata.sh" not in selection["metadata_update_command"]:
             raise AssertionError("Expected selected field condition to include metadata update command")
+        if "preflight_field_capture.sh" not in selection["preflight_command"]:
+            raise AssertionError("Expected selected field condition to include preflight command")
         if "VISION_NAV_FIELD_CONDITION=good_texture" not in selection["metadata_update_command"]:
             raise AssertionError("Expected metadata update command to target selected condition")
         if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in selection["metadata_update_command"]:
@@ -5763,6 +5765,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected shell assignments to mark the selected field condition")
         if "VISION_NAV_FIELD_METADATA_UPDATE_COMMAND" not in selection_shell:
             raise AssertionError("Expected shell assignments to export metadata update command")
+        if "VISION_NAV_FIELD_PREFLIGHT_COMMAND" not in selection_shell:
+            raise AssertionError("Expected shell assignments to export preflight command")
 
         ready_bundle = base / "mission_bundle"
         ready_bundle.mkdir()
@@ -5816,20 +5820,29 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "./scripts/pi/update_field_capture_metadata.sh"
         )
         legacy_plan["next_condition"]["metadata_update_command"] = legacy_command
+        legacy_plan["next_condition"].pop("preflight_command", None)
         for item in legacy_plan["conditions"]:
             if item["condition"] == "good_texture":
                 item["metadata_update_command"] = legacy_command
+                item.pop("preflight_command", None)
         legacy_plan_path = base / "field_collection_plan_legacy_metadata.json"
         legacy_plan_path.write_text(json.dumps(legacy_plan))
         legacy_selection = select_next_field_condition(legacy_plan_path)
         if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in legacy_selection["metadata_update_command"]:
             raise AssertionError("Expected workflow selection to enrich stale metadata update commands")
-        readiness_next = readiness_field_collection_next_condition(legacy_plan)
+        if "VISION_NAV_FIELD_COLLECTION_PLAN" not in legacy_selection["preflight_command"]:
+            raise AssertionError("Expected workflow selection to backfill stale preflight commands")
+        readiness_next = readiness_field_collection_next_condition(legacy_plan, plan_path=legacy_plan_path)
         if not readiness_next or "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in readiness_next["metadata_update_command"]:
             raise AssertionError("Expected readiness next condition to enrich stale metadata update commands")
+        if not readiness_next or "VISION_NAV_FIELD_COLLECTION_PLAN" not in readiness_next["preflight_command"]:
+            raise AssertionError("Expected readiness next condition to backfill stale preflight commands")
+        legacy_plan["_field_collection_plan_path"] = str(legacy_plan_path)
         handoff_next = handoff_field_collection_next_condition(legacy_plan)
         if not handoff_next or "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in handoff_next["metadata_update_command"]:
             raise AssertionError("Expected handoff next condition to enrich stale metadata update commands")
+        if not handoff_next or "VISION_NAV_FIELD_COLLECTION_PLAN" not in handoff_next["preflight_command"]:
+            raise AssertionError("Expected handoff next condition to backfill stale preflight commands")
 
         log_dir = base / "captures"
         log_dir.mkdir()

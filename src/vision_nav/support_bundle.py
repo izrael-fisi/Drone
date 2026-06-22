@@ -15,6 +15,7 @@ from vision_nav.ardupilot_params import evaluate_ardupilot_param_file
 from vision_nav.autonomy_evidence_workflow import validate_workflow_report
 from vision_nav.bench_readiness import evaluate_bench_readiness
 from vision_nav.bundle import load_manifest
+from vision_nav.field_collection_plan import preflight_command_for_condition
 from vision_nav.geospatial_health import write_geospatial_health_report
 from vision_nav.px4_params import evaluate_px4_param_file
 from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sitl_evidence
@@ -1071,7 +1072,19 @@ def copy_field_evidence_reports(paths: list[str], support_dir: Path) -> dict[str
     }
 
 
-def summarize_field_collection_condition(item: dict[str, Any], *, include_commands: bool = False) -> dict[str, Any]:
+def summarize_field_collection_condition(
+    item: dict[str, Any],
+    *,
+    include_commands: bool = False,
+    plan_path: str | Path | None = None,
+) -> dict[str, Any]:
+    preflight_command = item.get("preflight_command")
+    condition = item.get("condition")
+    if include_commands and not preflight_command and plan_path is not None and condition:
+        preflight_command = preflight_command_for_condition(
+            plan_path=plan_path,
+            condition=str(condition),
+        )
     summary = {
         "condition": item.get("condition"),
         "label": item.get("label"),
@@ -1083,7 +1096,7 @@ def summarize_field_collection_condition(item: dict[str, Any], *, include_comman
         "source_log": item.get("source_log"),
         "capture_output_dir": item.get("capture_output_dir"),
         "runtime_status_path": item.get("runtime_status_path"),
-        "has_preflight_command": bool(item.get("preflight_command") or item.get("has_preflight_command")),
+        "has_preflight_command": bool(preflight_command or item.get("has_preflight_command")),
         "has_capture_command": bool(item.get("capture_command") or item.get("has_capture_command")),
         "has_metadata_update_command": bool(
             item.get("metadata_update_command") or item.get("has_metadata_update_command")
@@ -1091,8 +1104,8 @@ def summarize_field_collection_condition(item: dict[str, Any], *, include_comman
         "has_register_command": bool(item.get("register_command") or item.get("has_register_command")),
     }
     if include_commands:
-        if item.get("preflight_command"):
-            summary["preflight_command"] = item.get("preflight_command")
+        if preflight_command:
+            summary["preflight_command"] = preflight_command
         if item.get("capture_command"):
             summary["capture_command"] = command_with_runtime_status_read(str(item.get("capture_command")))
         if item.get("metadata_update_command"):
@@ -1114,11 +1127,11 @@ def summarize_field_collection_plan(report: dict[str, Any], *, report_path: Path
     for item in report.get("conditions") or []:
         if not isinstance(item, dict):
             continue
-        conditions.append(summarize_field_collection_condition(item, include_commands=True))
+        conditions.append(summarize_field_collection_condition(item, include_commands=True, plan_path=report_path))
     pending_conditions = [item for item in conditions if item.get("status") != "registered"]
     raw_next_condition = report.get("next_condition") if isinstance(report.get("next_condition"), dict) else None
     next_condition = (
-        summarize_field_collection_condition(raw_next_condition, include_commands=True)
+        summarize_field_collection_condition(raw_next_condition, include_commands=True, plan_path=report_path)
         if raw_next_condition
         else (pending_conditions[0] if pending_conditions else None)
     )

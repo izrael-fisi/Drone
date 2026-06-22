@@ -371,6 +371,7 @@ except Exception:  # pragma: no cover - keeps this formatter useful from partial
 FIELD_COLLECTION_CHECKS = {"field_collection_plan", "field_evidence_proof", "threshold_tuning"}
 SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
 FIELD_COLLECTION_COMMAND_APP_ACTIONS = {
+    "preflight": "Module Setup > Field Capture Preflight",
     "capture": "Module Setup > Field Log Capture",
     "metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
     "registration": "Module Setup > Field Evidence Case > Register",
@@ -862,6 +863,11 @@ if field_conditions or next_field_condition:
             print(f"  terrain log: {source_log}")
         if runtime_status_path:
             print(f"  runtime status: {runtime_status_path}")
+        print_multiline_command(
+            "  preflight command:",
+            next_field_condition.get("preflight_command"),
+            FIELD_COLLECTION_COMMAND_APP_ACTIONS["preflight"],
+        )
         print_multiline_command(
             "  capture command:",
             next_field_condition.get("capture_command"),

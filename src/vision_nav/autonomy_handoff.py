@@ -5,7 +5,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from vision_nav.field_collection_plan import metadata_update_command_for_condition, metadata_update_command_is_detailed
+from vision_nav.field_collection_plan import (
+    metadata_update_command_for_condition,
+    metadata_update_command_is_detailed,
+    preflight_command_for_condition,
+)
 
 
 COMMAND_GROUP_DESKTOP_ACTIONS = {
@@ -471,6 +475,7 @@ def load_field_collection_plan(
         return None
     if not isinstance(plan, dict) or plan.get("schema_version") != "vision_nav_field_collection_plan_v1":
         return None
+    plan["_field_collection_plan_path"] = str(path)
     return plan
 
 
@@ -505,6 +510,14 @@ def field_collection_next_condition(
 
 def normalize_field_collection_condition(item: dict[str, Any], *, plan: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized = dict(item)
+    preflight_command = str(normalized.get("preflight_command") or "")
+    condition = normalized.get("condition")
+    plan_path = (plan or {}).get("_field_collection_plan_path") or (plan or {}).get("output_path") or (plan or {}).get("path")
+    if not preflight_command and plan_path and condition:
+        normalized["preflight_command"] = preflight_command_for_condition(
+            plan_path=str(plan_path),
+            condition=str(condition),
+        )
     command = normalized.get("capture_command")
     if isinstance(command, str) and command:
         normalized["capture_command"] = command_with_runtime_status_read(command)

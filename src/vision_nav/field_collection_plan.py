@@ -238,9 +238,11 @@ def condition_plan(
     )
     metadata_update_command = shell_command(metadata_update_env, "./scripts/pi/update_field_capture_metadata.sh")
     capture_command = shell_command(capture_env, "./scripts/pi/run_terrain_nav_loop.sh")
-    preflight_env = {"VISION_NAV_FIELD_CONDITION": condition}
-    if collection_plan_path is not None:
-        preflight_env["VISION_NAV_FIELD_COLLECTION_PLAN"] = str(collection_plan_path)
+    preflight_command = (
+        preflight_command_for_condition(plan_path=collection_plan_path, condition=condition)
+        if collection_plan_path is not None
+        else shell_command({"VISION_NAV_FIELD_CONDITION": condition}, "./scripts/pi/preflight_field_capture.sh")
+    )
     return {
         "condition": condition,
         "label": label_for_condition(condition),
@@ -258,7 +260,7 @@ def condition_plan(
         "capture_metadata": capture_metadata,
         "capture_checklist": capture_checklist,
         "capture_env": capture_env,
-        "preflight_command": shell_command(preflight_env, "./scripts/pi/preflight_field_capture.sh"),
+        "preflight_command": preflight_command,
         "capture_command": command_with_runtime_status_read(capture_command),
         "metadata_update_env": metadata_update_env,
         "metadata_update_command": metadata_update_command,
@@ -280,6 +282,16 @@ def metadata_update_command_for_condition(
             capture_metadata=capture_metadata,
         ),
         "./scripts/pi/update_field_capture_metadata.sh",
+    )
+
+
+def preflight_command_for_condition(*, plan_path: str | Path, condition: str) -> str:
+    return shell_command(
+        {
+            "VISION_NAV_FIELD_COLLECTION_PLAN": str(plan_path),
+            "VISION_NAV_FIELD_CONDITION": condition,
+        },
+        "./scripts/pi/preflight_field_capture.sh",
     )
 
 

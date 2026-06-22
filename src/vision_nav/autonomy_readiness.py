@@ -22,7 +22,11 @@ from vision_nav.bench_readiness import (
 )
 from vision_nav.autonomy_evidence_workflow import REQUIRED_WORKFLOW_STEPS, validate_workflow_report
 from vision_nav.field_conditions import REQUIRED_FIELD_CONDITIONS
-from vision_nav.field_collection_plan import metadata_update_command_for_condition, metadata_update_command_is_detailed
+from vision_nav.field_collection_plan import (
+    metadata_update_command_for_condition,
+    metadata_update_command_is_detailed,
+    preflight_command_for_condition,
+)
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 
 
@@ -692,7 +696,11 @@ def field_collection_commands(path: str | Path | None, key: str) -> list[str]:
     for item in conditions:
         if not isinstance(item, dict) or item.get("status") == "registered":
             continue
-        normalized = condition_with_metadata_update_command(compact_field_collection_condition(item), plan)
+        normalized = condition_with_metadata_update_command(
+            compact_field_collection_condition(item),
+            plan,
+            plan_path=source,
+        )
         commands.append(normalized.get(key))
     return unique_strings(commands)
 
@@ -1291,7 +1299,7 @@ def field_collection_next_condition_from_path(path: str | Path | None) -> dict[s
         return None
     if not isinstance(plan, dict):
         return None
-    return field_collection_next_condition(plan)
+    return field_collection_next_condition(plan, plan_path=source)
 
 
 def enrich_action_with_field_capture(
@@ -1940,7 +1948,7 @@ def field_collection_plan_check_from_plan(plan: dict[str, Any], *, source: str) 
         "missing_conditions": missing_conditions,
         "missing_traceability": missing_traceability,
     }
-    next_condition = field_collection_next_condition(plan)
+    next_condition = field_collection_next_condition(plan, plan_path=source)
     if next_condition:
         details["next_condition"] = next_condition
     if missing_conditions:
@@ -2003,16 +2011,28 @@ def field_collection_plan_check_from_summary(summary: dict[str, Any]) -> dict[st
     return failed("field_collection_plan", f"Field collection plan proof in the support bundle is {status}.", details)
 
 
-def field_collection_next_condition(plan: dict[str, Any]) -> dict[str, Any] | None:
+def field_collection_next_condition(
+    plan: dict[str, Any],
+    *,
+    plan_path: str | Path | None = None,
+) -> dict[str, Any] | None:
     raw_next = plan.get("next_condition")
     if isinstance(raw_next, dict):
-        return condition_with_metadata_update_command(compact_field_collection_condition(raw_next), plan)
+        return condition_with_metadata_update_command(
+            compact_field_collection_condition(raw_next),
+            plan,
+            plan_path=plan_path,
+        )
     conditions = plan.get("conditions")
     if not isinstance(conditions, list):
         return None
     for item in conditions:
         if isinstance(item, dict) and item.get("status") != "registered":
-            return condition_with_metadata_update_command(compact_field_collection_condition(item), plan)
+            return condition_with_metadata_update_command(
+                compact_field_collection_condition(item),
+                plan,
+                plan_path=plan_path,
+            )
     return None
 
 
@@ -2035,22 +2055,30 @@ def compact_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
     return {key: str(item[key]) for key in keys if item.get(key) is not None}
 
 
-def condition_with_metadata_update_command(condition: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+def condition_with_metadata_update_command(
+    condition: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    plan_path: str | Path | None = None,
+) -> dict[str, Any]:
     updated = dict(condition)
+    condition_name = condition.get("condition")
+    if not updated.get("preflight_command") and condition_name and plan_path is not None:
+        updated["preflight_command"] = preflight_command_for_condition(
+            plan_path=plan_path,
+            condition=str(condition_name),
+        )
     if updated.get("capture_command"):
         updated["capture_command"] = command_with_runtime_status_read(str(updated["capture_command"]))
-    if metadata_update_command_is_detailed(str(updated.get("metadata_update_command") or "")):
-        return updated
-    condition_name = condition.get("condition")
-    manifest_path = plan.get("manifest_path")
-    if not condition_name or not manifest_path:
-        return updated
-    capture_metadata = item_capture_metadata(condition, plan)
-    updated["metadata_update_command"] = metadata_update_command_for_condition(
-        manifest_path=str(manifest_path),
-        condition=str(condition_name),
-        capture_metadata=capture_metadata,
-    )
+    if not metadata_update_command_is_detailed(str(updated.get("metadata_update_command") or "")):
+        manifest_path = plan.get("manifest_path")
+        if condition_name and manifest_path:
+            capture_metadata = item_capture_metadata(condition, plan)
+            updated["metadata_update_command"] = metadata_update_command_for_condition(
+                manifest_path=str(manifest_path),
+                condition=str(condition_name),
+                capture_metadata=capture_metadata,
+            )
     return updated
 
 
