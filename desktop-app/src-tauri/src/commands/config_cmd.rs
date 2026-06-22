@@ -68,6 +68,13 @@ pub struct SupportBundleSummary {
     pub rosbag_export_validation_topic_count: Option<u64>,
     pub rosbag2_cli_review_status: Option<String>,
     pub rosbag2_cli_review_report_count: Option<u64>,
+    pub evidence_workflow_status: Option<String>,
+    pub evidence_workflow_validation_status: Option<String>,
+    pub evidence_workflow_runtime_status: Option<String>,
+    pub evidence_workflow_provenance_status: Option<String>,
+    pub evidence_workflow_step_count: Option<u64>,
+    pub evidence_workflow_issue_count: Option<u64>,
+    pub evidence_workflow_repo_commit: Option<String>,
     pub bench_readiness_status: Option<String>,
     pub bench_readiness_failed_count: Option<u64>,
     pub bench_readiness_degraded_count: Option<u64>,
@@ -897,6 +904,7 @@ pub struct SupportBundleDetails {
     pub threshold_tuning_reports: Vec<SupportBundleThresholdTuningReport>,
     pub rosbag_export_validation_reports: Vec<SupportBundleRosbagExportValidationReport>,
     pub rosbag2_cli_review_reports: Vec<SupportBundleRosbag2CliReviewReport>,
+    pub autonomy_evidence_workflow_validation: Option<AutonomyEvidenceWorkflowValidationSummary>,
     pub bench_readiness: Option<SupportBundleBenchReadinessReport>,
     pub artifacts: Vec<SupportBundleArtifactEntry>,
     pub entry_count: usize,
@@ -1222,6 +1230,9 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut threshold_tuning_reports = Vec::new();
     let mut rosbag_export_validation_reports = Vec::new();
     let mut rosbag2_cli_review_reports = Vec::new();
+    let mut autonomy_evidence_workflow_validation = manifest
+        .pointer("/autonomy_evidence_workflow/validation_summary")
+        .and_then(workflow_validation_summary_from_json);
     let mut artifacts = Vec::new();
     let mut bench_readiness = manifest
         .get("bench_readiness")
@@ -1237,6 +1248,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         if name.starts_with("summaries/")
             && name.ends_with(".summary.json")
             && !name.contains("/replay_gates/")
+            && !name.starts_with("summaries/autonomy_evidence_workflow/")
         {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 logs.push(log_summary_from_json(&name, &value));
@@ -1302,6 +1314,14 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 rosbag2_cli_review_reports.push(rosbag2_cli_review_report_from_json(&value));
             }
+        } else if name == "summaries/autonomy_evidence_workflow/workflow_validation.summary.json"
+            || name == "summaries/autonomy_evidence_workflow/workflow_validation.computed.json"
+        {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                if let Some(summary) = workflow_validation_summary_from_json(&value) {
+                    autonomy_evidence_workflow_validation = Some(summary);
+                }
+            }
         } else if name == "summaries/bench_readiness.json" {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 bench_readiness = Some(bench_readiness_report_from_json(&value));
@@ -1332,6 +1352,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         threshold_tuning_reports,
         rosbag_export_validation_reports,
         rosbag2_cli_review_reports,
+        autonomy_evidence_workflow_validation,
         bench_readiness,
         artifacts,
         entry_count,
@@ -4167,6 +4188,11 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
     if lower_name.starts_with("summaries/rosbag2_cli_reviews/") && lower_name.ends_with(".json") {
         return Some("rosbag2 cli review".to_string());
     }
+    if lower_name.starts_with("summaries/autonomy_evidence_workflow/")
+        && lower_name.ends_with(".json")
+    {
+        return Some("evidence workflow summary".to_string());
+    }
     if lower_name == "summaries/bench_readiness.json" {
         return Some("bench readiness report".to_string());
     }
@@ -4190,6 +4216,9 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
         }
         if lower_name.starts_with("extras/rosbag2_cli_reviews/") {
             return Some("rosbag2 cli artifact".to_string());
+        }
+        if lower_name.starts_with("extras/autonomy_evidence_workflow/") {
+            return Some("evidence workflow artifact".to_string());
         }
         return Some("extra artifact".to_string());
     }
@@ -4345,9 +4374,56 @@ fn gnss_denied_plan_summary_status(manifest: &serde_json::Value) -> Option<Strin
     })
 }
 
+fn workflow_validation_check<'a>(
+    validation_summary: Option<&'a serde_json::Value>,
+    name: &str,
+) -> Option<&'a serde_json::Value> {
+    validation_summary
+        .and_then(|value| value.get("checks"))
+        .and_then(|value| value.as_array())
+        .and_then(|checks| {
+            checks.iter().find(|check| {
+                check
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|check_name| check_name == name)
+            })
+        })
+}
+
+fn workflow_validation_check_status(
+    validation_summary: Option<&serde_json::Value>,
+    name: &str,
+) -> Option<String> {
+    workflow_validation_check(validation_summary, name)
+        .and_then(|check| json_string(check.get("status")))
+}
+
+fn workflow_validation_provenance_commit(
+    validation_summary: Option<&serde_json::Value>,
+) -> Option<String> {
+    json_string(
+        validation_summary
+            .and_then(|value| value.get("workflow_provenance"))
+            .and_then(|value| value.get("repo_commit")),
+    )
+    .or_else(|| {
+        let check = workflow_validation_check(validation_summary, "workflow_provenance")?;
+        json_string(check.get("repo_commit")).or_else(|| {
+            json_string(
+                check
+                    .get("details")
+                    .and_then(|value| value.get("repo_commit")),
+            )
+        })
+    })
+}
+
 fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<SupportBundleSummary> {
     let health = manifest.pointer("/bundle/health");
     let provenance = manifest.pointer("/bundle/health/source_provenance");
+    let evidence_workflow_validation =
+        manifest.pointer("/autonomy_evidence_workflow/validation_summary");
     let source_name = json_string(provenance.and_then(|value| value.get("original_file")))
         .or_else(|| json_string(provenance.and_then(|value| value.get("map_name"))))
         .or_else(|| json_string(provenance.and_then(|value| value.get("orthophoto_path"))));
@@ -4471,6 +4547,28 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         rosbag2_cli_review_report_count: manifest
             .pointer("/rosbag2_cli_reviews/report_count")
             .and_then(|value| value.as_u64()),
+        evidence_workflow_status: json_string(
+            manifest.pointer("/autonomy_evidence_workflow/status"),
+        ),
+        evidence_workflow_validation_status: json_string(
+            evidence_workflow_validation.and_then(|value| value.get("status")),
+        ),
+        evidence_workflow_runtime_status: json_string(
+            evidence_workflow_validation.and_then(|value| value.get("workflow_status")),
+        ),
+        evidence_workflow_provenance_status: workflow_validation_check_status(
+            evidence_workflow_validation,
+            "workflow_provenance",
+        ),
+        evidence_workflow_step_count: evidence_workflow_validation
+            .and_then(|value| value.get("step_count"))
+            .and_then(|value| value.as_u64()),
+        evidence_workflow_issue_count: evidence_workflow_validation
+            .and_then(|value| value.get("issue_count"))
+            .and_then(|value| value.as_u64()),
+        evidence_workflow_repo_commit: workflow_validation_provenance_commit(
+            evidence_workflow_validation,
+        ),
         bench_readiness_status: json_string(manifest.pointer("/bench_readiness/status")),
         bench_readiness_failed_count: manifest
             .pointer("/bench_readiness/summary/failed")
@@ -4495,6 +4593,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.threshold_tuning_status.is_none()
         && summary.rosbag_export_validation_status.is_none()
         && summary.rosbag2_cli_review_status.is_none()
+        && summary.evidence_workflow_status.is_none()
         && summary.bench_readiness_status.is_none()
     {
         return None;
@@ -4767,6 +4866,28 @@ mod tests {
                 "status": "passed",
                 "report_count": 1
             },
+            "autonomy_evidence_workflow": {
+                "status": "degraded",
+                "validation_summary": {
+                    "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
+                    "status": "degraded",
+                    "workflow_status": "failed",
+                    "step_count": 12,
+                    "issue_count": 2,
+                    "workflow_provenance": {
+                        "repo_commit": "abcdef123456"
+                    },
+                    "checks": [
+                        {
+                            "name": "workflow_provenance",
+                            "status": "passed",
+                            "details": {
+                                "repo_commit": "abcdef123456"
+                            }
+                        }
+                    ]
+                }
+            },
             "bench_readiness": {
                 "status": "degraded",
                 "summary": {
@@ -4855,6 +4976,28 @@ mod tests {
         assert_eq!(summary.rosbag_export_validation_topic_count, Some(3));
         assert_eq!(summary.rosbag2_cli_review_status.as_deref(), Some("passed"));
         assert_eq!(summary.rosbag2_cli_review_report_count, Some(1));
+        assert_eq!(
+            summary.evidence_workflow_status.as_deref(),
+            Some("degraded")
+        );
+        assert_eq!(
+            summary.evidence_workflow_validation_status.as_deref(),
+            Some("degraded")
+        );
+        assert_eq!(
+            summary.evidence_workflow_runtime_status.as_deref(),
+            Some("failed")
+        );
+        assert_eq!(
+            summary.evidence_workflow_provenance_status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(summary.evidence_workflow_step_count, Some(12));
+        assert_eq!(summary.evidence_workflow_issue_count, Some(2));
+        assert_eq!(
+            summary.evidence_workflow_repo_commit.as_deref(),
+            Some("abcdef123456")
+        );
         assert_eq!(summary.bench_readiness_status.as_deref(), Some("degraded"));
         assert_eq!(summary.bench_readiness_failed_count, Some(0));
         assert_eq!(summary.bench_readiness_degraded_count, Some(1));
@@ -6839,6 +6982,9 @@ mod tests {
                                 "estimator": {"health": "tracking"}
                             }
                         ]
+                    },
+                    "autonomy_evidence_workflow": {
+                        "status": "degraded"
                     }
                 })
                 .to_string()
@@ -7149,6 +7295,50 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write rosbag2 cli review");
+            zip.start_file(
+                "summaries/autonomy_evidence_workflow/workflow_validation.summary.json",
+                options,
+            )
+            .expect("workflow validation entry");
+            zip.write_all(
+                serde_json::json!({
+                    "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
+                    "status": "degraded",
+                    "workflow_status": "failed",
+                    "step_count": 10,
+                    "marker_count": 8,
+                    "issues": ["Some required workflow steps did not pass."],
+                    "next_required_step": {
+                        "name": "register_field_replay_case",
+                        "status": "skipped",
+                        "exit_code": 0,
+                        "command": "./scripts/pi/register_field_replay_case.sh",
+                        "desktop_action": "Module Setup > Field Evidence Case > Register"
+                    },
+                    "checks": [
+                        {
+                            "name": "workflow_provenance",
+                            "status": "passed",
+                            "message": "Workflow provenance is present."
+                        },
+                        {
+                            "name": "required_step_results",
+                            "status": "degraded",
+                            "non_passed_count": 1,
+                            "non_passed_steps": [
+                                {
+                                    "name": "register_field_replay_case",
+                                    "status": "skipped",
+                                    "exit_code": 0
+                                }
+                            ]
+                        }
+                    ]
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write workflow validation");
             zip.start_file("summaries/bench_readiness.json", options)
                 .expect("bench readiness entry");
             zip.write_all(
@@ -7181,6 +7371,10 @@ mod tests {
             .expect("rosbag2 cli artifact entry");
             zip.write_all(br#"{"status":"passed"}"#)
                 .expect("write rosbag2 cli artifact");
+            zip.start_file("extras/autonomy_evidence_workflow/workflow.log", options)
+                .expect("workflow log artifact entry");
+            zip.write_all(b"workflow complete\n")
+                .expect("write workflow log artifact");
             zip.start_file("bundle/ortho/map.png", options)
                 .expect("map asset entry");
             zip.write_all(TINY_PNG).expect("write map asset");
@@ -7188,7 +7382,7 @@ mod tests {
         }
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
-        assert_eq!(details.entry_count, 18);
+        assert_eq!(details.entry_count, 20);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(
@@ -7488,6 +7682,42 @@ mod tests {
         assert!(details.artifacts.iter().any(|artifact| {
             artifact.path == "extras/rosbag2_cli_reviews/rosbag2-cli-review.json"
                 && artifact.kind == "rosbag2 cli artifact"
+        }));
+        let workflow_validation = details
+            .autonomy_evidence_workflow_validation
+            .as_ref()
+            .expect("workflow validation summary");
+        assert_eq!(workflow_validation.status.as_deref(), Some("degraded"));
+        assert_eq!(
+            workflow_validation.workflow_status.as_deref(),
+            Some("failed")
+        );
+        assert_eq!(workflow_validation.step_count, Some(10));
+        assert_eq!(workflow_validation.issue_count, 1);
+        assert_eq!(
+            workflow_validation
+                .next_required_step
+                .as_ref()
+                .and_then(|step| step.command.as_deref()),
+            Some("./scripts/pi/register_field_replay_case.sh")
+        );
+        assert_eq!(
+            workflow_validation.checks[0].name.as_deref(),
+            Some("workflow_provenance")
+        );
+        assert_eq!(
+            workflow_validation.checks[1].non_passed_steps[0]
+                .name
+                .as_deref(),
+            Some("register_field_replay_case")
+        );
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "summaries/autonomy_evidence_workflow/workflow_validation.summary.json"
+                && artifact.kind == "evidence workflow summary"
+        }));
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "extras/autonomy_evidence_workflow/workflow.log"
+                && artifact.kind == "evidence workflow artifact"
         }));
         let readiness = details.bench_readiness.expect("bench readiness report");
         assert_eq!(readiness.status.as_deref(), Some("degraded"));

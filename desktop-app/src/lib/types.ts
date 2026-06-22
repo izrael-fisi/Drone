@@ -192,6 +192,13 @@ export interface SupportBundleFile {
     rosbag_export_validation_topic_count?: number;
     rosbag2_cli_review_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     rosbag2_cli_review_report_count?: number;
+    evidence_workflow_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    evidence_workflow_validation_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    evidence_workflow_runtime_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    evidence_workflow_provenance_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    evidence_workflow_step_count?: number;
+    evidence_workflow_issue_count?: number;
+    evidence_workflow_repo_commit?: string;
     bench_readiness_status?: "passed" | "failed" | "degraded" | string;
     bench_readiness_failed_count?: number;
     bench_readiness_degraded_count?: number;
@@ -401,6 +408,7 @@ export interface SupportBundleDetails {
     ros2_cli_exit_code?: number;
     issues: string[];
   }>;
+  autonomy_evidence_workflow_validation?: AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"];
   bench_readiness?: {
     status?: "passed" | "failed" | "degraded" | string;
     failed_count?: number;

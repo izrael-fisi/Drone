@@ -152,6 +152,15 @@ function SupportBundleDetailPanel({
   const px4SessionCommands = namedCommandRecords(px4SessionSummary?.operator_commands);
   const px4Prereqs = asRecord(details.manifest.px4_sitl_prereqs);
   const px4PrereqFixCommands = commandRecords(px4Prereqs?.fix_commands);
+  const evidenceWorkflow = asRecord(details.manifest.autonomy_evidence_workflow);
+  const workflowValidation = details.autonomy_evidence_workflow_validation;
+  const workflowStatus = typeof evidenceWorkflow?.status === "string" ? evidenceWorkflow.status : undefined;
+  const workflowProvenance = asRecord(asRecord(evidenceWorkflow?.validation_summary)?.workflow_provenance);
+  const workflowRepoCommit = typeof workflowProvenance?.repo_commit === "string" ? workflowProvenance.repo_commit : undefined;
+  const workflowProvenanceCheck = workflowValidation?.checks.find((check) => check.name === "workflow_provenance");
+  const workflowNextStep = workflowValidation?.next_required_step;
+  const workflowNextCommand = workflowNextStep?.command || workflowNextStep?.metadata_update_command;
+  const showEvidenceWorkflow = Boolean(workflowValidation || (workflowStatus && workflowStatus !== "not_provided"));
 
   return (
     <div className="space-y-2 pt-1">
@@ -186,6 +195,72 @@ function SupportBundleDetailPanel({
                 </span>
                 <span>{formatLabel(check.name)}</span>
                 {check.message && <span className="truncate text-slate-400">{check.message}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showEvidenceWorkflow && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Evidence workflow</div>
+          <div className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {workflowStatus && workflowStatus !== "not_provided" && (
+                <span className={statusClass(workflowStatus)}>
+                  {statusIcon(workflowStatus)}
+                  package {formatLabel(workflowStatus)}
+                </span>
+              )}
+              {workflowValidation?.status && (
+                <span className={statusClass(workflowValidation.status)}>
+                  {statusIcon(workflowValidation.status)}
+                  validation {formatLabel(workflowValidation.status)}
+                </span>
+              )}
+              {workflowValidation?.workflow_status && (
+                <span className={statusClass(workflowValidation.workflow_status)}>
+                  {statusIcon(workflowValidation.workflow_status)}
+                  runtime {formatLabel(workflowValidation.workflow_status)}
+                </span>
+              )}
+              {workflowProvenanceCheck?.status && (
+                <span className={statusClass(workflowProvenanceCheck.status)}>
+                  {statusIcon(workflowProvenanceCheck.status)}
+                  proof {formatLabel(workflowProvenanceCheck.status)}
+                </span>
+              )}
+              <span className="font-mono text-slate-500">steps {workflowValidation?.step_count ?? 0}</span>
+              <span className="font-mono text-slate-500">issues {workflowValidation?.issue_count ?? 0}</span>
+              <span className="font-mono text-slate-500">commit {workflowRepoCommit ? workflowRepoCommit.slice(0, 8) : "n/a"}</span>
+            </div>
+            {workflowNextStep && (
+              <div className="rounded border border-border/50 bg-bg-base/50 px-2 py-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500">
+                  <span>next {formatLabel(workflowNextStep.name)}</span>
+                  <span className={statusClass(workflowNextStep.status)}>
+                    {statusIcon(workflowNextStep.status)}
+                    {formatLabel(workflowNextStep.status)}
+                  </span>
+                  {workflowNextStep.desktop_action && <span className="truncate">app {workflowNextStep.desktop_action}</span>}
+                </div>
+                {workflowNextCommand && (
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(workflowNextCommand)}
+                    className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/60 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
+                    title={workflowNextCommand}
+                  >
+                    <Clipboard size={9} className="shrink-0" />
+                    <span className="shrink-0 text-slate-500">copy next</span>
+                    <span className="truncate whitespace-pre">{workflowNextCommand}</span>
+                  </button>
+                )}
+              </div>
+            )}
+            {(workflowValidation?.issues ?? []).slice(0, 2).map((issue) => (
+              <div key={issue} className="text-amber-200/80 truncate">
+                {issue}
               </div>
             ))}
           </div>
@@ -1018,6 +1093,12 @@ export function SupportBundleList({
                     rosbag2 {formatLabel(bundle.summary.rosbag2_cli_review_status)}
                   </span>
                 )}
+                {bundle.summary.evidence_workflow_status && bundle.summary.evidence_workflow_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.evidence_workflow_status)}>
+                    {statusIcon(bundle.summary.evidence_workflow_status)}
+                    workflow {formatLabel(bundle.summary.evidence_workflow_status)}
+                  </span>
+                )}
                 {bundle.summary.elevation_status && (
                   <span className={bundle.summary.vertical_sanity_ready ? "badge-green" : statusClass(bundle.summary.elevation_status)}>
                     {statusIcon(bundle.summary.vertical_sanity_ready ? "passed" : bundle.summary.elevation_status)}
@@ -1088,6 +1169,13 @@ export function SupportBundleList({
                   </span>
                   <span>rosbag2 cli {formatLabel(bundle.summary.rosbag2_cli_review_status)}</span>
                   <span>rosbag2 cli reports {bundle.summary.rosbag2_cli_review_report_count ?? 0}</span>
+                  <span>workflow {formatLabel(bundle.summary.evidence_workflow_status)}</span>
+                  <span>workflow validation {formatLabel(bundle.summary.evidence_workflow_validation_status)}</span>
+                  <span>workflow runtime {formatLabel(bundle.summary.evidence_workflow_runtime_status)}</span>
+                  <span>workflow proof {formatLabel(bundle.summary.evidence_workflow_provenance_status)}</span>
+                  <span>workflow steps {bundle.summary.evidence_workflow_step_count ?? 0}</span>
+                  <span>workflow issues {bundle.summary.evidence_workflow_issue_count ?? 0}</span>
+                  <span className="truncate">workflow commit {bundle.summary.evidence_workflow_repo_commit?.slice(0, 8) ?? "n/a"}</span>
                   <span>ready {formatLabel(bundle.summary.bench_readiness_status)}</span>
                   <span>
                     gate {bundle.summary.bench_readiness_failed_count ?? 0} fail / {bundle.summary.bench_readiness_degraded_count ?? 0} degrade

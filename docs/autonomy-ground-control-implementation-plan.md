@@ -1036,6 +1036,9 @@ Status:
   evidence workflow report, validation JSON, and log archive, including
   workflow provenance status, so offline support ZIPs expose stale or incomplete
   workflow proof directly.
+- Done: downloaded support-bundle cards now parse and render embedded autonomy
+  evidence-workflow status, validation health, provenance proof, step/issue
+  counts, repo commit, and extractable workflow artifacts for review.
 - Done: the evidence workflow writes a compressed workflow-log archive and
   emits `__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=...`, so full per-step logs can
   be downloaded with the workflow report instead of relying only on bounded
