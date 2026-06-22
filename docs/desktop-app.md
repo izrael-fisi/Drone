@@ -278,9 +278,12 @@ Module Setup can also run `Field Log Capture`, a bounded 30-frame
 `scripts/pi/run_terrain_nav_loop.sh` pass against the selected mission bundle,
 then immediately runs `scripts/pi/read_runtime_status.sh` so the app receives
 the same bounded status preview used by readiness handoffs. It uses the
-configured MAVLink endpoint when present, downloads `terrain_matches.jsonl` to
-`~/DroneTransfer/from-pi/terrain-match/`, and downloads the companion
-`runtime_status.json` for support review. That synced log can feed Field
+configured MAVLink endpoint when present. When a field collection condition is
+loaded, the capture runs with that condition's capture output directory so the
+Pi-side `terrain_matches.jsonl` and companion `runtime_status.json` land in the
+same proof folder referenced by the field plan. The app downloads
+`terrain_matches.jsonl` to `~/DroneTransfer/from-pi/terrain-match/` and the
+companion `runtime_status.json` for support review. That synced log can feed Field
 Evidence registration, ROS Bag Validation, Native rosbag2 Review,
 feature-method benchmarking, and threshold tuning. Evidence workflow checks
 parse existing synced logs before accepting them: the JSONL must be nonempty
@@ -384,8 +387,9 @@ and registration commands from the bundled field collection plan so the next
 real-world proof step can be recovered from an offline ZIP.
 In the Field Collection Plans list, each pending condition has a `Load` action
 that fills the Field Evidence Case form with the plan case name, condition,
-expected behavior, notes, site, and any non-placeholder capture metadata. This
-keeps the generated checklist and the registration form aligned while still
+expected behavior, log path, capture output path, runtime-status path, notes,
+site, and any non-placeholder capture metadata. This keeps the generated
+checklist, the capture action, and the registration form aligned while still
 letting the operator complete site-specific metadata before registering the log.
 The plan and readiness cards also promote the next pending condition with its
 preflight, capture, metadata-update, and registration command buttons, and the

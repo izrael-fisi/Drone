@@ -710,9 +710,11 @@ Status:
 - Done: pending field-collection conditions in Module Setup can copy individual
   or batched replay-case registration commands directly from readiness and
   collection-plan cards.
-- Done: Module Setup carries the loaded field collection plan's condition log
-  path into the Field Evidence Case form and registration command, reducing the
-  risk of accidentally registering a stale generic terrain log.
+- Done: Module Setup carries the loaded field collection plan's condition log,
+  capture output, and runtime-status paths into the Field Evidence Case form;
+  Field Log Capture now honors the condition-specific output directory before
+  registration, reducing the risk of accidentally capturing or registering a
+  stale generic terrain log.
 - Done: `scripts/pi/register_field_replay_case.sh` registers Pi terrain
   runtime/replay logs into the outgoing field replay manifest, writes the
   combined field-evidence report, and leaves it at the default path that support

@@ -127,6 +127,8 @@ interface FieldCaseForm {
   expected: FieldExpected;
   conditions: string;
   fieldLog: string;
+  captureOutputDir: string;
+  runtimeStatusPath: string;
   siteName: string;
   operator: string;
   captureDateUtc: string;
@@ -462,9 +464,16 @@ function bundleDiagnosticCommand(remoteProject: string, remoteBundle: string) {
   ].join("; ");
 }
 
-function fieldLogCaptureCommand(remoteProject: string, remoteBundle: string, mavlinkEndpoint: string) {
+function fieldLogCaptureCommand(
+  remoteProject: string,
+  remoteBundle: string,
+  mavlinkEndpoint: string,
+  fieldCase: FieldCaseForm,
+) {
+  const captureOutputDir = fieldCase.captureOutputDir.trim();
   const env = [
     `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)}`,
+    captureOutputDir ? `VISION_NAV_OUTPUT_DIR=${shellQuote(captureOutputDir)}` : "",
     "VISION_NAV_COUNT=30",
     "VISION_NAV_INTERVAL_S=1.0",
     mavlinkEndpoint.trim() ? `VISION_NAV_MAVLINK_ENDPOINT=${shellQuote(mavlinkEndpoint.trim())}` : "",
@@ -540,6 +549,8 @@ function fieldCaseFromCollectionPlanCondition(
     expected,
     conditions: conditionKey || current.conditions,
     fieldLog: usableFieldText(condition.source_log) ?? current.fieldLog,
+    captureOutputDir: usableFieldText(condition.capture_output_dir) ?? current.captureOutputDir,
+    runtimeStatusPath: usableFieldText(condition.runtime_status_path) ?? current.runtimeStatusPath,
     siteName: keepOrUse(current.siteName, metadata?.site_name ?? plan.site_name),
     operator: keepOrUse(current.operator, metadata?.operator),
     captureDateUtc: keepOrUse(current.captureDateUtc, metadata?.capture_date_utc),
@@ -732,6 +743,8 @@ function defaultFieldCaseForm(): FieldCaseForm {
     expected: "good_map",
     conditions: "good_texture",
     fieldLog: "",
+    captureOutputDir: "",
+    runtimeStatusPath: "",
     siteName: "",
     operator: "",
     captureDateUtc: compactUtcNow(),
@@ -4083,7 +4096,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         form.port,
         form.username,
         resolvedAuth,
-        fieldLogCaptureCommand(remoteProject, remoteBundle, form.mavlinkEndpoint),
+        fieldLogCaptureCommand(remoteProject, remoteBundle, form.mavlinkEndpoint, fieldCase),
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteLog = parseTerrainRuntimeLog(output);
@@ -6432,6 +6445,24 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                     value={fieldCase.fieldLog}
                     placeholder="$HOME/DroneTransfer/outgoing/field-captures/.../terrain_matches.jsonl"
                     onChange={(event) => setFieldCase((value) => ({ ...value, fieldLog: event.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="label">Capture output</label>
+                  <input
+                    className="input-field font-mono text-xs"
+                    value={fieldCase.captureOutputDir}
+                    placeholder="$HOME/DroneTransfer/outgoing/field-captures/.../"
+                    onChange={(event) => setFieldCase((value) => ({ ...value, captureOutputDir: event.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="label">Runtime status</label>
+                  <input
+                    className="input-field font-mono text-xs"
+                    value={fieldCase.runtimeStatusPath}
+                    placeholder="$HOME/DroneTransfer/outgoing/field-captures/.../runtime_status.json"
+                    onChange={(event) => setFieldCase((value) => ({ ...value, runtimeStatusPath: event.target.value }))}
                   />
                 </div>
                 <div>
