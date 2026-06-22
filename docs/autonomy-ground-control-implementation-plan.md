@@ -812,8 +812,8 @@ Status:
   machine-readable per-step workflow report with logs and emitted artifact
   markers even when the final gates still fail.
 - Done: the evidence workflow preserves PX4 prerequisite diagnostic markers in
-  the workflow report, but keeps `check_px4_receiver_proof` skipped until a PX4
-  SITL evidence session or evaluated receiver report exists.
+  the workflow report, but keeps `check_px4_receiver_proof` skipped until an
+  evaluated PX4 receiver report exists.
 - Done: the evidence workflow now reads the generated
   `autonomy_readiness_report.json` after the final audit wrapper runs and
   mirrors that report status onto the `run_autonomy_readiness_audit` workflow
@@ -845,9 +845,9 @@ Status:
   missing final-proof artifact markers for support bundle, PX4 receiver, field
   evidence, feature benchmark, threshold tuning, ROS bag, native rosbag2
   review, final audit, handoff, and evidence package outputs.
-  PX4 receiver proof accepts either the evidence-session marker or the evaluated
-  receiver-report marker so session-only support handoffs are not mislabeled as
-  missing PX4 proof.
+  PX4 receiver proof requires the evaluated receiver-report marker; an
+  evidence-session marker is preserved as diagnostic context but does not
+  satisfy the final-proof marker set by itself.
   PX4 prerequisite reports are tracked as important diagnostic markers, but do
   not satisfy the receiver-proof gate or final-proof marker set.
   The Pi evidence workflow now writes this validation JSON beside the workflow

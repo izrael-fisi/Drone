@@ -2538,11 +2538,16 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             session_only_checks["final_proof_markers"]["status"],
-            "passed",
-            "workflow validation px4 session satisfies final proof marker",
+            "degraded",
+            "workflow validation px4 session alone does not satisfy final proof marker",
         )
-        if "__VISION_NAV_PX4_SITL_SESSION__" not in session_only_checks["final_proof_markers"]["details"]["present_markers"]:
-            raise AssertionError("workflow validation should list PX4 session as a present final proof marker")
+        if "__VISION_NAV_PX4_SITL_SESSION__" in session_only_checks["final_proof_markers"]["details"]["present_markers"]:
+            raise AssertionError("PX4 session scaffolds should not satisfy final proof markers")
+        assert_equal(
+            session_only_checks["final_proof_markers"]["details"]["missing_markers"],
+            ["__VISION_NAV_PX4_SITL_REPORT__"],
+            "workflow validation session-only missing px4 report marker",
+        )
 
         missing_px4_report = json.loads(report_path.read_text())
         missing_px4_report["markers"].pop("__VISION_NAV_PX4_SITL_REPORT__")
@@ -2557,8 +2562,8 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             missing_px4_checks["final_proof_markers"]["details"]["missing_markers"],
-            ["__VISION_NAV_PX4_SITL_SESSION__", "__VISION_NAV_PX4_SITL_REPORT__"],
-            "workflow validation missing px4 proof marker alternatives",
+            ["__VISION_NAV_PX4_SITL_REPORT__"],
+            "workflow validation missing px4 proof marker",
         )
         if "__VISION_NAV_PX4_SITL_PREREQS__" in missing_px4_checks["final_proof_markers"]["details"]["present_markers"]:
             raise AssertionError("PX4 prereq diagnostics should not satisfy missing PX4 receiver proof")

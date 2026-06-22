@@ -153,6 +153,16 @@ cat >"$workflow_smoke_dir/px4_sitl_capture_prereqs.json" <<'EOF'
   }
 }
 EOF
+mkdir -p "$workflow_smoke_dir/px4-sitl-session"
+cat >"$workflow_smoke_dir/px4-sitl-session/px4_sitl_evidence_session.json" <<EOF
+{
+  "schema_version": "vision_nav_px4_sitl_evidence_session_v1",
+  "session_dir": "$workflow_smoke_dir/px4-sitl-session",
+  "receiver_report": "receiver_evidence.json",
+  "message_type": "odometry",
+  "rate_hz": 5.0
+}
+EOF
 VISION_NAV_PYTHON=python3 \
 VISION_NAV_EVIDENCE_WORKFLOW_DIR="$workflow_smoke_dir/workflow" \
 VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" \
@@ -177,7 +187,7 @@ VISION_NAV_SUPPORT_OUTPUT_DIR="$workflow_smoke_dir/support-bundles" \
 VISION_NAV_AUTONOMY_READINESS_REPORT="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.json" \
 VISION_NAV_AUTONOMY_HANDOFF="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.md" \
 VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.evidence.zip" \
-VISION_NAV_PX4_SITL_SESSION="$workflow_smoke_dir/missing-px4-sitl-evidence" \
+VISION_NAV_PX4_SITL_SESSION="$workflow_smoke_dir/px4-sitl-session" \
 VISION_NAV_PX4_SITL_REPORT="$workflow_smoke_dir/missing-receiver_evidence.json" \
 VISION_NAV_PX4_SITL_PREREQS="$workflow_smoke_dir/px4_sitl_capture_prereqs.json" \
 ./scripts/pi/run_autonomy_evidence_workflow.sh >"$evidence_workflow_output" 2>&1
@@ -218,7 +228,7 @@ assert "__VISION_NAV_RUNTIME_STATUS__" in report["markers"]
 assert "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__" in report["markers"]
 assert "__VISION_NAV_ROSBAG2_CLI_REVIEW__" in report["markers"]
 assert "__VISION_NAV_PX4_SITL_PREREQS__" in report["markers"]
-assert "__VISION_NAV_PX4_SITL_SESSION__" not in report["markers"]
+assert "__VISION_NAV_PX4_SITL_SESSION__" in report["markers"]
 assert "__VISION_NAV_PX4_SITL_REPORT__" not in report["markers"]
 assert report["status"] == "failed"
 assert Path(report["markers"]["__VISION_NAV_ROSBAG_EXPORT_VALIDATION__"]).exists()

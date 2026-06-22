@@ -393,7 +393,7 @@ px4_proof_marker_lines=()
 px4_diagnostic_marker_lines=()
 if [[ -f "$px4_sitl_session/px4_sitl_evidence_session.json" ]]; then
   export VISION_NAV_PX4_SITL_SESSION="$px4_sitl_session"
-  px4_proof_marker_lines+=("__VISION_NAV_PX4_SITL_SESSION__=$px4_sitl_session")
+  px4_diagnostic_marker_lines+=("__VISION_NAV_PX4_SITL_SESSION__=$px4_sitl_session")
 fi
 if [[ -f "$px4_sitl_report" ]]; then
   export VISION_NAV_PX4_SITL_REPORT="$px4_sitl_report"
@@ -411,7 +411,7 @@ if ((${#px4_proof_marker_lines[@]} > 0)); then
     "${px4_diagnostic_marker_lines[@]}"
 elif ((${#px4_diagnostic_marker_lines[@]} > 0)); then
   skip_step "check_px4_receiver_proof" \
-    "PX4 capture prerequisite diagnostics are available, but receiver proof is still missing. Capture ODOMETRY receiver evidence before treating the support bundle as bench-ready: VISION_NAV_SITL_SMOKE_DIR=\$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh" \
+    "PX4 session or prerequisite diagnostics are available, but evaluated receiver proof is still missing. Capture ODOMETRY receiver evidence before treating the support bundle as bench-ready: VISION_NAV_SITL_SMOKE_DIR=\$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh" \
     "${px4_diagnostic_marker_lines[@]}"
 else
   skip_step "check_px4_receiver_proof" \
