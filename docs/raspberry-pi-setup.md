@@ -469,8 +469,11 @@ JSON report includes `bundle_path`, `bundle_validation_command`, and a desktop
 action hint so the operator can return to Mission Planner, build/upload the
 bundle, then rerun preflight. The same report includes ordered `next_actions`
 for bundle prep, capture, metadata completion, and registration, with blocked
-steps listing the prerequisite checks they are waiting on. It does not create
-or register field evidence. When the default preflight report exists,
+steps listing the prerequisite checks they are waiting on. Bundle-prep actions
+also carry the compact bundle diagnostic so terminal output, Module Setup, and
+support-bundle details can show missing files, detected bundle candidates, and
+detected map sources directly beside the repair command. It does not create or
+register field evidence. When the default preflight report exists,
 `create_support_bundle.sh` copies it under `extras/field_capture_preflights/`,
 publishes the parseable report under `summaries/field_capture_preflights/`, and
 rolls up readiness flags, failed/degraded checks, and next-action counts in

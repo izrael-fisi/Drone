@@ -147,6 +147,7 @@ def build_next_actions(
         return []
     actions: list[dict[str, Any]] = []
     statuses = {str(item.get("name")): str(item.get("status") or "") for item in checks}
+    bundle_diagnostic = compact_check_bundle_diagnostic(checks, "bundle_path")
 
     if statuses.get("bundle_path") != "passed" and condition.get("bundle_validation_command"):
         actions.append(
@@ -157,6 +158,7 @@ def build_next_actions(
                 "Mission Planner > Build Bundle, Upload Bundle",
                 command=str(condition["bundle_validation_command"]),
                 bundle_path=str(condition.get("bundle") or ""),
+                bundle_diagnostic=bundle_diagnostic,
                 notes="Field capture cannot start until the selected mission bundle exists on the runtime module.",
             )
         )
@@ -222,6 +224,16 @@ def build_next_actions(
             )
         )
     return actions
+
+
+def compact_check_bundle_diagnostic(checks: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    details = check_details(checks, name) or {}
+    diagnostic = details.get("diagnostic")
+    if not diagnostic:
+        return None
+    from vision_nav.bundle_diagnostics import compact_bundle_diagnostic
+
+    return compact_bundle_diagnostic(diagnostic)
 
 
 def action_item(
@@ -568,6 +580,31 @@ def print_human(report: dict[str, Any]) -> None:
                 print(f"  app: {action['desktop_action']}")
             if action.get("waits_on"):
                 print(f"  waits on: {', '.join(str(item) for item in action['waits_on'])}")
+            diagnostic = action.get("bundle_diagnostic")
+            if isinstance(diagnostic, dict):
+                missing = diagnostic.get("missing_required_files") or []
+                if missing:
+                    print(f"  missing bundle files: {', '.join(str(item) for item in missing[:8])}")
+                candidates = [
+                    item
+                    for item in diagnostic.get("bundle_candidates") or []
+                    if isinstance(item, dict) and item.get("path")
+                ]
+                if candidates:
+                    print("  detected bundle candidates:")
+                    for candidate in candidates[:3]:
+                        warning = " (example/synthetic only)" if candidate.get("field_proof_warning") else ""
+                        print(f"    - {candidate.get('path')}{warning}")
+                map_sources = [
+                    item
+                    for item in diagnostic.get("map_source_candidates") or []
+                    if isinstance(item, dict) and item.get("path")
+                ]
+                if map_sources:
+                    print("  detected map sources:")
+                    for source in map_sources[:3]:
+                        label = source.get("name") or "unnamed"
+                        print(f"    - {source.get('path')} [{label}]")
             if action.get("command"):
                 print(f"  command: {action['command']}")
     if report.get("output_path"):

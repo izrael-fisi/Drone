@@ -410,7 +410,10 @@ inputs are ready or clearly marked as still missing. The Field Evidence Case
 the report available for support bundles and local readiness re-audits. After
 download, Module Setup also parses the report into a compact summary that shows
 capture and registration readiness, failed or degraded checks, active
-bundle/log/runtime-status paths, and copyable next-action commands. The same
+bundle/log/runtime-status paths, and copyable next-action commands. If bundle
+prep is the next action, the card also shows the missing required bundle files,
+detected candidate bundles, detected map sources, and the Mission Planner repair
+action from the preflight diagnostic. The same
 form lists the missing proof-grade metadata fields as chips and exposes an
 `Update Metadata` action that runs `scripts/pi/update_field_capture_metadata.sh`
 with the current form values, then downloads the refreshed active manifest and

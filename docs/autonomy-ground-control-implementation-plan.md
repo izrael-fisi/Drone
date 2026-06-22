@@ -432,6 +432,10 @@ Status:
 - Done: field-capture preflight reports ordered `next_actions` for bundle prep,
   terrain-log capture, capture-metadata completion, and registration, with
   blocked actions carrying explicit prerequisite check names.
+- Done: bundle-prep next actions now carry the same compact missing-bundle
+  diagnostic as the failed preflight check, including missing required files,
+  detected candidate bundles, detected map sources, and recommended Mission
+  Planner repair actions.
 - Done: Module Setup, readiness report cards, support-bundle details, and
   handoff summaries preserve and copy field-capture preflight commands beside
   capture, metadata-update, and registration commands.

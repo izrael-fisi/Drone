@@ -6641,6 +6641,51 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                                 waits on {(action.waits_on ?? []).map(formatReadinessLabel).join(", ")}
                               </div>
                             )}
+                            {action.bundle_diagnostic && (
+                              <div className="space-y-1 rounded border border-cyan-500/20 bg-cyan-500/5 px-2 py-1 text-[10px] text-slate-400">
+                                {action.bundle_diagnostic.missing_required_files.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    <span className="text-slate-500">missing</span>
+                                    {action.bundle_diagnostic.missing_required_files.slice(0, 5).map((file) => (
+                                      <span key={`${action.id ?? "action"}-missing-${file}`} className="rounded bg-bg-base/70 px-1 font-mono text-slate-300">
+                                        {file}
+                                      </span>
+                                    ))}
+                                    {action.bundle_diagnostic.missing_required_files.length > 5 && (
+                                      <span className="text-slate-500">+{action.bundle_diagnostic.missing_required_files.length - 5}</span>
+                                    )}
+                                  </div>
+                                )}
+                                {action.bundle_diagnostic.bundle_candidates.length > 0 && (
+                                  <div className="space-y-0.5">
+                                    <div className="text-slate-500">
+                                      bundle candidates {action.bundle_diagnostic.bundle_candidate_count ?? action.bundle_diagnostic.bundle_candidates.length}
+                                    </div>
+                                    {action.bundle_diagnostic.bundle_candidates.slice(0, 2).map((candidate) => (
+                                      <div key={`${action.id ?? "action"}-candidate-${candidate.path}`} className="flex min-w-0 flex-wrap items-center gap-1">
+                                        <span className="font-mono text-slate-300 break-all">{candidate.path ?? "n/a"}</span>
+                                        {candidate.bundle_id && <span className="badge-yellow text-[10px]">{candidate.bundle_id}</span>}
+                                        {candidate.field_proof_warning && (
+                                          <span className="badge-yellow text-[10px]" title={candidate.field_proof_warning}>smoke only</span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {action.bundle_diagnostic.map_source_candidates.length > 0 && (
+                                  <div className="space-y-0.5">
+                                    <div className="text-slate-500">
+                                      map sources {action.bundle_diagnostic.map_source_candidate_count ?? action.bundle_diagnostic.map_source_candidates.length}
+                                    </div>
+                                    {action.bundle_diagnostic.map_source_candidates.slice(0, 2).map((source) => (
+                                      <div key={`${action.id ?? "action"}-map-source-${source.path}`} className="font-mono text-slate-300 break-all">
+                                        {source.path ?? "n/a"} {source.name ? `(${source.name})` : ""}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             {action.command && (
                               <button
                                 type="button"

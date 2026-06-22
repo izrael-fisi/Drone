@@ -6301,6 +6301,16 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "action_required",
             "field preflight marks missing bundle prep action required",
         )
+        prepare_bundle_diagnostic = missing_bundle_actions[0].get("bundle_diagnostic") or {}
+        if "manifest.json" not in prepare_bundle_diagnostic.get("missing_required_files", []):
+            raise AssertionError("Expected prepare-bundle action to carry missing bundle file diagnostics")
+        detected_action_bundle_paths = {
+            item.get("path")
+            for item in prepare_bundle_diagnostic.get("bundle_candidates", [])
+            if isinstance(item, dict)
+        }
+        if str(ready_bundle) not in detected_action_bundle_paths:
+            raise AssertionError("Expected prepare-bundle action to carry detected bundle candidates")
         missing_capture_action = next(item for item in missing_bundle_actions if item["id"] == "capture_field_terrain_log")
         assert_equal(
             missing_capture_action["status"],

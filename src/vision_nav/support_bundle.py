@@ -1295,6 +1295,7 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
                 "source_log": action.get("source_log"),
                 "runtime_status_path": action.get("runtime_status_path"),
                 "notes": action.get("notes"),
+                "bundle_diagnostic": action.get("bundle_diagnostic"),
             }
         )
 

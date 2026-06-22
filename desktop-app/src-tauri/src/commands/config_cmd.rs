@@ -422,6 +422,7 @@ pub struct SupportBundleFieldCapturePreflightAction {
     pub source_log: Option<String>,
     pub runtime_status_path: Option<String>,
     pub notes: Option<String>,
+    pub bundle_diagnostic: Option<SupportBundleDiagnostic>,
 }
 
 #[derive(Serialize)]
@@ -4207,6 +4208,9 @@ fn field_capture_preflight_action_from_json(
         source_log: json_string(value.get("source_log")),
         runtime_status_path: json_string(value.get("runtime_status_path")),
         notes: json_string(value.get("notes")),
+        bundle_diagnostic: value
+            .get("bundle_diagnostic")
+            .and_then(support_bundle_diagnostic_from_json),
     }
 }
 
@@ -7694,7 +7698,38 @@ mod tests {
                             "title": "Build, upload, or validate the selected terrain bundle.",
                             "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
                             "command": "VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh",
-                            "bundle_path": "/home/user/drone-data/map_bundles/mission_bundle"
+                            "bundle_path": "/home/user/drone-data/map_bundles/mission_bundle",
+                            "bundle_diagnostic": {
+                                "bundle_exists": false,
+                                "missing_required_files": ["manifest.json", "ortho/map.png"],
+                                "bundle_candidate_count": 1,
+                                "map_source_candidate_count": 1,
+                                "bundle_candidates": [
+                                    {
+                                        "path": "/home/user/Drone/map_bundles/example",
+                                        "bundle_id": "example-single-image",
+                                        "tile_index_exists": false,
+                                        "field_proof_warning": "Example or synthetic bundles are useful for tooling smoke tests but do not satisfy real field evidence."
+                                    }
+                                ],
+                                "map_source_candidates": [
+                                    {
+                                        "path": "/home/user/maps/field-area",
+                                        "name": "Field Area",
+                                        "source": "uploaded_geotiff",
+                                        "georef_source": "geotiff_embedded"
+                                    }
+                                ],
+                                "recommended_actions": [
+                                    {
+                                        "id": "build_or_upload_selected_bundle",
+                                        "status": "action_required",
+                                        "title": "Build and upload the selected Mission Planner terrain bundle.",
+                                        "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                                        "command": "VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh"
+                                    }
+                                ]
+                            }
                         },
                         {
                             "id": "capture_field_terrain_log",
@@ -8159,6 +8194,20 @@ mod tests {
         assert_eq!(
             details.field_capture_preflight_reports[0].next_actions[1].waits_on,
             vec!["bundle_path".to_string()]
+        );
+        let action_bundle_diagnostic = details.field_capture_preflight_reports[0].next_actions[0]
+            .bundle_diagnostic
+            .as_ref()
+            .expect("preflight action bundle diagnostic parsed");
+        assert_eq!(
+            action_bundle_diagnostic.missing_required_files,
+            vec!["manifest.json".to_string(), "ortho/map.png".to_string()]
+        );
+        assert_eq!(
+            action_bundle_diagnostic.bundle_candidates[0]
+                .bundle_id
+                .as_deref(),
+            Some("example-single-image")
         );
         assert!(details.artifacts.iter().any(|artifact| {
             artifact.path == "summaries/field_capture_preflights/good_texture-01.json"
