@@ -293,6 +293,20 @@ EOF
 cat >"$local_audit_dir/replay-cases/field_collection_plan.md" <<'EOF'
 # Field Evidence Collection Plan
 EOF
+scanned_goal_status_output="$preflight_tmp_dir/autonomy_goal_status_scanned_preflight.txt"
+if VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
+VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
+VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
+VISION_NAV_PX4_SITL_REPORT="$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" \
+VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT=1 \
+./scripts/dev/autonomy_goal_status.sh >"$scanned_goal_status_output" 2>&1; then
+  echo "Expected scanned autonomy goal status to fail before final proof evidence exists." >&2
+  exit 1
+fi
+grep -q "Evidence inputs:" "$scanned_goal_status_output"
+grep -q "feature_method_benchmark_report" "$scanned_goal_status_output"
+grep -q "field_collection_plan" "$scanned_goal_status_output"
+grep -q "px4_sitl_report" "$scanned_goal_status_output"
 VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \

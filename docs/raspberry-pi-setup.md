@@ -905,9 +905,12 @@ support package, run:
 
 That local status helper summarizes proof-item counts, external blockers,
 proof-runbook phase counts, and next commands from
-`vision-nav-autonomy-readiness`, then exits nonzero until the final evidence
-package is complete. Generate the threshold report from the real field manifest
-with:
+`vision-nav-autonomy-readiness`. It scans the conventional
+`~/DroneTransfer/from-pi/` evidence folders for downloaded support bundles,
+PX4 receiver reports, field plans/evidence, feature benchmarks, threshold
+reports, ROS bag validation reports, and native rosbag2 CLI reviews, then exits
+nonzero until the final evidence package is complete. Generate the threshold
+report from the real field manifest with:
 
 ```bash
 ./scripts/pi/run_threshold_tuning_report.sh
@@ -1034,8 +1037,9 @@ the downloaded `~/DroneTransfer/from-pi/` evidence folders, and refreshes the
 final readiness, workflow, field, feature, threshold, ROS bag, PX4, and support
 bundle lists without opening a new SSH session.
 The Mac-side `./scripts/mac/goal_status.sh` helper also embeds the same
-autonomy proof summary before its transfer-folder and Pi connectivity checks,
-so operators can see proof blockers and SSH readiness from one command.
+download-aware autonomy proof summary before its transfer-folder and Pi
+connectivity checks, so operators can see proof blockers and SSH readiness from
+one command.
 
 It uses the latest downloaded support bundle, downloaded field-evidence and
 feature-method benchmark reports, downloaded threshold-tuning reports,

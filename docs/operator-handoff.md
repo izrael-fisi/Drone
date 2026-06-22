@@ -170,8 +170,11 @@ handoff package, run:
 
 It runs the strict readiness audit with the repo-local Python path, prints the
 current proof-item counts, external blockers, proof-runbook phase counts, and
-the next commands needed to collect missing evidence. It exits nonzero until
-the full final proof package is ready. Set
+the next commands needed to collect missing evidence. It scans the conventional
+`~/DroneTransfer/from-pi/` evidence folders and includes any downloaded support
+bundle, PX4 receiver report, field plan, field evidence, feature benchmark,
+threshold report, ROS bag validation, or native rosbag2 review it finds. It
+exits nonzero until the full final proof package is ready. Set
 `VISION_NAV_AUTONOMY_GOAL_STATUS_JSON=/path/to/report.json` to keep the raw
 JSON snapshot from that check.
 

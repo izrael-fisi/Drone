@@ -716,9 +716,10 @@ Status:
   and evidence ZIP, and preserves `support_bundle_bench_readiness` as an
   explicit missing proof gate just like the Pi wrapper.
 - Done: `scripts/dev/autonomy_goal_status.sh` runs the strict readiness audit
-  with the repo-local Python path and prints a concise goal-status summary with
-  proof-item counts, external blockers, proof-runbook phase counts, and next
-  commands without creating a new handoff package.
+  with the repo-local Python path, scans conventional downloaded evidence
+  folders, and prints a concise goal-status summary with consumed evidence
+  inputs, proof-item counts, external blockers, proof-runbook phase counts, and
+  next commands without creating a new handoff package.
 - Done: `scripts/mac/goal_status.sh` now embeds that autonomy proof summary
   before its transfer-folder and Pi connectivity checks so one operator command
   reports both missing proof gates and setup connectivity.

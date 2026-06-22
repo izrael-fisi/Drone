@@ -3,14 +3,211 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python_bin="${VISION_NAV_PYTHON:-python3}"
+download_root="${VISION_NAV_DESKTOP_TRANSFER_FROM_PI:-$HOME/DroneTransfer/from-pi}"
+support_dir="${VISION_NAV_LOCAL_SUPPORT_DIR:-$download_root/support-bundles}"
+replay_dir="${VISION_NAV_LOCAL_REPLAY_DIR:-$download_root/replay-cases}"
+feature_benchmark_dir="${VISION_NAV_LOCAL_FEATURE_BENCH_DIR:-$download_root/feature-method-bench}"
+support_bundle="${VISION_NAV_AUTONOMY_SUPPORT_BUNDLE:-}"
+field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$replay_dir/field_evidence_report.json}"
+field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$replay_dir/field_collection_plan.json}"
+feature_method_benchmark_report="${VISION_NAV_FEATURE_METHOD_BENCHMARK_REPORT:-}"
+threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$replay_dir/threshold_tuning_report.json}"
+rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$download_root/terrain-match/rosbag-jsonl-validation.json}"
+rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$download_root/terrain-match/rosbag2-cli-review.json}"
+evidence_workflow_report="${VISION_NAV_EVIDENCE_WORKFLOW_REPORT:-}"
+evidence_workflow_validation_report="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-}"
+evidence_workflow_log_archive="${VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE:-}"
+px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
+px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 json_copy="${VISION_NAV_AUTONOMY_GOAL_STATUS_JSON:-}"
 quiet_exit="${VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT:-0}"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-goal-status.XXXXXX")"
 tmp_report="$tmp_dir/report.json"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+latest_glob() {
+  local pattern="$1"
+  local matches=()
+  while IFS= read -r path; do
+    matches+=("$path")
+  done < <(compgen -G "$pattern" || true)
+  if ((${#matches[@]} == 0)); then
+    return 0
+  fi
+  ls -t "${matches[@]}" 2>/dev/null | head -n 1
+}
+
+first_existing_px4_session() {
+  local candidates=(
+    "$repo_root/px4-sitl-evidence"
+    "$PWD/px4-sitl-evidence"
+    "$HOME/px4-sitl-evidence"
+    "$download_root/px4-sitl-evidence"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate/px4_sitl_evidence_session.json" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
+first_existing_px4_report() {
+  local candidates=(
+    "$repo_root/px4-sitl-evidence/receiver_evidence.json"
+    "$PWD/px4-sitl-evidence/receiver_evidence.json"
+    "$HOME/px4-sitl-evidence/receiver_evidence.json"
+    "$download_root/px4-sitl-evidence/receiver_evidence.json"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
+first_existing_workflow_report() {
+  local candidates=(
+    "$replay_dir/autonomy_evidence_workflow.json"
+    "$replay_dir/autonomy-evidence-workflow/autonomy_evidence_workflow.json"
+    "$download_root/replay-cases/autonomy_evidence_workflow.json"
+    "$download_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
+first_existing_workflow_validation_report() {
+  local candidates=()
+  if [[ -n "$evidence_workflow_report" ]]; then
+    candidates+=("${evidence_workflow_report%.json}.validation.json")
+  fi
+  candidates+=(
+    "$replay_dir/autonomy_evidence_workflow.validation.json"
+    "$replay_dir/autonomy-evidence-workflow/autonomy_evidence_workflow.validation.json"
+    "$download_root/replay-cases/autonomy_evidence_workflow.validation.json"
+    "$download_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.validation.json"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
+first_existing_workflow_log_archive() {
+  local candidates=()
+  if [[ -n "$evidence_workflow_report" ]]; then
+    candidates+=("${evidence_workflow_report%.json}.logs.tar.gz")
+  fi
+  candidates+=(
+    "$replay_dir/autonomy_evidence_workflow.logs.tar.gz"
+    "$replay_dir/autonomy-evidence-workflow/autonomy_evidence_workflow.logs.tar.gz"
+    "$download_root/replay-cases/autonomy_evidence_workflow.logs.tar.gz"
+    "$download_root/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.logs.tar.gz"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+}
+
+if [[ -z "$support_bundle" ]]; then
+  support_bundle="$(latest_glob "$support_dir/*.zip")"
+fi
+
+if [[ -z "$feature_method_benchmark_report" ]]; then
+  feature_method_benchmark_report="$(latest_glob "$feature_benchmark_dir/*.json")"
+fi
+
+if [[ -z "$px4_sitl_session" ]]; then
+  px4_sitl_session="$(first_existing_px4_session || true)"
+fi
+
+if [[ -z "$px4_sitl_report" ]]; then
+  px4_sitl_report="$(first_existing_px4_report || true)"
+fi
+
+if [[ -z "$evidence_workflow_report" ]]; then
+  evidence_workflow_report="$(first_existing_workflow_report || true)"
+fi
+
+if [[ -z "$evidence_workflow_validation_report" ]]; then
+  evidence_workflow_validation_report="$(first_existing_workflow_validation_report || true)"
+fi
+
+if [[ -z "$evidence_workflow_log_archive" ]]; then
+  evidence_workflow_log_archive="$(first_existing_workflow_log_archive || true)"
+fi
+
+args=(
+  -m vision_nav.autonomy_readiness
+  --research-doc "$repo_root/docs/autonomy-ground-control-research.md"
+  --implementation-plan "$repo_root/docs/autonomy-ground-control-implementation-plan.md"
+  --json
+)
+
+if [[ -n "$support_bundle" && -f "$support_bundle" ]]; then
+  args+=(--support-bundle "$support_bundle")
+fi
+
+if [[ -n "$px4_sitl_session" && -f "$px4_sitl_session/px4_sitl_evidence_session.json" ]]; then
+  args+=(--px4-sitl-session "$px4_sitl_session")
+elif [[ -f "$px4_sitl_report" ]]; then
+  args+=(--px4-sitl-report "$px4_sitl_report")
+fi
+
+if [[ -f "$field_evidence_report" ]]; then
+  args+=(--field-evidence-report "$field_evidence_report")
+fi
+
+if [[ -f "$field_collection_plan" ]]; then
+  args+=(--field-collection-plan "$field_collection_plan")
+fi
+
+if [[ -f "$feature_method_benchmark_report" ]]; then
+  args+=(--feature-method-benchmark-report "$feature_method_benchmark_report")
+fi
+
+if [[ -f "$threshold_tuning_report" ]]; then
+  args+=(--threshold-tuning-report "$threshold_tuning_report")
+fi
+
+if [[ -f "$rosbag_export_validation" ]]; then
+  args+=(--rosbag-export-validation "$rosbag_export_validation")
+fi
+
+if [[ -f "$rosbag2_cli_review" ]]; then
+  args+=(--rosbag2-cli-review "$rosbag2_cli_review")
+fi
+
+if [[ -f "$evidence_workflow_report" ]]; then
+  args+=(--evidence-workflow-report "$evidence_workflow_report")
+fi
+
+if [[ -f "$evidence_workflow_validation_report" ]]; then
+  args+=(--evidence-workflow-validation-report "$evidence_workflow_validation_report")
+fi
+
+if [[ -f "$evidence_workflow_log_archive" ]]; then
+  args+=(--evidence-workflow-log-archive "$evidence_workflow_log_archive")
+fi
+
 set +e
-PYTHONPATH="$repo_root/src" "$python_bin" -m vision_nav.autonomy_readiness --json >"$tmp_report"
+PYTHONPATH="$repo_root/src" "$python_bin" "${args[@]}" >"$tmp_report"
 audit_status=$?
 set -e
 
@@ -36,6 +233,7 @@ runbook = report.get("proof_runbook") or {}
 runbook_summary = runbook.get("summary") or {}
 metadata = report.get("metadata") or {}
 repo = metadata.get("repo") or {}
+inputs = report.get("inputs") or {}
 
 passed = sum(1 for item in proof_items if item.get("status") == "passed")
 print(f"Autonomy goal status: {report.get('status', 'unknown')}")
@@ -58,6 +256,19 @@ if runbook_summary:
         f"{runbook_summary.get('action_required', 0)} action-required, "
         f"{runbook_summary.get('blocked', 0)} blocked"
     )
+
+present_inputs = [
+    (key, value)
+    for key, value in inputs.items()
+    if value and key not in {"research_doc", "implementation_plan"}
+]
+if present_inputs:
+    print()
+    print("Evidence inputs:")
+    for key, value in present_inputs[:12]:
+        print(f"- {key}: {value}")
+    if len(present_inputs) > 12:
+        print(f"- ... {len(present_inputs) - 12} more")
 
 if external_blockers:
     print()
