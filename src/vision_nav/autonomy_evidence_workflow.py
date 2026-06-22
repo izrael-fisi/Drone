@@ -645,6 +645,58 @@ def validation_exit_code(report: dict[str, Any]) -> int:
     return 1 if report.get("status") == "failed" else 0
 
 
+def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    printed_missing_steps: set[str] = set()
+    for check_item in report.get("checks") or []:
+        if not isinstance(check_item, dict) or check_item.get("status") == "passed":
+            continue
+        details = check_item.get("details") if isinstance(check_item.get("details"), dict) else {}
+        missing_steps = details.get("missing_steps")
+        if not isinstance(missing_steps, list):
+            missing_steps = check_item.get("missing_steps")
+        if isinstance(missing_steps, list):
+            new_missing_steps = [
+                str(step)
+                for step in missing_steps
+                if str(step) and str(step) not in printed_missing_steps
+            ]
+            if new_missing_steps:
+                for step in new_missing_steps[:6]:
+                    printed_missing_steps.add(step)
+                lines.append(f"- Missing workflow steps: {', '.join(new_missing_steps[:6])}")
+                if len(new_missing_steps) > 6:
+                    lines.append(f"  ... {len(new_missing_steps) - 6} more")
+
+        non_passed_steps = details.get("non_passed_steps")
+        if not isinstance(non_passed_steps, list):
+            non_passed_steps = check_item.get("non_passed_steps")
+        if isinstance(non_passed_steps, list):
+            for step in non_passed_steps[:4]:
+                if not isinstance(step, dict):
+                    continue
+                step_name = step.get("name") or "unknown"
+                step_status = step.get("status") or "unknown"
+                lines.append(f"- Non-passing workflow step: {step_name} [{step_status}]")
+                if step.get("notes"):
+                    lines.append(f"  Notes: {step.get('notes')}")
+
+        missing_markers = details.get("missing_markers")
+        if not isinstance(missing_markers, list):
+            missing_markers = check_item.get("missing_markers")
+        if isinstance(missing_markers, list) and missing_markers:
+            marker_label = (
+                "Missing final proof markers"
+                if check_item.get("name") == "final_proof_markers"
+                else "Missing workflow markers"
+            )
+            marker_names = [str(marker) for marker in missing_markers if str(marker)]
+            lines.append(f"- {marker_label}: {', '.join(marker_names[:6])}")
+            if len(marker_names) > 6:
+                lines.append(f"  ... {len(marker_names) - 6} more")
+    return lines
+
+
 def print_human(report: dict[str, Any]) -> None:
     print(f"Evidence workflow validation: {report.get('report_path')}")
     print(f"Status: {report.get('status')} workflow={report.get('workflow_status')}")
@@ -666,6 +718,11 @@ def print_human(report: dict[str, Any]) -> None:
         print("Issues:")
         for issue in issues:
             print(f"- {issue}")
+    detail_lines = workflow_validation_detail_lines(report)
+    if detail_lines:
+        print("Details:")
+        for line in detail_lines:
+            print(line)
 
 
 def main() -> None:

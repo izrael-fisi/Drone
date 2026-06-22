@@ -945,6 +945,10 @@ Status:
   validation checks with missing workflow step names, non-passing step
   summaries, and missing workflow/final-proof markers before the remediation
   command, so stale proof reports can be repaired without opening JSON.
+- Done: the standalone `vision_nav.autonomy_evidence_workflow` validation CLI
+  now prints the same missing-step, non-passing-step, and missing-marker
+  diagnostics in its human output, so terminal-only validation has the same
+  repair guidance as the goal-status helper.
 - Done: `scripts/dev/autonomy_goal_status.sh` now includes a field collection
   preview that translates missing required conditions into operator-readable
   labels, expected outcomes, and the next condition to capture before the

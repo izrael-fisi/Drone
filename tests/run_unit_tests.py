@@ -20,7 +20,12 @@ import numpy as np
 from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
 from vision_nav.ardupilot_params import check_ardupilot_external_nav_params, params_from_text as ardupilot_params_from_text
 from vision_nav.autonomy_evidence_package import create_evidence_package, missing_artifact_lines
-from vision_nav.autonomy_evidence_workflow import REQUIRED_WORKFLOW_STEPS, validate_workflow_report, validation_exit_code
+from vision_nav.autonomy_evidence_workflow import (
+    REQUIRED_WORKFLOW_STEPS,
+    print_human as print_workflow_validation_human,
+    validate_workflow_report,
+    validation_exit_code,
+)
 from vision_nav.autonomy_handoff import render_handoff_markdown
 from vision_nav.autonomy_readiness import REQUIRED_FIELD_CONDITIONS, evaluate_autonomy_readiness
 from vision_nav.bench_readiness import evaluate_bench_readiness, evaluate_bench_readiness_file
@@ -2948,6 +2953,16 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             "missing",
             "workflow validation missing next required step status",
         )
+        missing_step_output = io.StringIO()
+        with contextlib.redirect_stdout(missing_step_output):
+            print_workflow_validation_human(missing_required_step_validation)
+        missing_step_text = missing_step_output.getvalue()
+        if "Details:" not in missing_step_text:
+            raise AssertionError("workflow validation human output should include detailed diagnostics")
+        if "Missing workflow steps: capture_field_terrain_log" not in missing_step_text:
+            raise AssertionError("workflow validation human output should list missing required steps")
+        if "Non-passing workflow step: run_autonomy_readiness_audit [failed]" not in missing_step_text:
+            raise AssertionError("workflow validation human output should list non-passing steps")
 
         mismatched_readiness_report = json.loads(report_path.read_text())
         for step in mismatched_readiness_report["steps"]:
@@ -3031,6 +3046,14 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             ["__VISION_NAV_THRESHOLD_REPORT__", "__VISION_NAV_ROSBAG2_CLI_REVIEW__"],
             "workflow validation missing final proof marker list",
         )
+        incomplete_marker_output = io.StringIO()
+        with contextlib.redirect_stdout(incomplete_marker_output):
+            print_workflow_validation_human(incomplete_marker_validation)
+        if (
+            "Missing final proof markers: __VISION_NAV_THRESHOLD_REPORT__, __VISION_NAV_ROSBAG2_CLI_REVIEW__"
+            not in incomplete_marker_output.getvalue()
+        ):
+            raise AssertionError("workflow validation human output should list missing final proof markers")
 
         broken_archive_path = root / "broken.logs.tar.gz"
         with tarfile.open(broken_archive_path, "w:gz") as archive:
