@@ -2438,6 +2438,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                     "### Track 3: Terrain Map Bundle Pipeline",
                     "### Track 4: Desktop Setup And Mission UX",
                     "### Track 5: Validation And Product Risk Controls",
+                    "### Track 6: ArduPilot Adapter Path",
+                    "Acceptance checks:",
+                    "- ArduPilot support never becomes the default output path.",
+                    "- Runtime adapter work remains gated behind PX4 proof.",
                 ]
             )
         )
@@ -2800,8 +2804,13 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         assert_equal(
             ready["plan_snapshot"]["implementation_plan"]["track_count"],
-            5,
+            6,
             "autonomy readiness implementation track count",
+        )
+        assert_equal(
+            ready["plan_snapshot"]["implementation_plan"]["acceptance_check_count"],
+            2,
+            "autonomy readiness implementation acceptance checks",
         )
         ready_checks = {check["name"]: check["status"] for check in ready["checks"]}
         ready_check_details = {check["name"]: check.get("details") or {} for check in ready["checks"]}

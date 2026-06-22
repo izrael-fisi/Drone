@@ -4397,12 +4397,12 @@ mod tests {
                     "implementation_plan": {
                         "path": "docs/autonomy-ground-control-implementation-plan.md",
                         "exists": true,
-                        "required_marker_count": 5,
+                        "required_marker_count": 6,
                         "missing_markers": [],
                         "track_count": 6,
                         "done_count": 84,
                         "task_count": 13,
-                        "acceptance_check_count": 12
+                        "acceptance_check_count": 19
                     }
                 },
                     "evidence_manifest": {
@@ -4566,12 +4566,12 @@ mod tests {
                         "implementation_plan": {
                             "path": "docs/autonomy-ground-control-implementation-plan.md",
                             "exists": true,
-                            "required_marker_count": 5,
+                            "required_marker_count": 6,
                             "missing_markers": [],
                             "track_count": 6,
                             "done_count": 84,
                             "task_count": 13,
-                            "acceptance_check_count": 12
+                            "acceptance_check_count": 19
                         }
                     },
                     "proof_summary": {

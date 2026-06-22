@@ -32,6 +32,7 @@ IMPLEMENTATION_PLAN_MARKERS = [
     "Track 3: Terrain Map Bundle Pipeline",
     "Track 4: Desktop Setup And Mission UX",
     "Track 5: Validation And Product Risk Controls",
+    "Track 6: ArduPilot Adapter Path",
 ]
 
 EXTERNAL_PROOF_CHECKS = {
@@ -906,7 +907,11 @@ def summarize_implementation_plan(path: str | Path) -> dict[str, Any]:
         "in_progress_count": count_status_lines(text, "In progress"),
         "task_count": count_plan_list_items_under_heading(text, "Tasks"),
         "next_task_count": count_plan_list_items_under_heading(text, "Next tasks"),
-        "acceptance_check_count": count_plan_list_items_under_heading(text, "Acceptance checks"),
+        "acceptance_check_count": count_plan_list_items_under_heading(
+            text,
+            "Acceptance checks",
+            include_bullets=True,
+        ),
         "execution_order_count": count_numbered_lines(section_text(text, "Execution Order")),
     }
 
@@ -963,7 +968,7 @@ def count_status_lines(text: str, status: str) -> int:
     return len(re.findall(rf"^\s*-\s+{re.escape(status)}:", text, flags=re.MULTILINE))
 
 
-def count_plan_list_items_under_heading(text: str, heading: str) -> int:
+def count_plan_list_items_under_heading(text: str, heading: str, *, include_bullets: bool = False) -> int:
     total = 0
     search_from = 0
     pattern = re.compile(rf"^({re.escape(heading)}):\s*$", flags=re.MULTILINE)
@@ -975,6 +980,8 @@ def count_plan_list_items_under_heading(text: str, heading: str) -> int:
         next_heading = re.search(r"^\S.*:$|^#{1,6}\s+", text[start:], flags=re.MULTILINE)
         block = text[start : start + next_heading.start()] if next_heading else text[start:]
         total += count_numbered_lines(block)
+        if include_bullets:
+            total += count_bullet_lines(block)
         search_from = start
     return total
 
