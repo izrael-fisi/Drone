@@ -697,17 +697,18 @@ app sets:
 
 ```bash
 VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyAMA0:921600
-VISION_NAV_MAVLINK_MESSAGE=vision_position_estimate
+VISION_NAV_MAVLINK_MESSAGE=odometry
 VISION_NAV_EXTERNAL_POSITION_MIN_RATE_HZ=1.0
 VISION_NAV_EXTERNAL_POSITION_MAX_LATENCY_MS=500.0
 ```
 
-Accepted map matches are sent as MAVLink `VISION_POSITION_ESTIMATE` by default,
-with local NED position derived from the repo's local ENU measurement. Set
-`VISION_NAV_MAVLINK_MESSAGE=odometry` to bench the richer PX4 external-vision
-`ODOMETRY` path. Rejected matches are logged but not sent. Runtime logs include
-`external_position_health` snapshots with output status, send rate, latency,
-skip reasons, and covariance warnings.
+Accepted map matches are sent as MAVLink `ODOMETRY` by default, with local NED
+position derived from the repo's local ENU measurement. This is the preferred
+PX4 external-vision bench and final proof path. Set
+`VISION_NAV_MAVLINK_MESSAGE=vision_position_estimate` only for pose-only
+compatibility debugging. Rejected matches are logged but not sent. Runtime logs
+include `external_position_health` snapshots with output status, send rate,
+latency, skip reasons, and covariance warnings.
 
 ArduPilot device selection is kept as an adapter-readiness path, not the
 default runtime output. PX4 remains the bench target until receiver evidence is

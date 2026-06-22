@@ -1297,6 +1297,12 @@ rm -rf "$capture_smoke_dir"
 rm -rf "$capture_prereq_dir"
 
 echo "[8/8] Checking unrelated agent/chatbot scope is absent"
+grep -q 'VISION_NAV_MAVLINK_MESSAGE=odometry' docs/desktop-app.md
+grep -q 'Accepted map matches are sent as MAVLink `ODOMETRY` by default' docs/desktop-app.md
+if grep -q 'VISION_POSITION_ESTIMATE` by default' docs/desktop-app.md; then
+  echo "desktop app docs should not document VISION_POSITION_ESTIMATE as the default MAVLink output." >&2
+  exit 1
+fi
 scope_pattern="M""CP|L""LM|Chat""GPT"
 if rg -n "$scope_pattern" .; then
   echo "Found unrelated agent/chatbot scope text. Remove it before committing." >&2

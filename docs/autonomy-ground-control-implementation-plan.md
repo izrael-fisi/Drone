@@ -24,6 +24,9 @@ Status:
 - Done: Pi runtime wrappers and the MAVLink log sender default to the preferred
   `ODOMETRY` path while keeping `VISION_POSITION_ESTIMATE` as an explicit
   compatibility override.
+- Done: desktop app docs now document `ODOMETRY` as the MAVLink default and
+  keep `VISION_POSITION_ESTIMATE` as compatibility/debug only, matching the Pi
+  wrappers and final PX4 proof gates.
 - In progress: `vision-nav-send-mavlink-log` now supports selectable
   `vision_position_estimate` or `odometry` output, rate limiting, repeated log
   sends, and skip-reason summaries for sender-side PX4 SITL smoke tests.
