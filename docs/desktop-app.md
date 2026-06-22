@@ -498,6 +498,9 @@ when the direct report field is unavailable.
 The same card renders the report `plan_snapshot` when present, showing research
 marker/reference coverage and implementation track/task/done counts without
 opening the JSON report.
+It also shows audit provenance from the report or evidence package, including
+the generated timestamp, repo branch, commit hash, and dirty/clean state, so
+support can tell which code revision produced the readiness result.
 Module Setup also lists downloaded PX4 receiver-evidence JSON reports from
 `~/DroneTransfer/from-pi/px4-sitl-evidence/`, including sample count, latest
 sample age, observed receiver rate, MAVLink version, and issue summaries. The

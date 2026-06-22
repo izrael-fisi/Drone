@@ -435,6 +435,20 @@ export interface AutonomyReadinessPlanSnapshot {
   implementation_plan?: AutonomyReadinessPlanSourceSnapshot;
 }
 
+export interface AutonomyReadinessAuditMetadata {
+  schema_version?: string;
+  generated_at_utc?: string;
+  repo?: {
+    detected?: boolean;
+    root?: string;
+    path?: string;
+    branch?: string;
+    commit?: string;
+    dirty?: boolean;
+    remote?: string;
+  };
+}
+
 export interface AutonomyReadinessProofRunbook {
   schema_version?: string;
   ready_for_goal_completion?: boolean;
@@ -493,6 +507,7 @@ export interface AutonomyReadinessReportFile {
     schema_version?: string;
     readiness_status?: "passed" | "failed" | "degraded" | string;
     ready_for_goal_completion?: boolean;
+    readiness_report_metadata?: AutonomyReadinessAuditMetadata;
     plan_snapshot?: AutonomyReadinessPlanSnapshot;
     proof_item_count?: number;
     proof_item_passed_count?: number;
@@ -535,6 +550,7 @@ export interface AutonomyReadinessReportFile {
   workflow_validation_local_path?: string;
   workflow_log_archive_path?: string;
   workflow_log_archive_local_path?: string;
+  metadata?: AutonomyReadinessAuditMetadata;
   summary: {
     status?: "passed" | "failed" | "degraded" | string;
     failed_count?: number;

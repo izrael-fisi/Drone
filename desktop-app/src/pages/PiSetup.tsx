@@ -1054,6 +1054,8 @@ function AutonomyReadinessReportList({
             const researchSnapshot = planSnapshot?.research_doc;
             const implementationSnapshot = planSnapshot?.implementation_plan;
             const proofRunbook = report.proof_runbook ?? report.evidence_package_summary?.proof_runbook_summary;
+            const auditMetadata = report.metadata ?? report.evidence_package_summary?.readiness_report_metadata;
+            const auditRepo = auditMetadata?.repo;
             return (
             <div key={report.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
               <div className="flex items-start justify-between gap-3">
@@ -1085,6 +1087,18 @@ function AutonomyReadinessReportList({
                     <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
                       evidence package {formatReportSize(report.evidence_package_size_bytes ?? 0)} /{" "}
                       {formatReportTime(report.evidence_package_modified_unix_ms)}
+                    </div>
+                  )}
+                  {auditMetadata && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-slate-500">
+                      <span>audit {auditMetadata.generated_at_utc ?? "n/a"}</span>
+                      {auditRepo?.branch && <span>branch {auditRepo.branch}</span>}
+                      {auditRepo?.commit && <span>commit {shortSha(auditRepo.commit)}</span>}
+                      {typeof auditRepo?.dirty === "boolean" && (
+                        <span className={auditRepo.dirty ? "text-amber-300" : "text-emerald-300"}>
+                          {auditRepo.dirty ? "dirty" : "clean"}
+                        </span>
+                      )}
                     </div>
                   )}
                   {report.evidence_package_summary && (
@@ -4639,6 +4653,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     const latestCompletionBlockers = latestAutonomyReport?.evidence_manifest?.completion_blockers ?? [];
     const latestProofRunbook =
       latestAutonomyReport?.proof_runbook ?? latestAutonomyReport?.evidence_package_summary?.proof_runbook_summary ?? null;
+    const latestAuditMetadata =
+      latestAutonomyReport?.metadata ?? latestAutonomyReport?.evidence_package_summary?.readiness_report_metadata ?? null;
     const report = {
       version: "0.1.0",
       generated_at: new Date().toISOString(),
@@ -4734,6 +4750,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             evidence_package_path: latestAutonomyReport.evidence_package_path ?? null,
             evidence_package_size_bytes: latestAutonomyReport.evidence_package_size_bytes ?? null,
             evidence_package_summary: latestAutonomyReport.evidence_package_summary ?? null,
+            audit_metadata: latestAuditMetadata,
             plan_snapshot:
               latestAutonomyReport.plan_snapshot ?? latestAutonomyReport.evidence_package_summary?.plan_snapshot ?? null,
             workflow_report_path:

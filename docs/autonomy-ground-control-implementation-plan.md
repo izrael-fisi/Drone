@@ -593,6 +593,10 @@ Status:
   track counts, status-line counts, task counts, and acceptance-check counts so
   the final proof package records which version of the research/plan docs it
   evaluated.
+- Done: autonomy-readiness reports and evidence packages include audit
+  provenance metadata, and Module Setup now surfaces the generated timestamp,
+  repo branch, commit hash, and dirty/clean state in downloaded report cards
+  plus saved setup reports.
 - Done: autonomy-readiness reports include machine-readable `next_actions` for
   failed or degraded proof gates, with the relevant Module Setup action and
   shell command to collect the missing artifact.

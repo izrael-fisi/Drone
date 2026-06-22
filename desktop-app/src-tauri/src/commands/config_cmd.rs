@@ -525,6 +525,7 @@ pub struct AutonomyEvidencePackageSummary {
     pub schema_version: Option<String>,
     pub readiness_status: Option<String>,
     pub ready_for_goal_completion: Option<bool>,
+    pub readiness_report_metadata: Option<AutonomyReadinessAuditMetadata>,
     pub plan_snapshot: Option<AutonomyReadinessPlanSnapshot>,
     pub proof_item_count: Option<u64>,
     pub proof_item_passed_count: Option<u64>,
@@ -541,6 +542,24 @@ pub struct AutonomyEvidencePackageSummary {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyReadinessAuditMetadata {
+    pub schema_version: Option<String>,
+    pub generated_at_utc: Option<String>,
+    pub repo: Option<AutonomyReadinessAuditRepoMetadata>,
+}
+
+#[derive(Serialize)]
+pub struct AutonomyReadinessAuditRepoMetadata {
+    pub detected: Option<bool>,
+    pub root: Option<String>,
+    pub path: Option<String>,
+    pub branch: Option<String>,
+    pub commit: Option<String>,
+    pub dirty: Option<bool>,
+    pub remote: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyReadinessReportFile {
     pub name: String,
     pub path: String,
@@ -553,6 +572,7 @@ pub struct AutonomyReadinessReportFile {
     pub evidence_package_size_bytes: Option<u64>,
     pub evidence_package_modified_unix_ms: Option<u128>,
     pub evidence_package_summary: Option<AutonomyEvidencePackageSummary>,
+    pub metadata: Option<AutonomyReadinessAuditMetadata>,
     pub workflow_report_path: Option<String>,
     pub workflow_report_local_path: Option<String>,
     pub workflow_validation_path: Option<String>,
@@ -1243,6 +1263,7 @@ pub fn list_autonomy_readiness_reports(
         let command_bundle = autonomy_readiness_command_bundle_from_json(&value);
         let plan_snapshot = autonomy_readiness_plan_snapshot_from_json(value.get("plan_snapshot"));
         let proof_runbook = autonomy_readiness_proof_runbook_from_json(value.get("proof_runbook"));
+        let audit_metadata = autonomy_readiness_audit_metadata_from_json(value.get("metadata"));
         let field_collection_plan = autonomy_readiness_field_collection_plan_from_json(&value, &p);
         let modified_unix_ms = metadata
             .modified()
@@ -1302,6 +1323,7 @@ pub fn list_autonomy_readiness_reports(
                 .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
                 .map(|duration| duration.as_millis()),
             evidence_package_summary,
+            metadata: audit_metadata,
             workflow_report_path,
             workflow_report_local_path,
             workflow_validation_path,
@@ -1887,6 +1909,9 @@ fn read_autonomy_evidence_package_summary(path: &Path) -> Option<AutonomyEvidenc
         ready_for_goal_completion: manifest
             .get("ready_for_goal_completion")
             .and_then(|value| value.as_bool()),
+        readiness_report_metadata: autonomy_readiness_audit_metadata_from_json(
+            manifest.get("readiness_report_metadata"),
+        ),
         plan_snapshot: autonomy_readiness_plan_snapshot_from_json(manifest.get("plan_snapshot")),
         proof_item_count: proof_summary
             .and_then(|value| value.get("proof_item_count"))
@@ -2189,7 +2214,9 @@ fn read_log_timeline_entry(
         status_counts: counts_value(&accumulator.status_counts),
         reason_counts: counts_value(&accumulator.reason_counts),
         external_position_status_counts: counts_value(&accumulator.external_position_status_counts),
-        external_position_warning_counts: counts_value(&accumulator.external_position_warning_counts),
+        external_position_warning_counts: counts_value(
+            &accumulator.external_position_warning_counts,
+        ),
         first_sequence: accumulator.first_sequence,
         last_sequence: accumulator.last_sequence,
         first_timestamp_us: accumulator.first_timestamp_us,
@@ -2918,6 +2945,38 @@ fn autonomy_evidence_manifest_from_json(
             value.get("completion_blockers"),
         ),
         external_blockers: autonomy_evidence_blockers_from_value(value.get("external_blockers")),
+    })
+}
+
+fn autonomy_readiness_audit_metadata_from_json(
+    value: Option<&serde_json::Value>,
+) -> Option<AutonomyReadinessAuditMetadata> {
+    let value = value?;
+    if !value.is_object() {
+        return None;
+    }
+    Some(AutonomyReadinessAuditMetadata {
+        schema_version: json_string(value.get("schema_version")),
+        generated_at_utc: json_string(value.get("generated_at_utc")),
+        repo: autonomy_readiness_audit_repo_metadata_from_json(value.get("repo")),
+    })
+}
+
+fn autonomy_readiness_audit_repo_metadata_from_json(
+    value: Option<&serde_json::Value>,
+) -> Option<AutonomyReadinessAuditRepoMetadata> {
+    let value = value?;
+    if !value.is_object() {
+        return None;
+    }
+    Some(AutonomyReadinessAuditRepoMetadata {
+        detected: value.get("detected").and_then(|value| value.as_bool()),
+        root: json_string(value.get("root")),
+        path: json_string(value.get("path")),
+        branch: json_string(value.get("branch")),
+        commit: json_string(value.get("commit")),
+        dirty: value.get("dirty").and_then(|value| value.as_bool()),
+        remote: json_string(value.get("remote")),
     })
 }
 
@@ -4330,6 +4389,18 @@ mod tests {
             &report_path,
             serde_json::json!({
                 "status": "failed",
+                "metadata": {
+                    "schema_version": "vision_nav_autonomy_readiness_audit_metadata_v1",
+                    "generated_at_utc": "2026-06-22T07:00:00+00:00",
+                    "repo": {
+                        "detected": true,
+                        "root": "/repo/drone",
+                        "branch": "main",
+                        "commit": "abcdef1234567890",
+                        "dirty": false,
+                        "remote": "https://github.com/izrael-fisi/Drone.git"
+                    }
+                },
                 "inputs": {
                     "field_collection_plan": "/home/user/DroneTransfer/outgoing/replay-cases/field_collection_plan.json",
                     "evidence_workflow_report": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.json",
@@ -4566,6 +4637,18 @@ mod tests {
                     "schema_version": "vision_nav_autonomy_evidence_package_v1",
                     "readiness_status": "failed",
                     "ready_for_goal_completion": false,
+                    "readiness_report_metadata": {
+                        "schema_version": "vision_nav_autonomy_readiness_audit_metadata_v1",
+                        "generated_at_utc": "2026-06-22T07:05:00+00:00",
+                        "repo": {
+                            "detected": true,
+                            "root": "/repo/drone",
+                            "branch": "main",
+                            "commit": "fedcba9876543210",
+                            "dirty": true,
+                            "remote": "https://github.com/izrael-fisi/Drone.git"
+                        }
+                    },
                     "plan_snapshot": {
                         "schema_version": "vision_nav_autonomy_plan_snapshot_v1",
                         "research_doc": {
@@ -4713,6 +4796,26 @@ mod tests {
             .workflow_log_archive_local_path
             .as_deref()
             .is_some_and(|path| path.ends_with("autonomy_evidence_workflow.logs.tar.gz")));
+        let audit_metadata = reports[0].metadata.as_ref().expect("audit metadata");
+        assert_eq!(
+            audit_metadata.schema_version.as_deref(),
+            Some("vision_nav_autonomy_readiness_audit_metadata_v1")
+        );
+        assert_eq!(
+            audit_metadata.generated_at_utc.as_deref(),
+            Some("2026-06-22T07:00:00+00:00")
+        );
+        assert_eq!(
+            audit_metadata
+                .repo
+                .as_ref()
+                .and_then(|repo| repo.commit.as_deref()),
+            Some("abcdef1234567890")
+        );
+        assert_eq!(
+            audit_metadata.repo.as_ref().and_then(|repo| repo.dirty),
+            Some(false)
+        );
         let plan_snapshot = reports[0].plan_snapshot.as_ref().expect("plan snapshot");
         assert_eq!(
             plan_snapshot.schema_version.as_deref(),
@@ -4758,6 +4861,22 @@ mod tests {
             .expect("evidence package summary");
         assert_eq!(package_summary.readiness_status.as_deref(), Some("failed"));
         assert_eq!(package_summary.ready_for_goal_completion, Some(false));
+        assert_eq!(
+            package_summary
+                .readiness_report_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.repo.as_ref())
+                .and_then(|repo| repo.commit.as_deref()),
+            Some("fedcba9876543210")
+        );
+        assert_eq!(
+            package_summary
+                .readiness_report_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.repo.as_ref())
+                .and_then(|repo| repo.dirty),
+            Some(true)
+        );
         assert_eq!(
             package_summary
                 .plan_snapshot
