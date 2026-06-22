@@ -380,6 +380,10 @@ Status:
   SSH, download the snapshot, and show active map, last match, estimator health,
   external-position health, frame sequence, and accepted/rejected counts before
   the operator creates a full bench report.
+- Done: `scripts/pi/read_runtime_status.sh` is now part of the handoff-audited
+  Pi script surface, and local preflight checks that it emits the stable
+  `__VISION_NAV_RUNTIME_STATUS__` and `__VISION_NAV_RUNTIME_STATUS_JSON__`
+  markers expected by Module Setup and support-bundle workflows.
 
 Tasks:
 

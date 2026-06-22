@@ -41,6 +41,7 @@ pi_field_template_output="$preflight_tmp_dir/pi_field_template_preflight.txt"
 field_collection_plan_output="$preflight_tmp_dir/field_collection_plan_preflight.txt"
 field_template_schema_output="$preflight_tmp_dir/field_template_schema_preflight.txt"
 field_register_output="$preflight_tmp_dir/field_register_preflight.txt"
+runtime_status_output="$preflight_tmp_dir/runtime_status_preflight.txt"
 evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_preflight.txt"
 evidence_workflow_validation_output="$preflight_tmp_dir/evidence_workflow_validation_preflight.txt"
 invalid_evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_invalid_log.txt"
@@ -116,6 +117,14 @@ EOF
 cat >"$workflow_smoke_dir/runtime_status.json" <<'EOF'
 {"schema_version":"vision_nav_runtime_status_v1","active_map":{"bundle_id":"preflight"},"output":{"output_dir":"preflight-output","log_path":"preflight-output/terrain_matches.jsonl"},"last_match":{"status":"accepted"},"estimator":{"health":"healthy"},"external_position_health":{"status":"not_configured"}}
 EOF
+VISION_NAV_RUNTIME_STATUS_ROOTS="$workflow_smoke_dir" \
+VISION_NAV_RUNTIME_STATUS_MAX_BYTES=4096 \
+./scripts/pi/read_runtime_status.sh >"$runtime_status_output"
+grep -q "__VISION_NAV_RUNTIME_STATUS__=$workflow_smoke_dir/runtime_status.json" "$runtime_status_output"
+grep -q "__VISION_NAV_RUNTIME_STATUS_JSON__=" "$runtime_status_output"
+grep -q "Runtime status summary:" "$runtime_status_output"
+grep -q "map: preflight" "$runtime_status_output"
+grep -q "match: accepted" "$runtime_status_output"
 mkdir -p "$workflow_smoke_dir/terrain-match"
 cat >"$workflow_smoke_dir/terrain-match/rosbag2-cli-review.json" <<EOF
 {

@@ -93,6 +93,7 @@ required_pi_scripts=(
   "scripts/pi/replay_vision_nav_frames.sh"
   "scripts/pi/replay_terrain_nav_log.sh"
   "scripts/pi/summarize_vision_nav_logs.sh"
+  "scripts/pi/read_runtime_status.sh"
   "scripts/pi/create_support_bundle.sh"
   "scripts/pi/create_field_evidence_template.sh"
   "scripts/pi/create_field_collection_plan.sh"
