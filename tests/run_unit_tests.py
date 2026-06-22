@@ -2994,9 +2994,47 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 {
                     "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
                     "status": "degraded",
+                    "workflow_status": "failed",
                     "report_path": str(workflow_report),
+                    "step_count": 11,
+                    "marker_count": 9,
                     "issue_count": 1,
                     "issues": ["unit validation issue"],
+                    "checks": [
+                        {
+                            "name": "required_step_results",
+                            "status": "degraded",
+                            "message": "Some required workflow steps did not pass.",
+                            "details": {
+                                "non_passed_count": 2,
+                                "missing_steps": [],
+                                "non_passed_steps": [
+                                    {
+                                        "name": "register_field_replay_case",
+                                        "status": "skipped",
+                                        "exit_code": 0,
+                                        "notes": "No field case variables supplied.",
+                                    },
+                                    {
+                                        "name": "run_autonomy_readiness_audit",
+                                        "status": "failed",
+                                        "exit_code": 1,
+                                        "notes": "Final readiness failed.",
+                                    },
+                                ],
+                            },
+                        },
+                        {
+                            "name": "final_proof_markers",
+                            "status": "degraded",
+                            "message": "Workflow report is missing final-readiness proof artifact markers.",
+                            "details": {
+                                "missing_markers": ["__VISION_NAV_THRESHOLD_REPORT__"],
+                                "present_markers": ["__VISION_NAV_SUPPORT_ZIP__"],
+                                "marker_count": 9,
+                            },
+                        },
+                    ],
                 }
             )
         )
@@ -3955,6 +3993,49 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 raise AssertionError("autonomy evidence package missing immediate threshold command")
             if "./scripts/pi/run_threshold_tuning_report.sh" in package_command_bundle["blocked_follow_up_commands"]:
                 raise AssertionError("autonomy evidence package should not block immediate threshold command")
+            workflow_validation_summary = package_manifest.get("workflow_validation_summary")
+            if not isinstance(workflow_validation_summary, dict):
+                raise AssertionError("autonomy evidence package missing workflow validation summary")
+            assert_equal(
+                workflow_validation_summary["status"],
+                "degraded",
+                "autonomy evidence package workflow validation status",
+            )
+            assert_equal(
+                workflow_validation_summary["workflow_status"],
+                "failed",
+                "autonomy evidence package workflow validation workflow status",
+            )
+            assert_equal(
+                workflow_validation_summary["issue_count"],
+                1,
+                "autonomy evidence package workflow validation issue count",
+            )
+            required_step_check = next(
+                item
+                for item in workflow_validation_summary["checks"]
+                if item.get("name") == "required_step_results"
+            )
+            assert_equal(
+                required_step_check["non_passed_count"],
+                2,
+                "autonomy evidence package workflow validation non-passed count",
+            )
+            assert_equal(
+                required_step_check["non_passed_steps"][0]["name"],
+                "register_field_replay_case",
+                "autonomy evidence package workflow validation non-passed step",
+            )
+            assert_equal(
+                required_step_check["non_passed_steps"][0]["status"],
+                "skipped",
+                "autonomy evidence package workflow validation non-passed status",
+            )
+            assert_equal(
+                required_step_check["non_passed_steps"][0]["exit_code"],
+                0,
+                "autonomy evidence package workflow validation non-passed exit code",
+            )
             manifest = json.loads(archive.read("manifest.json"))
             assert_equal(manifest["readiness_status"], "failed", "autonomy evidence package status")
             assert_equal(

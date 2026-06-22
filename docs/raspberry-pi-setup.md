@@ -1122,7 +1122,9 @@ It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and
 even when the audit fails, so the missing proof artifacts are visible in both a
 machine-readable report, a support handoff, and a package manifest with the
 plan source snapshot, compact goal-proof counts, and a bounded proof-runbook
-summary.
+summary. The package manifest also preserves a compact workflow-validation
+summary with failed/degraded checks, missing final-proof markers, and
+non-passing required workflow steps when validation JSON is available.
 The evidence-package command also prints the first missing package artifact
 labels, including failed `proof:<check>` gates and their missing condition
 summary, so terminal logs show which final proof artifacts are still absent.
@@ -1170,7 +1172,8 @@ summaries, downloaded autonomy-workflow reports, and a compact latest-readiness
 snapshot with handoff path, evidence package path, goal-completion flag,
 plan source snapshot, external blockers, next actions, the readiness
 `command_bundle` or evidence-package command-bundle fallback, and the
-referenced field collection plan summary when it is available locally.
+evidence-package workflow-validation summary plus referenced field collection
+plan summary when they are available locally.
 The same Module Setup panel lists the latest downloaded feature-method
 benchmark JSON reports
 with recommended method and accepted rates, lists field-evidence JSON reports

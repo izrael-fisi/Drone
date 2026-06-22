@@ -541,6 +541,7 @@ pub struct AutonomyEvidencePackageSummary {
     pub skipped_count: Option<u64>,
     pub proof_runbook_summary: Option<AutonomyReadinessProofRunbook>,
     pub command_bundle: Option<AutonomyReadinessCommandBundle>,
+    pub workflow_validation_summary: Option<AutonomyEvidenceWorkflowValidationSummary>,
     pub proof_items: Vec<AutonomyReadinessEvidenceBlocker>,
     pub included_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
     pub missing_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
@@ -1967,6 +1968,9 @@ fn read_autonomy_evidence_package_summary(path: &Path) -> Option<AutonomyEvidenc
         command_bundle: autonomy_readiness_command_bundle_from_bundle_json(
             manifest.get("command_bundle"),
         ),
+        workflow_validation_summary: manifest
+            .get("workflow_validation_summary")
+            .and_then(workflow_validation_summary_from_json),
         proof_items: autonomy_evidence_blockers_from_value(
             proof_summary.and_then(|value| value.get("proof_items")),
         ),
@@ -3464,7 +3468,9 @@ fn workflow_validation_summary_from_json(
                                 .map(|item| AutonomyEvidenceWorkflowValidationStepResult {
                                     name: json_string(item.get("name")),
                                     status: json_string(item.get("status")),
-                                    exit_code: item.get("exit_code").and_then(|value| value.as_i64()),
+                                    exit_code: item
+                                        .get("exit_code")
+                                        .and_then(|value| value.as_i64()),
                                     notes: json_string(item.get("notes")),
                                 })
                                 .collect::<Vec<_>>()
@@ -4897,6 +4903,44 @@ mod tests {
                         ],
                         "command_count": 6
                     },
+                    "workflow_validation_summary": {
+                        "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
+                        "status": "degraded",
+                        "workflow_status": "failed",
+                        "step_count": 10,
+                        "marker_count": 8,
+                        "issue_count": 1,
+                        "issues": ["Some required workflow steps did not pass."],
+                        "checks": [
+                            {"name": "schema", "status": "passed", "message": "Workflow JSON is valid."},
+                            {
+                                "name": "required_step_results",
+                                "status": "degraded",
+                                "message": "Some required steps were skipped or failed.",
+                                "non_passed_count": 2,
+                                "non_passed_steps": [
+                                    {
+                                        "name": "register_field_replay_case",
+                                        "status": "skipped",
+                                        "exit_code": 0,
+                                        "notes": "Waiting for field replay capture."
+                                    },
+                                    {
+                                        "name": "run_autonomy_readiness_audit",
+                                        "status": "failed",
+                                        "exit_code": 1
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "final_proof_markers",
+                                "status": "degraded",
+                                "marker_count": 8,
+                                "missing_markers": ["__VISION_NAV_FIELD_EVIDENCE_REPORT__"],
+                                "present_markers": ["__VISION_NAV_SUPPORT_ZIP__", "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__"]
+                            }
+                        ]
+                    },
                     "included": [
                         {"label": "autonomy_report"},
                         {"label": "autonomy_handoff"},
@@ -5087,6 +5131,38 @@ mod tests {
             "./scripts/pi/run_threshold_tuning_report.sh"
         );
         assert_eq!(package_command_bundle.command_count, Some(6));
+        let package_validation = package_summary
+            .workflow_validation_summary
+            .as_ref()
+            .expect("package workflow validation summary");
+        assert_eq!(package_validation.status.as_deref(), Some("degraded"));
+        assert_eq!(
+            package_validation.workflow_status.as_deref(),
+            Some("failed")
+        );
+        assert_eq!(package_validation.issue_count, 1);
+        assert_eq!(package_validation.checks.len(), 3);
+        assert_eq!(
+            package_validation.checks[1].name.as_deref(),
+            Some("required_step_results")
+        );
+        assert_eq!(package_validation.checks[1].non_passed_count, Some(2));
+        assert_eq!(
+            package_validation.checks[1].non_passed_steps[0]
+                .name
+                .as_deref(),
+            Some("register_field_replay_case")
+        );
+        assert_eq!(
+            package_validation.checks[1].non_passed_steps[0]
+                .status
+                .as_deref(),
+            Some("skipped")
+        );
+        assert_eq!(
+            package_validation.checks[2].missing_markers,
+            vec!["__VISION_NAV_FIELD_EVIDENCE_REPORT__".to_string()]
+        );
         assert_eq!(package_summary.included_count, Some(3));
         assert_eq!(package_summary.missing_count, Some(1));
         assert_eq!(package_summary.skipped_count, Some(1));
@@ -5469,15 +5545,11 @@ mod tests {
         assert_eq!(validation.checks[1].missing_steps.len(), 0);
         assert_eq!(validation.checks[1].non_passed_steps.len(), 2);
         assert_eq!(
-            validation.checks[1].non_passed_steps[0]
-                .name
-                .as_deref(),
+            validation.checks[1].non_passed_steps[0].name.as_deref(),
             Some("register_field_replay_case")
         );
         assert_eq!(
-            validation.checks[1].non_passed_steps[0]
-                .status
-                .as_deref(),
+            validation.checks[1].non_passed_steps[0].status.as_deref(),
             Some("skipped")
         );
         assert_eq!(validation.checks[1].non_passed_steps[0].exit_code, Some(0));

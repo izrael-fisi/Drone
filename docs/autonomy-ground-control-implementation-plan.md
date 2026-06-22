@@ -723,6 +723,10 @@ Status:
   goal-proof summary and proof-runbook summary with proof pass counts, first
   proof items, completion-blocker count, external-blocker count, and ordered
   phase state.
+- Done: evidence-package manifests preserve a compact workflow-validation
+  summary, including status, issue count, failed/degraded checks, missing final
+  proof markers, and non-passing required workflow steps, so support can see why
+  the package is not final without opening the raw validation JSON.
 - Done: evidence-package manifests now list failed required proof gates as
   missing `proof:<check>` entries even when no artifact path exists yet, so an
   incomplete package cannot appear artifact-complete just because PX4, field,
@@ -907,6 +911,9 @@ Status:
   details, including missing/present final-proof marker arrays and
   missing/non-passing required-step summaries, so exported setup reports keep
   the same support-review context as the workflow card.
+- Done: Module Setup renders the compact workflow-validation summary embedded in
+  downloaded evidence-package manifests, so readiness report cards still surface
+  failed workflow steps even when support is reviewing the ZIP summary.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

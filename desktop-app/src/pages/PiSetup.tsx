@@ -1283,6 +1283,9 @@ function AutonomyReadinessReportList({
                           <span>external blockers {report.evidence_package_summary.external_blocker_count}</span>
                         )}
                       </div>
+                      {report.evidence_package_summary.workflow_validation_summary && (
+                        <WorkflowValidationSummaryLine summary={report.evidence_package_summary.workflow_validation_summary} />
+                      )}
                       {report.evidence_package_summary.proof_items.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {report.evidence_package_summary.proof_items.slice(0, 4).map((item, index) => (

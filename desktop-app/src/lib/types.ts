@@ -527,6 +527,7 @@ export interface AutonomyReadinessReportFile {
       field_collection_registration_commands: string[];
       command_count?: number;
     };
+    workflow_validation_summary?: AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"];
     proof_items: Array<{
       name?: string;
       status?: "passed" | "failed" | "degraded" | string;

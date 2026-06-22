@@ -584,6 +584,10 @@ Missing entries include not-yet-passed required proof gates, even when no
 concrete artifact path has been produced yet. For those proof gates, the card
 preserves and displays status, reason, message, source, and the first missing
 condition keys when available.
+If the package manifest includes a compact workflow-validation summary, the card
+also shows the workflow status, issue count, failed/degraded checks, missing
+final-proof markers, and non-passing required workflow steps from the package
+itself.
 The evidence-package command prints the same first missing package artifact
 labels to terminal logs, so CLI-only support reviews can identify absent proof
 gates without opening the ZIP manifest.
@@ -626,9 +630,9 @@ log archives are available, the local/Pi readiness audit records them as
 non-gating inputs so the handoff can show availability and the evidence ZIP can
 carry them with the rest of the review package when they are under the artifact
 size limit. The evidence ZIP manifest also includes the plan snapshot, bounded
-proof counts, a bounded proof-runbook summary, a preserved command bundle, and
-the first proof items, and the Autonomy Readiness Reports card shows those
-package proof counts beside
+proof counts, a bounded proof-runbook summary, a preserved command bundle, a
+compact workflow-validation summary, and the first proof items, and the Autonomy
+Readiness Reports card shows those package proof counts beside
 compact workflow, validation, and logs chips for referenced inputs, with
 copy/reveal actions when the downloaded local artifact exists.
 

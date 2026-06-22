@@ -16,6 +16,7 @@ MAX_MANIFEST_PROOF_ITEMS = 12
 MAX_MANIFEST_BLOCKERS = 12
 MAX_MANIFEST_RUNBOOK_PHASES = 8
 MAX_MANIFEST_RUNBOOK_ACTIONS = 8
+MAX_MANIFEST_WORKFLOW_CHECKS = 8
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,6 +109,7 @@ def create_evidence_package(
             "diagnostic_summary": build_diagnostic_summary(report),
             "proof_runbook_summary": build_proof_runbook_summary(report),
             "command_bundle": build_command_bundle_summary(report),
+            "workflow_validation_summary": build_workflow_validation_summary(report, report_path=report_file),
             "max_artifact_bytes": max_artifact_bytes,
             "included": included,
             "missing": missing,
@@ -246,6 +248,103 @@ def build_command_bundle_summary(report: dict[str, Any]) -> dict[str, Any] | Non
     if not any(value for value in summary.values() if isinstance(value, list)):
         return None
     return summary
+
+
+def build_workflow_validation_summary(report: dict[str, Any], *, report_path: Path) -> dict[str, Any] | None:
+    path = resolve_workflow_validation_path(report, report_path=report_path)
+    if path is None:
+        return None
+    try:
+        validation = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "path": str(path),
+            "status": "unreadable",
+            "issues": ["Workflow validation report could not be read."],
+        }
+    if not isinstance(validation, dict) or validation.get("schema_version") != "vision_nav_autonomy_evidence_workflow_validation_v1":
+        return {
+            "path": str(path),
+            "status": "unrecognized",
+            "issues": ["Workflow validation report schema is not recognized."],
+        }
+    checks = dict_items(validation.get("checks"))
+    highlighted_checks = [check for check in checks if check.get("status") != "passed"]
+    if not highlighted_checks:
+        highlighted_checks = checks
+    return {
+        "path": str(path),
+        "schema_version": validation.get("schema_version"),
+        "status": validation.get("status"),
+        "workflow_status": validation.get("workflow_status"),
+        "step_count": validation.get("step_count"),
+        "marker_count": validation.get("marker_count"),
+        "issue_count": len(string_list(validation.get("issues"))),
+        "issues": string_list(validation.get("issues"))[:MAX_MANIFEST_RUNBOOK_ACTIONS],
+        "checks_truncated": len(highlighted_checks) > MAX_MANIFEST_WORKFLOW_CHECKS,
+        "checks": [
+            compact_workflow_validation_check(check)
+            for check in highlighted_checks[:MAX_MANIFEST_WORKFLOW_CHECKS]
+        ],
+    }
+
+
+def resolve_workflow_validation_path(report: dict[str, Any], *, report_path: Path) -> Path | None:
+    inputs = report.get("inputs") if isinstance(report.get("inputs"), dict) else {}
+    raw_path = inputs.get("evidence_workflow_validation_report")
+    if isinstance(raw_path, str) and raw_path:
+        candidate = Path(raw_path).expanduser()
+        if candidate.is_file():
+            return candidate
+    sibling_names = [
+        "autonomy_evidence_workflow.validation.json",
+        "autonomy_readiness_report.validation.json",
+    ]
+    for name in sibling_names:
+        sibling = report_path.parent / name
+        if sibling.is_file():
+            return sibling
+    return None
+
+
+def compact_workflow_validation_check(check: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in ("name", "status", "message"):
+        value = check.get(key)
+        if isinstance(value, str) and value:
+            compact[key] = value
+    details = check.get("details") if isinstance(check.get("details"), dict) else {}
+    marker_count = details.get("marker_count", check.get("marker_count"))
+    if isinstance(marker_count, int):
+        compact["marker_count"] = marker_count
+    missing_markers = string_list(details.get("missing_markers") or check.get("missing_markers"))
+    if missing_markers:
+        compact["missing_markers"] = missing_markers[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+        compact["missing_markers_truncated"] = len(missing_markers) > MAX_MANIFEST_RUNBOOK_ACTIONS
+    present_markers = string_list(details.get("present_markers") or check.get("present_markers"))
+    if present_markers:
+        compact["present_markers"] = present_markers[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+        compact["present_markers_truncated"] = len(present_markers) > MAX_MANIFEST_RUNBOOK_ACTIONS
+    missing_steps = string_list(details.get("missing_steps") or check.get("missing_steps"))
+    if missing_steps:
+        compact["missing_steps"] = missing_steps[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+        compact["missing_steps_truncated"] = len(missing_steps) > MAX_MANIFEST_RUNBOOK_ACTIONS
+    non_passed_count = details.get("non_passed_count", check.get("non_passed_count"))
+    if isinstance(non_passed_count, int):
+        compact["non_passed_count"] = non_passed_count
+    non_passed_steps = dict_items(details.get("non_passed_steps") or check.get("non_passed_steps"))
+    if non_passed_steps:
+        compact["non_passed_steps_truncated"] = len(non_passed_steps) > MAX_MANIFEST_RUNBOOK_ACTIONS
+        compact["non_passed_steps"] = [
+            {
+                key: str(step.get(key))
+                for key in ("name", "status", "notes")
+                if step.get(key) is not None
+            }
+            | ({"exit_code": step.get("exit_code")} if isinstance(step.get("exit_code"), int) else {})
+            for step in non_passed_steps[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+        ]
+    return compact
 
 
 def compact_runbook_phase(phase: dict[str, Any]) -> dict[str, Any]:
