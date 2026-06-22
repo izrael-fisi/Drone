@@ -285,6 +285,11 @@ function SupportBundleDetailPanel({
                   )}
                   {workflowNextStep.metadata_update_command && <span className="truncate">metadata update ready</span>}
                 </div>
+                {workflowNextStep.notes && (
+                  <div className="text-[10px] text-slate-400">
+                    {workflowNextStep.notes}
+                  </div>
+                )}
                 {workflowNextCommand && (
                   <button
                     type="button"

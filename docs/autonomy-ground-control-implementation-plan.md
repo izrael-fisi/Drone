@@ -633,6 +633,10 @@ Status:
   metadata-update, and registration commands from the bundled field collection
   plan, allowing an offline support ZIP to hand the operator back to the exact
   next field-proof command sequence.
+- Done: downloaded support-bundle evidence-workflow details now render the
+  workflow validation next-step notes beside the copyable command, so offline
+  support review can see the prerequisite or repair context without hovering or
+  opening raw validation JSON.
 - Done: autonomy readiness audits record field collection plan/checklist paths
   when present so `autonomy_readiness_report.evidence.zip` includes the
   operator plan beside the final handoff and machine-readable report.
