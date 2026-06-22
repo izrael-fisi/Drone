@@ -231,6 +231,7 @@ external_blockers = evidence.get("external_blockers") or []
 completion_blockers = evidence.get("completion_blockers") or []
 runbook = report.get("proof_runbook") or {}
 runbook_summary = runbook.get("summary") or {}
+phases = runbook.get("phases") or []
 metadata = report.get("metadata") or {}
 repo = metadata.get("repo") or {}
 inputs = report.get("inputs") or {}
@@ -270,6 +271,23 @@ if present_inputs:
     if len(present_inputs) > 12:
         print(f"- ... {len(present_inputs) - 12} more")
 
+if phases:
+    print()
+    print("Proof phases:")
+    for phase in phases:
+        phase_id = phase.get("id") or "unknown"
+        status = phase.get("status") or "unknown"
+        title = phase.get("title") or phase_id
+        print(f"- {phase_id} [{status}]: {title}")
+        dependencies = phase.get("dependency_status") or {}
+        waiting_on = [
+            f"{name}={value}"
+            for name, value in dependencies.items()
+            if value != "passed"
+        ]
+        if waiting_on:
+            print(f"  waiting on: {', '.join(waiting_on)}")
+
 if external_blockers:
     print()
     print("External blockers:")
@@ -286,7 +304,33 @@ if external_blockers:
     if len(external_blockers) > 12:
         print(f"- ... {len(external_blockers) - 12} more")
 
-next_actions = report.get("next_actions") or []
+phase_commands = []
+if phases:
+    for phase in phases:
+        if phase.get("status") != "action_required":
+            continue
+        phase_command_values = set()
+        for action in phase.get("actions") or []:
+            command = action.get("command")
+            if not command:
+                continue
+            phase_command_values.add(command)
+            phase_commands.append(
+                {
+                    "title": action.get("title") or phase.get("title") or phase.get("id") or "next action",
+                    "command": command,
+                }
+            )
+        for command in phase.get("commands") or []:
+            if command in phase_command_values:
+                continue
+            phase_commands.append(
+                {
+                    "title": phase.get("title") or phase.get("id") or "next action",
+                    "command": command,
+                }
+            )
+next_actions = phase_commands or (report.get("next_actions") or [])
 if next_actions:
     print()
     print("Next commands:")

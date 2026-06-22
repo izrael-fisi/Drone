@@ -719,7 +719,7 @@ Status:
   with the repo-local Python path, scans conventional downloaded evidence
   folders, and prints a concise goal-status summary with consumed evidence
   inputs, proof-item counts, external blockers, proof-runbook phase counts, and
-  next commands without creating a new handoff package.
+  runbook-ordered next commands without creating a new handoff package.
 - Done: `scripts/mac/goal_status.sh` now embeds that autonomy proof summary
   before its transfer-folder and Pi connectivity checks so one operator command
   reports both missing proof gates and setup connectivity.

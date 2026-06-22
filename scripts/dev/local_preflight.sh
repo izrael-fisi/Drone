@@ -243,6 +243,9 @@ if ./scripts/dev/autonomy_goal_status.sh >"$goal_status_output" 2>&1; then
   exit 1
 fi
 grep -q "Autonomy goal status: failed" "$goal_status_output"
+grep -q "Proof phases:" "$goal_status_output"
+grep -q "method_thresholds \\[blocked\\]" "$goal_status_output"
+grep -q "waiting on: field_dataset=action_required" "$goal_status_output"
 grep -q "External proof blockers:" "$goal_status_output"
 grep -q "Next commands:" "$goal_status_output"
 grep -q "support_bundle_bench_readiness" "$goal_status_output"
