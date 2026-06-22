@@ -137,6 +137,22 @@ cat >"$workflow_smoke_dir/terrain-match/rosbag2-cli-review.json" <<EOF
   "issues": []
 }
 EOF
+cat >"$workflow_smoke_dir/px4_sitl_capture_prereqs.json" <<'EOF'
+{
+  "schema_version": "vision_nav_px4_sitl_capture_prereqs_v1",
+  "status": "failed",
+  "checks": [
+    {
+      "name": "px4_autopilot_dir",
+      "status": "failed",
+      "message": "PX4-Autopilot checkout was not found."
+    }
+  ],
+  "markers": {
+    "__VISION_NAV_PX4_SITL_PREREQS__": "px4_sitl_capture_prereqs.json"
+  }
+}
+EOF
 VISION_NAV_PYTHON=python3 \
 VISION_NAV_EVIDENCE_WORKFLOW_DIR="$workflow_smoke_dir/workflow" \
 VISION_NAV_EVIDENCE_WORKFLOW_REPORT="$workflow_smoke_dir/workflow/autonomy_evidence_workflow.json" \
@@ -161,6 +177,9 @@ VISION_NAV_SUPPORT_OUTPUT_DIR="$workflow_smoke_dir/support-bundles" \
 VISION_NAV_AUTONOMY_READINESS_REPORT="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.json" \
 VISION_NAV_AUTONOMY_HANDOFF="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.md" \
 VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE="$workflow_smoke_dir/replay-cases/autonomy_readiness_report.evidence.zip" \
+VISION_NAV_PX4_SITL_SESSION="$workflow_smoke_dir/missing-px4-sitl-evidence" \
+VISION_NAV_PX4_SITL_REPORT="$workflow_smoke_dir/missing-receiver_evidence.json" \
+VISION_NAV_PX4_SITL_PREREQS="$workflow_smoke_dir/px4_sitl_capture_prereqs.json" \
 ./scripts/pi/run_autonomy_evidence_workflow.sh >"$evidence_workflow_output" 2>&1
 grep -q "__VISION_NAV_EVIDENCE_WORKFLOW_REPORT__=" "$evidence_workflow_output"
 grep -q "__VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION__=" "$evidence_workflow_output"
@@ -186,6 +205,7 @@ assert "validate_rosbag_export" in steps
 assert "check_native_rosbag2_review" in steps
 assert "check_px4_receiver_proof" in steps
 assert "run_autonomy_readiness_audit" in steps
+assert steps["check_px4_receiver_proof"]["status"] == "skipped"
 assert steps["run_autonomy_readiness_audit"]["status"] == "failed"
 assert steps["run_autonomy_readiness_audit"]["readiness_report_status"] == "failed"
 assert "__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__" in report["markers"]
@@ -197,6 +217,9 @@ assert "__VISION_NAV_TERRAIN_LOG__" in report["markers"]
 assert "__VISION_NAV_RUNTIME_STATUS__" in report["markers"]
 assert "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__" in report["markers"]
 assert "__VISION_NAV_ROSBAG2_CLI_REVIEW__" in report["markers"]
+assert "__VISION_NAV_PX4_SITL_PREREQS__" in report["markers"]
+assert "__VISION_NAV_PX4_SITL_SESSION__" not in report["markers"]
+assert "__VISION_NAV_PX4_SITL_REPORT__" not in report["markers"]
 assert report["status"] == "failed"
 assert Path(report["markers"]["__VISION_NAV_ROSBAG_EXPORT_VALIDATION__"]).exists()
 assert Path(report["markers"]["__VISION_NAV_ROSBAG2_CLI_REVIEW__"]).exists()

@@ -811,6 +811,9 @@ Status:
   writing a
   machine-readable per-step workflow report with logs and emitted artifact
   markers even when the final gates still fail.
+- Done: the evidence workflow preserves PX4 prerequisite diagnostic markers in
+  the workflow report, but keeps `check_px4_receiver_proof` skipped until a PX4
+  SITL evidence session or evaluated receiver report exists.
 - Done: the evidence workflow now reads the generated
   `autonomy_readiness_report.json` after the final audit wrapper runs and
   mirrors that report status onto the `run_autonomy_readiness_audit` workflow

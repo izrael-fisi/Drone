@@ -242,10 +242,16 @@ skip_step() {
   local name="$1"
   local notes="$2"
   local log_path="$log_dir/${name}.log"
-  printf '%s\n' "$notes" >"$log_path"
+  shift 2 || true
+  {
+    printf '%s\n' "$notes"
+    for line in "$@"; do
+      printf '%s\n' "$line"
+    done
+  } >"$log_path"
   echo
   echo "== $name =="
-  echo "skipped: $notes"
+  cat "$log_path"
   record_step "$name" "skipped" 0 "$log_path" "$notes"
 }
 
@@ -383,24 +389,30 @@ else
     "Missing native rosbag2 CLI review artifact: $rosbag2_cli_review. Run Module Setup > Native rosbag2 Review on a sourced ROS 2 workstation, or run ./scripts/dev/run_rosbag2_cli_review.sh after syncing a field log."
 fi
 
-px4_marker_lines=()
+px4_proof_marker_lines=()
+px4_diagnostic_marker_lines=()
 if [[ -f "$px4_sitl_session/px4_sitl_evidence_session.json" ]]; then
   export VISION_NAV_PX4_SITL_SESSION="$px4_sitl_session"
-  px4_marker_lines+=("__VISION_NAV_PX4_SITL_SESSION__=$px4_sitl_session")
+  px4_proof_marker_lines+=("__VISION_NAV_PX4_SITL_SESSION__=$px4_sitl_session")
 fi
 if [[ -f "$px4_sitl_report" ]]; then
   export VISION_NAV_PX4_SITL_REPORT="$px4_sitl_report"
-  px4_marker_lines+=("__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report")
+  px4_proof_marker_lines+=("__VISION_NAV_PX4_SITL_REPORT__=$px4_sitl_report")
 fi
 if [[ -f "$px4_sitl_prereqs" ]]; then
   export VISION_NAV_PX4_SITL_PREREQS="$px4_sitl_prereqs"
-  px4_marker_lines+=("__VISION_NAV_PX4_SITL_PREREQS__=$px4_sitl_prereqs")
+  px4_diagnostic_marker_lines+=("__VISION_NAV_PX4_SITL_PREREQS__=$px4_sitl_prereqs")
 fi
 
-if ((${#px4_marker_lines[@]} > 0)); then
+if ((${#px4_proof_marker_lines[@]} > 0)); then
   pass_step "check_px4_receiver_proof" \
     "PX4 external-vision receiver evidence is available for support-bundle and final-readiness evidence." \
-    "${px4_marker_lines[@]}"
+    "${px4_proof_marker_lines[@]}" \
+    "${px4_diagnostic_marker_lines[@]}"
+elif ((${#px4_diagnostic_marker_lines[@]} > 0)); then
+  skip_step "check_px4_receiver_proof" \
+    "PX4 capture prerequisite diagnostics are available, but receiver proof is still missing. Capture ODOMETRY receiver evidence before treating the support bundle as bench-ready: VISION_NAV_SITL_SMOKE_DIR=\$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh" \
+    "${px4_diagnostic_marker_lines[@]}"
 else
   skip_step "check_px4_receiver_proof" \
     "Missing PX4 ODOMETRY receiver proof. Capture it before treating the support bundle as bench-ready: VISION_NAV_SITL_SMOKE_DIR=\$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh"
