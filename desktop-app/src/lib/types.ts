@@ -464,6 +464,7 @@ export interface AutonomyReadinessReportFile {
     field_evidence_proof_status?: "passed" | "failed" | "degraded" | string;
     feature_method_benchmark_status?: "passed" | "failed" | "degraded" | string;
     threshold_tuning_status?: "passed" | "failed" | "degraded" | string;
+    rosbag_export_validation_status?: "passed" | "failed" | "degraded" | string;
   };
   checks: Array<{
     name?: string;
@@ -597,6 +598,8 @@ export interface AutonomyEvidenceWorkflowReportFile {
   feature_method_report_local_path?: string;
   threshold_report_path?: string;
   threshold_report_local_path?: string;
+  rosbag_validation_path?: string;
+  rosbag_validation_local_path?: string;
   readiness_report_path?: string;
   readiness_report_local_path?: string;
   handoff_path?: string;
@@ -731,6 +734,23 @@ export interface ThresholdTuningReportFile {
     field_case_count?: number;
     covered_conditions?: unknown;
     margins?: unknown;
+  };
+}
+
+export interface RosbagExportValidationReportFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  report: {
+    status?: "passed" | "failed" | "degraded" | string;
+    format?: string;
+    artifact_path?: string;
+    metadata_path?: string;
+    message_count?: number;
+    topic_count?: number;
+    topics: string[];
+    issues: string[];
   };
 }
 

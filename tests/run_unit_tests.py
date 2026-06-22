@@ -2092,6 +2092,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                         "__VISION_NAV_SUPPORT_ZIP__": str(root / "support.zip"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN__": str(root / "field_collection_plan.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__": str(root / "field_collection_plan.md"),
+                        "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__": str(root / "rosbag-jsonl-validation.json"),
                         "__VISION_NAV_AUTONOMY_REPORT__": str(root / "autonomy_readiness_report.json"),
                     },
                 }
@@ -2574,8 +2575,13 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             if action.get("check") == "rosbag_export_validation"
         ]
         assert_equal(len(rosbag_actions), 1, "autonomy readiness rosbag validation next action")
-        if "vision-nav-validate-rosbag-export" not in rosbag_actions[0]["command"]:
-            raise AssertionError("autonomy readiness rosbag action should validate ROS bag exports")
+        assert_equal(
+            rosbag_actions[0]["desktop_action"],
+            "Module Setup > ROS Bag Validation",
+            "autonomy readiness rosbag validation desktop action",
+        )
+        if "run_rosbag_export_validation.sh" not in rosbag_actions[0]["command"]:
+            raise AssertionError("autonomy readiness rosbag action should use the Pi ROS bag validation wrapper")
 
         direct_rosbag_ready = evaluate_autonomy_readiness(
             research_doc_path=research_doc,

@@ -402,9 +402,9 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
         },
         "rosbag_export_validation": {
             "title": "Export and validate the ROS replay artifact.",
-            "desktop_action": "Module Setup > Bench Report after ROS replay export",
-            "command": "vision-nav-ros2-replay-log --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl --include-frame-topic && vision-nav-validate-rosbag-export --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl --output ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json",
-            "notes": "The final readiness package must include a passed ROS replay export validation with odometry and diagnostics topics.",
+            "desktop_action": "Module Setup > ROS Bag Validation",
+            "command": "./scripts/pi/run_rosbag_export_validation.sh",
+            "notes": "Run after a terrain runtime/replay log exists. The final readiness package must include a passed ROS replay export validation with odometry and diagnostics topics.",
         },
     }
     next_actions: list[dict[str, Any]] = []
@@ -521,8 +521,8 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
         },
         "rosbag_export_validations": {
             "title": "Export and validate the ROS replay artifact.",
-            "desktop_action": "Module Setup > Bench Report after ROS replay export",
-            "command": "vision-nav-ros2-replay-log --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl --include-frame-topic && vision-nav-validate-rosbag-export --artifact ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl --output ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json && ./scripts/pi/create_support_bundle.sh",
+            "desktop_action": "Module Setup > ROS Bag Validation, then Bench Report",
+            "command": "./scripts/pi/run_rosbag_export_validation.sh && ./scripts/pi/create_support_bundle.sh",
             "notes": "Support bundles should include a passed ROS replay export validation summary.",
         },
         "ardupilot_params": {

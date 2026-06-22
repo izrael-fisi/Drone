@@ -266,6 +266,15 @@ you need to inspect odometry, diagnostics, and bounded camera frames outside the
 runtime loop:
 
 ```bash
+./scripts/pi/run_rosbag_export_validation.sh
+```
+
+The wrapper exports the default terrain log into
+`~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl/`, validates it, and emits
+`__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=...` for support-bundle and final
+readiness collection. The equivalent low-level commands are:
+
+```bash
 vision-nav-ros2-replay-log \
   --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
   --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl \

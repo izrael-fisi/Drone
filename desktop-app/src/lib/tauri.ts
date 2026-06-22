@@ -20,6 +20,7 @@ import type {
   PiDiscoveryCandidate,
   Profile,
   Px4ReceiverReportFile,
+  RosbagExportValidationReportFile,
   Region,
   AutonomyEvidenceWorkflowReportFile,
   AutonomyReadinessReportFile,
@@ -140,11 +141,15 @@ export const cmd = {
     invoke<FeatureMethodBenchmarkReportFile[]>("list_feature_method_benchmark_reports", { dir }),
   listPx4ReceiverReports: (dir: string) =>
     invoke<Px4ReceiverReportFile[]>("list_px4_receiver_reports", { dir }),
+  listRosbagExportValidationReports: (dir: string) =>
+    invoke<RosbagExportValidationReportFile[]>("list_rosbag_export_validation_reports", { dir }),
   listThresholdTuningReports: (dir: string) =>
     invoke<ThresholdTuningReportFile[]>("list_threshold_tuning_reports", { dir }),
   listSupportBundles: (dir: string) => invoke<SupportBundleFile[]>("list_support_bundles", { dir }),
   revealSupportBundle: (path: string) => invoke<void>("reveal_support_bundle", { path }),
   deleteSupportBundle: (path: string) => invoke<void>("delete_support_bundle", { path }),
+  runLocalAutonomyReadinessAudit: (repoDir: string, downloadRoot?: string) =>
+    invoke<CommandResult>("run_local_autonomy_readiness_audit", { repoDir, downloadRoot }),
   readSupportBundleDetails: (path: string) =>
     invoke<SupportBundleDetails>("read_support_bundle_details", { path }),
   extractSupportBundleArtifact: (path: string, entryPath: string) =>

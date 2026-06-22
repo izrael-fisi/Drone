@@ -15,6 +15,7 @@ REQUIRED_WORKFLOW_STEPS = [
     "register_field_replay_case",
     "run_feature_method_benchmark",
     "run_threshold_tuning_report",
+    "validate_rosbag_export",
     "create_support_bundle",
     "run_autonomy_readiness_audit",
 ]
@@ -24,6 +25,7 @@ IMPORTANT_MARKERS = [
     "__VISION_NAV_SUPPORT_ZIP__",
     "__VISION_NAV_FIELD_COLLECTION_PLAN__",
     "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__",
+    "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__",
     "__VISION_NAV_AUTONOMY_REPORT__",
 ]
 

@@ -14,11 +14,14 @@ field_manifest="${VISION_NAV_FIELD_MANIFEST:-$HOME/DroneTransfer/outgoing/replay
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$(dirname "$field_manifest")/field_collection_plan.json}"
 field_collection_plan_md="${VISION_NAV_FIELD_COLLECTION_PLAN_MD:-${field_collection_plan%.json}.md}"
 field_log="${VISION_NAV_FIELD_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}"
+rosbag_export_dir="${VISION_NAV_ROSBAG_EXPORT_DIR:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl}"
+rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
 steps_jsonl=""
 
 export VISION_NAV_FIELD_COLLECTION_PLAN="$field_collection_plan"
 export VISION_NAV_FIELD_COLLECTION_PLAN_MD="$field_collection_plan_md"
+export VISION_NAV_ROSBAG_EXPORT_VALIDATION="$rosbag_export_validation"
 
 usage() {
   cat >&2 <<EOF
@@ -31,8 +34,9 @@ This wrapper attempts the ordered evidence collection path:
      VISION_NAV_FIELD_EXPECTED, and VISION_NAV_FIELD_CONDITION(S) are provided
   3. run feature-method benchmark when a replay log exists
   4. run threshold tuning when a field manifest exists
-  5. create a support bundle
-  6. run the strict autonomy-readiness audit and evidence package
+  5. export and validate ROS bag JSONL replay artifacts when a replay log exists
+  6. create a support bundle
+  7. run the strict autonomy-readiness audit and evidence package
 
 Common optional overrides:
   VISION_NAV_EVIDENCE_WORKFLOW_REPORT     Default: $report
@@ -43,6 +47,8 @@ Common optional overrides:
   VISION_NAV_FIELD_COLLECTION_PLAN       Default: $field_collection_plan
   VISION_NAV_FIELD_COLLECTION_PLAN_MD    Default: $field_collection_plan_md
   VISION_NAV_FIELD_LOG                    Default: $field_log
+  VISION_NAV_ROSBAG_EXPORT_DIR            Default: $rosbag_export_dir
+  VISION_NAV_ROSBAG_EXPORT_VALIDATION     Default: $rosbag_export_validation
   VISION_NAV_BUNDLE                       Default: $bundle
 EOF
 }
@@ -249,6 +255,18 @@ if [[ -f "$field_manifest" ]]; then
   VISION_NAV_THRESHOLD_ALLOW_FAILED=1 run_step "run_threshold_tuning_report" ./scripts/pi/run_threshold_tuning_report.sh
 else
   skip_step "run_threshold_tuning_report" "Missing field manifest: $field_manifest"
+fi
+
+if [[ -f "$field_log" ]]; then
+  (
+    export VISION_NAV_PYTHON="$venv_python"
+    export VISION_NAV_ROSBAG_SOURCE_LOG="$field_log"
+    export VISION_NAV_ROSBAG_EXPORT_DIR="$rosbag_export_dir"
+    export VISION_NAV_ROSBAG_EXPORT_VALIDATION="$rosbag_export_validation"
+    run_step "validate_rosbag_export" ./scripts/pi/run_rosbag_export_validation.sh
+  )
+else
+  skip_step "validate_rosbag_export" "Missing terrain match replay log: $field_log"
 fi
 
 run_step "create_support_bundle" ./scripts/pi/create_support_bundle.sh

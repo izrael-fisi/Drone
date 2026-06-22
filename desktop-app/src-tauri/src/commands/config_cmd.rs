@@ -72,6 +72,13 @@ pub struct SupportBundleFile {
 }
 
 #[derive(Serialize)]
+pub struct LocalCommandResult {
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleLogSummary {
     pub name: String,
     pub total_records: Option<u64>,
@@ -284,6 +291,15 @@ pub struct SupportBundleRosbagExportValidationReport {
 }
 
 #[derive(Serialize)]
+pub struct RosbagExportValidationReportFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub report: SupportBundleRosbagExportValidationReport,
+}
+
+#[derive(Serialize)]
 pub struct ThresholdTuningReportFile {
     pub name: String,
     pub path: String,
@@ -392,6 +408,7 @@ pub struct AutonomyReadinessSummary {
     pub field_evidence_proof_status: Option<String>,
     pub feature_method_benchmark_status: Option<String>,
     pub threshold_tuning_status: Option<String>,
+    pub rosbag_export_validation_status: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -518,6 +535,8 @@ pub struct AutonomyEvidenceWorkflowReportFile {
     pub feature_method_report_local_path: Option<String>,
     pub threshold_report_path: Option<String>,
     pub threshold_report_local_path: Option<String>,
+    pub rosbag_validation_path: Option<String>,
+    pub rosbag_validation_local_path: Option<String>,
     pub readiness_report_path: Option<String>,
     pub readiness_report_local_path: Option<String>,
     pub handoff_path: Option<String>,
@@ -741,6 +760,50 @@ pub fn delete_support_bundle(path: String) -> Result<(), String> {
     std::fs::remove_file(&path)
         .with_context(|| format!("Cannot delete support bundle {}", path.display()))
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn run_local_autonomy_readiness_audit(
+    repo_dir: String,
+    download_root: Option<String>,
+) -> Result<LocalCommandResult, String> {
+    tokio::task::spawn_blocking(move || {
+        run_local_autonomy_readiness_audit_inner(&repo_dir, download_root.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+fn run_local_autonomy_readiness_audit_inner(
+    repo_dir: &str,
+    download_root: Option<&str>,
+) -> Result<LocalCommandResult> {
+    let repo = expand_local_path(repo_dir)?;
+    let script = repo.join("scripts/dev/run_local_autonomy_readiness_audit.sh");
+    if !script.is_file() {
+        return Err(anyhow!(
+            "Missing local autonomy readiness wrapper: {}",
+            script.display()
+        ));
+    }
+
+    let mut command = Command::new("bash");
+    command.arg(&script).current_dir(&repo);
+    if let Some(root) = download_root.filter(|value| !value.trim().is_empty()) {
+        command.env(
+            "VISION_NAV_DESKTOP_TRANSFER_FROM_PI",
+            expand_local_path(root)?,
+        );
+    }
+    let output = command
+        .output()
+        .with_context(|| format!("Failed to run {}", script.display()))?;
+    Ok(LocalCommandResult {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
 }
 
 #[tauri::command]
@@ -1512,6 +1575,65 @@ pub fn list_threshold_tuning_reports(
             size_bytes: metadata.len(),
             modified_unix_ms,
             report: threshold_tuning_report_from_json(&value),
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn list_rosbag_export_validation_reports(
+    dir: String,
+) -> Result<Vec<RosbagExportValidationReportFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if value.get("schema_version").and_then(|value| value.as_str())
+            != Some("vision_nav_rosbag_export_validation_v1")
+        {
+            continue;
+        }
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(RosbagExportValidationReportFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("rosbag-jsonl-validation.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            report: rosbag_export_validation_report_from_json(&value),
         });
     }
     files.sort_by(|a, b| {
@@ -2449,6 +2571,7 @@ fn autonomy_readiness_report_from_json(
             field_evidence_proof_status: check_status("field_evidence_proof"),
             feature_method_benchmark_status: check_status("feature_method_benchmark"),
             threshold_tuning_status: check_status("threshold_tuning"),
+            rosbag_export_validation_status: check_status("rosbag_export_validation"),
         },
         checks,
         next_actions,
@@ -2662,6 +2785,8 @@ fn autonomy_evidence_workflow_report_from_json(
         feature_method_report_local_path: None,
         threshold_report_path: marker("__VISION_NAV_THRESHOLD_REPORT__"),
         threshold_report_local_path: None,
+        rosbag_validation_path: marker("__VISION_NAV_ROSBAG_EXPORT_VALIDATION__"),
+        rosbag_validation_local_path: None,
         readiness_report_path: marker("__VISION_NAV_AUTONOMY_REPORT__"),
         readiness_report_local_path: None,
         handoff_path: marker("__VISION_NAV_AUTONOMY_HANDOFF__"),
@@ -2709,6 +2834,11 @@ fn populate_workflow_report_local_artifacts(
     );
     report.threshold_report_local_path =
         workflow_artifact_local_path(report_path, report.threshold_report_path.as_deref(), None);
+    report.rosbag_validation_local_path = workflow_artifact_local_path(
+        report_path,
+        report.rosbag_validation_path.as_deref(),
+        Some("terrain-match"),
+    );
     report.readiness_report_local_path =
         workflow_artifact_local_path(report_path, report.readiness_report_path.as_deref(), None);
     report.handoff_local_path =
@@ -3379,9 +3509,11 @@ mod tests {
         list_autonomy_evidence_workflow_reports, list_autonomy_readiness_reports,
         list_feature_method_benchmark_reports, list_field_collection_plans,
         list_field_evidence_reports, list_field_evidence_templates, list_px4_receiver_reports,
-        list_threshold_tuning_reports, read_support_bundle_details, support_summary_from_manifest,
+        list_rosbag_export_validation_reports, list_threshold_tuning_reports,
+        read_support_bundle_details, run_local_autonomy_readiness_audit_inner,
+        support_summary_from_manifest,
     };
-    use std::fs::File;
+    use std::fs::{self, File};
     use std::io::Write;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -3392,6 +3524,36 @@ mod tests {
         let expanded = expand_local_path("~/DroneTransfer/from-pi/support-bundles")
             .expect("expand support path");
         assert!(expanded.ends_with("DroneTransfer/from-pi/support-bundles"));
+    }
+
+    #[test]
+    fn runs_local_autonomy_readiness_audit_wrapper() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let repo = std::env::temp_dir().join(format!("drone-local-readiness-{stamp}"));
+        let script_dir = repo.join("scripts/dev");
+        fs::create_dir_all(&script_dir).expect("create script dir");
+        let transfer_root = repo.join("from-pi");
+        fs::create_dir_all(&transfer_root).expect("create transfer root");
+        fs::write(
+            script_dir.join("run_local_autonomy_readiness_audit.sh"),
+            "#!/usr/bin/env bash\nprintf 'root=%s\\n' \"$VISION_NAV_DESKTOP_TRANSFER_FROM_PI\"\nprintf '__VISION_NAV_AUTONOMY_REPORT__=%s/out.json\\n' \"$PWD\"\nexit 7\n",
+        )
+        .expect("write wrapper");
+
+        let result = run_local_autonomy_readiness_audit_inner(
+            repo.to_str().expect("repo path"),
+            Some(transfer_root.to_str().expect("transfer path")),
+        )
+        .expect("run wrapper");
+
+        assert_eq!(result.exit_code, 7);
+        assert!(result.stdout.contains("root="));
+        assert!(result.stdout.contains("__VISION_NAV_AUTONOMY_REPORT__="));
+        assert!(result.stderr.is_empty());
+        let _ = fs::remove_dir_all(&repo);
     }
 
     #[test]
@@ -3605,14 +3767,15 @@ mod tests {
                     "evidence_workflow_validation_report": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.validation.json",
                     "evidence_workflow_log_archive": "/home/user/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.logs.tar.gz"
                 },
-                "summary": {"failed": 2, "degraded": 1, "passed": 4},
+                "summary": {"failed": 2, "degraded": 1, "passed": 5},
                 "checks": [
                     {"name": "research_doc", "status": "passed", "message": "Research doc ready."},
                     {"name": "support_bundle_bench_readiness", "status": "failed", "message": "Support bundle missing."},
                     {"name": "px4_receiver_proof", "status": "failed", "message": "Receiver proof missing."},
                     {"name": "field_evidence_proof", "status": "degraded", "message": "Needs more logs."},
                     {"name": "feature_method_benchmark", "status": "passed", "message": "Benchmark present."},
-                    {"name": "threshold_tuning", "status": "passed", "message": "Threshold report present."}
+                    {"name": "threshold_tuning", "status": "passed", "message": "Threshold report present."},
+                    {"name": "rosbag_export_validation", "status": "passed", "message": "ROS bag validation present."}
                 ],
                 "next_actions": [
                     {
@@ -3961,7 +4124,14 @@ mod tests {
             reports[0].summary.field_evidence_proof_status.as_deref(),
             Some("degraded")
         );
-        assert_eq!(reports[0].checks.len(), 6);
+        assert_eq!(
+            reports[0]
+                .summary
+                .rosbag_export_validation_status
+                .as_deref(),
+            Some("passed")
+        );
+        assert_eq!(reports[0].checks.len(), 7);
         assert_eq!(reports[0].next_actions.len(), 3);
         assert_eq!(
             reports[0].next_actions[0].desktop_action.as_deref(),
@@ -4050,6 +4220,7 @@ mod tests {
         std::fs::create_dir_all(base.join("support-bundles")).expect("create support dir");
         std::fs::create_dir_all(base.join("feature-method-bench")).expect("create feature dir");
         std::fs::create_dir_all(base.join("px4-sitl-evidence")).expect("create px4 dir");
+        std::fs::create_dir_all(base.join("terrain-match")).expect("create terrain-match dir");
         std::fs::write(
             dir.join("autonomy_evidence_workflow.json"),
             serde_json::json!({
@@ -4087,6 +4258,7 @@ mod tests {
                     "__VISION_NAV_FIELD_EVIDENCE_REPORT__": "/tmp/field_evidence_report.json",
                     "__VISION_NAV_FEATURE_METHOD_REPORT__": "/tmp/feature_method_benchmark.json",
                     "__VISION_NAV_THRESHOLD_REPORT__": "/tmp/threshold_tuning_report.json",
+                    "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__": "/tmp/rosbag-jsonl-validation.json",
                     "__VISION_NAV_AUTONOMY_REPORT__": "/tmp/autonomy_readiness_report.json",
                     "__VISION_NAV_AUTONOMY_HANDOFF__": "/tmp/autonomy_readiness_report.md",
                     "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__": "/tmp/autonomy_readiness_report.evidence.zip",
@@ -4110,7 +4282,7 @@ mod tests {
                 "status": "degraded",
                 "workflow_status": "failed",
                 "step_count": 3,
-                "marker_count": 10,
+                "marker_count": 11,
                 "log_archive": "/tmp/autonomy_evidence_workflow.logs.tar.gz",
                 "issues": ["Workflow status is failed; the report is useful, but readiness proof is incomplete."]
             })
@@ -4129,6 +4301,12 @@ mod tests {
         .expect("write local feature artifact");
         std::fs::write(dir.join("threshold_tuning_report.json"), "{}")
             .expect("write local threshold artifact");
+        std::fs::write(
+            base.join("terrain-match")
+                .join("rosbag-jsonl-validation.json"),
+            "{}",
+        )
+        .expect("write local rosbag validation artifact");
         std::fs::write(dir.join("autonomy_readiness_report.md"), "# handoff")
             .expect("write local handoff artifact");
         std::fs::write(dir.join("autonomy_readiness_report.evidence.zip"), "zip")
@@ -4156,7 +4334,7 @@ mod tests {
         assert_eq!(reports[0].steps[0].name.as_deref(), Some("field_template"));
         assert_eq!(reports[0].steps[0].exit_code, Some(0));
         assert_eq!(reports[0].steps[1].status.as_deref(), Some("skipped"));
-        assert_eq!(reports[0].marker_count, 10);
+        assert_eq!(reports[0].marker_count, 11);
         assert_eq!(
             reports[0].workflow_logs_path.as_deref(),
             Some("/tmp/autonomy_evidence_workflow.logs.tar.gz")
@@ -4181,7 +4359,7 @@ mod tests {
         assert_eq!(validation.status.as_deref(), Some("degraded"));
         assert_eq!(validation.workflow_status.as_deref(), Some("failed"));
         assert_eq!(validation.step_count, Some(3));
-        assert_eq!(validation.marker_count, Some(10));
+        assert_eq!(validation.marker_count, Some(11));
         assert_eq!(validation.issue_count, 1);
         assert_eq!(validation.issues.len(), 1);
         assert_eq!(
@@ -4218,6 +4396,14 @@ mod tests {
             .threshold_report_local_path
             .as_deref()
             .is_some_and(|path| path.ends_with("replay-cases/threshold_tuning_report.json")));
+        assert_eq!(
+            reports[0].rosbag_validation_path.as_deref(),
+            Some("/tmp/rosbag-jsonl-validation.json")
+        );
+        assert!(reports[0]
+            .rosbag_validation_local_path
+            .as_deref()
+            .is_some_and(|path| path.ends_with("terrain-match/rosbag-jsonl-validation.json")));
         assert_eq!(
             reports[0].readiness_report_path.as_deref(),
             Some("/tmp/autonomy_readiness_report.json")
@@ -4612,6 +4798,54 @@ mod tests {
     }
 
     #[test]
+    fn lists_rosbag_export_validation_reports_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-rosbag-validation-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create rosbag validation dir");
+        std::fs::write(
+            dir.join("rosbag-jsonl-validation.json"),
+            serde_json::json!({
+                "schema_version": "vision_nav_rosbag_export_validation_v1",
+                "status": "passed",
+                "artifact_path": "/tmp/rosbag-jsonl",
+                "metadata_path": "/tmp/rosbag-jsonl/metadata.json",
+                "format": "vision_nav_rosbag_jsonl_v1",
+                "message_count": 4,
+                "topic_count": 3,
+                "topics": [
+                    {"name": "/vision_nav/odometry", "type": "nav_msgs/msg/Odometry", "message_count": 1},
+                    {"name": "/diagnostics", "type": "diagnostic_msgs/msg/DiagnosticArray", "message_count": 2},
+                    {"name": "/vision_nav/camera/image/compressed", "type": "sensor_msgs/msg/CompressedImage", "message_count": 1}
+                ],
+                "issues": []
+            })
+            .to_string(),
+        )
+        .expect("write rosbag validation report");
+        std::fs::write(
+            dir.join("threshold_tuning_report.json"),
+            serde_json::json!({"status": "passed", "method": "field-replay-gate-threshold-audit", "summary": {}}).to_string(),
+        )
+        .expect("write unrelated report");
+        let reports = list_rosbag_export_validation_reports(dir.to_string_lossy().into_owned())
+            .expect("list reports");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].name, "rosbag-jsonl-validation.json");
+        assert_eq!(reports[0].report.status.as_deref(), Some("passed"));
+        assert_eq!(
+            reports[0].report.format.as_deref(),
+            Some("vision_nav_rosbag_jsonl_v1")
+        );
+        assert_eq!(reports[0].report.message_count, Some(4));
+        assert_eq!(reports[0].report.topic_count, Some(3));
+        assert_eq!(reports[0].report.topics.len(), 3);
+    }
+
+    #[test]
     fn reads_support_bundle_details_from_zip() {
         const TINY_PNG: &[u8] = &[
             137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
@@ -4879,6 +5113,31 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write threshold tuning");
+            zip.start_file(
+                "summaries/rosbag_export_validations/vision_nav_rosbag_jsonl_v1-01.json",
+                options,
+            )
+            .expect("rosbag export validation entry");
+            zip.write_all(
+                serde_json::json!({
+                    "schema_version": "vision_nav_rosbag_export_validation_v1",
+                    "status": "passed",
+                    "artifact_path": "/tmp/rosbag-jsonl",
+                    "metadata_path": "/tmp/rosbag-jsonl/metadata.json",
+                    "format": "vision_nav_rosbag_jsonl_v1",
+                    "message_count": 4,
+                    "topic_count": 3,
+                    "topics": [
+                        {"name": "/vision_nav/odometry", "type": "nav_msgs/msg/Odometry", "message_count": 1},
+                        {"name": "/diagnostics", "type": "diagnostic_msgs/msg/DiagnosticArray", "message_count": 2},
+                        {"name": "/vision_nav/camera/image/compressed", "type": "sensor_msgs/msg/CompressedImage", "message_count": 1}
+                    ],
+                    "issues": []
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write rosbag export validation");
             zip.start_file("summaries/bench_readiness.json", options)
                 .expect("bench readiness entry");
             zip.write_all(
@@ -4911,7 +5170,7 @@ mod tests {
         }
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
-        assert_eq!(details.entry_count, 15);
+        assert_eq!(details.entry_count, 16);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(details.runtime_statuses.len(), 1);
@@ -5091,6 +5350,29 @@ mod tests {
             details.threshold_tuning_reports[0].field_case_count,
             Some(8)
         );
+        assert_eq!(details.rosbag_export_validation_reports.len(), 1);
+        assert_eq!(
+            details.rosbag_export_validation_reports[0]
+                .status
+                .as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            details.rosbag_export_validation_reports[0]
+                .format
+                .as_deref(),
+            Some("vision_nav_rosbag_jsonl_v1")
+        );
+        assert_eq!(
+            details.rosbag_export_validation_reports[0].message_count,
+            Some(4)
+        );
+        assert_eq!(details.rosbag_export_validation_reports[0].topics.len(), 3);
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path
+                == "summaries/rosbag_export_validations/vision_nav_rosbag_jsonl_v1-01.json"
+                && artifact.kind == "rosbag export validation"
+        }));
         let readiness = details.bench_readiness.expect("bench readiness report");
         assert_eq!(readiness.status.as_deref(), Some("degraded"));
         assert_eq!(readiness.degraded_count, Some(1));

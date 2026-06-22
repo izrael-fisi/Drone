@@ -376,11 +376,18 @@ threshold report under the Pi replay-cases folder, and downloads it to
 Reports list shows downloaded JSON reports with coverage status, replay status,
 field-case count, and the main acceptance-rate margins.
 
+Module Setup can run `ROS Bag Validation` after a terrain runtime/replay log
+exists. The action runs `scripts/pi/run_rosbag_export_validation.sh` over SSH,
+exports the default terrain log into the dependency-free ROS bag JSONL review
+format, validates the export, downloads `rosbag-jsonl-validation.json` to
+`~/DroneTransfer/from-pi/terrain-match/`, and refreshes the ROS Bag Validation
+list used by the final readiness audit.
+
 For Pi-side support sessions where a single command is easier than clicking each
 step, `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the same ordered
 path: field template, field collection checklist, optional field-case
-registration, feature benchmark, threshold tuning, support bundle, and final
-readiness audit. It writes
+registration, feature benchmark, threshold tuning, ROS bag JSONL export
+validation, support bundle, and final readiness audit. It writes
 `autonomy_evidence_workflow.json` with per-step status, log paths, output tails,
 an accompanying compressed workflow-log archive, and emitted markers, while
 still failing honestly in the final readiness report until real PX4 and field
@@ -392,18 +399,18 @@ current Field Evidence Case form values for optional case registration,
 downloads the workflow JSON, log archive, and validation JSON, and also
 downloads any support bundle, field-evidence report, feature-method benchmark,
 threshold-tuning report, readiness report, handoff, evidence package,
-field-collection plan/checklist, or PX4 receiver report marker emitted by the
-wrapper.
+field-collection plan/checklist, ROS bag validation report, or PX4 receiver
+report marker emitted by the wrapper.
 Downloaded workflow reports are indexed after app restart in the Evidence
 Workflow Reports list with pass/fail/skip counts, per-step status, emitted
 artifact markers, and copy/reveal controls. Artifact marker chips copy the
 emitted logs, validation report, support, field, feature, threshold, readiness,
-handoff, package, field-plan, or PX4 path for support notes; the `all` chip
-copies the complete artifact path bundle. When the downloaded artifact exists
-in the standard transfer folders, those chips copy the local desktop path
-instead of only the Pi-side marker path. When the validation JSON exists beside
-the workflow report, the card summarizes validation status, workflow status,
-issue count, and the first validation issue.
+handoff, package, field-plan, ROS bag validation, or PX4 path for support
+notes; the `all` chip copies the complete artifact path bundle. When the
+downloaded artifact exists in the standard transfer folders, those chips copy
+the local desktop path instead of only the Pi-side marker path. When the
+validation JSON exists beside the workflow report, the card summarizes
+validation status, workflow status, issue count, and the first validation issue.
 For offline support review, run
 `vision-nav-validate-evidence-workflow --report <autonomy_evidence_workflow.json>`
 against a downloaded workflow report. The validator confirms the required
@@ -448,6 +455,12 @@ local readiness wrapper consumes the downloaded feature-benchmark JSON and PX4
 receiver-evidence JSON directly, so a new benchmark or receiver check can be
 audited without rebuilding the support bundle just to duplicate the same report
 summary.
+Module Setup also exposes `Local Readiness Re-Audit`, which runs
+`scripts/dev/run_local_autonomy_readiness_audit.sh` against the already
+downloaded `~/DroneTransfer/from-pi/` evidence folders from the desktop app. It
+does not require an SSH connection, and it refreshes the same final readiness,
+workflow, field, feature, threshold, ROS bag, PX4, and support-bundle report
+lists after the local audit finishes.
 
 After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
 `Open Bench Report In Module Setup` action opens that device's setup tab with

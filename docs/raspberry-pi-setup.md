@@ -612,6 +612,20 @@ To review the same terrain log as ROS-style topics without requiring ROS 2 on
 the Pi, export a dependency-free bag-like JSONL directory:
 
 ```bash
+./scripts/pi/run_rosbag_export_validation.sh
+```
+
+That wrapper uses
+`~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl`, writes
+`~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl/`, validates the result,
+and emits `__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=...` for desktop download,
+support bundles, and final readiness audits. For custom paths, set
+`VISION_NAV_ROSBAG_SOURCE_LOG`, `VISION_NAV_ROSBAG_EXPORT_DIR`, or
+`VISION_NAV_ROSBAG_EXPORT_VALIDATION`.
+
+The equivalent low-level commands are:
+
+```bash
 vision-nav-ros2-replay-log \
   --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl \
   --export-rosbag-jsonl ~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl \
@@ -828,7 +842,11 @@ feature, and final readiness evidence artifacts.
 If `~/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json` exists,
 the final Pi-side readiness wrapper includes it automatically. Override the path
 with `VISION_NAV_ROSBAG_EXPORT_VALIDATION=/path/to/validation.json` when
-reviewing a different JSONL, MCAP, or native rosbag2 validation report.
+reviewing a different JSONL, MCAP, or native rosbag2 validation report. Module
+Setup downloads emitted validation reports into
+`~/DroneTransfer/from-pi/terrain-match/`, lists them under ROS Bag Validation,
+offers a standalone `ROS Bag Validation` action for the wrapper, and shows the
+ROS bag gate in the Autonomy Readiness Reports card.
 
 If you want one Pi-side command that attempts the ordered evidence workflow and
 preserves a step-by-step report even when prerequisites are still missing, run:
@@ -840,8 +858,9 @@ preserves a step-by-step report even when prerequisites are still missing, run:
 The workflow creates or reuses the field evidence template, optionally
 registers a field case when `VISION_NAV_FIELD_CASE_NAME`,
 `VISION_NAV_FIELD_EXPECTED`, and `VISION_NAV_FIELD_CONDITION(S)` are set, then
-attempts feature benchmarking, threshold tuning, support-bundle creation, and
-the final autonomy-readiness audit. It writes
+attempts feature benchmarking, threshold tuning, dependency-free ROS bag JSONL
+export validation, support-bundle creation, and the final autonomy-readiness
+audit. It writes
 `~/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json`
 with per-step status, log paths, tail output, a compressed workflow-log archive,
 and any emitted `__VISION_NAV_*__` markers. The archive preserves the full step
@@ -920,11 +939,18 @@ strict audit report locally:
 ./scripts/dev/run_local_autonomy_readiness_audit.sh
 ```
 
+The desktop app exposes the same offline check as Module Setup >
+`Local Readiness Re-Audit`. That action runs from the desktop repo path, scans
+the downloaded `~/DroneTransfer/from-pi/` evidence folders, and refreshes the
+final readiness, workflow, field, feature, threshold, ROS bag, PX4, and support
+bundle lists without opening a new SSH session.
+
 It uses the latest downloaded support bundle, downloaded field-evidence and
 feature-method benchmark reports, downloaded threshold-tuning reports,
 downloaded ROS bag export validation reports, and a downloaded field collection
 plan/checklist, plus a local PX4 SITL evidence session or receiver report when
-present.
+present. The local wrapper looks for the default validation report at
+`~/DroneTransfer/from-pi/terrain-match/rosbag-jsonl-validation.json`.
 It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and
 `__VISION_NAV_AUTONOMY_HANDOFF__=...` plus
 `__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=...`, then writes

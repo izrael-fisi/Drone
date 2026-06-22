@@ -127,6 +127,10 @@ Status:
 - Done: `vision-nav-validate-rosbag-export` validates JSONL, MCAP, and native
   rosbag2 export metadata, sidecars, topic counts, message counts, and storage
   presence without requiring ROS 2.
+- Done: `scripts/pi/run_rosbag_export_validation.sh` wraps the default Pi
+  terrain log export and validation into one command, writes the stable
+  `rosbag-jsonl-validation.json` readiness artifact, and emits
+  `__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=...` for support/download workflows.
 - Done: support bundles ingest ROS bag export validation reports under
   `extras/rosbag_export_validations/`, publish parsed summaries under
   `summaries/rosbag_export_validations/`, and surface their status in desktop
@@ -505,6 +509,10 @@ Status:
   evidence, threshold-tuning proof, and ROS replay export validation proof. It
   intentionally fails until the external PX4, field-log, and replay-validation
   artifacts exist.
+- Done: `scripts/dev/handoff_audit.sh` now verifies the Python entrypoints used
+  by the autonomy-readiness path, including replay registration, field-evidence
+  gates, feature/retrieval benchmarks, threshold tuning, PX4 receiver evidence,
+  MAVLink replay send, ROS replay export, and evidence-workflow validation.
 - Done: autonomy-readiness reports include a `plan_snapshot` with source-doc
   marker coverage, research reference/near-term item counts, implementation
   track counts, status-line counts, task counts, and acceptance-check counts so
@@ -513,6 +521,10 @@ Status:
 - Done: autonomy-readiness reports include machine-readable `next_actions` for
   failed or degraded proof gates, with the relevant Module Setup action and
   shell command to collect the missing artifact.
+- Done: ROS replay validation next actions now point to Module Setup's
+  standalone `ROS Bag Validation` action and the
+  `scripts/pi/run_rosbag_export_validation.sh` wrapper instead of asking
+  operators to hand-run the lower-level export and validator commands.
 - Done: Module Setup can copy all shell commands from an autonomy-readiness
   report's next actions in one click, while preserving per-action command copy.
 - Done: autonomy-readiness JSON reports include a machine-readable
@@ -547,6 +559,14 @@ Status:
 - Done: the Pi and local autonomy-readiness wrappers pass
   `rosbag-jsonl-validation.json` to the final audit when it exists and emit
   `__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=...` for support handoff notes.
+- Done: Module Setup parses `__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=...`,
+  downloads the validation JSON into the terrain-match transfer folder, lists
+  downloaded ROS bag validation reports after restart, and shows the ROS bag
+  gate in autonomy-readiness report cards and saved setup reports.
+- Done: Module Setup exposes a standalone `ROS Bag Validation` action that runs
+  `scripts/pi/run_rosbag_export_validation.sh`, downloads the emitted validation
+  report, and refreshes the ROS Bag Validation evidence list without requiring
+  the full evidence workflow.
 - Done: `scripts/pi/run_autonomy_readiness_audit.sh` runs the same final audit
   on the Pi against the latest support bundle and writes
   `autonomy_readiness_report.json` for transfer or support review.
@@ -572,6 +592,10 @@ Status:
   feature-method benchmark report, renders a Markdown handoff beside the JSON
   report, and fails closed while preserving artifacts that explain which proof
   items are missing.
+- Done: Module Setup exposes `Local Readiness Re-Audit` as a local-only action
+  that runs the desktop wrapper against already downloaded `from-pi` evidence,
+  then refreshes final readiness, workflow, field, feature, threshold, ROS bag,
+  PX4, and support-bundle report lists without requiring SSH.
 - Done: Module Setup exposes an `Autonomy Readiness` SSH action after the bench
   report step, so operators can run the strict final audit from the desktop app
   and download the JSON report to `~/DroneTransfer/from-pi/replay-cases/`.
@@ -592,9 +616,14 @@ Status:
   without requiring the separate Evidence Workflow action first.
 - Done: `scripts/pi/run_autonomy_evidence_workflow.sh` attempts the ordered
   field-template, field-collection checklist, optional field-case registration,
-  feature-benchmark, threshold-tuning, support-bundle, and final-readiness
-  sequence while writing a machine-readable per-step workflow report with logs
-  and emitted artifact markers even when the final gates still fail.
+  feature-benchmark, threshold-tuning, ROS bag JSONL export validation,
+  support-bundle, and final-readiness sequence while writing a
+  machine-readable per-step workflow report with logs and emitted artifact
+  markers even when the final gates still fail.
+- Done: the evidence workflow uses the standalone
+  `scripts/pi/run_rosbag_export_validation.sh` wrapper for its ROS bag
+  validation step, so direct operator runs and full workflow runs generate the
+  same marker/report shape.
 - Done: the evidence workflow writes a compressed workflow-log archive and
   emits `__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__=...`, so full per-step logs can
   be downloaded with the workflow report instead of relying only on bounded
@@ -634,12 +663,12 @@ Status:
   after app restart with pass/fail/skip counts, per-step status, and emitted
   artifact markers, including workflow logs, validation report, support bundle,
   field-evidence, feature-method, threshold-tuning, final readiness, handoff,
-  evidence-package, field-plan, and PX4 receiver outputs. Each marker can be
-  copied individually or as one artifact-path bundle from the workflow report
-  card for support notes, preferring the downloaded local artifact path when
-  the app can resolve it. When the downloaded validation JSON is present, the
-  card also shows validation status, workflow status, issue count, and the first
-  validation issue.
+  evidence-package, field-plan, ROS bag validation, and PX4 receiver outputs.
+  Each marker can be copied individually or as one artifact-path bundle from
+  the workflow report card for support notes, preferring the downloaded local
+  artifact path when the app can resolve it. When the downloaded validation JSON
+  is present, the card also shows validation status, workflow status, issue
+  count, and the first validation issue.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

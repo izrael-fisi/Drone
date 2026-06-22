@@ -52,6 +52,7 @@ import type {
   LocalNetworkHint,
   PiDiscoveryCandidate,
   Px4ReceiverReportFile,
+  RosbagExportValidationReportFile,
   SupportBundleDetails,
   SupportBundleFile,
   ThresholdTuningReportFile,
@@ -64,7 +65,9 @@ const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
 const AUTONOMY_REPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/replay-cases";
 const FEATURE_BENCH_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/feature-method-bench";
 const PX4_RECEIVER_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/px4-sitl-evidence";
+const ROSBAG_VALIDATION_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/terrain-match";
 const RUNTIME_STATUS_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/runtime-status";
+const DESKTOP_TRANSFER_FROM_PI_DIR = "~/DroneTransfer/from-pi";
 const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 const SUPPORT_EVIDENCE_ENV =
   'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
@@ -125,6 +128,7 @@ interface SetupStep {
   command?: () => string;
   requiresSudo?: boolean;
   recommended?: boolean;
+  localOnly?: boolean;
 }
 
 interface ModuleSetupHandoff {
@@ -274,6 +278,14 @@ function parseThresholdTuningReport(output: string) {
     .map((line) => line.trim())
     .find((line) => line.startsWith("__VISION_NAV_THRESHOLD_REPORT__="))
     ?.replace("__VISION_NAV_THRESHOLD_REPORT__=", "");
+}
+
+function parseRosbagExportValidationReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_ROSBAG_EXPORT_VALIDATION__="))
+    ?.replace("__VISION_NAV_ROSBAG_EXPORT_VALIDATION__=", "");
 }
 
 function parseFieldEvidenceReport(output: string) {
@@ -564,6 +576,7 @@ function workflowMarkerArtifacts(report: AutonomyEvidenceWorkflowReportFile) {
     { label: "field", path: report.field_evidence_report_local_path ?? report.field_evidence_report_path },
     { label: "feature", path: report.feature_method_report_local_path ?? report.feature_method_report_path },
     { label: "thresholds", path: report.threshold_report_local_path ?? report.threshold_report_path },
+    { label: "rosbag", path: report.rosbag_validation_local_path ?? report.rosbag_validation_path },
     { label: "readiness", path: report.readiness_report_local_path ?? report.readiness_report_path },
     { label: "handoff", path: report.handoff_local_path ?? report.handoff_path },
     { label: "package", path: report.evidence_package_local_path ?? report.evidence_package_path },
@@ -1065,6 +1078,7 @@ function AutonomyReadinessReportList({
                   ["field", report.summary.field_evidence_proof_status],
                   ["features", report.summary.feature_method_benchmark_status],
                   ["thresholds", report.summary.threshold_tuning_status],
+                  ["rosbag", report.summary.rosbag_export_validation_status],
                 ].map(([label, status]) => (
                   <div key={label} className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500">
                     <span className={cn(readinessBadgeClass(status), "text-[10px]")}>
@@ -2157,6 +2171,125 @@ function ThresholdTuningReportList({
   );
 }
 
+function RosbagExportValidationReportList({
+  reports,
+  downloadDir,
+  onRefresh,
+}: {
+  reports: RosbagExportValidationReportFile[];
+  downloadDir: string;
+  onRefresh: () => void;
+}) {
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reveal = async (path: string) => {
+    setBusyPath(path);
+    setActionError(null);
+    try {
+      await cmd.revealSupportBundle(path);
+    } catch (err) {
+      setActionError(String(err));
+    } finally {
+      setBusyPath(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="text-xs font-medium text-slate-300 flex items-center gap-2">
+            <Archive size={13} className="text-cyan-400" /> ROS Bag Validation
+          </h4>
+          <p className="text-[10px] text-slate-500 font-mono truncate">{downloadDir}</p>
+        </div>
+        <button onClick={onRefresh} className="btn-secondary text-xs py-1 px-2">
+          <RefreshCw size={11} />
+          Refresh
+        </button>
+      </div>
+      {actionError && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
+      {reports.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-slate-500">
+          No downloaded ROS bag validation report yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {reports.slice(0, 3).map((file) => (
+            <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={readinessBadgeClass(file.report.status)}>
+                      {readinessIcon(file.report.status)}
+                      {formatReadinessLabel(file.report.status)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      {formatReadinessLabel(file.report.format)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      {file.report.message_count ?? 0} msg
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      {file.report.topic_count ?? 0} topics
+                    </span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
+                    {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
+                    artifact {formatReadinessLabel(file.report.artifact_path)}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(file.path)}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Copy report path"
+                  >
+                    <Copy size={11} />
+                  </button>
+                  <button
+                    onClick={() => reveal(file.path)}
+                    disabled={busyPath === file.path}
+                    className="btn-secondary text-xs py-1 px-2"
+                    title="Show report file"
+                  >
+                    {busyPath === file.path ? <Loader2 size={11} className="animate-spin" /> : <FolderOpen size={11} />}
+                  </button>
+                </div>
+              </div>
+              {file.report.topics.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {file.report.topics.slice(0, 4).map((topic) => (
+                    <span key={`${file.path}-${topic}`} className="rounded border border-border bg-bg-base px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                      {topic}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {file.report.issues.length > 0 && (
+                <div className="space-y-1">
+                  {file.report.issues.slice(0, 3).map((issue) => (
+                    <div key={`${file.path}-${issue}`} className="text-[10px] text-amber-300 truncate">
+                      {issue}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ModuleSetupProps {
   initialDeviceId?: string;
   embedded?: boolean;
@@ -2192,6 +2325,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [fieldEvidenceReports, setFieldEvidenceReports] = useState<FieldEvidenceReportFile[]>([]);
   const [featureBenchmarkReports, setFeatureBenchmarkReports] = useState<FeatureMethodBenchmarkReportFile[]>([]);
   const [thresholdTuningReports, setThresholdTuningReports] = useState<ThresholdTuningReportFile[]>([]);
+  const [rosbagValidationReports, setRosbagValidationReports] = useState<RosbagExportValidationReportFile[]>([]);
   const [runtimeStatus, setRuntimeStatus] = useState<Record<string, unknown> | null>(null);
   const [runtimeStatusRemotePath, setRuntimeStatusRemotePath] = useState<string | null>(null);
   const [runtimeStatusLocalPath, setRuntimeStatusLocalPath] = useState<string | null>(null);
@@ -2308,6 +2442,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const refreshRosbagValidationReports = async () => {
+    try {
+      setRosbagValidationReports(await cmd.listRosbagExportValidationReports(ROSBAG_VALIDATION_DOWNLOAD_DIR));
+    } catch {
+      setRosbagValidationReports([]);
+    }
+  };
+
   useEffect(() => {
     refreshSupportBundles();
     refreshAutonomyReports();
@@ -2318,6 +2460,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     refreshFieldEvidenceReports();
     refreshFeatureBenchmarkReports();
     refreshThresholdTuningReports();
+    refreshRosbagValidationReports();
     cmd.localNetworkHints().then(setNetworkHints).catch(() => setNetworkHints([]));
   }, []);
 
@@ -2645,6 +2788,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const remoteFieldCollectionPlanMarkdown = parseFieldCollectionPlanMarkdown(output);
       const remoteFeatureMethodReport = parseFeatureMethodReport(output);
       const remoteThresholdReport = parseThresholdTuningReport(output);
+      const remoteRosbagValidation = parseRosbagExportValidationReport(output);
       if (!remoteReport) {
         setResult("autonomy-readiness", {
           status: "failed",
@@ -2797,6 +2941,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         );
         proofDownloadText += `\n\n$ download threshold report\nSaved to ${downloadedThreshold.local_path}\n[${downloadedThreshold.bytes_received} bytes]`;
       }
+      if (remoteRosbagValidation) {
+        setResult("autonomy-readiness", {
+          status: "running",
+          output: `$ autonomy readiness\n${output}\n\n$ download readiness report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${handoffDownloadText}${evidencePackageDownloadText}${workflowDownloadText}${proofDownloadText}\n\n$ download ROS bag validation\nDownloading ${remoteRosbagValidation}...`,
+        });
+        const downloadedRosbagValidation = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteRosbagValidation,
+          ROSBAG_VALIDATION_DOWNLOAD_DIR,
+        );
+        proofDownloadText += `\n\n$ download ROS bag validation\nSaved to ${downloadedRosbagValidation.local_path}\n[${downloadedRosbagValidation.bytes_received} bytes]`;
+      }
       if (remoteFieldCollectionPlan) {
         setResult("autonomy-readiness", {
           status: "running",
@@ -2855,10 +3014,61 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       await refreshFieldEvidenceReports();
       await refreshFeatureBenchmarkReports();
       await refreshThresholdTuningReports();
+      await refreshRosbagValidationReports();
       await refreshFieldCollectionPlans();
       await refreshPx4ReceiverReports();
     } catch (err) {
       setResult("autonomy-readiness", { status: "failed", output: `$ autonomy readiness\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
+  const runLocalAutonomyReadiness = async () => {
+    setRunningStep("local-autonomy-readiness");
+    setError(null);
+    setResult("local-autonomy-readiness", { status: "running", output: "$ local autonomy readiness\n" });
+    try {
+      const result = await cmd.runLocalAutonomyReadinessAudit(repoPath, DESKTOP_TRANSFER_FROM_PI_DIR);
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const localReport = parseAutonomyReadinessReport(output);
+      const localHandoff = parseAutonomyReadinessHandoff(output);
+      const localEvidencePackage = parseAutonomyEvidencePackage(output);
+      const localWorkflow = parseAutonomyEvidenceWorkflowReport(output);
+      const localFieldCollectionPlan = parseFieldCollectionPlan(output);
+      const localFieldCollectionPlanMarkdown = parseFieldCollectionPlanMarkdown(output);
+      if (localHandoff) {
+        setAutonomyHandoffLocalPath(localHandoff);
+      }
+      if (localEvidencePackage) {
+        setAutonomyEvidencePackageLocalPath(localEvidencePackage);
+      }
+      if (localWorkflow) {
+        setAutonomyWorkflowLocalPath(localWorkflow);
+      }
+      if (localFieldCollectionPlan) {
+        setFieldCollectionPlanLocalPath(localFieldCollectionPlan);
+      }
+      if (localFieldCollectionPlanMarkdown) {
+        setFieldCollectionPlanMarkdownLocalPath(localFieldCollectionPlanMarkdown);
+      }
+
+      setResult("local-autonomy-readiness", {
+        status: result.exit_code === 0 && localReport ? "passed" : "failed",
+        output: `$ local autonomy readiness\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+      await refreshAutonomyReports();
+      await refreshAutonomyWorkflowReports();
+      await refreshFieldEvidenceReports();
+      await refreshFeatureBenchmarkReports();
+      await refreshThresholdTuningReports();
+      await refreshRosbagValidationReports();
+      await refreshFieldCollectionPlans();
+      await refreshPx4ReceiverReports();
+      await refreshSupportBundles();
+    } catch (err) {
+      setResult("local-autonomy-readiness", { status: "failed", output: `$ local autonomy readiness\nERROR: ${err}` });
     } finally {
       setRunningStep(null);
     }
@@ -2894,6 +3104,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const remoteFieldCollectionPlanMarkdown = parseFieldCollectionPlanMarkdown(output);
       const remoteFeatureMethodReport = parseFeatureMethodReport(output);
       const remoteThresholdReport = parseThresholdTuningReport(output);
+      const remoteRosbagValidation = parseRosbagExportValidationReport(output);
       const remotePx4Report = parsePx4SitlReport(output);
       if (!remoteWorkflow) {
         setResult("autonomy-evidence-workflow", {
@@ -3009,6 +3220,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         );
         downloadText += `\n\n$ download threshold report\nSaved to ${downloadedThreshold.local_path}\n[${downloadedThreshold.bytes_received} bytes]`;
       }
+      if (remoteRosbagValidation) {
+        setResult("autonomy-evidence-workflow", {
+          status: "running",
+          output: `$ autonomy evidence workflow\n${output}${downloadText}\n\n$ download ROS bag validation\nDownloading ${remoteRosbagValidation}...`,
+        });
+        const downloadedRosbagValidation = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteRosbagValidation,
+          ROSBAG_VALIDATION_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download ROS bag validation\nSaved to ${downloadedRosbagValidation.local_path}\n[${downloadedRosbagValidation.bytes_received} bytes]`;
+      }
       if (remoteReport) {
         setResult("autonomy-evidence-workflow", {
           status: "running",
@@ -3114,6 +3340,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       await refreshFieldEvidenceReports();
       await refreshFeatureBenchmarkReports();
       await refreshThresholdTuningReports();
+      await refreshRosbagValidationReports();
       await refreshFieldCollectionPlans();
       await refreshAutonomyReports();
       await refreshPx4ReceiverReports();
@@ -3172,6 +3399,59 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       await refreshThresholdTuningReports();
     } catch (err) {
       setResult("threshold-tuning", { status: "failed", output: `$ threshold tuning\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
+  const runRosbagExportValidation = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before validating the ROS bag export.");
+      return;
+    }
+    setRunningStep("rosbag-validation");
+    setError(null);
+    setResult("rosbag-validation", { status: "running", output: "$ ROS bag validation\n" });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        `cd ${shellQuote(remoteProject)} && ./scripts/pi/run_rosbag_export_validation.sh`,
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteReport = parseRosbagExportValidationReport(output);
+      if (!remoteReport) {
+        setResult("rosbag-validation", {
+          status: "failed",
+          output: `$ ROS bag validation\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+          exitCode: result.exit_code,
+        });
+        return;
+      }
+
+      setResult("rosbag-validation", {
+        status: "running",
+        output: `$ ROS bag validation\n${output}\n\n$ download ROS bag validation\nDownloading ${remoteReport}...`,
+      });
+      const downloaded = await cmd.sshDownloadFile(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        remoteReport,
+        ROSBAG_VALIDATION_DOWNLOAD_DIR,
+      );
+      setResult("rosbag-validation", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ ROS bag validation\n${output}\n\n$ download ROS bag validation\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+      await refreshRosbagValidationReports();
+    } catch (err) {
+      setResult("rosbag-validation", { status: "failed", output: `$ ROS bag validation\nERROR: ${err}` });
     } finally {
       setRunningStep(null);
     }
@@ -3657,6 +3937,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       detail: "Generates and downloads the replay-gate threshold report from registered real field cases.",
     },
     {
+      id: "rosbag-validation",
+      title: "ROS Bag Validation",
+      detail: "Exports the latest terrain log as ROS bag JSONL and downloads the validation report.",
+    },
+    {
       id: "autonomy-evidence-workflow",
       title: "Evidence Workflow",
       detail: "Attempts the ordered evidence sequence and downloads a per-step workflow report for support review.",
@@ -3666,6 +3951,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       title: "Autonomy Readiness",
       detail: "Runs the strict final audit against the latest Pi support bundle and field evidence artifacts.",
       command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/run_autonomy_readiness_audit.sh`,
+    },
+    {
+      id: "local-autonomy-readiness",
+      title: "Local Readiness Re-Audit",
+      detail: "Re-runs the strict final audit against downloaded desktop evidence without connecting to the module.",
+      localOnly: true,
     },
   ];
 
@@ -3686,6 +3977,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       await runThresholdTuning();
       return;
     }
+    if (step.id === "rosbag-validation") {
+      await runRosbagExportValidation();
+      return;
+    }
     if (step.id === "field-collection-plan") {
       await createFieldCollectionPlan();
       return;
@@ -3696,6 +3991,10 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     if (step.id === "autonomy-readiness") {
       await runAutonomyReadiness();
+      return;
+    }
+    if (step.id === "local-autonomy-readiness") {
+      await runLocalAutonomyReadiness();
       return;
     }
     if (!step.command) return;
@@ -3781,6 +4080,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         field_collection_plan_markdown_local_path: fieldCollectionPlanMarkdownLocalPath,
         feature_benchmark_download_dir: FEATURE_BENCH_DOWNLOAD_DIR,
         px4_receiver_download_dir: PX4_RECEIVER_DOWNLOAD_DIR,
+        rosbag_validation_download_dir: ROSBAG_VALIDATION_DOWNLOAD_DIR,
         runtime_status_download_dir: RUNTIME_STATUS_DOWNLOAD_DIR,
       },
       runtime_status: runtimeStatus
@@ -3822,6 +4122,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             workflow_logs_path: latestWorkflowReport.workflow_logs_local_path ?? latestWorkflowReport.workflow_logs_path ?? null,
             workflow_validation_path:
               latestWorkflowReport.workflow_validation_local_path ?? latestWorkflowReport.workflow_validation_path ?? null,
+            rosbag_validation_path:
+              latestWorkflowReport.rosbag_validation_local_path ?? latestWorkflowReport.rosbag_validation_path ?? null,
             validation: latestWorkflowReport.workflow_validation_summary
               ? {
                   status: latestWorkflowReport.workflow_validation_summary.status ?? null,
@@ -3890,6 +4192,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       downloaded_field_evidence_reports: fieldEvidenceReports.slice(0, 5),
       downloaded_feature_benchmark_reports: featureBenchmarkReports.slice(0, 5),
       downloaded_threshold_tuning_reports: thresholdTuningReports.slice(0, 5),
+      downloaded_rosbag_validation_reports: rosbagValidationReports.slice(0, 5),
     };
     const defaultPath = `drone-module-setup-${safeReportName(form.host || form.name)}-${new Date().toISOString().slice(0, 10)}.json`;
     const path = await saveDialog({
@@ -4482,15 +4785,18 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                           {step.requiresSudo && (
                             <span className="text-[10px] border border-amber-500/20 bg-amber-500/10 text-amber-400 rounded px-1.5 py-0.5">sudo</span>
                           )}
+                          {step.localOnly && (
+                            <span className="text-[10px] border border-cyan-500/20 bg-cyan-500/10 text-cyan-300 rounded px-1.5 py-0.5">local</span>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5">{step.detail}</p>
                       </div>
                       <button
                         onClick={() => runSetupStep(step)}
-                        disabled={!connectionReady || !!runningStep || (step.requiresSudo && !sudoPassword)}
+                        disabled={(!step.localOnly && !connectionReady) || !!runningStep || (step.requiresSudo && !sudoPassword)}
                         className="btn-secondary text-xs py-1 px-2 shrink-0"
                       >
-                        {runningStep === step.id ? <Loader2 size={11} className="animate-spin" /> : step.id === "bench-report" ? <Archive size={11} /> : <Terminal size={11} />}
+                        {runningStep === step.id ? <Loader2 size={11} className="animate-spin" /> : step.id === "bench-report" ? <Archive size={11} /> : step.localOnly ? <RefreshCw size={11} /> : <Terminal size={11} />}
                         Run
                       </button>
                       {runningStep === step.id && <Loader2 size={12} className="animate-spin text-cyan-400 shrink-0 mt-0.5" />}
@@ -4661,6 +4967,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               reports={thresholdTuningReports}
               downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
               onRefresh={refreshThresholdTuningReports}
+            />
+            <RosbagExportValidationReportList
+              reports={rosbagValidationReports}
+              downloadDir={ROSBAG_VALIDATION_DOWNLOAD_DIR}
+              onRefresh={refreshRosbagValidationReports}
             />
             <AutonomyReadinessReportList
               reports={autonomyReports}
