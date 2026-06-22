@@ -46,6 +46,7 @@ evidence_workflow_validation_output="$preflight_tmp_dir/evidence_workflow_valida
 invalid_evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_invalid_log.txt"
 bad_status_evidence_workflow_output="$preflight_tmp_dir/evidence_workflow_bad_status.txt"
 support_autodetect_output="$preflight_tmp_dir/support_autodetect_px4_report.txt"
+support_autodetect_goal_status_output="$preflight_tmp_dir/support_autodetect_goal_status.txt"
 rosbag_validation_output="$preflight_tmp_dir/rosbag_validation_preflight.txt"
 rosbag2_review_output="$preflight_tmp_dir/rosbag2_cli_review_dry_run.txt"
 field_smoke_dir="$(mktemp -d "$preflight_tmp_dir/field-case.XXXXXX")"
@@ -506,6 +507,20 @@ assert "extras/px4_params/px4.params" in names
 assert "extras/ardupilot_params/ardupilot.params" in names
 assert "summaries/replay_gates/field-good-texture-smoke.gate.json" in names
 PY
+support_autodetect_zip="$(ls -t "$support_autodetect_dir"/*.zip | head -n 1)"
+if VISION_NAV_AUTONOMY_SUPPORT_BUNDLE="$support_autodetect_zip" \
+VISION_NAV_DESKTOP_TRANSFER_FROM_PI="$preflight_tmp_dir/no-from-pi" \
+VISION_NAV_LOCAL_TRANSFER_OUTGOING="$preflight_tmp_dir/no-outgoing" \
+VISION_NAV_SKIP_CONVENTIONAL_PX4_SITL=1 \
+VISION_NAV_AUTONOMY_GOAL_STATUS_QUIET_EXIT=1 \
+./scripts/dev/autonomy_goal_status.sh >"$support_autodetect_goal_status_output" 2>&1; then
+  echo "Expected support-autodetect autonomy goal status to fail before final proof evidence exists." >&2
+  exit 1
+fi
+grep -q "Bench readiness details:" "$support_autodetect_goal_status_output"
+grep -q "bundle_health \\[failed\\]: Support bundle has no terrain bundle metadata." "$support_autodetect_goal_status_output"
+grep -q "runtime_logs \\[failed\\]: Support bundle has no runtime/replay logs to inspect." "$support_autodetect_goal_status_output"
+grep -q "feature_method_benchmarks \\[failed\\]: Feature-method benchmark report is required for this readiness gate." "$support_autodetect_goal_status_output"
 rosbag_smoke_dir="$workflow_smoke_dir/rosbag-smoke"
 mkdir -p "$rosbag_smoke_dir"
 cat >"$rosbag_smoke_dir/terrain_matches.jsonl" <<'EOF'

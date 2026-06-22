@@ -408,6 +408,22 @@ def print_multiline_command(prefix, command):
         print(f"  {line}")
 
 
+def normalize_bench_subchecks(values):
+    subchecks = []
+    if not isinstance(values, list):
+        return subchecks
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        name = str(value.get("name") or "")
+        status = str(value.get("status") or "unknown")
+        message = str(value.get("message") or "")
+        if not name and not message:
+            continue
+        subchecks.append({"name": name or "unknown", "status": status, "message": message})
+    return subchecks
+
+
 report_path = sys.argv[1]
 with open(report_path, "r", encoding="utf-8") as handle:
     report = json.load(handle)
@@ -507,6 +523,7 @@ if external_blockers:
         print(f"- ... {len(external_blockers) - 12} more")
 
 support_details = check_details(report, "support_bundle_bench_readiness")
+bench_subchecks = normalize_bench_subchecks(support_details.get("failed_or_degraded_checks"))
 bench_inputs = [
     str(value)
     for value in support_details.get("expected_bench_inputs") or []
@@ -546,6 +563,17 @@ if bench_inputs or support_bundle_command or bench_actions:
     action_commands = {str(action.get("command") or "") for action in bench_actions}
     if support_bundle_command and support_bundle_command not in action_commands:
         print(f"- create or refresh support bundle after inputs exist: {support_bundle_command}")
+
+if bench_subchecks:
+    print()
+    print("Bench readiness details:")
+    for subcheck in bench_subchecks[:12]:
+        name = subcheck["name"]
+        status = subcheck["status"]
+        message = subcheck["message"]
+        print(f"- {name} [{status}]: {message}")
+    if len(bench_subchecks) > 12:
+        print(f"- ... {len(bench_subchecks) - 12} more")
 
 field_conditions = field_condition_names_from_report(report, external_blockers)
 next_field_condition = find_next_field_condition(report, field_conditions)
