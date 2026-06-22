@@ -290,12 +290,14 @@ VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
 VISION_NAV_PX4_SITL_REPORT="$local_audit_dir/px4-sitl-evidence/receiver_evidence.json" \
 VISION_NAV_AUTONOMY_ALLOW_FAILED=1 \
 ./scripts/dev/run_local_autonomy_readiness_audit.sh >"$local_autonomy_output" 2>&1
+grep -q "No support bundle ZIP found" "$local_autonomy_output"
 grep -q "__VISION_NAV_AUTONOMY_REPORT__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_AUTONOMY_HANDOFF__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_PX4_SITL_REPORT__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN__=" "$local_autonomy_output"
 grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__=" "$local_autonomy_output"
+grep -q "proof:support_bundle_bench_readiness" "$local_autonomy_output"
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.json"
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.md"
 test -f "$local_audit_dir/replay-cases/autonomy_readiness_report.evidence.zip"

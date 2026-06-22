@@ -163,6 +163,9 @@ args=(
 
 if [[ -n "$support_bundle" && -f "$support_bundle" ]]; then
   args+=(--support-bundle "$support_bundle")
+else
+  echo "No support bundle ZIP found; the local readiness audit will fail closed and record the missing proof gate." >&2
+  echo "Run Module Setup > Bench Report, copy a support bundle into $support_dir, or set VISION_NAV_AUTONOMY_SUPPORT_BUNDLE." >&2
 fi
 
 if [[ -n "$px4_sitl_session" && -f "$px4_sitl_session/px4_sitl_evidence_session.json" ]]; then
@@ -225,7 +228,7 @@ fi
 cat <<EOF
 
 Local autonomy readiness audit inputs:
-  support bundle:          ${support_bundle:-not found}
+  support bundle:          $([[ -f "$support_bundle" ]] && printf '%s' "$support_bundle" || printf 'not found')
   px4 sitl session:        ${px4_sitl_session:-not found}
   px4 sitl report:         $([[ -f "$px4_sitl_report" ]] && printf '%s' "$px4_sitl_report" || printf 'not found')
   field evidence report:   $([[ -f "$field_evidence_report" ]] && printf '%s' "$field_evidence_report" || printf 'not found')

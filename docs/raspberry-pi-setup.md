@@ -1029,6 +1029,9 @@ downloaded ROS bag export validation reports, and a downloaded field collection
 plan/checklist, plus a local PX4 SITL evidence session or receiver report when
 present. The local wrapper looks for the default validation report at
 `~/DroneTransfer/from-pi/terrain-match/rosbag-jsonl-validation.json`.
+If the downloaded support bundle is still missing, the local wrapper prints a
+fail-closed warning, still writes the failed report, handoff, and evidence ZIP,
+and records `support_bundle_bench_readiness` as a missing proof gate.
 It prints `__VISION_NAV_AUTONOMY_REPORT__=...` and
 `__VISION_NAV_AUTONOMY_HANDOFF__=...` plus
 `__VISION_NAV_AUTONOMY_EVIDENCE_PACKAGE__=...`, then writes

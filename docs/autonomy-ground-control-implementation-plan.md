@@ -711,6 +711,10 @@ Status:
   feature-method benchmark report, renders a Markdown handoff beside the JSON
   report, and fails closed while preserving artifacts that explain which proof
   items are missing.
+- Done: the local autonomy-readiness wrapper now warns when no downloaded
+  support bundle is available, still writes the failed report, Markdown handoff,
+  and evidence ZIP, and preserves `support_bundle_bench_readiness` as an
+  explicit missing proof gate just like the Pi wrapper.
 - Done: Module Setup exposes `Local Readiness Re-Audit` as a local-only action
   that runs the desktop wrapper against already downloaded `from-pi` evidence,
   then refreshes final readiness, workflow, field, feature, threshold, ROS bag,

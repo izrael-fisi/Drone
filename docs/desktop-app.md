@@ -519,7 +519,10 @@ Module Setup also exposes `Local Readiness Re-Audit`, which runs
 downloaded `~/DroneTransfer/from-pi/` evidence folders from the desktop app. It
 does not require an SSH connection, and it refreshes the same final readiness,
 workflow, field, feature, threshold, ROS bag, PX4, and support-bundle report
-lists after the local audit finishes.
+lists after the local audit finishes. When no downloaded support bundle is
+available yet, the local wrapper still writes the failed readiness report,
+handoff, and evidence package, and it names `support_bundle_bench_readiness` as
+the missing proof gate in terminal output and package metadata.
 
 After Mission Planner builds and uploads a bundle to a Raspberry Pi device, the
 `Open Bench Report In Module Setup` action opens that device's setup tab with
