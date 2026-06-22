@@ -1070,6 +1070,8 @@ grep -q "feature_method_benchmark_report: $outgoing_fallback_root/feature-method
 grep -q "capture command:" "$outgoing_fallback_goal_status"
 grep -q "app: Module Setup > Field Log Capture" "$outgoing_fallback_goal_status"
 grep -q "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" "$outgoing_fallback_goal_status"
+grep -q "preflight + capture command:" "$outgoing_fallback_goal_status"
+grep -q "app: Module Setup > Field Capture Preflight, then Field Log Capture" "$outgoing_fallback_goal_status"
 grep -q "metadata update command:" "$outgoing_fallback_goal_status"
 grep -q "app: Module Setup > Field Evidence Case > Update Metadata" "$outgoing_fallback_goal_status"
 grep -q "update_field_capture_metadata.sh" "$outgoing_fallback_goal_status"
@@ -1081,7 +1083,11 @@ import sys
 
 text = Path(sys.argv[1]).read_text()
 field_preview = text.index("Field collection preview:")
-capture_label = text.index("capture command:", field_preview)
+preflight_capture_label = text.index("preflight + capture command:", field_preview)
+preflight_capture_app = text.index("app: Module Setup > Field Capture Preflight, then Field Log Capture", preflight_capture_label)
+preflight_capture_command = text.index("preflight_field_capture.sh", preflight_capture_app)
+preflight_capture_runtime = text.index("read_runtime_status.sh", preflight_capture_command)
+capture_label = text.index("\n  capture command:", preflight_capture_runtime)
 capture_app = text.index("app: Module Setup > Field Log Capture", capture_label)
 capture_command = text.index("VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh", capture_app)
 metadata_label = text.index("metadata update command:", capture_command)
@@ -1090,6 +1096,7 @@ metadata_command = text.index("./scripts/pi/update_field_capture_metadata.sh", m
 register_label = text.index("register command:", metadata_command)
 register_app = text.index("app: Module Setup > Field Evidence Case > Register", register_label)
 register_command = text.index("./scripts/pi/register_field_replay_case.sh", register_app)
+assert preflight_capture_label < preflight_capture_app < preflight_capture_command < preflight_capture_runtime < capture_label
 assert capture_label < capture_app < capture_command
 assert metadata_label < metadata_app < metadata_command
 assert register_label < register_app < register_command

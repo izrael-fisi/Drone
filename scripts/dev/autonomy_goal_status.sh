@@ -382,6 +382,7 @@ FIELD_COLLECTION_CHECKS = {"field_collection_plan", "field_evidence_proof", "thr
 SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
 FIELD_COLLECTION_COMMAND_APP_ACTIONS = {
     "preflight": "Module Setup > Field Capture Preflight",
+    "preflight_capture": "Module Setup > Field Capture Preflight, then Field Log Capture",
     "capture": "Module Setup > Field Log Capture",
     "metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
     "registration": "Module Setup > Field Evidence Case > Register",
@@ -971,6 +972,11 @@ if field_conditions or next_field_condition:
             "  preflight command:",
             next_field_condition.get("preflight_command"),
             FIELD_COLLECTION_COMMAND_APP_ACTIONS["preflight"],
+        )
+        print_multiline_command(
+            "  preflight + capture command:",
+            next_field_condition.get("preflight_capture_command"),
+            FIELD_COLLECTION_COMMAND_APP_ACTIONS["preflight_capture"],
         )
         print_multiline_command(
             "  capture command:",

@@ -5496,10 +5496,16 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         incomplete_handoff = render_handoff_markdown(incomplete_field_plan_ready)
         if "Field collection preflight commands:" not in incomplete_handoff:
             raise AssertionError("autonomy handoff missing field preflight command section")
+        if "Field collection preflight + capture commands:" not in incomplete_handoff:
+            raise AssertionError("autonomy handoff missing field preflight+capture command section")
         if "Field collection metadata update commands:" not in incomplete_handoff:
             raise AssertionError("autonomy handoff missing field metadata update command section")
         if "./scripts/pi/preflight_field_capture.sh --condition blur" not in incomplete_handoff:
             raise AssertionError("autonomy handoff missing field preflight command")
+        if blur_preflight_capture_command not in incomplete_handoff:
+            raise AssertionError("autonomy handoff missing field preflight+capture command")
+        if "# app: Module Setup > Field Capture Preflight, then Field Log Capture" not in incomplete_handoff:
+            raise AssertionError("autonomy handoff missing field preflight+capture app hint")
         if "VISION_NAV_FIELD_OPERATOR=TODO_operator" not in incomplete_handoff:
             raise AssertionError("autonomy handoff missing field metadata update command")
         incomplete_report = root / "autonomy_readiness_incomplete_field_plan.json"
@@ -7054,6 +7060,10 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected handoff next condition to enrich stale metadata update commands")
         if not handoff_next or "VISION_NAV_FIELD_COLLECTION_PLAN" not in handoff_next["preflight_command"]:
             raise AssertionError("Expected handoff next condition to backfill stale preflight commands")
+        if not handoff_next or "preflight_field_capture.sh" not in handoff_next["preflight_capture_command"]:
+            raise AssertionError("Expected handoff next condition to backfill stale preflight+capture commands")
+        if not handoff_next or "read_runtime_status.sh" not in handoff_next["preflight_capture_command"]:
+            raise AssertionError("Expected handoff next preflight+capture command to include runtime status")
         legacy_preflight = evaluate_field_capture_preflight(
             plan_path=legacy_plan_path,
             repo_root=Path.cwd(),

@@ -129,6 +129,17 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
                 )
                 if next_condition.get("preflight_command"):
                     lines.extend(["", "Preflight command:", "", "```bash", str(next_condition["preflight_command"]), "```"])
+                if next_condition.get("preflight_capture_command"):
+                    lines.extend(
+                        [
+                            "",
+                            "Preflight + capture command:",
+                            "",
+                            "```bash",
+                            str(next_condition["preflight_capture_command"]),
+                            "```",
+                        ]
+                    )
                 if next_condition.get("capture_command"):
                     lines.extend(["", "Capture command:", "", "```bash", str(next_condition["capture_command"]), "```"])
                 if next_condition.get("metadata_update_command"):
@@ -312,6 +323,11 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         if field_preflight_commands:
             lines.extend(["", "Field collection preflight commands:", "", "```bash"])
             lines.extend(annotated_command_lines(field_preflight_commands, app_hints))
+            lines.append("```")
+        field_preflight_capture_commands = command_groups.get("field_collection_preflight_capture") or []
+        if field_preflight_capture_commands:
+            lines.extend(["", "Field collection preflight + capture commands:", "", "```bash"])
+            lines.extend(annotated_command_lines(field_preflight_capture_commands, app_hints))
             lines.append("```")
         field_capture_commands = command_groups.get("field_collection_capture") or []
         if field_capture_commands:
@@ -526,6 +542,14 @@ def normalize_field_collection_condition(item: dict[str, Any], *, plan: dict[str
             command,
             runtime_status_root=str(normalized.get("capture_output_dir") or "").strip() or None,
         )
+    preflight_command = str(normalized.get("preflight_command") or "").strip()
+    capture_command = str(normalized.get("capture_command") or "").strip()
+    preflight_capture_command = str(normalized.get("preflight_capture_command") or "").strip()
+    if preflight_command and capture_command and (
+        not preflight_capture_command
+        or ("read_runtime_status.sh" in capture_command and "read_runtime_status.sh" not in preflight_capture_command)
+    ):
+        normalized["preflight_capture_command"] = f"{preflight_command} && {capture_command}"
     metadata_command = str(normalized.get("metadata_update_command") or "")
     if not metadata_update_command_is_detailed(metadata_command):
         manifest_path = (plan or {}).get("manifest_path")
@@ -750,6 +774,16 @@ def command_app_hints(report: dict[str, Any], field_plan: dict[str, Any] | None)
 
     if field_plan is not None:
         for condition in field_collection_pending_conditions(field_plan):
+            add_command_app_hint(
+                hints,
+                condition.get("preflight_command"),
+                "Module Setup > Field Capture Preflight",
+            )
+            add_command_app_hint(
+                hints,
+                condition.get("preflight_capture_command"),
+                "Module Setup > Field Capture Preflight, then Field Log Capture",
+            )
             add_command_app_hint(
                 hints,
                 condition.get("capture_command"),
