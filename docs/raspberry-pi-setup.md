@@ -804,14 +804,17 @@ compare the observed `vehicle_visual_odometry` listener rate against the smoke
 manifest `rate_hz`, so support bundles show whether PX4 received the
 external-vision stream at a plausible rate. The same timing detail is carried
 into bench-readiness and final autonomy-readiness check details.
-The final autonomy-readiness wrapper can also consume the report marker
-directly through `VISION_NAV_PX4_SITL_REPORT`, which is useful when receiver
-proof has already been evaluated and does not need to be repackaged into a new
-support bundle. When that direct report is present, the wrapper prints
-`__VISION_NAV_PX4_SITL_REPORT__=...` so the desktop app can download and list
-the standalone receiver proof beside the final readiness report. Receiver
-reports must show `expected_message: odometry` to satisfy bench or final
-readiness; compatibility-path reports are treated as debug evidence only.
+Support-bundle creation and the final autonomy-readiness wrapper can also
+consume the report marker directly through `VISION_NAV_PX4_SITL_REPORT`, which
+is useful when receiver proof has already been evaluated and the full session
+folder is not being recopied. Direct reports are copied under
+`extras/px4_sitl_evidence/`, republished under
+`summaries/px4_sitl_evidence/`, and printed as
+`__VISION_NAV_PX4_SITL_REPORT__=...` by the readiness wrapper so the desktop app
+can download and list the standalone receiver proof beside the final readiness
+report. Receiver reports must show `expected_message: odometry` to satisfy
+bench or final readiness; compatibility-path reports are treated as debug
+evidence only.
 
 To include the PX4 parameter readiness report in the same support bundle:
 

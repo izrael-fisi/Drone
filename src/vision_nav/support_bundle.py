@@ -39,6 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--px4-listener", help="Optional PX4 `listener vehicle_visual_odometry` capture text file.")
     parser.add_argument("--px4-mavlink-status", help="Optional PX4 `mavlink status` capture text file.")
     parser.add_argument("--px4-sitl-session", help="Optional PX4 SITL evidence session directory or manifest.")
+    parser.add_argument("--px4-sitl-report", help="Optional evaluated PX4 receiver_evidence.json report.")
     parser.add_argument("--px4-params", help="Optional PX4 parameter export file to check and include.")
     parser.add_argument("--ardupilot-params", help="Optional ArduPilot parameter export file to check and include.")
     parser.add_argument(
@@ -477,6 +478,7 @@ def evaluate_replay_cases(replay_cases: dict[str, Any], support_dir: Path) -> di
 def evaluate_px4_receiver_evidence(
     *,
     session_path: str | None = None,
+    report_path: str | None = None,
     listener_path: str | None = None,
     mavlink_status_path: str | None = None,
     expected_message: str = "odometry",
@@ -504,6 +506,44 @@ def evaluate_px4_receiver_evidence(
         report_path = evidence_dir / "receiver_evidence.json"
         report["report_path"] = str(report_path)
         report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        return report
+
+    if report_path:
+        src = Path(report_path).expanduser()
+        evidence_dir = support_dir / "summaries" / "px4_sitl_evidence"
+        raw_dir = support_dir / "extras" / "px4_sitl_evidence"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        if not src.exists():
+            report = {
+                "status": "failed",
+                "expected_message": expected_message,
+                "source": "px4_sitl_report",
+                "source_report_path": str(src),
+                "issues": [{"severity": "error", "message": "PX4 receiver evidence report is missing."}],
+            }
+        else:
+            try:
+                report = json.loads(src.read_text(encoding="utf-8"))
+                if not isinstance(report, dict):
+                    raise ValueError("receiver evidence report root must be an object")
+            except Exception as exc:
+                report = {
+                    "status": "failed",
+                    "expected_message": expected_message,
+                    "source": "px4_sitl_report",
+                    "source_report_path": str(src),
+                    "issues": [{"severity": "error", "message": f"PX4 receiver evidence report could not be parsed: {exc}"}],
+                }
+            else:
+                report = dict(report)
+                report["source"] = "px4_sitl_report"
+                report["source_report_path"] = str(src)
+                report["report_copy"] = copy_file(src, raw_dir / "receiver_evidence.json")
+        summary_path = evidence_dir / "receiver_evidence.json"
+        report["report_path"] = str(summary_path)
+        report.setdefault("expected_message", expected_message)
+        summary_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
         return report
 
     if not listener_path:
@@ -1166,6 +1206,7 @@ def create_support_bundle(
     px4_listener_path: str | None = None,
     px4_mavlink_status_path: str | None = None,
     px4_sitl_session_path: str | None = None,
+    px4_sitl_report_path: str | None = None,
     px4_params_path: str | None = None,
     ardupilot_params_path: str | None = None,
     px4_expected_message: str = "odometry",
@@ -1213,6 +1254,7 @@ def create_support_bundle(
     replay_gate_summary = evaluate_replay_cases(replay_cases, support_dir)
     px4_evidence_summary = evaluate_px4_receiver_evidence(
         session_path=px4_sitl_session_path,
+        report_path=px4_sitl_report_path,
         listener_path=px4_listener_path,
         mavlink_status_path=px4_mavlink_status_path,
         expected_message=px4_expected_message,
@@ -1353,6 +1395,7 @@ def main() -> None:
         px4_listener_path=args.px4_listener,
         px4_mavlink_status_path=args.px4_mavlink_status,
         px4_sitl_session_path=args.px4_sitl_session,
+        px4_sitl_report_path=args.px4_sitl_report,
         px4_params_path=args.px4_params,
         ardupilot_params_path=args.ardupilot_params,
         px4_expected_message=args.px4_expected_message,

@@ -61,6 +61,10 @@ if [[ -n "${VISION_NAV_PX4_SITL_SESSION:-}" && -e "${VISION_NAV_PX4_SITL_SESSION
   args+=(--px4-sitl-session "$VISION_NAV_PX4_SITL_SESSION")
 fi
 
+if [[ -n "${VISION_NAV_PX4_SITL_REPORT:-}" && -f "${VISION_NAV_PX4_SITL_REPORT}" ]]; then
+  args+=(--px4-sitl-report "$VISION_NAV_PX4_SITL_REPORT")
+fi
+
 if [[ -n "${VISION_NAV_PX4_PARAMS:-}" && -f "${VISION_NAV_PX4_PARAMS}" ]]; then
   args+=(--px4-params "$VISION_NAV_PX4_PARAMS")
 fi

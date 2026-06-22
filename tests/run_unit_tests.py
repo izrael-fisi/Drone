@@ -2193,6 +2193,45 @@ RC8_OPTION,90
         assert_equal(manifest["px4_sitl_evidence"]["listener"]["sample_count"], 2, "support px4 evidence samples")
         assert_equal(manifest["px4_sitl_evidence"]["listener"]["observed_rate_hz"], 5.0, "support px4 evidence rate")
         assert_equal(manifest["px4_sitl_evidence"]["config"]["expected_rate_hz"], 5.0, "support px4 expected rate")
+        direct_px4_report = root / "direct_receiver_evidence.json"
+        direct_px4_report.write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "expected_message": "odometry",
+                    "listener": {"sample_count": 2, "observed_rate_hz": 5.0},
+                    "config": {"expected_rate_hz": 5.0},
+                    "issues": [],
+                }
+            )
+        )
+        direct_px4_result = create_support_bundle(
+            repo=".",
+            output_dir=root / "support-direct-px4",
+            name="unit-support-direct-px4",
+            px4_sitl_report_path=str(direct_px4_report),
+            px4_expected_message="odometry",
+        )
+        with zipfile.ZipFile(direct_px4_result["zip_path"]) as archive:
+            direct_names = set(archive.namelist())
+        for expected in {
+            "summaries/px4_sitl_evidence/receiver_evidence.json",
+            "extras/px4_sitl_evidence/receiver_evidence.json",
+        }:
+            if expected not in direct_names:
+                raise AssertionError(f"Missing direct PX4 report artifact from support bundle: {expected}")
+        direct_px4_manifest = json.loads(Path(direct_px4_result["manifest_path"]).read_text())
+        assert_equal(direct_px4_manifest["px4_sitl_evidence"]["status"], "passed", "direct support px4 evidence status")
+        assert_equal(
+            direct_px4_manifest["px4_sitl_evidence"]["source"],
+            "px4_sitl_report",
+            "direct support px4 evidence source",
+        )
+        assert_equal(
+            direct_px4_manifest["px4_sitl_evidence"]["listener"]["observed_rate_hz"],
+            5.0,
+            "direct support px4 evidence observed rate",
+        )
         assert_equal(manifest["px4_params"]["status"], "degraded", "support px4 params status")
         assert_equal(manifest["px4_params"]["parameters"]["EKF2_EV_CTRL"], 1, "support px4 ev ctrl")
         assert_equal(manifest["ardupilot_params"]["status"], "passed", "support ardupilot params status")

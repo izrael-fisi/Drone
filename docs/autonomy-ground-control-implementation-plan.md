@@ -56,6 +56,10 @@ Status:
   `--px4-sitl-session` / `VISION_NAV_PX4_SITL_SESSION`, copy it under
   `extras/px4_sitl_session/`, and publish the parsed receiver report under
   `summaries/px4_sitl_evidence/`.
+- Done: support bundles can also ingest an already evaluated
+  `receiver_evidence.json` through `--px4-sitl-report` /
+  `VISION_NAV_PX4_SITL_REPORT`, copy it under `extras/px4_sitl_evidence/`, and
+  republish it under `summaries/px4_sitl_evidence/`.
 - Done: the final readiness audit accepts standalone PX4 receiver-evidence
   reports through `--px4-sitl-report` / `VISION_NAV_PX4_SITL_REPORT`, so
   already evaluated receiver proof can be reused without rebuilding the support
