@@ -77,6 +77,12 @@ STRICT_SUPPORT_BUNDLE_ACTIONS = [
         "notes": "Field Log Capture writes terrain_matches.jsonl and runtime_status.json for bench review.",
     },
     {
+        "label": "Review PX4 receiver prerequisites.",
+        "desktop_action": "Module Setup > PX4 Prereq Setup",
+        "command": "./scripts/dev/setup_px4_sitl_prereqs.sh",
+        "notes": "Run the dry-run setup helper before receiver capture so missing tmux or PX4 checkout setup is visible.",
+    },
+    {
         "label": "Capture PX4 ODOMETRY receiver proof.",
         "desktop_action": "Module Setup > PX4 SITL Receiver Capture",
         "command": "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
@@ -93,6 +99,11 @@ STRICT_SUPPORT_BUNDLE_ACTIONS = [
         "desktop_action": "Module Setup > Create Plan",
         "command": FIELD_COLLECTION_BOOTSTRAP_COMMAND,
         "notes": "This creates the field evidence template and condition-specific collection plan.",
+    },
+    {
+        "label": "Load the next field condition into the registration form.",
+        "desktop_action": "Module Setup > Load Next Field Condition",
+        "notes": "Use the newest downloaded plan to prefill the next required condition before manual registration.",
     },
     {
         "label": "Collect and register real field evidence.",

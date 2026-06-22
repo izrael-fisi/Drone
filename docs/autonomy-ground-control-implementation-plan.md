@@ -55,6 +55,9 @@ Status:
   `--apply`, and only clones PX4 when `--clone-px4` is explicitly supplied.
 - Done: Module Setup exposes a local-only `PX4 Prereq Setup` action that runs
   that helper in dry-run mode before `PX4 SITL Receiver Capture`.
+- Done: the strict readiness guidance now lists `PX4 Prereq Setup` before PX4
+  receiver capture and `Load Next Field Condition` between `Create Plan` and
+  `Evidence Workflow`, matching the app-side bench collection flow.
 - Done: the PX4 SITL smoke script, automated capture harness, and session
   evaluator emit stable `__VISION_NAV_PX4_SITL_SESSION__` /
   `__VISION_NAV_PX4_SITL_PREREQS__` /

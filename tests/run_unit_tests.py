@@ -3148,12 +3148,31 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "./scripts/pi/create_support_bundle.sh",
             "autonomy readiness missing support bundle command",
         )
+        px4_capture_command = "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh"
+        support_bundle_command = "./scripts/pi/create_support_bundle.sh"
         bench_actions = support_check["details"]["bench_evidence_actions"]
         bench_action_commands = [action.get("command") for action in bench_actions]
+        bench_action_desktop_actions = [action.get("desktop_action") for action in bench_actions]
         if "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" not in bench_action_commands:
             raise AssertionError("autonomy readiness missing support bundle should expose runtime capture action")
+        if "./scripts/dev/setup_px4_sitl_prereqs.sh" not in bench_action_commands:
+            raise AssertionError("autonomy readiness missing support bundle should expose PX4 prereq setup action")
         if "./scripts/pi/create_support_bundle.sh" not in bench_action_commands:
             raise AssertionError("autonomy readiness missing support bundle should expose support bundle action")
+        if "Module Setup > Load Next Field Condition" not in bench_action_desktop_actions:
+            raise AssertionError("autonomy readiness missing support bundle should expose next field condition action")
+        if bench_action_commands.index("./scripts/dev/setup_px4_sitl_prereqs.sh") > bench_action_commands.index(
+            px4_capture_command
+        ):
+            raise AssertionError("autonomy readiness should surface PX4 prereq setup before receiver capture")
+        if bench_action_desktop_actions.index("Module Setup > Create Plan") > bench_action_desktop_actions.index(
+            "Module Setup > Load Next Field Condition"
+        ):
+            raise AssertionError("autonomy readiness should create the field plan before loading its next condition")
+        if bench_action_desktop_actions.index(
+            "Module Setup > Load Next Field Condition"
+        ) > bench_action_desktop_actions.index("Module Setup > Evidence Workflow"):
+            raise AssertionError("autonomy readiness should load the next field condition before evidence workflow")
         support_blocker = next(
             blocker
             for blocker in missing_proof_ready["evidence_manifest"]["external_blockers"]
@@ -3164,8 +3183,6 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         if not support_blocker.get("bench_evidence_actions"):
             raise AssertionError("autonomy readiness blocker missing support bundle action hints")
         bench_commands = missing_proof_phases["bench_foundation"]["commands"]
-        px4_capture_command = "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh"
-        support_bundle_command = "./scripts/pi/create_support_bundle.sh"
         if bench_commands.index(px4_capture_command) > bench_commands.index(support_bundle_command):
             raise AssertionError("autonomy proof runbook should capture PX4 receiver proof before creating support bundle")
         bench_action_checks = [action.get("check") for action in missing_proof_phases["bench_foundation"]["actions"]]

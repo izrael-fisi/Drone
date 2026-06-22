@@ -563,12 +563,14 @@ grep -q "runtime terrain log and runtime_status.json snapshot" "$goal_status_out
 grep -q "PX4 ODOMETRY receiver evidence report" "$goal_status_output"
 grep -q "suggested collection order:" "$goal_status_output"
 grep -q "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh" "$goal_status_output"
+grep -q "Module Setup > PX4 Prereq Setup" "$goal_status_output"
 grep -q "Module Setup > PX4 SITL Receiver Capture" "$goal_status_output"
 grep -q "Field collection preview:" "$goal_status_output"
 grep -q "Good texture, matching map (good_texture), expected good_map" "$goal_status_output"
 grep -q "Wrong-map rejection (wrong_map), expected wrong_map" "$goal_status_output"
 grep -q "Guided workflow option:" "$goal_status_output"
 grep -q "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh" "$goal_status_output"
+grep -q "Module Setup > Load Next Field Condition" "$goal_status_output"
 grep -q "./scripts/pi/run_autonomy_evidence_workflow.sh" "$goal_status_output"
 grep -q "Next commands:" "$goal_status_output"
 grep -q "Blocked follow-up commands:" "$goal_status_output"
@@ -578,6 +580,14 @@ grep -q "./scripts/dev/run_rosbag2_cli_review.sh" "$goal_status_output"
 python3 - "$goal_status_output" <<'PY'
 import sys
 text = open(sys.argv[1], encoding="utf-8").read()
+bench_order = text.index("suggested collection order:")
+px4_prereq_app = text.index("Module Setup > PX4 Prereq Setup", bench_order)
+px4_capture_app = text.index("Module Setup > PX4 SITL Receiver Capture", bench_order)
+create_plan_app = text.index("Module Setup > Create Plan", bench_order)
+load_next_app = text.index("Module Setup > Load Next Field Condition", bench_order)
+evidence_workflow_app = text.index("Module Setup > Evidence Workflow", bench_order)
+assert px4_prereq_app < px4_capture_app
+assert create_plan_app < load_next_app < evidence_workflow_app
 next_commands = text.index("Next commands:")
 px4 = text.index("VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh", next_commands)
 support = text.index("./scripts/pi/create_support_bundle.sh", next_commands)
@@ -687,6 +697,8 @@ grep -q "Good texture, matching map (good_texture), expected good_map" "$scanned
 grep -q "Bench evidence preview:" "$scanned_goal_status_output"
 grep -q "field evidence report covering all required real-world conditions" "$scanned_goal_status_output"
 grep -q "suggested collection order:" "$scanned_goal_status_output"
+grep -q "Module Setup > PX4 Prereq Setup" "$scanned_goal_status_output"
+grep -q "Module Setup > Load Next Field Condition" "$scanned_goal_status_output"
 grep -q "Module Setup > Bench Report" "$scanned_goal_status_output"
 grep -q "./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh" "$scanned_goal_status_output"
 python3 - "$scanned_goal_status_output" <<'PY'
@@ -696,10 +708,18 @@ import sys
 text = Path(sys.argv[1]).read_text()
 fixes = text.index("Immediate prerequisite fixes:")
 guided = text.index("Guided workflow option:")
+bench_order = text.index("suggested collection order:")
+px4_prereq_app = text.index("Module Setup > PX4 Prereq Setup", bench_order)
+px4_capture_app = text.index("Module Setup > PX4 SITL Receiver Capture", bench_order)
+create_plan_app = text.index("Module Setup > Create Plan", bench_order)
+load_next_app = text.index("Module Setup > Load Next Field Condition", bench_order)
+evidence_workflow_app = text.index("Module Setup > Evidence Workflow", bench_order)
 next_commands = text.index("Next commands:")
 field_plan = text.index("./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh", next_commands)
 workflow = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", next_commands)
 assert fixes < guided < next_commands
+assert px4_prereq_app < px4_capture_app
+assert create_plan_app < load_next_app < evidence_workflow_app
 assert field_plan < workflow
 PY
 VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
