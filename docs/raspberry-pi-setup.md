@@ -752,8 +752,11 @@ assets. Include map assets for heavier offline reproduction with:
 VISION_NAV_SUPPORT_INCLUDE_MAP_ASSETS=1 ./scripts/pi/create_support_bundle.sh
 ```
 
-To include replay-gate pass/fail reports, point the support-bundle wrapper at a
-replay-case manifest:
+If the default field replay manifest exists at
+`~/DroneTransfer/outgoing/replay-cases/field_manifest.json`, the
+support-bundle wrapper automatically evaluates it and includes replay-gate
+pass/fail reports. To include a nonstandard replay-case manifest instead, point
+the wrapper at it explicitly:
 
 ```bash
 VISION_NAV_REPLAY_CASE_MANIFEST="$HOME/Drone/replay_cases.json" \

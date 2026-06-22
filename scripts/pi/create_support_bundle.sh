@@ -16,6 +16,7 @@ px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
 px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 px4_params="${VISION_NAV_PX4_PARAMS:-}"
 ardupilot_params="${VISION_NAV_ARDUPILOT_PARAMS:-}"
+replay_case_manifest="${VISION_NAV_REPLAY_CASE_MANIFEST:-}"
 
 if [[ -z "$px4_sitl_session" && -f "$HOME/px4-sitl-evidence/px4_sitl_evidence_session.json" ]]; then
   px4_sitl_session="$HOME/px4-sitl-evidence"
@@ -31,6 +32,10 @@ fi
 
 if [[ -z "$ardupilot_params" && -f "$HOME/ardupilot.params" ]]; then
   ardupilot_params="$HOME/ardupilot.params"
+fi
+
+if [[ -z "$replay_case_manifest" && -f "$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json" ]]; then
+  replay_case_manifest="$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json"
 fi
 
 if [[ "$venv_python" == */* ]]; then
@@ -97,8 +102,8 @@ if [[ -n "${VISION_NAV_SITL_MAVLINK_MESSAGE:-}" ]]; then
   args+=(--px4-expected-message "$VISION_NAV_SITL_MAVLINK_MESSAGE")
 fi
 
-if [[ -n "${VISION_NAV_REPLAY_CASE_MANIFEST:-}" && -f "${VISION_NAV_REPLAY_CASE_MANIFEST}" ]]; then
-  args+=(--replay-case-manifest "$VISION_NAV_REPLAY_CASE_MANIFEST")
+if [[ -n "$replay_case_manifest" && -f "$replay_case_manifest" ]]; then
+  args+=(--replay-case-manifest "$replay_case_manifest")
 fi
 
 if [[ -n "$feature_method_benchmark" && -e "$feature_method_benchmark" ]]; then

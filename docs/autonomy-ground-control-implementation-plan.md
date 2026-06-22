@@ -85,6 +85,10 @@ Status:
   `~/px4.params` and `~/ardupilot.params` exports, so parameter evidence is
   included in the support bundle without re-entering environment variables when
   the operator saves exports to the documented default paths.
+- Done: `scripts/pi/create_support_bundle.sh` auto-detects the default
+  `~/DroneTransfer/outgoing/replay-cases/field_manifest.json`, so registered
+  field replay cases are evaluated and packaged without re-entering
+  `VISION_NAV_REPLAY_CASE_MANIFEST`.
 - Done: the bench-readiness gate now counts optional ArduPilot ExternalNav
   parameter reports when present, without making ArduPilot mandatory for the
   PX4-first bench path.

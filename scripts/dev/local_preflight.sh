@@ -201,6 +201,7 @@ PY
 support_autodetect_home="$workflow_smoke_dir/support-autodetect-home"
 support_autodetect_dir="$workflow_smoke_dir/support-autodetect-bundles"
 mkdir -p "$support_autodetect_home/px4-sitl-evidence"
+mkdir -p "$support_autodetect_home/DroneTransfer/outgoing/replay-cases/logs"
 cat >"$support_autodetect_home/px4-sitl-evidence/receiver_evidence.json" <<'EOF'
 {
   "status": "passed",
@@ -209,6 +210,28 @@ cat >"$support_autodetect_home/px4-sitl-evidence/receiver_evidence.json" <<'EOF'
   "config": {"expected_rate_hz": 5.0},
   "issues": []
 }
+EOF
+cat >"$support_autodetect_home/DroneTransfer/outgoing/replay-cases/field_manifest.json" <<'EOF'
+{
+  "version": "0.1.0",
+  "description": "Local support-bundle auto-detect smoke manifest.",
+  "cases": [
+    {
+      "case_name": "field-good-texture-smoke",
+      "expected": "good_map",
+      "dataset_type": "field",
+      "conditions": ["good_texture"],
+      "bundle": "smoke-bundle",
+      "log": "logs/field-good-texture-smoke.jsonl",
+      "notes": "Synthetic local-preflight log used only to prove default field manifest auto-detection."
+    }
+  ]
+}
+EOF
+cat >"$support_autodetect_home/DroneTransfer/outgoing/replay-cases/logs/field-good-texture-smoke.jsonl" <<'EOF'
+{"sequence":1,"timestamp_us":1000000,"result":{"status":"accepted","confidence":0.82,"inliers":34,"reprojection_error_px":1.6,"scale_confidence":0.74,"local_enu_m":{"x":0.0,"y":0.0,"z":null},"covariance":{"x_m2":4.0,"y_m2":4.0,"z_m2":null,"yaw_rad2":null}}}
+{"sequence":2,"timestamp_us":2000000,"result":{"status":"accepted","confidence":0.84,"inliers":36,"reprojection_error_px":1.4,"scale_confidence":0.76,"local_enu_m":{"x":2.0,"y":1.0,"z":null},"covariance":{"x_m2":4.0,"y_m2":4.0,"z_m2":null,"yaw_rad2":null}}}
+{"sequence":3,"timestamp_us":3000000,"result":{"status":"accepted","confidence":0.8,"inliers":31,"reprojection_error_px":1.9,"scale_confidence":0.71,"local_enu_m":{"x":4.0,"y":2.0,"z":null},"covariance":{"x_m2":5.0,"y_m2":5.0,"z_m2":null,"yaw_rad2":null}}}
 EOF
 cat >"$support_autodetect_home/px4.params" <<'EOF'
 1 1 EKF2_EV_CTRL 1 6
@@ -237,7 +260,7 @@ EK3_SRC_OPTIONS,0
 GPS_TYPE,0
 RC8_OPTION,90
 EOF
-env -u VISION_NAV_PX4_SITL_SESSION -u VISION_NAV_PX4_SITL_REPORT -u VISION_NAV_PX4_PARAMS -u VISION_NAV_ARDUPILOT_PARAMS \
+env -u VISION_NAV_PX4_SITL_SESSION -u VISION_NAV_PX4_SITL_REPORT -u VISION_NAV_PX4_PARAMS -u VISION_NAV_ARDUPILOT_PARAMS -u VISION_NAV_REPLAY_CASE_MANIFEST \
 HOME="$support_autodetect_home" \
 VISION_NAV_PYTHON=python3 \
 VISION_NAV_SUPPORT_OUTPUT_DIR="$support_autodetect_dir" \
@@ -262,12 +285,16 @@ assert manifest["px4_params"]["status"] in {"passed", "degraded"}
 assert manifest["px4_params"]["param_copy"]["source"].endswith("px4.params")
 assert manifest["ardupilot_params"]["status"] == "passed"
 assert manifest["ardupilot_params"]["param_copy"]["source"].endswith("ardupilot.params")
+assert manifest["replay_gates"]["status"] == "passed"
+assert manifest["replay_gates"]["case_count"] == 1
+assert manifest["replay_gates"]["sources"][0].endswith("DroneTransfer/outgoing/replay-cases/field_manifest.json")
 with zipfile.ZipFile(zips[0]) as archive:
     names = set(archive.namelist())
 assert "summaries/px4_sitl_evidence/receiver_evidence.json" in names
 assert "extras/px4_sitl_evidence/receiver_evidence.json" in names
 assert "extras/px4_params/px4.params" in names
 assert "extras/ardupilot_params/ardupilot.params" in names
+assert "summaries/replay_gates/field-good-texture-smoke.gate.json" in names
 PY
 rosbag_smoke_dir="$workflow_smoke_dir/rosbag-smoke"
 mkdir -p "$rosbag_smoke_dir"
