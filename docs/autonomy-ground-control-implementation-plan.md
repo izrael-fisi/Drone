@@ -783,6 +783,10 @@ Status:
   commands separately from immediate next commands, so method/threshold and ROS
   replay actions remain visible without being presented as runnable before
   their field-dataset prerequisite is satisfied.
+- Done: `scripts/dev/autonomy_goal_status.sh` now prints PX4 SITL capture
+  prerequisite diagnostics when a `px4_sitl_capture_prereqs.json` report is
+  available, including failed check names and next-action messages, so operators
+  can distinguish setup blockers from missing receiver proof.
 - Done: `scripts/dev/autonomy_goal_status.sh` also shows
   `./scripts/pi/run_autonomy_evidence_workflow.sh` as the guided all-in-one
   workflow option, while keeping the exact proof-runbook and per-condition

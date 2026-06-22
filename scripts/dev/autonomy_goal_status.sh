@@ -267,6 +267,7 @@ phases = runbook.get("phases") or []
 metadata = report.get("metadata") or {}
 repo = metadata.get("repo") or {}
 inputs = report.get("inputs") or {}
+diagnostics = report.get("diagnostics") if isinstance(report.get("diagnostics"), dict) else {}
 command_bundle = report.get("command_bundle") if isinstance(report.get("command_bundle"), dict) else {}
 guided_workflow_commands = [
     str(command)
@@ -343,6 +344,41 @@ if external_blockers:
             print(f"  missing conditions: {visible}{extra}")
     if len(external_blockers) > 12:
         print(f"- ... {len(external_blockers) - 12} more")
+
+px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
+if isinstance(px4_prereqs, dict):
+    failed_checks = [
+        item
+        for item in px4_prereqs.get("failed_checks") or []
+        if isinstance(item, dict)
+    ]
+    issues = [
+        item
+        for item in px4_prereqs.get("issues") or []
+        if isinstance(item, dict)
+    ]
+    next_prereq_actions = [
+        str(item)
+        for item in px4_prereqs.get("next_actions") or []
+        if str(item)
+    ]
+    if failed_checks or issues or px4_prereqs.get("status") not in {"passed", "not_provided", None}:
+        print()
+        print("Diagnostics:")
+        status = px4_prereqs.get("status") or "unknown"
+        path = px4_prereqs.get("path") or inputs.get("px4_sitl_prereqs") or "unknown"
+        print(f"- px4_sitl_prereqs [{status}]: {path}")
+        for item in failed_checks[:6]:
+            name = item.get("name") or "unknown"
+            item_status = item.get("status") or "unknown"
+            message = item.get("message") or ""
+            print(f"  failed check: {name} [{item_status}] {message}")
+        for item in issues[:4]:
+            severity = item.get("severity") or "info"
+            message = item.get("message") or ""
+            print(f"  issue [{severity}]: {message}")
+        for action in next_prereq_actions[:4]:
+            print(f"  next action: {action}")
 
 if guided_workflow_commands:
     print()

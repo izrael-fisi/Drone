@@ -647,6 +647,9 @@ grep -q "feature_method_benchmark_report" "$scanned_goal_status_output"
 grep -q "field_collection_plan" "$scanned_goal_status_output"
 grep -q "px4_sitl_report" "$scanned_goal_status_output"
 grep -q "px4_sitl_prereqs" "$scanned_goal_status_output"
+grep -q "Diagnostics:" "$scanned_goal_status_output"
+grep -q "px4_autopilot_dir" "$scanned_goal_status_output"
+grep -q "PX4-Autopilot directory not found." "$scanned_goal_status_output"
 VISION_NAV_LOCAL_SUPPORT_DIR="$local_audit_dir/support-bundles" \
 VISION_NAV_LOCAL_REPLAY_DIR="$local_audit_dir/replay-cases" \
 VISION_NAV_LOCAL_FEATURE_BENCH_DIR="$local_audit_dir/feature-method-bench" \
