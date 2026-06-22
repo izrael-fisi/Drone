@@ -1150,6 +1150,10 @@ Status:
 - Done: Module Setup renders the compact workflow-validation summary embedded in
   downloaded evidence-package manifests, so readiness report cards still surface
   failed workflow steps even when support is reviewing the ZIP summary.
+- Done: downloaded support-bundle details now expand workflow-validation
+  blockers into missing required workflow steps, non-passing workflow step
+  records, missing final-proof markers, and failed/degraded validation checks,
+  so support review can identify the next proof gap without opening raw JSON.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

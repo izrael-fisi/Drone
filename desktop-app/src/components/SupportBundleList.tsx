@@ -3,6 +3,9 @@ import { AlertTriangle, Archive, CheckCircle2, Clipboard, Eye, FileDown, FolderO
 import { cmd } from "../lib/tauri";
 import type { FieldCollectionPlanCondition, SupportBundleDetails, SupportBundleFile } from "../lib/types";
 
+type WorkflowValidationSummary = NonNullable<SupportBundleDetails["autonomy_evidence_workflow_validation"]>;
+type WorkflowValidationStep = WorkflowValidationSummary["checks"][number]["non_passed_steps"][number];
+
 function formatBundleSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -45,6 +48,27 @@ function formatCounts(counts?: Record<string, number>) {
   return Object.entries(counts)
     .map(([key, value]) => `${key} ${value}`)
     .join(", ");
+}
+
+function uniqueStrings(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    if (!value || seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
+function formatLimitedList(values: string[], limit: number) {
+  const shown = values.slice(0, limit).map(formatLabel).join(", ");
+  const extra = values.length > limit ? ` +${values.length - limit}` : "";
+  return `${shown}${extra}`;
+}
+
+function formatWorkflowStep(step: WorkflowValidationStep) {
+  return [formatLabel(step.name), formatLabel(step.status)]
+    .filter((part) => part && part !== "n/a")
+    .join(": ");
 }
 
 function countsRecord(value: unknown): Record<string, number> | undefined {
@@ -160,6 +184,14 @@ function SupportBundleDetailPanel({
   const workflowProvenanceCheck = workflowValidation?.checks.find((check) => check.name === "workflow_provenance");
   const workflowNextStep = workflowValidation?.next_required_step;
   const workflowNextCommand = workflowNextStep?.command || workflowNextStep?.metadata_update_command;
+  const workflowBlockingChecks = (workflowValidation?.checks ?? []).filter((check) => check.status && check.status !== "passed");
+  const workflowMissingSteps = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_steps));
+  const workflowMissingMarkers = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_markers));
+  const workflowNonPassedSteps = workflowBlockingChecks.flatMap((check) => check.non_passed_steps);
+  const hasWorkflowBlockerDetails = workflowMissingSteps.length > 0
+    || workflowNonPassedSteps.length > 0
+    || workflowMissingMarkers.length > 0
+    || workflowBlockingChecks.length > 0;
   const showEvidenceWorkflow = Boolean(workflowValidation || (workflowStatus && workflowStatus !== "not_provided"));
 
   return (
@@ -263,6 +295,55 @@ function SupportBundleDetailPanel({
                 {issue}
               </div>
             ))}
+            {hasWorkflowBlockerDetails && (
+              <div className="space-y-1 rounded border border-border/50 bg-bg-base/50 px-2 py-1">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Workflow validation blockers</div>
+                {workflowMissingSteps.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500">
+                    <span className="badge-red">missing steps</span>
+                    <span className="truncate" title={workflowMissingSteps.map(formatLabel).join(", ")}>
+                      {formatLimitedList(workflowMissingSteps, 6)}
+                    </span>
+                  </div>
+                )}
+                {workflowNonPassedSteps.slice(0, 4).map((step, index) => (
+                  <div
+                    key={`${step.name ?? "workflow-step"}-${step.status ?? "status"}-${index}`}
+                    className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500"
+                    title={step.notes || undefined}
+                  >
+                    <span className={statusClass(step.status)}>
+                      {statusIcon(step.status)}
+                      {formatLabel(step.status)}
+                    </span>
+                    <span className="truncate">{formatWorkflowStep(step)}</span>
+                    {typeof step.exit_code === "number" && <span>exit {step.exit_code}</span>}
+                    {step.notes && <span className="truncate text-slate-400">{step.notes}</span>}
+                  </div>
+                ))}
+                {workflowNonPassedSteps.length > 4 && (
+                  <div className="font-mono text-slate-500">+{workflowNonPassedSteps.length - 4} more non-passing workflow steps</div>
+                )}
+                {workflowMissingMarkers.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500">
+                    <span className="badge-yellow">missing markers</span>
+                    <span className="truncate" title={workflowMissingMarkers.map(formatLabel).join(", ")}>
+                      {formatLimitedList(workflowMissingMarkers, 6)}
+                    </span>
+                  </div>
+                )}
+                {workflowBlockingChecks.slice(0, 4).map((check) => (
+                  <div key={`${check.name ?? "check"}-${check.status ?? "status"}`} className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500">
+                    <span className={statusClass(check.status)}>
+                      {statusIcon(check.status)}
+                      {formatLabel(check.status)}
+                    </span>
+                    <span>{formatLabel(check.name)}</span>
+                    {check.message && <span className="truncate text-slate-400">{check.message}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
