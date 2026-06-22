@@ -613,8 +613,10 @@ support = text.index("./scripts/pi/create_support_bundle.sh", next_commands)
 field_plan = text.index("./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh", next_commands)
 workflow = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", next_commands)
 assert px4 < support
-assert support < field_plan < workflow
+assert field_plan < workflow < support
 blocked_followups = text.index("Blocked follow-up commands:")
+assert "./scripts/pi/run_feature_method_benchmark.sh" not in text[next_commands:blocked_followups]
+assert "./scripts/pi/run_feature_method_benchmark.sh" in text[blocked_followups:]
 assert "./scripts/pi/run_rosbag_export_validation.sh" not in text[next_commands:blocked_followups]
 assert "./scripts/pi/run_rosbag_export_validation.sh" in text[blocked_followups:]
 assert "./scripts/dev/run_rosbag2_cli_review.sh" in text[blocked_followups:]
@@ -737,10 +739,12 @@ evidence_workflow_app = text.index("Module Setup > Evidence Workflow", bench_ord
 next_commands = text.index("Next commands:")
 field_plan = text.index("./scripts/pi/create_field_evidence_template.sh && ./scripts/pi/create_field_collection_plan.sh", next_commands)
 workflow = text.index("./scripts/pi/run_autonomy_evidence_workflow.sh", next_commands)
+support_bundle = text.index("./scripts/pi/create_support_bundle.sh", next_commands)
+blocked_followups = text.index("Blocked follow-up commands:")
 assert fixes < guided < next_commands
 assert px4_prereq_app < px4_capture_app
 assert create_plan_app < load_next_app < evidence_workflow_app
-assert field_plan < workflow
+assert field_plan < workflow < support_bundle
 PY
 outgoing_fallback_dir="$(mktemp -d "$preflight_tmp_dir/outgoing-fallback.XXXXXX")"
 outgoing_fallback_from_pi="$outgoing_fallback_dir/from-pi-empty"

@@ -825,6 +825,10 @@ Status:
   commands separately from immediate next commands, so method/threshold and ROS
   replay actions remain visible without being presented as runnable before
   their field-dataset prerequisite is satisfied.
+- Done: proof-runbook command ordering now keeps support-bundle creation after
+  the specific bench and field evidence collection steps, and delegates feature
+  benchmarking, threshold tuning, and ROS replay proof to their blocked
+  follow-up phases until the real field dataset phase passes.
 - Done: `scripts/dev/autonomy_goal_status.sh` now prints PX4 SITL capture
   prerequisite diagnostics when a `px4_sitl_capture_prereqs.json` report is
   available, including failed check names and next-action messages, so operators

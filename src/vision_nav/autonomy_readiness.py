@@ -55,6 +55,28 @@ FIELD_COLLECTION_BOOTSTRAP_COMMAND = (
 )
 GUIDED_EVIDENCE_WORKFLOW_COMMAND = "./scripts/pi/run_autonomy_evidence_workflow.sh"
 SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
+BENCH_SUBCHECK_ACTION_ORDER = {
+    "bundle_health": 10,
+    "gnss_denied_plan": 20,
+    "runtime_logs": 30,
+    "runtime_status": 40,
+    "replay_gates": 50,
+    "px4_sitl_evidence": 60,
+    "px4_params": 70,
+    "field_evidence": 80,
+    "feature_method_benchmarks": 90,
+    "threshold_tuning": 100,
+    "rosbag_export_validations": 110,
+    "rosbag2_cli_reviews": 120,
+    "ardupilot_params": 130,
+}
+BENCH_SUBCHECKS_DELEGATED_TO_LATER_PHASES = {
+    "field_evidence",
+    "feature_method_benchmarks",
+    "threshold_tuning",
+    "rosbag_export_validations",
+    "rosbag2_cli_reviews",
+}
 STRICT_SUPPORT_BUNDLE_INPUTS = [
     "terrain bundle health and GNSS-denied mission prep",
     "runtime terrain log and runtime_status.json snapshot",
@@ -508,7 +530,7 @@ def proof_runbook_command_groups(
             immediate_commands.extend(phase_commands)
         elif phase_status == "blocked" and phase.get("id") != "final_audit":
             blocked_commands.extend(phase_commands)
-    immediate_next_action_commands = unique_strings(immediate_commands)
+    immediate_next_action_commands = defer_support_bundle_command(unique_strings(immediate_commands))
     blocked_follow_up_commands = unique_strings(
         command
         for command in blocked_commands
@@ -517,6 +539,12 @@ def proof_runbook_command_groups(
     if not immediate_next_action_commands and fallback_commands:
         immediate_next_action_commands = fallback_commands
     return immediate_next_action_commands, blocked_follow_up_commands
+
+
+def defer_support_bundle_command(commands: list[str]) -> list[str]:
+    support_commands = [command for command in commands if command == SUPPORT_BUNDLE_COMMAND]
+    other_commands = [command for command in commands if command != SUPPORT_BUNDLE_COMMAND]
+    return [*other_commands, *support_commands]
 
 
 def json_string_list(value: Any) -> list[str]:
@@ -711,6 +739,7 @@ def proof_runbook_actions(
     actions: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for name in check_names:
+        matching_actions = []
         for action in next_actions:
             if not isinstance(action, dict):
                 continue
@@ -719,12 +748,30 @@ def proof_runbook_actions(
                 continue
             if action_check != name and not action_check.startswith(f"{name}."):
                 continue
+            if (
+                name == "support_bundle_bench_readiness"
+                and str(action.get("bench_subcheck") or "") in BENCH_SUBCHECKS_DELEGATED_TO_LATER_PHASES
+            ):
+                continue
+            matching_actions.append(action)
+        for action in sorted(matching_actions, key=proof_runbook_action_order):
+            action_check = str(action.get("check") or "")
             key = (action_check, str(action.get("command") or ""))
             if key in seen:
                 continue
             seen.add(key)
             actions.append(compact_proof_runbook_action(action))
     return actions
+
+
+def proof_runbook_action_order(action: dict[str, Any]) -> tuple[int, str]:
+    action_check = str(action.get("check") or "")
+    if action_check.startswith("support_bundle_bench_readiness."):
+        subcheck = str(action.get("bench_subcheck") or "")
+        return (BENCH_SUBCHECK_ACTION_ORDER.get(subcheck, 1000), action_check)
+    if action.get("command") == SUPPORT_BUNDLE_COMMAND:
+        return (2000, action_check)
+    return (1, action_check)
 
 
 def compact_proof_runbook_action(action: dict[str, Any]) -> dict[str, Any]:
@@ -965,7 +1012,7 @@ def next_actions_for_bench_subchecks(details: dict[str, Any]) -> list[dict[str, 
         "gnss_denied_plan": {
             "title": "Complete GNSS-denied mission prep before rebuilding the bundle.",
             "desktop_action": "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
-            "command": "./scripts/pi/validate_terrain_bundle.sh && ./scripts/pi/create_support_bundle.sh",
+            "command": "./scripts/pi/validate_terrain_bundle.sh",
             "notes": "The support bundle must include a Mission Planner export with satellite source disabled, map reset, home reset, heading, and estimator readiness all marked complete.",
         },
         "runtime_logs": {

@@ -329,6 +329,7 @@ except Exception:  # pragma: no cover - keeps this formatter useful from partial
 
 
 FIELD_COLLECTION_CHECKS = {"field_collection_plan", "field_evidence_proof", "threshold_tuning"}
+SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
 
 
 def unique_ordered(values):
@@ -422,6 +423,22 @@ def normalize_bench_subchecks(values):
             continue
         subchecks.append({"name": name or "unknown", "status": status, "message": message})
     return subchecks
+
+
+def defer_support_bundle_actions(actions):
+    if not isinstance(actions, list):
+        return actions
+    support_actions = [
+        action
+        for action in actions
+        if isinstance(action, dict) and action.get("command") == SUPPORT_BUNDLE_COMMAND
+    ]
+    other_actions = [
+        action
+        for action in actions
+        if not (isinstance(action, dict) and action.get("command") == SUPPORT_BUNDLE_COMMAND)
+    ]
+    return other_actions + support_actions
 
 
 report_path = sys.argv[1]
@@ -717,7 +734,7 @@ if phases:
                         "waiting_on": ", ".join(waiting_on),
                     }
                 )
-next_actions = phase_commands or (report.get("next_actions") or [])
+next_actions = defer_support_bundle_actions(phase_commands or (report.get("next_actions") or []))
 printed_commands = set()
 if next_actions:
     print()
