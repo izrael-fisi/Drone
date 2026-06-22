@@ -17,6 +17,13 @@ MAX_MANIFEST_BLOCKERS = 12
 MAX_MANIFEST_RUNBOOK_PHASES = 8
 MAX_MANIFEST_RUNBOOK_ACTIONS = 8
 MAX_MANIFEST_WORKFLOW_CHECKS = 8
+COMMAND_GROUP_DESKTOP_ACTIONS = {
+    "guided_workflow": "Module Setup > Evidence Workflow",
+    "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
+    "field_collection_capture": "Module Setup > Field Log Capture",
+    "field_collection_metadata_update": "Module Setup > Field Evidence Case > Update Metadata",
+    "field_collection_registration": "Module Setup > Field Evidence Case > Register",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -289,7 +296,7 @@ def command_bundle_items(report: dict[str, Any], bundle: dict[str, Any]) -> list
                 continue
             seen.add(dedupe_key)
             item = {"group": group, "command": command}
-            desktop_action = app_hints.get(command)
+            desktop_action = app_hints.get(command) or COMMAND_GROUP_DESKTOP_ACTIONS.get(group)
             if desktop_action:
                 item["desktop_action"] = desktop_action
             items.append(item)

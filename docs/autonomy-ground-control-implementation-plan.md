@@ -699,6 +699,9 @@ Status:
 - Done: evidence-package command bundles now also preserve structured command
   items with group names and desktop app actions, so support ZIPs keep the
   operator UI route beside each runnable command.
+- Done: Module Setup uses those structured command items when copying grouped
+  Autonomy Readiness commands, preserving `# app:` route comments in the
+  clipboard text.
 - Done: the Tauri report parser now preserves
   `field_collection_capture_commands`,
   `field_collection_metadata_update_commands`, and

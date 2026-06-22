@@ -3932,6 +3932,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             if not any(
                 item.get("group") == "field_collection_metadata_update"
                 and item.get("command") == "./scripts/pi/update_field_capture_metadata.sh --condition blur"
+                and item.get("desktop_action") == "Module Setup > Field Evidence Case > Update Metadata"
                 for item in incomplete_command_items
                 if isinstance(item, dict)
             ):

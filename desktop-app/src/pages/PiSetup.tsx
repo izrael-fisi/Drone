@@ -79,6 +79,7 @@ const SUPPORT_EVIDENCE_ENV =
 type WorkflowValidationSummary = NonNullable<AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"]>;
 type WorkflowValidationCheck = WorkflowValidationSummary["checks"][number];
 type EvidencePackageArtifact = NonNullable<AutonomyReadinessReportFile["evidence_package_summary"]>["missing_artifacts"][number];
+type AutonomyCommandBundle = NonNullable<AutonomyReadinessReportFile["command_bundle"]>;
 
 type AuthForm = "password" | "key";
 type StepStatus = "idle" | "running" | "passed" | "failed";
@@ -973,6 +974,24 @@ function uniqueActionCommands(actions: Array<{ command?: string }>) {
   return uniqueCommands(actions.map((action) => action.command));
 }
 
+function commandGroupText(
+  commandBundle: AutonomyCommandBundle | undefined,
+  group: string,
+  commands: string[],
+) {
+  const appHints = new Map(
+    (commandBundle?.command_items ?? [])
+      .filter((item) => item.group === group && item.command && item.desktop_action)
+      .map((item) => [item.command as string, item.desktop_action as string]),
+  );
+  return commands
+    .flatMap((command) => {
+      const appHint = appHints.get(command);
+      return appHint ? [`# app: ${appHint}`, command] : [command];
+    })
+    .join("\n");
+}
+
 function workflowMarkerArtifacts(report: AutonomyEvidenceWorkflowReportFile) {
   return [
     { label: "logs", path: report.workflow_logs_local_path ?? report.workflow_logs_path },
@@ -1226,6 +1245,8 @@ function AutonomyReadinessReportList({
             const blockedFollowUpCommands = uniqueCommands(commandBundle?.blocked_follow_up_commands ?? []);
             const primaryNextActionCommands =
               immediateNextActionCommands.length > 0 ? immediateNextActionCommands : nextActionCommands;
+            const primaryNextActionGroup =
+              immediateNextActionCommands.length > 0 ? "immediate_next_action" : "next_action";
             const guidedWorkflowCommands = uniqueCommands(commandBundle?.guided_workflow_commands ?? []);
             const supportBenchBlocker = [
               ...(report.evidence_manifest?.external_blockers ?? []),
@@ -1443,7 +1464,11 @@ function AutonomyReadinessReportList({
                         {fieldPlanCaptureCommands.length > 0 && (
                           <button
                             type="button"
-                            onClick={() => navigator.clipboard.writeText(fieldPlanCaptureCommands.join("\n"))}
+                            onClick={() =>
+                              navigator.clipboard.writeText(
+                                commandGroupText(commandBundle, "field_collection_capture", fieldPlanCaptureCommands),
+                              )
+                            }
                             className="btn-secondary px-1.5 py-0.5 text-[10px]"
                             title="Copy pending capture commands"
                           >
@@ -1454,7 +1479,15 @@ function AutonomyReadinessReportList({
                         {fieldPlanMetadataUpdateCommands.length > 0 && (
                           <button
                             type="button"
-                            onClick={() => navigator.clipboard.writeText(fieldPlanMetadataUpdateCommands.join("\n"))}
+                            onClick={() =>
+                              navigator.clipboard.writeText(
+                                commandGroupText(
+                                  commandBundle,
+                                  "field_collection_metadata_update",
+                                  fieldPlanMetadataUpdateCommands,
+                                ),
+                              )
+                            }
                             className="btn-secondary px-1.5 py-0.5 text-[10px]"
                             title="Copy pending metadata update commands"
                           >
@@ -1465,7 +1498,15 @@ function AutonomyReadinessReportList({
                         {fieldPlanRegisterCommands.length > 0 && (
                           <button
                             type="button"
-                            onClick={() => navigator.clipboard.writeText(fieldPlanRegisterCommands.join("\n"))}
+                            onClick={() =>
+                              navigator.clipboard.writeText(
+                                commandGroupText(
+                                  commandBundle,
+                                  "field_collection_registration",
+                                  fieldPlanRegisterCommands,
+                                ),
+                              )
+                            }
                             className="btn-secondary px-1.5 py-0.5 text-[10px]"
                             title="Copy pending registration commands"
                           >
@@ -1759,7 +1800,11 @@ function AutonomyReadinessReportList({
                       </span>
                       <button
                         type="button"
-                        onClick={() => navigator.clipboard.writeText(guidedWorkflowCommands.join("\n"))}
+                        onClick={() =>
+                          navigator.clipboard.writeText(
+                            commandGroupText(commandBundle, "guided_workflow", guidedWorkflowCommands),
+                          )
+                        }
                         className="font-mono text-[10px] text-cyan-400 hover:text-cyan-300 truncate max-w-full"
                         title="Copy guided evidence workflow command"
                       >
@@ -1774,7 +1819,11 @@ function AutonomyReadinessReportList({
                     {primaryNextActionCommands.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => navigator.clipboard.writeText(primaryNextActionCommands.join("\n"))}
+                        onClick={() =>
+                          navigator.clipboard.writeText(
+                            commandGroupText(commandBundle, primaryNextActionGroup, primaryNextActionCommands),
+                          )
+                        }
                         className="btn-secondary px-1.5 py-0.5 text-[10px]"
                         title={
                           immediateNextActionCommands.length > 0
@@ -1789,7 +1838,11 @@ function AutonomyReadinessReportList({
                     {prerequisiteFixCommands.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => navigator.clipboard.writeText(prerequisiteFixCommands.join("\n"))}
+                        onClick={() =>
+                          navigator.clipboard.writeText(
+                            commandGroupText(commandBundle, "prerequisite_fix", prerequisiteFixCommands),
+                          )
+                        }
                         className="btn-secondary px-1.5 py-0.5 text-[10px]"
                         title="Copy setup prerequisite fix commands"
                       >
@@ -1800,7 +1853,11 @@ function AutonomyReadinessReportList({
                     {blockedFollowUpCommands.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => navigator.clipboard.writeText(blockedFollowUpCommands.join("\n"))}
+                        onClick={() =>
+                          navigator.clipboard.writeText(
+                            commandGroupText(commandBundle, "blocked_follow_up", blockedFollowUpCommands),
+                          )
+                        }
                         className="btn-secondary px-1.5 py-0.5 text-[10px]"
                         title="Copy commands that are blocked until upstream proof is captured"
                       >
