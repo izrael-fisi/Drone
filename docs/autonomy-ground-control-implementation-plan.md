@@ -1109,6 +1109,11 @@ Status:
   JSONL, or logs without accepted/rejected/degraded match statuses fail the
   step, while a valid log without `runtime_status.json` is kept as degraded
   evidence until the runtime snapshot is generated or downloaded.
+- Done: the evidence workflow now runs `preflight_field_capture` as an ordered
+  diagnostic step between field-condition selection and terrain-log capture,
+  preserves `field_capture_preflight.json` plus bundle/capture/metadata
+  markers, and routes missing-bundle preflight failures through Mission Planner
+  bundle validation before capture.
 - Done: downstream workflow steps that consume a field terrain log now require
   the same validated-log state from this workflow run. Field-case registration,
   feature-method benchmarking, and ROS replay export skip instead of consuming

@@ -686,8 +686,18 @@ if workflow_validation:
                 print(f"  output: {next_step.get('output_dir')}")
             if next_step.get("runtime_status_path"):
                 print(f"  runtime status: {next_step.get('runtime_status_path')}")
+            if next_step.get("preflight_report"):
+                print(f"  preflight report: {next_step.get('preflight_report')}")
+            if next_step.get("preflight_status"):
+                print(f"  preflight status: {next_step.get('preflight_status')}")
+            if isinstance(next_step.get("ready_for_capture"), bool):
+                print(f"  ready for capture: {'yes' if next_step.get('ready_for_capture') else 'no'}")
+            if isinstance(next_step.get("ready_for_registration"), bool):
+                print(f"  ready for registration: {'yes' if next_step.get('ready_for_registration') else 'no'}")
             if next_step.get("capture_command_after_bundle"):
                 print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
+            if next_step.get("capture_command_after_preflight"):
+                print(f"  after preflight: {next_step.get('capture_command_after_preflight')}")
             metadata_update_command = enriched_metadata_update_command(
                 next_step.get("metadata_update_command"),
                 next_field_condition,

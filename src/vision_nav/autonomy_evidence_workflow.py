@@ -15,6 +15,7 @@ REQUIRED_WORKFLOW_STEPS = [
     "create_field_evidence_template",
     "create_field_collection_plan",
     "select_field_collection_condition",
+    "preflight_field_capture",
     "capture_field_terrain_log",
     "register_field_replay_case",
     "refresh_field_collection_plan",
@@ -43,6 +44,10 @@ WORKFLOW_STEP_GUIDANCE = {
     "capture_field_terrain_log": {
         "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
         "desktop_action": "Module Setup > Field Log Capture",
+    },
+    "preflight_field_capture": {
+        "command": "./scripts/pi/preflight_field_capture.sh",
+        "desktop_action": "Module Setup > Field Capture Preflight",
     },
     "register_field_replay_case": {
         "command": "./scripts/pi/register_field_replay_case.sh",
@@ -88,6 +93,7 @@ IMPORTANT_MARKERS = [
     "__VISION_NAV_PX4_SITL_PREREQS__",
     "__VISION_NAV_FIELD_COLLECTION_PLAN__",
     "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__",
+    "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__",
     "__VISION_NAV_TERRAIN_LOG__",
     "__VISION_NAV_RUNTIME_STATUS__",
     "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__",
@@ -118,6 +124,10 @@ TERRAIN_BUNDLE_STATUS_MARKER = "__VISION_NAV_TERRAIN_BUNDLE_STATUS__"
 TERRAIN_CAPTURE_COMMAND_MARKER = "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"
 TERRAIN_CAPTURE_OUTPUT_DIR_MARKER = "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"
 EXPECTED_TERRAIN_LOG_MARKER = "__VISION_NAV_EXPECTED_TERRAIN_LOG__"
+FIELD_CAPTURE_PREFLIGHT_MARKER = "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"
+FIELD_CAPTURE_PREFLIGHT_STATUS_MARKER = "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT_STATUS__"
+FIELD_CAPTURE_READY_MARKER = "__VISION_NAV_FIELD_CAPTURE_READY__"
+FIELD_REGISTRATION_READY_MARKER = "__VISION_NAV_FIELD_REGISTRATION_READY__"
 
 
 def parse_args() -> argparse.Namespace:
@@ -572,8 +582,49 @@ def workflow_step_summary(
 def apply_marker_guidance(summary: dict[str, Any], markers: dict[str, Any] | None) -> None:
     if not isinstance(markers, dict):
         return
+    apply_preflight_marker_guidance(summary, markers)
     apply_registration_marker_guidance(summary, markers)
     apply_capture_marker_guidance(summary, markers)
+
+
+def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, Any]) -> None:
+    if summary.get("name") != "preflight_field_capture":
+        return
+    preflight_report = marker_string(markers, FIELD_CAPTURE_PREFLIGHT_MARKER)
+    preflight_status = marker_string(markers, FIELD_CAPTURE_PREFLIGHT_STATUS_MARKER)
+    capture_ready = marker_string(markers, FIELD_CAPTURE_READY_MARKER)
+    registration_ready = marker_string(markers, FIELD_REGISTRATION_READY_MARKER)
+    bundle_path = marker_string(markers, TERRAIN_BUNDLE_MARKER)
+    bundle_status = marker_string(markers, TERRAIN_BUNDLE_STATUS_MARKER)
+    expected_log = marker_string(markers, EXPECTED_TERRAIN_LOG_MARKER)
+    output_dir = marker_string(markers, TERRAIN_CAPTURE_OUTPUT_DIR_MARKER)
+    capture_command = marker_string(markers, TERRAIN_CAPTURE_COMMAND_MARKER)
+    metadata_update_command = marker_string(markers, FIELD_METADATA_UPDATE_COMMAND_MARKER)
+    if preflight_report:
+        summary["preflight_report"] = preflight_report
+    if preflight_status:
+        summary["preflight_status"] = preflight_status
+    if capture_ready is not None:
+        summary["ready_for_capture"] = capture_ready == "1"
+    if registration_ready is not None:
+        summary["ready_for_registration"] = registration_ready == "1"
+    if bundle_path:
+        summary["bundle_path"] = bundle_path
+    if expected_log:
+        summary["expected_log"] = expected_log
+    if output_dir:
+        summary["output_dir"] = output_dir
+        summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)
+    if capture_command:
+        summary["capture_command_after_preflight"] = command_with_runtime_status_read(capture_command)
+    if metadata_update_command:
+        summary["metadata_update_command"] = metadata_update_command
+    if bundle_status == "missing":
+        summary["desktop_action"] = "Mission Planner > Build Bundle, Upload Bundle, then Module Setup > Field Capture Preflight"
+        summary["command"] = bundle_validation_command(bundle_path)
+        existing_notes = str(summary.get("notes") or "").strip()
+        guidance = "Field capture preflight found the selected terrain bundle missing; build/upload it, validate it, then rerun preflight."
+        summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
 
 
 def apply_registration_marker_guidance(summary: dict[str, Any], markers: dict[str, Any]) -> None:
@@ -791,18 +842,26 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
 
 def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
     details = [
+        ("Preflight report", next_step.get("preflight_report")),
+        ("Preflight status", next_step.get("preflight_status")),
         ("Bundle", next_step.get("bundle_path")),
         ("Expected log", next_step.get("expected_log")),
         ("Output", next_step.get("output_dir")),
         ("Runtime status", next_step.get("runtime_status_path")),
         ("After bundle", next_step.get("capture_command_after_bundle")),
+        ("After preflight", next_step.get("capture_command_after_preflight")),
         ("Metadata update", next_step.get("metadata_update_command")),
     ]
-    return [
+    lines = [
         f"{label}: {value}"
         for label, value in details
         if isinstance(value, str) and value.strip()
     ]
+    if isinstance(next_step.get("ready_for_capture"), bool):
+        lines.append(f"Ready for capture: {'yes' if next_step.get('ready_for_capture') else 'no'}")
+    if isinstance(next_step.get("ready_for_registration"), bool):
+        lines.append(f"Ready for registration: {'yes' if next_step.get('ready_for_registration') else 'no'}")
+    return lines
 
 
 def print_human(report: dict[str, Any]) -> None:

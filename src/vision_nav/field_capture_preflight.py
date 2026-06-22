@@ -527,6 +527,17 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"__VISION_NAV_FIELD_REGISTRATION_READY__={1 if report.get('ready_for_registration') else 0}")
     if report.get("output_path"):
         print(f"__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__={report['output_path']}")
+    if report.get("bundle_path"):
+        print(f"__VISION_NAV_TERRAIN_BUNDLE__={report['bundle_path']}")
+        print(f"__VISION_NAV_TERRAIN_BUNDLE_STATUS__={'available' if Path(str(report['bundle_path'])).exists() else 'missing'}")
+    if report.get("source_log"):
+        print(f"__VISION_NAV_EXPECTED_TERRAIN_LOG__={report['source_log']}")
+    if report.get("capture_output_dir"):
+        print(f"__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__={report['capture_output_dir']}")
+    if report.get("capture_command"):
+        print(f"__VISION_NAV_TERRAIN_CAPTURE_COMMAND__={report['capture_command']}")
+    if report.get("metadata_update_command"):
+        print(f"__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__={report['metadata_update_command']}")
 
 
 def main() -> None:

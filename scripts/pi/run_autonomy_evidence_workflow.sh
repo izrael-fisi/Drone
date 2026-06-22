@@ -23,6 +23,7 @@ if [[ -n "${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR+x}" ]]; then
 fi
 field_log="${VISION_NAV_FIELD_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}"
 field_capture_output_dir="${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR:-$(dirname "$field_log")}"
+field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-$(dirname "$field_collection_plan")/field_capture_preflight.json}"
 field_capture_count="${VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT:-30}"
 terrain_capture_command="${VISION_NAV_EVIDENCE_WORKFLOW_TERRAIN_CAPTURE_COMMAND:-./scripts/pi/run_terrain_nav_loop.sh}"
 rosbag_export_dir="${VISION_NAV_ROSBAG_EXPORT_DIR:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl}"
@@ -67,6 +68,7 @@ field_log_ready=0
 
 export VISION_NAV_FIELD_COLLECTION_PLAN="$field_collection_plan"
 export VISION_NAV_FIELD_COLLECTION_PLAN_MD="$field_collection_plan_md"
+export VISION_NAV_FIELD_CAPTURE_PREFLIGHT="$field_capture_preflight"
 export VISION_NAV_ROSBAG_EXPORT_VALIDATION="$rosbag_export_validation"
 export VISION_NAV_ROSBAG2_CLI_REVIEW="$rosbag2_cli_review"
 
@@ -101,6 +103,7 @@ Common optional overrides:
   VISION_NAV_FIELD_COLLECTION_PLAN_MD    Default: $field_collection_plan_md
   VISION_NAV_FIELD_LOG                    Default: $field_log
   VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR     Default: $field_capture_output_dir
+  VISION_NAV_FIELD_CAPTURE_PREFLIGHT      Default: $field_capture_preflight
   VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT=30
   VISION_NAV_EVIDENCE_WORKFLOW_TERRAIN_CAPTURE_COMMAND=$terrain_capture_command
   VISION_NAV_ROSBAG_EXPORT_DIR            Default: $rosbag_export_dir
@@ -700,6 +703,7 @@ fi
 
 run_step "create_field_collection_plan" ./scripts/pi/create_field_collection_plan.sh
 load_field_collection_condition
+run_step "preflight_field_capture" ./scripts/pi/preflight_field_capture.sh
 
 runtime_status="$(dirname "$field_log")/runtime_status.json"
 if [[ -f "$field_log" ]]; then

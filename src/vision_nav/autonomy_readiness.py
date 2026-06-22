@@ -113,6 +113,12 @@ STRICT_SUPPORT_BUNDLE_ACTIONS = [
         "notes": "The support bundle must include terrain bundle health plus GNSS-denied mission metadata.",
     },
     {
+        "label": "Run field capture preflight.",
+        "desktop_action": "Module Setup > Field Capture Preflight",
+        "command": "./scripts/pi/preflight_field_capture.sh",
+        "notes": "Preflight records the selected condition, bundle, capture, and metadata readiness before runtime capture.",
+    },
+    {
         "label": "Capture a runtime terrain log and status snapshot.",
         "desktop_action": "Module Setup > Field Log Capture, then Runtime Status",
         "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
@@ -1422,6 +1428,36 @@ def enrich_action_with_field_capture(
         action["notes"] = " ".join([str(action.get("notes") or ""), *detail_lines]).strip()
 
 
+def enrich_action_with_field_preflight(action: dict[str, Any], condition: dict[str, Any] | None) -> None:
+    if not condition:
+        return
+    preflight_command = condition.get("preflight_command")
+    if isinstance(preflight_command, str) and preflight_command.strip():
+        action["command"] = preflight_command
+    for target_key, source_key in (
+        ("field_condition", "condition"),
+        ("field_label", "label"),
+        ("field_expected", "expected"),
+        ("field_bundle", "bundle"),
+        ("field_capture_output_dir", "capture_output_dir"),
+        ("field_source_log", "source_log"),
+        ("field_runtime_status_path", "runtime_status_path"),
+        ("field_metadata_update_command", "metadata_update_command"),
+    ):
+        value = condition.get(source_key)
+        if isinstance(value, str) and value.strip():
+            action[target_key] = value
+    label = condition.get("label") or condition.get("condition")
+    condition_name = condition.get("condition")
+    detail = ""
+    if label and condition_name:
+        detail = f"Selected field condition: {label} ({condition_name})."
+    elif condition_name:
+        detail = f"Selected field condition: {condition_name}."
+    if detail:
+        action["notes"] = " ".join([str(action.get("notes") or ""), detail]).strip()
+
+
 def enrich_action_with_field_bundle(action: dict[str, Any], condition: dict[str, Any] | None) -> None:
     if not condition:
         return
@@ -1450,6 +1486,8 @@ def strict_support_bundle_actions(field_next_condition: dict[str, Any] | None = 
                 field_next_condition,
                 append_runtime_status_read=True,
             )
+        elif action.get("desktop_action") == "Module Setup > Field Capture Preflight":
+            enrich_action_with_field_preflight(action, field_next_condition)
         elif action.get("desktop_action") == "Mission Planner > GNSS-Denied Prep, Build Bundle, Upload Bundle":
             enrich_action_with_field_bundle(action, field_next_condition)
     return actions

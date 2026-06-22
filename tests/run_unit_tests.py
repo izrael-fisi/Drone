@@ -2372,6 +2372,7 @@ RC8_OPTION,90
                         "__VISION_NAV_PX4_SITL_REPORT__": str(root / "receiver_evidence.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN__": str(root / "field_collection_plan.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__": str(root / "field_collection_plan.md"),
+                        "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__": str(root / "field_capture_preflight.json"),
                         "__VISION_NAV_FIELD_EVIDENCE_REPORT__": str(root / "field_evidence_report.json"),
                         "__VISION_NAV_FEATURE_METHOD_REPORT__": str(root / "feature_method_benchmark.json"),
                         "__VISION_NAV_THRESHOLD_REPORT__": str(root / "threshold_tuning_report.json"),
@@ -2925,6 +2926,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                         "__VISION_NAV_PX4_SITL_REPORT__": str(root / "receiver_evidence.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN__": str(root / "field_collection_plan.json"),
                         "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__": str(root / "field_collection_plan.md"),
+                        "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__": str(root / "field_capture_preflight.json"),
                         "__VISION_NAV_FIELD_EVIDENCE_REPORT__": str(root / "field_evidence_report.json"),
                         "__VISION_NAV_FEATURE_METHOD_REPORT__": str(root / "feature_method_benchmark.json"),
                         "__VISION_NAV_THRESHOLD_REPORT__": str(root / "threshold_tuning_report.json"),
@@ -2976,6 +2978,8 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation should list PX4 prereqs as an important diagnostic marker")
         if "__VISION_NAV_PX4_SITL_PREREQS__" in detailed_checks["final_proof_markers"]["details"]["present_markers"]:
             raise AssertionError("PX4 prereq diagnostics should not satisfy final proof markers")
+        if "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__" in detailed_checks["final_proof_markers"]["details"]["present_markers"]:
+            raise AssertionError("Field capture preflight diagnostics should not satisfy final proof markers")
 
         old_format_report = json.loads(report_path.read_text())
         old_format_report.pop("workflow_provenance", None)
@@ -2991,9 +2995,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         if "rerun the evidence workflow" not in old_format_checks["workflow_provenance"]["message"]:
             raise AssertionError("workflow provenance diagnostic should tell operators to rerun the workflow")
 
-        capture_blocked_report = json.loads(report_path.read_text())
-        capture_blocked_report["markers"].pop("__VISION_NAV_TERRAIN_LOG__", None)
-        capture_blocked_report["markers"].pop("__VISION_NAV_RUNTIME_STATUS__", None)
+        preflight_blocked_report = json.loads(report_path.read_text())
         missing_bundle_path = root / "missing_mission_bundle"
         capture_output_dir = root / "field-captures" / "good_texture"
         capture_command = (
@@ -3006,6 +3008,72 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             "VISION_NAV_FIELD_CONDITION=good_texture "
             "./scripts/pi/update_field_capture_metadata.sh"
         )
+        preflight_blocked_report["markers"]["__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"] = str(
+            root / "field_capture_preflight.json"
+        )
+        preflight_blocked_report["markers"]["__VISION_NAV_FIELD_CAPTURE_PREFLIGHT_STATUS__"] = "failed"
+        preflight_blocked_report["markers"]["__VISION_NAV_FIELD_CAPTURE_READY__"] = "0"
+        preflight_blocked_report["markers"]["__VISION_NAV_FIELD_REGISTRATION_READY__"] = "0"
+        preflight_blocked_report["markers"]["__VISION_NAV_EXPECTED_TERRAIN_LOG__"] = str(
+            capture_output_dir / "terrain_matches.jsonl"
+        )
+        preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE__"] = str(missing_bundle_path)
+        preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE_STATUS__"] = "missing"
+        preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"] = str(capture_output_dir)
+        preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"] = capture_command
+        preflight_blocked_report["markers"]["__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__"] = capture_metadata_command
+        for step in preflight_blocked_report["steps"]:
+            if step.get("name") == "preflight_field_capture":
+                step["status"] = "failed"
+                step["notes"] = "Field capture preflight found missing bundle."
+            elif step.get("name") == "capture_field_terrain_log":
+                step["status"] = "skipped"
+                step["notes"] = "Missing terrain replay log and bundle."
+        preflight_blocked_path = root / "preflight_blocked_autonomy_evidence_workflow.json"
+        preflight_blocked_path.write_text(json.dumps(preflight_blocked_report))
+        preflight_blocked_validation = validate_workflow_report(preflight_blocked_path)
+        assert_equal(
+            preflight_blocked_validation["next_required_step"]["name"],
+            "preflight_field_capture",
+            "workflow validation should surface preflight before capture when preflight fails",
+        )
+        assert_equal(
+            preflight_blocked_validation["next_required_step"]["desktop_action"],
+            "Mission Planner > Build Bundle, Upload Bundle, then Module Setup > Field Capture Preflight",
+            "workflow validation missing-bundle preflight guidance routes through Mission Planner",
+        )
+        assert_equal(
+            preflight_blocked_validation["next_required_step"]["command"],
+            f"VISION_NAV_BUNDLE={shlex.quote(str(missing_bundle_path))} ./scripts/pi/validate_terrain_bundle.sh",
+            "workflow validation missing-bundle preflight guidance validates selected bundle path",
+        )
+        assert_equal(
+            preflight_blocked_validation["next_required_step"]["capture_command_after_preflight"],
+            f"{capture_command} && ./scripts/pi/read_runtime_status.sh",
+            "workflow validation preserves capture command after preflight",
+        )
+        assert_equal(
+            preflight_blocked_validation["next_required_step"]["preflight_status"],
+            "failed",
+            "workflow validation preserves preflight status",
+        )
+        assert_equal(
+            preflight_blocked_validation["next_required_step"]["ready_for_capture"],
+            False,
+            "workflow validation preserves preflight capture readiness",
+        )
+        preflight_blocked_output = io.StringIO()
+        with contextlib.redirect_stdout(preflight_blocked_output):
+            print_workflow_validation_human(preflight_blocked_validation)
+        preflight_blocked_text = preflight_blocked_output.getvalue()
+        if "Preflight report: " not in preflight_blocked_text:
+            raise AssertionError("workflow validation human output should include preflight report")
+        if "After preflight: " not in preflight_blocked_text:
+            raise AssertionError("workflow validation human output should include post-preflight capture command")
+
+        capture_blocked_report = json.loads(report_path.read_text())
+        capture_blocked_report["markers"].pop("__VISION_NAV_TERRAIN_LOG__", None)
+        capture_blocked_report["markers"].pop("__VISION_NAV_RUNTIME_STATUS__", None)
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CONDITION__"] = "good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CASE__"] = "dronecompute-test-area-good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_EXPECTED_TERRAIN_LOG__"] = str(capture_output_dir / "terrain_matches.jsonl")
