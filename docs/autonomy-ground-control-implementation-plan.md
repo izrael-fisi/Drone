@@ -775,6 +775,10 @@ Status:
   then surface non-passing workflow validation status, next required step,
   desktop action, and command so stale downloaded validation cannot hide a new
   required evidence step.
+- Done: final autonomy-readiness reports now treat the evidence-workflow
+  validation as its own strict proof gate; the goal stays blocked unless the
+  validation report, required ordered workflow steps, final proof markers, log
+  archive check, and workflow status all pass.
 - Done: autonomy-readiness reports now include a strict
   `evidence_manifest` section with completion blockers, external proof
   blockers, missing field conditions, and failed/degraded bench subchecks so the

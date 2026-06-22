@@ -20,6 +20,7 @@ from vision_nav.bench_readiness import (
     passed,
     readiness_status,
 )
+from vision_nav.autonomy_evidence_workflow import REQUIRED_WORKFLOW_STEPS, validate_workflow_report
 from vision_nav.field_conditions import REQUIRED_FIELD_CONDITIONS
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 
@@ -48,6 +49,7 @@ EXTERNAL_PROOF_CHECKS = {
     "threshold_tuning",
     "rosbag_export_validation",
     "rosbag2_cli_review",
+    "evidence_workflow_validation",
 }
 
 FIELD_COLLECTION_BOOTSTRAP_COMMAND = (
@@ -230,6 +232,7 @@ PROOF_RUNBOOK_PHASES = [
             "threshold_tuning",
             "rosbag_export_validation",
             "rosbag2_cli_review",
+            "evidence_workflow_validation",
         ],
         "depends_on": ["plan_source", "bench_foundation", "field_dataset", "method_thresholds", "ros2_replay"],
         "commands": ["./scripts/pi/run_autonomy_readiness_audit.sh", "./scripts/dev/run_local_autonomy_readiness_audit.sh"],
@@ -346,6 +349,11 @@ def evaluate_autonomy_readiness(
         check_threshold_tuning(threshold_tuning_report_path, support_manifest=support_manifest),
         check_rosbag_export_validation(rosbag_export_validation_path, support_manifest=support_manifest),
         check_rosbag2_cli_review(rosbag2_cli_review_path, support_checks),
+        check_evidence_workflow_validation(
+            evidence_workflow_report_path,
+            evidence_workflow_validation_report_path,
+            evidence_workflow_log_archive_path,
+        ),
     ]
     status = readiness_status(checks)
     next_actions = next_actions_for_checks(checks)
@@ -959,6 +967,7 @@ def evidence_source_for_check(name: str, details: dict[str, Any], inputs: dict[s
         "threshold_tuning": "threshold_tuning_report",
         "rosbag_export_validation": "rosbag_export_validation",
         "rosbag2_cli_review": "rosbag2_cli_review",
+        "evidence_workflow_validation": "evidence_workflow_validation_report",
     }
     for key in ("source", "support_bundle_path", "report_path", "session_dir", "path"):
         value = details.get(key)
@@ -1050,6 +1059,12 @@ def next_actions_for_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]
             "desktop_action": "Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit",
             "command": "./scripts/dev/run_rosbag2_cli_review.sh",
             "notes": "Run on a sourced ROS 2 workstation after native rosbag2 export. The review must include a passing validator result and successful ros2 bag info output.",
+        },
+        "evidence_workflow_validation": {
+            "title": "Run the guided evidence workflow and validate its report.",
+            "desktop_action": "Module Setup > Evidence Workflow",
+            "command": GUIDED_EVIDENCE_WORKFLOW_COMMAND,
+            "notes": "The final readiness gate requires a passed workflow validation report, including every ordered step and final proof marker.",
         },
     }
     next_actions: list[dict[str, Any]] = []
@@ -2264,6 +2279,167 @@ def rosbag2_cli_review_check_from_report(report: dict[str, Any], *, source: str)
     if status == "degraded":
         return degraded("rosbag2_cli_review", "Native rosbag2 CLI review is degraded.", details)
     return failed("rosbag2_cli_review", f"Native rosbag2 CLI review is {status or 'missing'}.", details)
+
+
+REQUIRED_WORKFLOW_VALIDATION_CHECKS = [
+    "schema",
+    "required_steps",
+    "step_statuses",
+    "required_step_results",
+    "important_markers",
+    "final_proof_markers",
+    "log_archive",
+    "final_readiness_status",
+    "workflow_status",
+]
+
+
+def check_evidence_workflow_validation(
+    workflow_report_path: str | Path | None,
+    workflow_validation_report_path: str | Path | None,
+    workflow_log_archive_path: str | Path | None,
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
+        "required_steps": REQUIRED_WORKFLOW_STEPS,
+        "required_validation_checks": REQUIRED_WORKFLOW_VALIDATION_CHECKS,
+        "workflow_report": str(Path(workflow_report_path).expanduser()) if workflow_report_path else None,
+        "validation_report": str(Path(workflow_validation_report_path).expanduser())
+        if workflow_validation_report_path
+        else None,
+        "log_archive": str(Path(workflow_log_archive_path).expanduser()) if workflow_log_archive_path else None,
+    }
+    validation: dict[str, Any]
+
+    if workflow_validation_report_path:
+        source = Path(workflow_validation_report_path).expanduser()
+        if not source.is_file():
+            return failed(
+                "evidence_workflow_validation",
+                "Autonomy evidence workflow validation report is missing.",
+                details,
+            )
+        try:
+            validation = json.loads(source.read_text(encoding="utf-8"))
+        except Exception as exc:
+            details["error"] = str(exc)
+            return failed(
+                "evidence_workflow_validation",
+                "Could not read autonomy evidence workflow validation report.",
+                details,
+            )
+        details["source"] = str(source)
+    elif workflow_report_path:
+        source = Path(workflow_report_path).expanduser()
+        if not source.is_file():
+            return failed(
+                "evidence_workflow_validation",
+                "Autonomy evidence workflow report is missing.",
+                details,
+            )
+        try:
+            validation = validate_workflow_report(source)
+        except Exception as exc:
+            details["error"] = str(exc)
+            return failed(
+                "evidence_workflow_validation",
+                "Could not validate autonomy evidence workflow report.",
+                details,
+            )
+        details["source"] = str(source)
+        details["validation_source"] = "computed_from_workflow_report"
+    else:
+        return failed(
+            "evidence_workflow_validation",
+            "A passed autonomy evidence workflow validation report is required for final readiness.",
+            details,
+        )
+
+    checks = validation.get("checks") if isinstance(validation.get("checks"), list) else []
+    checks_by_name = {
+        str(check.get("name") or ""): check
+        for check in checks
+        if isinstance(check, dict) and check.get("name")
+    }
+    missing_checks = [name for name in REQUIRED_WORKFLOW_VALIDATION_CHECKS if name not in checks_by_name]
+    non_passing_checks = [
+        {
+            "name": name,
+            "status": normalize_status(checks_by_name[name].get("status")) or "unknown",
+            "message": str(checks_by_name[name].get("message") or ""),
+        }
+        for name in REQUIRED_WORKFLOW_VALIDATION_CHECKS
+        if name in checks_by_name and normalize_status(checks_by_name[name].get("status")) != "passed"
+    ]
+    issues = validation.get("issues") if isinstance(validation.get("issues"), list) else []
+    details.update(
+        {
+            "schema_version": validation.get("schema_version"),
+            "status": normalize_status(validation.get("status")) or "unknown",
+            "workflow_status": normalize_status(validation.get("workflow_status")) or "unknown",
+            "report_path": validation.get("report_path"),
+            "step_count": validation.get("step_count"),
+            "marker_count": validation.get("marker_count"),
+            "issue_count": validation.get("issue_count", len(issues)),
+            "issues": [str(issue) for issue in issues[:8]],
+            "next_required_step": validation.get("next_required_step")
+            if isinstance(validation.get("next_required_step"), dict)
+            else None,
+            "missing_validation_checks": missing_checks,
+            "non_passing_validation_checks": non_passing_checks,
+        }
+    )
+
+    if validation.get("schema_version") != "vision_nav_autonomy_evidence_workflow_validation_v1":
+        return failed(
+            "evidence_workflow_validation",
+            "Autonomy evidence workflow validation report has an unexpected schema.",
+            details,
+        )
+
+    try:
+        step_count = int(validation.get("step_count") or 0)
+    except (TypeError, ValueError):
+        step_count = 0
+    if step_count < len(REQUIRED_WORKFLOW_STEPS):
+        return failed(
+            "evidence_workflow_validation",
+            "Autonomy evidence workflow validation is missing required workflow step coverage.",
+            details,
+        )
+
+    if workflow_log_archive_path:
+        archive_source = Path(workflow_log_archive_path).expanduser()
+        if not archive_source.is_file():
+            return failed(
+                "evidence_workflow_validation",
+                "Autonomy evidence workflow log archive is missing.",
+                details,
+            )
+
+    if missing_checks:
+        return failed(
+            "evidence_workflow_validation",
+            "Autonomy evidence workflow validation is missing required validator checks.",
+            details,
+        )
+    if non_passing_checks:
+        return failed(
+            "evidence_workflow_validation",
+            "Autonomy evidence workflow validation has non-passing required checks.",
+            details,
+        )
+
+    if details["status"] == "passed" and details["workflow_status"] == "passed":
+        return passed(
+            "evidence_workflow_validation",
+            "Autonomy evidence workflow validation passed.",
+            details,
+        )
+    return failed(
+        "evidence_workflow_validation",
+        f"Autonomy evidence workflow validation is {details['status']} with workflow status {details['workflow_status']}.",
+        details,
+    )
 
 
 def rosbag_report_topics(report: dict[str, Any]) -> list[str]:

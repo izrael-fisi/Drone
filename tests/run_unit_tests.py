@@ -3271,6 +3271,79 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         (workflow_logs_dir / "create_field_evidence_template.log").write_text("unit workflow log\n")
         with tarfile.open(workflow_log_archive, "w:gz") as archive:
             archive.add(workflow_logs_dir / "create_field_evidence_template.log", arcname="logs/create_field_evidence_template.log")
+        workflow_validation_ready_report = root / "autonomy_evidence_workflow.ready.validation.json"
+        workflow_validation_ready_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_autonomy_evidence_workflow_validation_v1",
+                    "status": "passed",
+                    "workflow_status": "passed",
+                    "report_path": str(workflow_report),
+                    "step_count": len(REQUIRED_WORKFLOW_STEPS),
+                    "marker_count": 16,
+                    "log_archive": str(workflow_log_archive),
+                    "issue_count": 0,
+                    "issues": [],
+                    "next_required_step": None,
+                    "checks": [
+                        {
+                            "name": "schema",
+                            "status": "passed",
+                            "message": "Workflow report schema is valid.",
+                        },
+                        {
+                            "name": "required_steps",
+                            "status": "passed",
+                            "message": "Workflow report includes every ordered evidence step.",
+                            "details": {"step_count": len(REQUIRED_WORKFLOW_STEPS)},
+                        },
+                        {
+                            "name": "step_statuses",
+                            "status": "passed",
+                            "message": "Workflow step statuses are parseable.",
+                        },
+                        {
+                            "name": "required_step_results",
+                            "status": "passed",
+                            "message": "Every required workflow step passed.",
+                            "details": {
+                                "required_count": len(REQUIRED_WORKFLOW_STEPS),
+                                "missing_steps": [],
+                                "non_passed_steps": [],
+                                "non_passed_count": 0,
+                            },
+                        },
+                        {
+                            "name": "important_markers",
+                            "status": "passed",
+                            "message": "Workflow report includes the high-value artifact markers.",
+                        },
+                        {
+                            "name": "final_proof_markers",
+                            "status": "passed",
+                            "message": "Workflow report includes every final-readiness proof artifact marker.",
+                        },
+                        {
+                            "name": "log_archive",
+                            "status": "passed",
+                            "message": "Workflow log archive includes logs for all reported steps.",
+                            "details": {"path": str(workflow_log_archive)},
+                        },
+                        {
+                            "name": "final_readiness_status",
+                            "status": "passed",
+                            "message": "Workflow final-audit step matches the generated autonomy-readiness report status.",
+                            "details": {"readiness_status": "passed", "workflow_status": "passed"},
+                        },
+                        {
+                            "name": "workflow_status",
+                            "status": "passed",
+                            "message": "Workflow completed without failed or skipped steps.",
+                        },
+                    ],
+                }
+            )
+        )
 
         direct_report_support_manifest = root / "support_manifest_without_embedded_field_feature.json"
         direct_report_support_data = json.loads(support_manifest.read_text())
@@ -3458,10 +3531,18 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
             evidence_workflow_report_path=workflow_report,
-            evidence_workflow_validation_report_path=workflow_validation_report,
+            evidence_workflow_validation_report_path=workflow_validation_ready_report,
             evidence_workflow_log_archive_path=workflow_log_archive,
         )
         assert_equal(ready["status"], "passed", "autonomy readiness full proof status")
+        workflow_ready_check = next(
+            check for check in ready["checks"] if check.get("name") == "evidence_workflow_validation"
+        )
+        assert_equal(
+            workflow_ready_check["status"],
+            "passed",
+            "autonomy readiness workflow validation full proof status",
+        )
         assert_equal(
             ready["metadata"]["schema_version"],
             "vision_nav_autonomy_readiness_audit_metadata_v1",
@@ -3483,7 +3564,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         )
         assert_equal(
             ready["inputs"]["evidence_workflow_validation_report"],
-            str(workflow_validation_report),
+            str(workflow_validation_ready_report),
             "autonomy readiness workflow validation input",
         )
         assert_equal(
@@ -3500,6 +3581,46 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             ready["diagnostics"]["px4_sitl_prereqs"]["fix_commands"][0]["condition"],
             "px4_autopilot_dir",
             "autonomy readiness px4 prereq fix command",
+        )
+        degraded_workflow_ready = evaluate_autonomy_readiness(
+            research_doc_path=research_doc,
+            implementation_plan_path=implementation_plan,
+            support_bundle_path=direct_report_support_manifest,
+            px4_sitl_report_path=px4_receiver_report,
+            px4_sitl_prereq_path=px4_prereq_report,
+            field_evidence_report_path=field_report,
+            field_collection_plan_path=field_collection_plan,
+            feature_method_benchmark_report_path=feature_report,
+            threshold_tuning_report_path=threshold_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
+        )
+        assert_equal(
+            degraded_workflow_ready["status"],
+            "failed",
+            "autonomy readiness degraded workflow validation should fail final proof",
+        )
+        degraded_workflow_check = next(
+            check
+            for check in degraded_workflow_ready["checks"]
+            if check.get("name") == "evidence_workflow_validation"
+        )
+        assert_equal(
+            degraded_workflow_check["status"],
+            "failed",
+            "autonomy readiness workflow validation strict gate",
+        )
+        degraded_workflow_actions = [
+            action
+            for action in degraded_workflow_ready["next_actions"]
+            if action.get("check") == "evidence_workflow_validation"
+        ]
+        assert_equal(len(degraded_workflow_actions), 1, "autonomy readiness workflow validation next action")
+        assert_equal(
+            degraded_workflow_actions[0]["command"],
+            "./scripts/pi/run_autonomy_evidence_workflow.sh",
+            "autonomy readiness workflow validation recovery command",
         )
         assert_equal(
             ready["plan_snapshot"]["schema_version"],
@@ -4100,6 +4221,9 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
             rosbag_export_validation_path=rosbag_validation_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_ready_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
         )
         direct_rosbag_checks = {check["name"]: check["status"] for check in direct_rosbag_ready["checks"]}
         assert_equal(direct_rosbag_ready["status"], "passed", "autonomy readiness direct rosbag validation")
@@ -4154,6 +4278,9 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
             rosbag2_cli_review_path=rosbag2_cli_review,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_ready_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
         )
         direct_rosbag2_checks = {check["name"]: check["status"] for check in direct_rosbag2_ready["checks"]}
         assert_equal(direct_rosbag2_ready["status"], "passed", "autonomy readiness direct rosbag2 cli review")
@@ -4176,6 +4303,9 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             field_collection_plan_path=field_collection_plan,
             feature_method_benchmark_report_path=feature_report,
             threshold_tuning_report_path=threshold_report,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_ready_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
         )
         assert_equal(missing_runtime_status_ready["status"], "degraded", "autonomy readiness missing runtime status")
         runtime_actions = [
@@ -4294,6 +4424,9 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             support_bundle_path=bundled_threshold_manifest,
             field_evidence_report_path=field_report,
             field_collection_plan_path=field_collection_plan,
+            evidence_workflow_report_path=workflow_report,
+            evidence_workflow_validation_report_path=workflow_validation_ready_report,
+            evidence_workflow_log_archive_path=workflow_log_archive,
         )
         assert_equal(bundled_threshold_ready["status"], "passed", "autonomy readiness bundled threshold status")
 
