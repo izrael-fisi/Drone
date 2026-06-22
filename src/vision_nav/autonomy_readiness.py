@@ -58,14 +58,14 @@ PROOF_RUNBOOK_PHASES = [
         "id": "bench_foundation",
         "title": "Create bench evidence package",
         "checks": ["support_bundle_bench_readiness", "px4_receiver_proof"],
-        "depends_on": [],
+        "depends_on": ["plan_source"],
         "notes": "Build and upload the terrain bundle, run the runtime, capture PX4 ODOMETRY receiver proof, export parameters, then create the support bundle.",
     },
     {
         "id": "field_dataset",
         "title": "Collect real field replay coverage",
         "checks": ["field_collection_plan", "field_evidence_proof"],
-        "depends_on": [],
+        "depends_on": ["plan_source"],
         "notes": "Start from the field evidence template and replace every required placeholder with a real terrain log.",
     },
     {
@@ -79,7 +79,7 @@ PROOF_RUNBOOK_PHASES = [
         "id": "ros2_replay",
         "title": "Validate ROS replay artifacts",
         "checks": ["rosbag_export_validation", "rosbag2_cli_review"],
-        "depends_on": [],
+        "depends_on": ["plan_source"],
         "notes": "Export the replay artifact, then review the native rosbag2 export on a sourced ROS 2 workstation.",
     },
     {

@@ -2940,6 +2940,25 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(research_doc_actions), 1, "autonomy readiness research doc next action")
         if "autonomy-ground-control-research.md" not in research_doc_actions[0]["command"]:
             raise AssertionError("autonomy readiness research doc action should point to the research doc")
+        headings_only_research_phases = {
+            phase["id"]: phase
+            for phase in headings_only_research_ready["proof_runbook"]["phases"]
+        }
+        assert_equal(
+            headings_only_research_phases["plan_source"]["status"],
+            "action_required",
+            "autonomy readiness research source runbook plan phase action required",
+        )
+        assert_equal(
+            headings_only_research_phases["bench_foundation"]["status"],
+            "blocked",
+            "autonomy readiness research source blocks bench phase",
+        )
+        assert_equal(
+            headings_only_research_phases["field_dataset"]["dependency_status"]["plan_source"],
+            "action_required",
+            "autonomy readiness research source field dependency",
+        )
 
         headings_only_plan = root / "implementation_plan_headings_only.md"
         headings_only_plan.write_text(
@@ -2983,6 +3002,25 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(implementation_plan_actions), 1, "autonomy readiness implementation plan next action")
         if "autonomy-ground-control-implementation-plan.md" not in implementation_plan_actions[0]["command"]:
             raise AssertionError("autonomy readiness implementation plan action should point to the plan doc")
+        headings_only_plan_phases = {
+            phase["id"]: phase
+            for phase in headings_only_ready["proof_runbook"]["phases"]
+        }
+        assert_equal(
+            headings_only_plan_phases["plan_source"]["status"],
+            "action_required",
+            "autonomy readiness implementation source runbook plan phase action required",
+        )
+        assert_equal(
+            headings_only_plan_phases["ros2_replay"]["status"],
+            "blocked",
+            "autonomy readiness implementation source blocks ros2 phase",
+        )
+        assert_equal(
+            headings_only_plan_phases["final_audit"]["dependency_status"]["plan_source"],
+            "action_required",
+            "autonomy readiness implementation source final dependency",
+        )
 
         missing_metadata_audit_field_report = root / "field_evidence_missing_metadata_audit.json"
         missing_metadata_field_data = json.loads(field_report.read_text())
