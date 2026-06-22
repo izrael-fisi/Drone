@@ -4183,6 +4183,19 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "runtime_status",
             "autonomy readiness support evidence subcheck",
         )
+        if "runtime terrain log and runtime_status.json snapshot" not in runtime_blockers[0].get("expected_bench_inputs", []):
+            raise AssertionError("stale support bundle blocker should preserve strict expected bench inputs")
+        if not any(
+            action.get("command") == "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh"
+            for action in runtime_blockers[0].get("bench_evidence_actions", [])
+            if isinstance(action, dict)
+        ):
+            raise AssertionError("stale support bundle blocker should preserve bench refresh action hints")
+        assert_equal(
+            runtime_blockers[0].get("support_bundle_command"),
+            "./scripts/pi/create_support_bundle.sh",
+            "stale support bundle blocker refresh command",
+        )
 
         incomplete_gnss_manifest = root / "support_manifest_incomplete_gnss.json"
         incomplete_gnss_data = json.loads(direct_report_support_manifest.read_text())

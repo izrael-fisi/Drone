@@ -751,6 +751,10 @@ Status:
 - Done: Module Setup renders those autonomy-readiness bench subchecks in the
   downloaded report card, including subcheck name, status, and message for
   support-bundle failures such as missing runtime status or PX4 receiver proof.
+- Done: non-passing support-bundle readiness details now preserve the strict
+  expected bench inputs, collection-order actions, and refresh command even when
+  a stale support bundle exists, so `autonomy_goal_status.sh` and Module Setup
+  can show how to rebuild the evidence instead of only listing failed subchecks.
 - Done: autonomy-readiness reports now include a strict
   `evidence_manifest` section with completion blockers, external proof
   blockers, missing field conditions, and failed/degraded bench subchecks so the

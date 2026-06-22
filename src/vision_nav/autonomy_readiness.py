@@ -1228,6 +1228,14 @@ def evaluate_support_bundle(
         "summary": report.get("summary"),
         "failed_or_degraded_checks": support_bench_subchecks(report),
     }
+    if status != "passed":
+        details.update(
+            {
+                "expected_bench_inputs": STRICT_SUPPORT_BUNDLE_INPUTS,
+                "bench_evidence_actions": STRICT_SUPPORT_BUNDLE_ACTIONS,
+                "support_bundle_command": SUPPORT_BUNDLE_COMMAND,
+            }
+        )
     if status == "passed":
         return {"check": passed("support_bundle_bench_readiness", "Support bundle bench-readiness gate passed.", details), "report": report, "manifest": manifest}
     if status == "degraded":
