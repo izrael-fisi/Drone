@@ -577,13 +577,17 @@ Status:
   `command_bundle` with next-action commands and pending field replay
   registration commands for downstream support tooling, and Module Setup
   consumes that bundle for bulk command copy plus saved setup-report exports.
-- Done: field-evidence readiness next actions now point operators to
-  `Create Template, then Register`, so missing real-world replay evidence starts
-  with the eight-condition starter manifest instead of ad hoc case entry.
+- Done: field-evidence readiness next actions now point to the current
+  proof-collection flow: load a pending Field Collection Plan condition, run
+  `Field Log Capture`, then register the captured replay case.
 - Done: autonomy-readiness reports now preserve failed/degraded
   bench-readiness subchecks and expand them into specific next actions, so a
   missing `runtime_status.json` points to Module Setup > Runtime Status instead
   of only saying to recreate the support bundle.
+- Done: runtime-log, runtime-status, PX4 receiver, and native rosbag2 next
+  actions now use the current Module Setup action names (`Field Log Capture`,
+  `PX4 SITL Receiver Capture`, `Native rosbag2 Review`) so proof runbooks match
+  the desktop workflow.
 - Done: Module Setup renders those autonomy-readiness bench subchecks in the
   downloaded report card, including subcheck name, status, and message for
   support-bundle failures such as missing runtime status or PX4 receiver proof.

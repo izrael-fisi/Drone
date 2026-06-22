@@ -2766,6 +2766,17 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             "failed",
             "autonomy readiness rejects compatibility-only px4 proof",
         )
+        px4_actions = [
+            action
+            for action in compatibility_ready["next_actions"]
+            if action.get("check") == "px4_receiver_proof"
+        ]
+        assert_equal(len(px4_actions), 1, "autonomy readiness px4 receiver next action")
+        assert_equal(
+            px4_actions[0]["desktop_action"],
+            "Module Setup > PX4 SITL Receiver Capture, then Local Readiness Re-Audit",
+            "autonomy readiness px4 receiver desktop action",
+        )
 
         missing_feature_direct = evaluate_autonomy_readiness(
             research_doc_path=research_doc,
@@ -2827,11 +2838,13 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(missing_field_actions), 1, "autonomy readiness field evidence next action")
         assert_equal(
             missing_field_actions[0]["desktop_action"],
-            "Module Setup > Field Evidence Case > Create Template, then Register",
+            "Module Setup > Field Collection Plan > Load, Field Log Capture, then Field Evidence Case > Register",
             "autonomy readiness field evidence desktop action",
         )
-        if "create_field_evidence_template.sh" not in missing_field_actions[0]["command"]:
-            raise AssertionError("autonomy readiness field evidence action should start with template creation")
+        if "create_field_collection_plan.sh" not in missing_field_actions[0]["command"]:
+            raise AssertionError("autonomy readiness field evidence action should start with collection planning")
+        if "run_terrain_nav_loop.sh" not in missing_field_actions[0]["command"]:
+            raise AssertionError("autonomy readiness field evidence action should include field log capture")
         support_field_actions = [
             action
             for action in missing_field_direct["next_actions"]
@@ -2840,7 +2853,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(support_field_actions), 1, "autonomy readiness support field evidence subcheck action")
         assert_equal(
             support_field_actions[0]["desktop_action"],
-            "Module Setup > Field Evidence Case > Create Template, then Register",
+            "Module Setup > Field Collection Plan > Load, Field Log Capture, then Field Evidence Case > Register",
             "autonomy readiness support field evidence desktop action",
         )
         missing_field_phases = {phase["id"]: phase for phase in missing_field_direct["proof_runbook"]["phases"]}
@@ -2933,6 +2946,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             if action.get("check") == "rosbag2_cli_review"
         ]
         assert_equal(len(rosbag2_actions), 1, "autonomy readiness rosbag2 cli review next action")
+        assert_equal(
+            rosbag2_actions[0]["desktop_action"],
+            "Module Setup > Native rosbag2 Review, then Local Readiness Re-Audit",
+            "autonomy readiness rosbag2 desktop action",
+        )
         if "scripts/dev/run_rosbag2_cli_review.sh" not in rosbag2_actions[0]["command"]:
             raise AssertionError("autonomy readiness rosbag2 action should use the sourced-workstation wrapper")
 
@@ -2976,7 +2994,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(runtime_actions), 1, "autonomy readiness runtime status next action")
         assert_equal(
             runtime_actions[0]["desktop_action"],
-            "Module Setup > Runtime Status, then Bench Report",
+            "Module Setup > Field Log Capture, then Runtime Status and Bench Report",
             "autonomy readiness runtime status desktop action",
         )
         generic_support_actions = [
