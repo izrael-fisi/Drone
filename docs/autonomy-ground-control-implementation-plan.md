@@ -503,6 +503,11 @@ Status:
   generator on the Pi, writes `field_collection_plan.json` and
   `field_collection_plan.md` into the replay-cases transfer folder, and emits
   stable markers for workflow/support collection.
+- Done: `vision-nav-update-field-capture-metadata` and
+  `scripts/pi/update_field_capture_metadata.sh` patch proof-grade capture
+  metadata for a selected field condition in the active manifest, then
+  regenerate the field collection plan so terminal-only field collection can
+  advance from captured log to registration without editing JSON by hand.
 - Done: the Pi template wrapper can seed the active field manifest, and
   replay-case registration replaces matching template placeholders by condition
   tag when real field logs are collected.

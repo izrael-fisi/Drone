@@ -393,7 +393,11 @@ commands pass the filled JSON through `VISION_NAV_FIELD_CAPTURE_METADATA`, so
 registered field replay cases keep that context for support review. The
 field-evidence and threshold-tuning proof gates require that metadata to be
 filled for every real field case; placeholder `TODO` values or missing numeric
-altitude/speed context keep the final readiness proof failed.
+altitude/speed context keep the final readiness proof failed. Operators using
+the Pi terminal instead of the desktop form can run
+`scripts/pi/update_field_capture_metadata.sh` to patch the active manifest for a
+condition and regenerate the collection plan before running the Evidence
+Workflow again.
 
 Module Setup can also register the latest Pi terrain runtime log as a field
 evidence case after capture. The operator selects expected behavior, condition

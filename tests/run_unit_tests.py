@@ -46,6 +46,7 @@ from vision_nav.field_capture_metadata import (
     CAPTURE_CHECKLIST_SCHEMA_VERSION,
     CAPTURE_METADATA_SCHEMA_VERSION,
 )
+from vision_nav.field_capture_metadata_update import update_field_capture_metadata
 from vision_nav.field_collection_plan import create_field_collection_plan, render_field_collection_markdown
 from vision_nav.field_evidence_template import create_field_evidence_template
 from vision_nav.field_evidence_gate import evaluate_field_evidence_gate
@@ -4544,6 +4545,21 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             bundle="field-bundles/site-a/mission_bundle",
             seed_manifest_path=active_manifest,
         )
+        inferred_plan = create_field_collection_plan(
+            manifest_path=active_manifest,
+            output_path=base / "field_collection_plan_inferred.json",
+            capture_root="$HOME/DroneTransfer/outgoing/field-captures",
+        )
+        assert_equal(
+            inferred_plan["next_condition"]["capture_output_dir"],
+            "$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture",
+            "field collection infers site name from manifest template",
+        )
+        assert_equal(
+            inferred_plan["next_condition"]["bundle"],
+            "field-bundles/site-a/mission_bundle",
+            "field collection preserves case bundle from manifest",
+        )
         plan = create_field_collection_plan(
             manifest_path=active_manifest,
             output_path=base / "field_collection_plan.json",
@@ -4732,6 +4748,47 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected Markdown plan to include condition-specific capture instructions")
         if "Capture metadata to fill before registration" not in markdown:
             raise AssertionError("Expected Markdown plan to include capture metadata scaffold")
+
+        metadata_update = update_field_capture_metadata(
+            manifest_path=active_manifest,
+            condition="low_texture",
+            updates=field_capture_metadata_fixture(
+                "low_texture",
+                updated["next_condition"]["expected"],
+                bundle=updated["next_condition"]["bundle"],
+                site_name="Site A",
+            ),
+        )
+        assert_equal(
+            metadata_update["capture_metadata_status"],
+            "passed",
+            "field capture metadata update status",
+        )
+        refreshed = create_field_collection_plan(
+            manifest_path=active_manifest,
+            output_path=base / "field_collection_plan_metadata_updated.json",
+            site_name="Site A",
+            bundle="field-bundles/site-a/mission_bundle",
+        )
+        refreshed_selection = select_next_field_condition(base / "field_collection_plan_metadata_updated.json")
+        assert_equal(
+            refreshed_selection["condition"],
+            "low_texture",
+            "field metadata update keeps low texture as next pending condition",
+        )
+        assert_equal(
+            refreshed_selection["capture_metadata_status"],
+            "passed",
+            "field metadata update persists through regenerated plan",
+        )
+        low_texture_case = next(
+            case for case in json.loads(active_manifest.read_text())["cases"] if "low_texture" in case["conditions"]
+        )
+        assert_equal(
+            low_texture_case["capture_metadata"]["operator"],
+            "unit-operator",
+            "field metadata update persisted operator",
+        )
 
 
 def test_replay_dataset_coverage_audit_requires_real_field_cases() -> None:

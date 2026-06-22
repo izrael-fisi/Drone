@@ -549,6 +549,29 @@ For the field-evidence gate and threshold-tuning report, capture metadata is
 proof-grade: field cases fail if required metadata fields are missing, still
 set to `TODO`, or omit numeric altitude/speed context.
 
+For terminal-only field collection, patch the active manifest's metadata for a
+condition before rerunning the guided workflow or registration step:
+
+```bash
+VISION_NAV_FIELD_CONDITION=good_texture \
+VISION_NAV_FIELD_OPERATOR="operator name" \
+VISION_NAV_FIELD_LOCATION_LABEL="test area" \
+VISION_NAV_FIELD_ALTITUDE_AGL_M=35 \
+VISION_NAV_FIELD_SPEED_MPS=4 \
+VISION_NAV_FIELD_LIGHTING=nominal \
+VISION_NAV_FIELD_WEATHER=clear \
+VISION_NAV_FIELD_TERRAIN_TEXTURE=distinct \
+VISION_NAV_FIELD_MAP_AGE_OR_SEASON_NOTES="same season" \
+VISION_NAV_FIELD_CAMERA_FOCUS_EXPOSURE_NOTES="manual focus checked" \
+VISION_NAV_FIELD_IMU_PX4_STATE_NOTES="EKF stable before capture" \
+VISION_NAV_FIELD_SAFETY_NOTES="spotter present" \
+./scripts/pi/update_field_capture_metadata.sh
+```
+
+That helper updates `field_manifest.json`, then regenerates
+`field_collection_plan.json` and `.md` so the next workflow run can see whether
+registration is allowed.
+
 Generate a field-collection checklist from the active manifest before going
 outside:
 

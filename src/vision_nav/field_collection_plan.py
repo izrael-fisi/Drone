@@ -71,6 +71,11 @@ def create_field_collection_plan(
 ) -> dict[str, Any]:
     manifest = Path(manifest_path).expanduser()
     manifest_data = load_manifest_or_empty(manifest)
+    template = manifest_data.get("template") if isinstance(manifest_data.get("template"), dict) else {}
+    if site_name == "field-site":
+        template_site_name = template.get("site_name")
+        if isinstance(template_site_name, str) and template_site_name.strip():
+            site_name = template_site_name
     cases = [case for case in manifest_data.get("cases") or [] if isinstance(case, dict)]
     conditions = [
         condition_plan(
@@ -163,6 +168,8 @@ def condition_plan(
     if selected is not None:
         case_name = str(selected.get("case_name") or generated_case_name)
         expected = str(selected.get("expected") or expected)
+        if selected.get("bundle"):
+            bundle = str(selected.get("bundle"))
         manifest_log_path = str(selected.get("log") or "") or None
         notes = str(selected.get("notes") or notes)
         log_exists = case_log_exists(manifest_path, selected)
