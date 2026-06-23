@@ -888,6 +888,7 @@ export interface AutonomyEvidenceWorkflowValidationNextStep {
   expected_log?: string;
   output_dir?: string;
   runtime_status_path?: string;
+  capture_script_path?: string;
   capture_command_after_bundle?: string;
 }
 
@@ -903,6 +904,7 @@ export interface AutonomyEvidenceWorkflowValidationStepResult {
   expected_log?: string;
   output_dir?: string;
   runtime_status_path?: string;
+  capture_script_path?: string;
   preflight_report?: string;
   preflight_status?: "passed" | "failed" | "degraded" | "skipped" | string;
   ready_for_capture?: boolean;

@@ -865,6 +865,7 @@ pub struct AutonomyEvidenceWorkflowValidationStepResult {
     pub expected_log: Option<String>,
     pub output_dir: Option<String>,
     pub runtime_status_path: Option<String>,
+    pub capture_script_path: Option<String>,
     pub preflight_report: Option<String>,
     pub preflight_status: Option<String>,
     pub ready_for_capture: Option<bool>,
@@ -898,6 +899,7 @@ pub struct AutonomyEvidenceWorkflowValidationNextStep {
     pub expected_log: Option<String>,
     pub output_dir: Option<String>,
     pub runtime_status_path: Option<String>,
+    pub capture_script_path: Option<String>,
     pub capture_command_after_bundle: Option<String>,
 }
 
@@ -4015,6 +4017,7 @@ fn workflow_validation_step_results_from_json(
                     expected_log: json_string(item.get("expected_log")),
                     output_dir: json_string(item.get("output_dir")),
                     runtime_status_path: json_string(item.get("runtime_status_path")),
+                    capture_script_path: json_string(item.get("capture_script_path")),
                     preflight_report: json_string(item.get("preflight_report")),
                     preflight_status: json_string(item.get("preflight_status")),
                     ready_for_capture: item
@@ -4066,6 +4069,7 @@ fn workflow_validation_next_step_from_json(
         expected_log: json_string(value.get("expected_log")),
         output_dir: json_string(value.get("output_dir")),
         runtime_status_path: json_string(value.get("runtime_status_path")),
+        capture_script_path: json_string(value.get("capture_script_path")),
         capture_command_after_bundle: json_string(value.get("capture_command_after_bundle")),
     })
 }
@@ -6180,6 +6184,7 @@ mod tests {
                             "notes": "Waiting for field replay capture.",
                             "command": "./scripts/pi/register_field_replay_case.sh",
                             "desktop_action": "Module Setup > Field Evidence Case > Register",
+                            "capture_script_path": "/home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh",
                             "metadata_update_command": "./scripts/pi/update_field_capture_metadata.sh --condition blur"
                         },
                         "checks": [
@@ -6199,6 +6204,7 @@ mod tests {
                                         "current_preflight_report": "/home/user/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json",
                                         "current_preflight_status": "degraded",
                                         "current_ready_for_registration": false,
+                                        "capture_script_path": "/home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh",
                                         "guidance": "A newer field-capture preflight report is capture-ready."
                                     },
                                     {
@@ -6461,6 +6467,13 @@ mod tests {
                 .and_then(|step| step.metadata_update_command.as_deref()),
             Some("./scripts/pi/update_field_capture_metadata.sh --condition blur")
         );
+        assert_eq!(
+            package_validation
+                .next_required_step
+                .as_ref()
+                .and_then(|step| step.capture_script_path.as_deref()),
+            Some("/home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh")
+        );
         assert_eq!(package_validation.checks.len(), 3);
         assert_eq!(
             package_validation.checks[1].name.as_deref(),
@@ -6478,6 +6491,12 @@ mod tests {
                 .status
                 .as_deref(),
             Some("skipped")
+        );
+        assert_eq!(
+            package_validation.checks[1].non_passed_steps[0]
+                .capture_script_path
+                .as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh")
         );
         assert_eq!(
             package_validation.checks[1].non_passed_steps[0].current_preflight_allows_capture,
@@ -6787,6 +6806,7 @@ mod tests {
                     "expected_log": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/terrain_matches.jsonl",
                     "output_dir": "/home/user/DroneTransfer/outgoing/field-captures/good_texture",
                     "runtime_status_path": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/runtime_status.json",
+                    "capture_script_path": "/home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh",
                     "capture_command_after_bundle": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=/home/user/DroneTransfer/outgoing/field-captures/good_texture ./scripts/pi/read_runtime_status.sh"
                 },
                 "checks": [
@@ -6813,6 +6833,7 @@ mod tests {
                                     "current_preflight_report": "/home/user/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json",
                                     "current_preflight_status": "degraded",
                                     "current_ready_for_registration": false,
+                                    "capture_script_path": "/home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh",
                                     "guidance": "A newer field-capture preflight report is capture-ready."
                                 },
                                 {
@@ -6962,6 +6983,10 @@ mod tests {
             )
         );
         assert_eq!(
+            next_step.capture_script_path.as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh")
+        );
+        assert_eq!(
             next_step.capture_command_after_bundle.as_deref(),
             Some("VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=/home/user/DroneTransfer/outgoing/field-captures/good_texture ./scripts/pi/read_runtime_status.sh")
         );
@@ -7002,6 +7027,12 @@ mod tests {
         assert_eq!(
             validation.checks[1].non_passed_steps[0].current_ready_for_registration,
             Some(false)
+        );
+        assert_eq!(
+            validation.checks[1].non_passed_steps[0]
+                .capture_script_path
+                .as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh")
         );
         assert_eq!(
             validation.checks[1].non_passed_steps[0].guidance.as_deref(),

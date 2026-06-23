@@ -287,6 +287,8 @@ if next_step:
         print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
     if next_step.get("capture_command_after_preflight"):
         print(f"  after preflight: {next_step.get('capture_command_after_preflight')}")
+    if next_step.get("capture_script_path"):
+        print(f"  capture script: {next_step.get('capture_script_path')}")
     metadata_update_command = enriched_metadata_update_command(next_step.get("metadata_update_command"))
     if metadata_update_command:
         print(f"  metadata update: {metadata_update_command}")

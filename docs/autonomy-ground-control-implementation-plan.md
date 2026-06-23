@@ -459,6 +459,10 @@ Status:
   `run_field_capture.sh` artifact, records `capture_script_path` in JSON and
   next actions, emits a `__VISION_NAV_TERRAIN_CAPTURE_SCRIPT__` marker, and
   surfaces the path in Module Setup and support-bundle detail views.
+- Done: workflow validation, autonomy evidence packages, support-bundle
+  summaries, goal-status output, and desktop workflow cards now preserve and
+  display `capture_script_path` so a capture-ready preflight hands operators
+  directly to the generated field-capture script.
 - Done: bundle-prep next actions now carry the same compact missing-bundle
   diagnostic as the failed preflight check, including missing required files,
   detected candidate bundles, detected map sources, and recommended Mission

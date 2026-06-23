@@ -122,6 +122,7 @@ FIELD_METADATA_UPDATE_COMMAND_MARKER = "__VISION_NAV_FIELD_METADATA_UPDATE_COMMA
 TERRAIN_BUNDLE_MARKER = "__VISION_NAV_TERRAIN_BUNDLE__"
 TERRAIN_BUNDLE_STATUS_MARKER = "__VISION_NAV_TERRAIN_BUNDLE_STATUS__"
 TERRAIN_CAPTURE_COMMAND_MARKER = "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"
+TERRAIN_CAPTURE_SCRIPT_MARKER = "__VISION_NAV_TERRAIN_CAPTURE_SCRIPT__"
 TERRAIN_PREFLIGHT_CAPTURE_COMMAND_MARKER = "__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__"
 TERRAIN_CAPTURE_OUTPUT_DIR_MARKER = "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"
 EXPECTED_TERRAIN_LOG_MARKER = "__VISION_NAV_EXPECTED_TERRAIN_LOG__"
@@ -642,6 +643,8 @@ def annotate_capture_step_from_current_preflight(
         step["ready_for_registration"] = report["ready_for_registration"]
     if isinstance(report.get("bundle_path"), str) and report["bundle_path"].strip():
         step["bundle_path"] = report["bundle_path"].strip()
+    if isinstance(report.get("capture_script_path"), str) and report["capture_script_path"].strip():
+        step["capture_script_path"] = report["capture_script_path"].strip()
     expected_log = report.get("terrain_log_path") or report.get("source_log")
     if isinstance(expected_log, str) and expected_log.strip():
         step["expected_log"] = expected_log.strip()
@@ -815,6 +818,7 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
     expected_log = marker_string(markers, EXPECTED_TERRAIN_LOG_MARKER)
     output_dir = marker_string(markers, TERRAIN_CAPTURE_OUTPUT_DIR_MARKER)
     capture_command = marker_string(markers, TERRAIN_CAPTURE_COMMAND_MARKER)
+    capture_script_path = marker_string(markers, TERRAIN_CAPTURE_SCRIPT_MARKER)
     preflight_capture_command = marker_string(markers, TERRAIN_PREFLIGHT_CAPTURE_COMMAND_MARKER)
     metadata_update_command = marker_string(markers, FIELD_METADATA_UPDATE_COMMAND_MARKER)
     if preflight_report:
@@ -837,6 +841,8 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
             capture_command,
             runtime_status_root=output_dir,
         )
+    if capture_script_path:
+        summary["capture_script_path"] = capture_script_path
     if preflight_capture_command:
         summary["preflight_capture_command"] = preflight_capture_command
     if metadata_update_command:
@@ -866,6 +872,8 @@ def apply_current_preflight_report_guidance(summary: dict[str, Any], markers: di
         summary["ready_for_registration"] = report["ready_for_registration"]
     if isinstance(report.get("bundle_path"), str) and report["bundle_path"].strip():
         summary["bundle_path"] = report["bundle_path"].strip()
+    if isinstance(report.get("capture_script_path"), str) and report["capture_script_path"].strip():
+        summary["capture_script_path"] = report["capture_script_path"].strip()
     expected_log = report.get("terrain_log_path") or report.get("source_log")
     if isinstance(expected_log, str) and expected_log.strip():
         summary["expected_log"] = expected_log.strip()
@@ -925,6 +933,7 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
     if summary.get("name") != "capture_field_terrain_log":
         return
     capture_command = marker_string(markers, TERRAIN_CAPTURE_COMMAND_MARKER)
+    capture_script_path = marker_string(markers, TERRAIN_CAPTURE_SCRIPT_MARKER)
     preflight_capture_command = marker_string(markers, TERRAIN_PREFLIGHT_CAPTURE_COMMAND_MARKER)
     bundle_path = marker_string(markers, TERRAIN_BUNDLE_MARKER)
     bundle_status = marker_string(markers, TERRAIN_BUNDLE_STATUS_MARKER)
@@ -933,6 +942,8 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
     metadata_update_command = marker_string(markers, FIELD_METADATA_UPDATE_COMMAND_MARKER)
     if capture_command:
         summary["command"] = capture_command
+    if capture_script_path:
+        summary["capture_script_path"] = capture_script_path
     if preflight_capture_command:
         summary["preflight_capture_command"] = preflight_capture_command
     if expected_log:
@@ -1236,6 +1247,8 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                     lines.append(f"  Output: {step.get('output_dir')}")
                 if step.get("runtime_status_path"):
                     lines.append(f"  Runtime status: {step.get('runtime_status_path')}")
+                if step.get("capture_script_path"):
+                    lines.append(f"  Capture script: {step.get('capture_script_path')}")
                 if step.get("preflight_report"):
                     lines.append(f"  Preflight report: {step.get('preflight_report')}")
                 if step.get("preflight_status"):
@@ -1331,6 +1344,7 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
         ("Expected log", next_step.get("expected_log")),
         ("Output", next_step.get("output_dir")),
         ("Runtime status", next_step.get("runtime_status_path")),
+        ("Capture script", next_step.get("capture_script_path")),
         ("Preflight + capture", next_step.get("preflight_capture_command")),
         ("After bundle", next_step.get("capture_command_after_bundle")),
         ("Preflight + capture after bundle", next_step.get("preflight_capture_command_after_bundle")),

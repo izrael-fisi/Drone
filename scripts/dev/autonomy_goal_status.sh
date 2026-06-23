@@ -793,6 +793,8 @@ if workflow_validation:
                 print(f"  after bundle: {next_step.get('capture_command_after_bundle')}")
             if next_step.get("capture_command_after_preflight"):
                 print(f"  after preflight: {next_step.get('capture_command_after_preflight')}")
+            if next_step.get("capture_script_path"):
+                print(f"  capture script: {next_step.get('capture_script_path')}")
             metadata_update_command = enriched_metadata_update_command(
                 next_step.get("metadata_update_command"),
                 next_field_condition,
@@ -847,6 +849,8 @@ if workflow_validation:
                         print(f"  output: {step.get('output_dir')}")
                     if step.get("runtime_status_path"):
                         print(f"  runtime status: {step.get('runtime_status_path')}")
+                    if step.get("capture_script_path"):
+                        print(f"  capture script: {step.get('capture_script_path')}")
                     if step.get("preflight_report"):
                         print(f"  preflight report: {step.get('preflight_report')}")
                     if step.get("preflight_status"):

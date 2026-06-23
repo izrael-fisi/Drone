@@ -988,6 +988,7 @@ function workflowNextStepTitle(nextStep: WorkflowValidationSummary["next_require
     nextStep.expected_log ? `expected log: ${nextStep.expected_log}` : null,
     nextStep.output_dir ? `output: ${nextStep.output_dir}` : null,
     nextStep.runtime_status_path ? `runtime status: ${nextStep.runtime_status_path}` : null,
+    nextStep.capture_script_path ? `capture script: ${nextStep.capture_script_path}` : null,
     nextStep.metadata_update_command,
     nextStep.notes,
   ]
@@ -1024,6 +1025,9 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
           {nextStep.bundle_path && (
             <span className="max-w-[18rem] truncate font-mono text-amber-100/80">bundle {nextStep.bundle_path}</span>
           )}
+          {nextStep.capture_script_path && (
+            <span className="max-w-[18rem] truncate font-mono text-emerald-100/80">script {nextStep.capture_script_path}</span>
+          )}
           {nextStep.command && (
             <button
               type="button"
@@ -1040,6 +1044,16 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
               onClick={() => navigator.clipboard.writeText(nextStep.capture_command_after_bundle ?? "")}
               className="inline-flex h-4 w-4 items-center justify-center rounded border border-cyan-400/20 text-cyan-200 hover:border-cyan-300"
               title="Copy field capture command to run after bundle validation"
+            >
+              <Copy size={9} />
+            </button>
+          )}
+          {nextStep.capture_script_path && (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(nextStep.capture_script_path ?? "")}
+              className="inline-flex h-4 w-4 items-center justify-center rounded border border-emerald-400/20 text-emerald-200 hover:border-emerald-300"
+              title="Copy generated field capture script path"
             >
               <Copy size={9} />
             </button>
@@ -1071,6 +1085,7 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
               step.expected_log ? `Expected log: ${step.expected_log}` : undefined,
               step.output_dir ? `Output: ${step.output_dir}` : undefined,
               step.runtime_status_path ? `Runtime status: ${step.runtime_status_path}` : undefined,
+              step.capture_script_path ? `Capture script: ${step.capture_script_path}` : undefined,
               step.preflight_report ? `Preflight: ${step.preflight_report}` : undefined,
               step.preflight_status ? `Preflight status: ${step.preflight_status}` : undefined,
               step.ready_for_capture !== undefined ? `Ready for capture: ${step.ready_for_capture ? "yes" : "no"}` : undefined,

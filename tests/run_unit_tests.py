@@ -3617,6 +3617,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         preflight_blocked_report = json.loads(report_path.read_text())
         missing_bundle_path = root / "missing_mission_bundle"
         capture_output_dir = root / "field-captures" / "good_texture"
+        capture_script_path = root / "replay-cases" / "run_field_capture.sh"
         capture_command = (
             f"VISION_NAV_BUNDLE={missing_bundle_path} "
             f"VISION_NAV_OUTPUT_DIR={capture_output_dir} "
@@ -3634,6 +3635,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                     "schema_version": "vision_nav_field_capture_preflight_v1",
                     "status": "failed",
                     "bundle_path": str(missing_bundle_path),
+                    "capture_script_path": str(capture_script_path),
                     "checks": [
                         {
                             "name": "bundle_path",
@@ -3700,6 +3702,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE_STATUS__"] = "missing"
         preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"] = str(capture_output_dir)
         preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"] = capture_command
+        preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_SCRIPT__"] = str(capture_script_path)
         preflight_blocked_report["markers"]["__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__"] = capture_metadata_command
         for step in preflight_blocked_report["steps"]:
             if step.get("name") == "preflight_field_capture":
@@ -3737,6 +3740,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             "workflow validation preserves preflight status",
         )
         assert_equal(
+            preflight_blocked_validation["next_required_step"]["capture_script_path"],
+            str(capture_script_path),
+            "workflow validation preserves generated capture script path",
+        )
+        assert_equal(
             preflight_blocked_validation["next_required_step"]["ready_for_capture"],
             False,
             "workflow validation preserves preflight capture readiness",
@@ -3758,6 +3766,8 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation human output should include preflight report")
         if "After preflight: " not in preflight_blocked_text:
             raise AssertionError("workflow validation human output should include post-preflight capture command")
+        if "Capture script: " not in preflight_blocked_text:
+            raise AssertionError("workflow validation human output should include generated capture script")
         if "Missing bundle files: manifest.json" not in preflight_blocked_text:
             raise AssertionError("workflow validation human output should include bundle diagnostics")
         if "Recommended bundle action: Build and upload the selected Mission Planner terrain bundle." not in preflight_blocked_text:
@@ -3783,6 +3793,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         ready_preflight_then_capture_command = (
             f"{ready_preflight_command} && {ready_preflight_capture_with_status}"
         )
+        ready_preflight_capture_script = root / "replay-cases" / "ready_run_field_capture.sh"
         ready_preflight_report = root / "ready_workflow_field_capture_preflight.json"
         ready_preflight_report.write_text(
             json.dumps(
@@ -3795,6 +3806,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
                     "capture_output_dir": str(ready_preflight_capture_output),
                     "source_log": str(ready_preflight_capture_output / "terrain_matches.jsonl"),
                     "runtime_status_path": str(ready_preflight_capture_output / "runtime_status.json"),
+                    "capture_script_path": str(ready_preflight_capture_script),
                     "preflight_command": ready_preflight_command,
                     "preflight_capture_command": ready_preflight_then_capture_command,
                     "capture_command": ready_preflight_capture_command,
@@ -3869,6 +3881,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             str(ready_preflight_capture_output / "runtime_status.json"),
             "workflow validation should prefer refreshed runtime status path",
         )
+        assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["capture_script_path"],
+            str(ready_preflight_capture_script),
+            "workflow validation should prefer refreshed capture script path",
+        )
         stale_preflight_ready_checks = {check["name"]: check for check in stale_preflight_ready_validation["checks"]}
         non_passed_names = [
             item["name"]
@@ -3900,6 +3917,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             capture_detail["preflight_capture_command"],
             ready_preflight_then_capture_command,
             "workflow validation active capture blocker preflight command",
+        )
+        assert_equal(
+            capture_detail["capture_script_path"],
+            str(ready_preflight_capture_script),
+            "workflow validation active capture blocker capture script path",
         )
         assert_equal(
             capture_detail["ready_for_capture"],
@@ -3957,6 +3979,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE_STATUS__"] = "missing"
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"] = str(capture_output_dir)
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"] = capture_command
+        capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_SCRIPT__"] = str(capture_script_path)
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_METADATA_UPDATE_COMMAND__"] = capture_metadata_command
         for step in capture_blocked_report["steps"]:
             if step.get("name") == "select_field_collection_condition":
@@ -3995,6 +4018,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             capture_blocked_validation["next_required_step"]["runtime_status_path"],
             str(capture_output_dir / "runtime_status.json"),
             "workflow validation surfaces expected runtime status path",
+        )
+        assert_equal(
+            capture_blocked_validation["next_required_step"]["capture_script_path"],
+            str(capture_script_path),
+            "workflow validation surfaces generated capture script path",
         )
         assert_equal(
             capture_blocked_validation["next_required_step"]["metadata_update_command"],
@@ -4783,6 +4811,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "expected_log": str(root / "field-captures/good_texture/terrain_matches.jsonl"),
                         "output_dir": str(root / "field-captures/good_texture"),
                         "runtime_status_path": str(root / "field-captures/good_texture/runtime_status.json"),
+                        "capture_script_path": str(root / "replay-cases/run_field_capture.sh"),
                         "capture_command_after_bundle": f"VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'} ./scripts/pi/read_runtime_status.sh",
                     },
                     "checks": [
@@ -4803,6 +4832,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                                         "current_preflight_report": str(root / "field_capture_preflight.json"),
                                         "current_preflight_status": "degraded",
                                         "current_ready_for_registration": False,
+                                        "capture_script_path": str(root / "replay-cases/run_field_capture.sh"),
                                         "guidance": "A newer field-capture preflight report is capture-ready.",
                                     },
                                     {
@@ -6479,6 +6509,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 str(root / "field-captures/good_texture/runtime_status.json"),
                 "autonomy evidence package workflow validation runtime status path",
             )
+            assert_equal(
+                workflow_validation_summary["next_required_step"]["capture_script_path"],
+                str(root / "replay-cases/run_field_capture.sh"),
+                "autonomy evidence package workflow validation capture script path",
+            )
             required_step_check = next(
                 item
                 for item in workflow_validation_summary["checks"]
@@ -6519,6 +6554,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 False,
                 "autonomy evidence package workflow validation stale preflight registration readiness",
             )
+            assert_equal(
+                required_step_check["non_passed_steps"][0]["capture_script_path"],
+                str(root / "replay-cases/run_field_capture.sh"),
+                "autonomy evidence package workflow validation non-passed capture script path",
+            )
             if "preflight report is capture-ready" not in required_step_check["non_passed_steps"][0].get("guidance", ""):
                 raise AssertionError("autonomy evidence package should preserve stale preflight guidance")
             support_workflow_summary = summarize_workflow_validation(json.loads(workflow_validation_report.read_text()))
@@ -6537,6 +6577,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 0,
                 "support workflow validation superseded count",
             )
+            assert_equal(
+                support_workflow_summary["next_required_step"]["capture_script_path"],
+                str(root / "replay-cases/run_field_capture.sh"),
+                "support workflow validation next capture script path",
+            )
             support_required_step_check = next(
                 item
                 for item in support_workflow_summary["checks"]
@@ -6551,6 +6596,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 support_required_step_check["non_passed_steps"][0]["current_preflight_report"],
                 str(root / "field_capture_preflight.json"),
                 "support workflow summary stale preflight report path",
+            )
+            assert_equal(
+                support_required_step_check["non_passed_steps"][0]["capture_script_path"],
+                str(root / "replay-cases/run_field_capture.sh"),
+                "support workflow summary stale preflight capture script path",
             )
             if "preflight report is capture-ready" not in support_required_step_check["non_passed_steps"][0].get("guidance", ""):
                 raise AssertionError("support workflow summary should preserve stale preflight guidance")

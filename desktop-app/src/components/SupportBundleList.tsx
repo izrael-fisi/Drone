@@ -88,6 +88,7 @@ function workflowStepTitle(step: WorkflowValidationStep) {
     step.expected_log ? `Expected log: ${step.expected_log}` : undefined,
     step.output_dir ? `Output: ${step.output_dir}` : undefined,
     step.runtime_status_path ? `Runtime status: ${step.runtime_status_path}` : undefined,
+    step.capture_script_path ? `Capture script: ${step.capture_script_path}` : undefined,
     step.preflight_report ? `Preflight: ${step.preflight_report}` : undefined,
     step.preflight_status ? `Preflight status: ${step.preflight_status}` : undefined,
     step.ready_for_capture !== undefined ? `Ready for capture: ${step.ready_for_capture ? "yes" : "no"}` : undefined,
@@ -339,6 +340,7 @@ function SupportBundleDetailPanel({
   const workflowNextCommand = workflowNextStep?.command || workflowNextStep?.metadata_update_command;
   const workflowMetadataUpdateCommand = workflowNextStep?.metadata_update_command;
   const workflowCaptureAfterBundleCommand = workflowNextStep?.capture_command_after_bundle;
+  const workflowCaptureScriptPath = workflowNextStep?.capture_script_path;
   const workflowBlockingChecks = (workflowValidation?.checks ?? []).filter((check) => check.status && check.status !== "passed");
   const workflowMissingSteps = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_steps));
   const workflowMissingMarkers = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_markers));
@@ -491,6 +493,9 @@ function SupportBundleDetailPanel({
                   {workflowNextStep.runtime_status_path && (
                     <span className="truncate">runtime {workflowNextStep.runtime_status_path}</span>
                   )}
+                  {workflowNextStep.capture_script_path && (
+                    <span className="truncate">script {workflowNextStep.capture_script_path}</span>
+                  )}
                   {workflowNextStep.metadata_update_command && <span className="truncate">metadata update ready</span>}
                 </div>
                 {workflowNextStep.notes && (
@@ -520,6 +525,18 @@ function SupportBundleDetailPanel({
                     <Clipboard size={9} className="shrink-0" />
                     <span className="shrink-0 text-amber-200/80">copy metadata update</span>
                     <span className="truncate whitespace-pre">{workflowMetadataUpdateCommand}</span>
+                  </button>
+                )}
+                {workflowCaptureScriptPath && (
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(workflowCaptureScriptPath)}
+                    className="flex w-full min-w-0 items-center gap-1.5 rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-left font-mono text-[10px] text-emerald-100 hover:border-emerald-400/50"
+                    title={workflowCaptureScriptPath}
+                  >
+                    <Clipboard size={9} className="shrink-0" />
+                    <span className="shrink-0 text-emerald-200/80">copy capture script path</span>
+                    <span className="truncate whitespace-pre">{workflowCaptureScriptPath}</span>
                   </button>
                 )}
                 {workflowCaptureAfterBundleCommand && (
