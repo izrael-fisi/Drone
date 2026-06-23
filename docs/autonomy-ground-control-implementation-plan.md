@@ -1447,6 +1447,10 @@ Status:
   field-capture preflight diagnostic on downloaded autonomy-readiness cards, so
   shared ZIP manifests show capture readiness, rerun-preflight hints, problem
   checks, and copyable next-action commands without opening raw JSON.
+- Done: Module Setup Field Log Capture now prefers the latest matching
+  capture-ready preflight report's generated `run_field_capture.sh` script or
+  preflight-plus-capture command, and the preflight summary exposes Copy Capture
+  and Run Capture controls for that exact command.
 - Done: Module Setup lists downloaded autonomy-readiness JSON reports from
   `~/DroneTransfer/from-pi/replay-cases/` with pass/degraded/fail counts and
   the support-bundle, PX4 receiver, field-evidence, feature-benchmark, and

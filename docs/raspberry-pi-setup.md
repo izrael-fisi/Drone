@@ -503,7 +503,11 @@ folder. When the selected mission bundle is missing, the JSON report includes
 operator can return to Mission Planner, build/upload the bundle, then rerun
 preflight. The same report includes ordered `next_actions` for bundle prep,
 capture, metadata completion, and registration, with blocked steps listing the
-prerequisite checks they are waiting on. Bundle-prep actions also carry the
+prerequisite checks they are waiting on. When the report is capture-ready,
+Module Setup's Field Log Capture action prefers the generated
+`run_field_capture.sh` script or preflight-plus-capture command from that
+report, and the preflight summary exposes copy/run controls for the exact
+capture command. Bundle-prep actions also carry the
 compact bundle diagnostic so terminal output, Module Setup, and support-bundle
 details can show missing files, detected bundle candidates, and detected map
 sources directly beside the repair command. It does not create or register

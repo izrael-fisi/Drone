@@ -504,7 +504,18 @@ function fieldLogCaptureCommand(
   remoteBundle: string,
   mavlinkEndpoint: string,
   fieldCase: FieldCaseForm,
+  preflightReport?: FieldCapturePreflightReport | null,
 ) {
+  const condition = firstFieldCondition(fieldCase.conditions);
+  const reportMatchesCondition =
+    preflightReport?.ready_for_capture === true &&
+    (!preflightReport.condition || !condition || preflightReport.condition === condition);
+  if (reportMatchesCondition && preflightReport?.capture_script_path?.trim()) {
+    return `cd ${shellQuote(remoteProject)} && bash ${shellQuote(preflightReport.capture_script_path.trim())}`;
+  }
+  if (reportMatchesCondition && preflightReport?.preflight_capture_command?.trim()) {
+    return `cd ${shellQuote(remoteProject)} && ${preflightReport.preflight_capture_command.trim()}`;
+  }
   const captureOutputDir = fieldCase.captureOutputDir.trim();
   const env = [
     `VISION_NAV_BUNDLE=${shellQuote(remoteBundle)}`,
@@ -516,6 +527,19 @@ function fieldLogCaptureCommand(
   ].filter(Boolean).join(" ");
   const runtimeStatusRoot = captureOutputDir || "$HOME/DroneTransfer/outgoing/terrain-match";
   return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_terrain_nav_loop.sh && ${runtimeStatusReadCommand(runtimeStatusRoot)}`;
+}
+
+function fieldLogCaptureCommandSource(
+  fieldCase: FieldCaseForm,
+  preflightReport?: FieldCapturePreflightReport | null,
+) {
+  const condition = firstFieldCondition(fieldCase.conditions);
+  const reportMatchesCondition =
+    preflightReport?.ready_for_capture === true &&
+    (!preflightReport.condition || !condition || preflightReport.condition === condition);
+  if (reportMatchesCondition && preflightReport?.capture_script_path?.trim()) return "preflight capture script";
+  if (reportMatchesCondition && preflightReport?.preflight_capture_command?.trim()) return "preflight + capture command";
+  return "direct field log capture";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -4374,14 +4398,25 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     setRunningStep("field-log-capture");
     setError(null);
-    setResult("field-log-capture", { status: "running", output: "$ field log capture\n" });
+    const commandSource = fieldLogCaptureCommandSource(fieldCase, fieldCapturePreflightReport);
+    const captureCommand = fieldLogCaptureCommand(
+      remoteProject,
+      remoteBundle,
+      form.mavlinkEndpoint,
+      fieldCase,
+      fieldCapturePreflightReport,
+    );
+    setResult("field-log-capture", {
+      status: "running",
+      output: `$ field log capture\nUsing ${commandSource}.`,
+    });
     try {
       const result = await cmd.sshRunCommand(
         form.host,
         form.port,
         form.username,
         resolvedAuth,
-        fieldLogCaptureCommand(remoteProject, remoteBundle, form.mavlinkEndpoint, fieldCase),
+        captureCommand,
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteLog = parseTerrainRuntimeLog(output);
@@ -4426,7 +4461,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       }
       setResult("field-log-capture", {
         status: result.exit_code === 0 && remoteLog && remoteStatus ? "passed" : "failed",
-        output: `$ field log capture\n${output || "(no output)"}${downloadText}\n[exit ${result.exit_code}]`,
+        output: `$ field log capture\nUsing ${commandSource}.\n${output || "(no output)"}${downloadText}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
     } catch (err) {
@@ -6308,6 +6343,17 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const fieldPreflightDegradedChecks = fieldCapturePreflightReport?.checks.filter((check) => check.status === "degraded") ?? [];
   const fieldPreflightVisibleChecks = [...fieldPreflightFailedChecks, ...fieldPreflightDegradedChecks].slice(0, 4);
   const fieldPreflightNextActions = fieldCapturePreflightReport?.next_actions.slice(0, 4) ?? [];
+  const fieldPreflightCaptureCommand = fieldLogCaptureCommand(
+    remoteProject,
+    remoteBundle,
+    form.mavlinkEndpoint,
+    fieldCase,
+    fieldCapturePreflightReport,
+  );
+  const fieldPreflightCaptureCommandSource = fieldLogCaptureCommandSource(fieldCase, fieldCapturePreflightReport);
+  const fieldPreflightCanRunCapture =
+    fieldCapturePreflightReport?.ready_for_capture === true &&
+    fieldPreflightCaptureCommandSource !== "direct field log capture";
 
   return (
     <div className={cn(embedded ? "space-y-5" : "p-6 space-y-6 animate-fade-in")}>
@@ -6810,17 +6856,45 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               )}
               {fieldCapturePreflightReport && (
                 <div className="space-y-3 border-t border-border pt-3">
-                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
-                    <span className={cn(readinessBadgeClass(fieldCapturePreflightReport.status), "text-[10px]")}>
-                      preflight {formatReadinessLabel(fieldCapturePreflightReport.status)}
-                    </span>
-                    <span className={fieldCapturePreflightReport.ready_for_capture ? "badge-green text-[10px]" : "badge-red text-[10px]"}>
-                      capture {fieldCapturePreflightReport.ready_for_capture ? "ready" : "blocked"}
-                    </span>
-                    <span className={fieldCapturePreflightReport.ready_for_registration ? "badge-green text-[10px]" : "badge-yellow text-[10px]"}>
-                      registration {fieldCapturePreflightReport.ready_for_registration ? "ready" : "waiting"}
-                    </span>
-                    <span className="text-slate-500">condition {fieldCapturePreflightReport.condition ?? "n/a"}</span>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+                      <span className={cn(readinessBadgeClass(fieldCapturePreflightReport.status), "text-[10px]")}>
+                        preflight {formatReadinessLabel(fieldCapturePreflightReport.status)}
+                      </span>
+                      <span className={fieldCapturePreflightReport.ready_for_capture ? "badge-green text-[10px]" : "badge-red text-[10px]"}>
+                        capture {fieldCapturePreflightReport.ready_for_capture ? "ready" : "blocked"}
+                      </span>
+                      <span className={fieldCapturePreflightReport.ready_for_registration ? "badge-green text-[10px]" : "badge-yellow text-[10px]"}>
+                        registration {fieldCapturePreflightReport.ready_for_registration ? "ready" : "waiting"}
+                      </span>
+                      <span className="text-slate-500">condition {fieldCapturePreflightReport.condition ?? "n/a"}</span>
+                      <span className="text-cyan-300">capture source {fieldPreflightCaptureCommandSource}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(fieldPreflightCaptureCommand)}
+                        className="btn-secondary px-2 py-1 text-[10px]"
+                        title="Copy the command Field Log Capture will run"
+                      >
+                        <Copy size={10} />
+                        Copy capture
+                      </button>
+                      <button
+                        type="button"
+                        onClick={runFieldLogCapture}
+                        disabled={!connectionReady || !!runningStep || !fieldPreflightCanRunCapture}
+                        className="btn-primary px-2 py-1 text-[10px]"
+                        title={
+                          fieldPreflightCanRunCapture
+                            ? "Run the latest preflight-approved capture"
+                            : "Field capture preflight must be capture-ready first"
+                        }
+                      >
+                        {runningStep === "field-log-capture" ? <Loader2 size={10} className="animate-spin" /> : <Terminal size={10} />}
+                        Run Capture
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-2 text-[11px]">
                     <div className="min-w-0 text-slate-400">
