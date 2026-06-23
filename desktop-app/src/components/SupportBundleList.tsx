@@ -333,6 +333,7 @@ function SupportBundleDetailPanel({
   const benchFollowUps = benchReadinessFollowUps(details.bench_readiness);
   const evidenceWorkflow = asRecord(details.manifest.autonomy_evidence_workflow);
   const workflowValidation = details.autonomy_evidence_workflow_validation;
+  const fieldLogSummary = details.field_log_capture_report_summary;
   const workflowStatus = typeof evidenceWorkflow?.status === "string" ? evidenceWorkflow.status : undefined;
   const workflowProvenance = asRecord(asRecord(evidenceWorkflow?.validation_summary)?.workflow_provenance);
   const workflowRepoCommit = typeof workflowProvenance?.repo_commit === "string" ? workflowProvenance.repo_commit : undefined;
@@ -847,6 +848,65 @@ function SupportBundleDetailPanel({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {(fieldLogSummary || details.field_log_capture_reports.length > 0) && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Field log captures</div>
+          {fieldLogSummary && (
+            <div className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(fieldLogSummary.status)}>
+                  {statusIcon(fieldLogSummary.status)}
+                  {formatLabel(fieldLogSummary.status)}
+                </span>
+                <span className="font-mono text-slate-500">{fieldLogSummary.report_count ?? 0} reports</span>
+                <span className="font-mono text-slate-500">{fieldLogSummary.record_count ?? 0} records</span>
+                <span className="font-mono text-slate-500">metadata {fieldLogSummary.metadata_ready_count ?? 0}</span>
+                <span className="font-mono text-slate-500">register {fieldLogSummary.registration_ready_count ?? 0}</span>
+                {fieldLogSummary.auto_added_field_collection_capture_report_count != null && (
+                  <span className="font-mono text-slate-500">
+                    auto {fieldLogSummary.auto_added_field_collection_capture_report_count}
+                  </span>
+                )}
+              </div>
+              {fieldLogSummary.field_collection_plan_capture_reports.length > 0 && (
+                <div className="font-mono text-slate-500 truncate">
+                  inferred {fieldLogSummary.field_collection_plan_capture_reports.length}:{" "}
+                  {fieldLogSummary.field_collection_plan_capture_reports.slice(0, 2).map(formatLabel).join(", ")}
+                  {fieldLogSummary.field_collection_plan_capture_reports.length > 2
+                    ? ` +${fieldLogSummary.field_collection_plan_capture_reports.length - 2}`
+                    : ""}
+                </div>
+              )}
+              {(fieldLogSummary.issue_count ?? 0) > 0 && (
+                <div className="font-mono text-amber-200/80">issues {fieldLogSummary.issue_count}</div>
+              )}
+            </div>
+          )}
+          {details.field_log_capture_reports.slice(0, 3).map((report, index) => (
+            <div key={`${report.case_name ?? "field-log"}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={statusClass(report.status)}>
+                  {statusIcon(report.status)}
+                  {formatLabel(report.status)}
+                </span>
+                <span className="font-mono text-slate-400">{formatLabel(report.case_name)}</span>
+                <span className="font-mono text-slate-500">{formatLabel(report.condition)}</span>
+                {report.metadata_ready != null && (
+                  <span className="font-mono text-slate-500">metadata {report.metadata_ready ? "ready" : "needed"}</span>
+                )}
+                {report.registration_ready != null && (
+                  <span className="font-mono text-slate-500">register {report.registration_ready ? "ready" : "blocked"}</span>
+                )}
+              </div>
+              <div className="font-mono text-slate-500 truncate">log {formatLabel(report.remote_terrain_log ?? report.local_terrain_log)}</div>
+              {report.metadata_issues.slice(0, 2).map((issue) => (
+                <div key={issue} className="text-amber-200/80 truncate">{issue}</div>
+              ))}
+            </div>
+          ))}
         </div>
       )}
 

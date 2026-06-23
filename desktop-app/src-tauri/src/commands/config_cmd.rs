@@ -588,6 +588,20 @@ pub struct FieldLogCaptureReportFile {
 }
 
 #[derive(Serialize)]
+pub struct FieldLogCaptureReportSummary {
+    pub status: Option<String>,
+    pub report_count: Option<u64>,
+    pub record_count: Option<u64>,
+    pub registration_ready_count: Option<u64>,
+    pub metadata_ready_count: Option<u64>,
+    pub preflight_ready_for_capture_count: Option<u64>,
+    pub preflight_ready_for_registration_count: Option<u64>,
+    pub issue_count: Option<u64>,
+    pub auto_added_field_collection_capture_report_count: Option<u64>,
+    pub field_collection_plan_capture_reports: Vec<String>,
+}
+
+#[derive(Serialize)]
 pub struct ThresholdTuningReportFile {
     pub name: String,
     pub path: String,
@@ -1157,6 +1171,7 @@ pub struct SupportBundleDetails {
     pub field_evidence_reports: Vec<SupportBundleFieldEvidenceReport>,
     pub field_collection_plan_reports: Vec<SupportBundleFieldCollectionPlanReport>,
     pub field_capture_preflight_reports: Vec<SupportBundleFieldCapturePreflightReport>,
+    pub field_log_capture_report_summary: Option<FieldLogCaptureReportSummary>,
     pub field_log_capture_reports: Vec<FieldLogCaptureReport>,
     pub threshold_tuning_reports: Vec<SupportBundleThresholdTuningReport>,
     pub rosbag_export_validation_reports: Vec<SupportBundleRosbagExportValidationReport>,
@@ -1486,6 +1501,9 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut field_evidence_reports = Vec::new();
     let mut field_collection_plan_reports = Vec::new();
     let mut field_capture_preflight_reports = Vec::new();
+    let field_log_capture_report_summary = manifest
+        .get("field_log_capture_reports")
+        .map(field_log_capture_report_summary_from_json);
     let mut field_log_capture_reports = Vec::new();
     let mut threshold_tuning_reports = Vec::new();
     let mut rosbag_export_validation_reports = Vec::new();
@@ -1633,6 +1651,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         field_evidence_reports,
         field_collection_plan_reports,
         field_capture_preflight_reports,
+        field_log_capture_report_summary,
         field_log_capture_reports,
         threshold_tuning_reports,
         rosbag_export_validation_reports,
@@ -3522,6 +3541,35 @@ fn field_log_capture_report_from_json(value: &serde_json::Value) -> Option<Field
             .and_then(|value| value.as_bool()),
         runtime_status: value.get("runtime_status").cloned(),
     })
+}
+
+fn field_log_capture_report_summary_from_json(
+    value: &serde_json::Value,
+) -> FieldLogCaptureReportSummary {
+    FieldLogCaptureReportSummary {
+        status: json_string(value.get("status")),
+        report_count: value.get("report_count").and_then(|value| value.as_u64()),
+        record_count: value.get("record_count").and_then(|value| value.as_u64()),
+        registration_ready_count: value
+            .get("registration_ready_count")
+            .and_then(|value| value.as_u64()),
+        metadata_ready_count: value
+            .get("metadata_ready_count")
+            .and_then(|value| value.as_u64()),
+        preflight_ready_for_capture_count: value
+            .get("preflight_ready_for_capture_count")
+            .and_then(|value| value.as_u64()),
+        preflight_ready_for_registration_count: value
+            .get("preflight_ready_for_registration_count")
+            .and_then(|value| value.as_u64()),
+        issue_count: value.get("issue_count").and_then(|value| value.as_u64()),
+        auto_added_field_collection_capture_report_count: value
+            .get("auto_added_field_collection_capture_report_count")
+            .and_then(|value| value.as_u64()),
+        field_collection_plan_capture_reports: json_string_array(
+            value.get("field_collection_plan_capture_reports"),
+        ),
+    }
 }
 
 fn rosbag2_cli_review_report_from_json(
@@ -8399,6 +8447,20 @@ mod tests {
                             }
                         ]
                     },
+                    "field_log_capture_reports": {
+                        "status": "passed",
+                        "report_count": 1,
+                        "record_count": 12,
+                        "registration_ready_count": 1,
+                        "metadata_ready_count": 1,
+                        "preflight_ready_for_capture_count": 1,
+                        "preflight_ready_for_registration_count": 1,
+                        "issue_count": 0,
+                        "auto_added_field_collection_capture_report_count": 1,
+                        "field_collection_plan_capture_reports": [
+                            "field-captures/good_texture/field_log_capture_report.json"
+                        ]
+                    },
                     "autonomy_evidence_workflow": {
                         "status": "degraded"
                     }
@@ -9412,6 +9474,21 @@ mod tests {
         assert_eq!(
             details.field_log_capture_reports[0].status.as_deref(),
             Some("passed")
+        );
+        let field_log_summary = details
+            .field_log_capture_report_summary
+            .as_ref()
+            .expect("field log capture report summary parsed");
+        assert_eq!(field_log_summary.status.as_deref(), Some("passed"));
+        assert_eq!(field_log_summary.report_count, Some(1));
+        assert_eq!(field_log_summary.record_count, Some(12));
+        assert_eq!(
+            field_log_summary.auto_added_field_collection_capture_report_count,
+            Some(1)
+        );
+        assert_eq!(
+            field_log_summary.field_collection_plan_capture_reports[0],
+            "field-captures/good_texture/field_log_capture_report.json"
         );
         assert_eq!(
             details.field_log_capture_reports[0].case_name.as_deref(),

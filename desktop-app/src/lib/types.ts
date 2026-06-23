@@ -549,6 +549,45 @@ export interface SupportBundleDetails {
       };
     }>;
   }>;
+  field_log_capture_report_summary?: {
+    status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    report_count?: number;
+    record_count?: number;
+    registration_ready_count?: number;
+    metadata_ready_count?: number;
+    preflight_ready_for_capture_count?: number;
+    preflight_ready_for_registration_count?: number;
+    issue_count?: number;
+    auto_added_field_collection_capture_report_count?: number;
+    field_collection_plan_capture_reports: string[];
+  };
+  field_log_capture_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    generated_at_utc?: string;
+    host?: string;
+    device_name?: string;
+    command_source?: string;
+    command?: string;
+    exit_code?: number;
+    case_name?: string;
+    expected?: "good_map" | "degraded" | "wrong_map" | string;
+    condition?: string;
+    conditions?: string;
+    capture_output_dir?: string;
+    metadata_ready?: boolean;
+    metadata_issues: string[];
+    preflight_status?: "passed" | "failed" | "degraded" | string;
+    preflight_ready_for_capture?: boolean;
+    preflight_ready_for_registration?: boolean;
+    remote_terrain_log?: string;
+    remote_runtime_status?: string;
+    local_terrain_log?: string;
+    local_runtime_status?: string;
+    metadata_update_command?: string;
+    register_command?: string;
+    registration_ready?: boolean;
+    runtime_status?: unknown;
+  }>;
   threshold_tuning_reports: Array<{
     status?: "passed" | "failed" | "degraded" | string;
     method?: string;

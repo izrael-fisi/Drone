@@ -860,6 +860,10 @@ Status:
   metadata-update, and registration commands from the bundled field collection
   plan, allowing an offline support ZIP to hand the operator back to the exact
   next field-proof command sequence.
+- Done: downloaded support-bundle details now show field-log capture audit
+  summary counts, auto-ingested report counts, inferred report paths, and
+  per-report metadata/registration readiness so support can confirm terminal
+  field captures were packaged from the field collection plan.
 - Done: downloaded support-bundle evidence-workflow details now render the
   workflow validation next-step notes beside the copyable command, so offline
   support review can see the prerequisite or repair context without hovering or
