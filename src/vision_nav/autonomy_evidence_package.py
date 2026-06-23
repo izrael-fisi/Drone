@@ -414,12 +414,22 @@ def compact_workflow_validation_check(check: dict[str, Any]) -> dict[str, Any]:
     non_passed_count = details.get("non_passed_count", check.get("non_passed_count"))
     if isinstance(non_passed_count, int):
         compact["non_passed_count"] = non_passed_count
+    superseded_count = details.get("superseded_count", check.get("superseded_count"))
+    if isinstance(superseded_count, int):
+        compact["superseded_count"] = superseded_count
     non_passed_steps = dict_items(details.get("non_passed_steps") or check.get("non_passed_steps"))
     if non_passed_steps:
         compact["non_passed_steps_truncated"] = len(non_passed_steps) > MAX_MANIFEST_RUNBOOK_ACTIONS
         compact["non_passed_steps"] = [
             compact_workflow_validation_step(step)
             for step in non_passed_steps[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+        ]
+    superseded_steps = dict_items(details.get("superseded_steps") or check.get("superseded_steps"))
+    if superseded_steps:
+        compact["superseded_steps_truncated"] = len(superseded_steps) > MAX_MANIFEST_RUNBOOK_ACTIONS
+        compact["superseded_steps"] = [
+            compact_workflow_validation_step(step)
+            for step in superseded_steps[:MAX_MANIFEST_RUNBOOK_ACTIONS]
         ]
     return compact
 

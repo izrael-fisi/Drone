@@ -837,6 +837,25 @@ if workflow_validation:
                             print(f"  current preflight report: {step.get('current_preflight_report')}")
                         if step.get("guidance"):
                             print(f"  guidance: {step.get('guidance')}")
+            superseded_steps = details.get("superseded_steps")
+            if not isinstance(superseded_steps, list):
+                superseded_steps = check.get("superseded_steps")
+            if isinstance(superseded_steps, list):
+                for step in superseded_steps[:4]:
+                    if not isinstance(step, dict):
+                        continue
+                    step_name = step.get("name") or "unknown"
+                    step_status = step.get("status") or "unknown"
+                    print(f"- superseded workflow step: {step_name} [{step_status}]")
+                    if step.get("notes"):
+                        print(f"  notes: {step.get('notes')}")
+                    if step.get("current_preflight_allows_capture") is True:
+                        preflight_status = step.get("current_preflight_status") or "unknown"
+                        print(f"  current preflight: capture-ready ({preflight_status})")
+                        if step.get("current_preflight_report"):
+                            print(f"  current preflight report: {step.get('current_preflight_report')}")
+                        if step.get("guidance"):
+                            print(f"  guidance: {step.get('guidance')}")
             missing_markers = details.get("missing_markers")
             if not isinstance(missing_markers, list):
                 missing_markers = check.get("missing_markers")

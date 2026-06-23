@@ -944,6 +944,8 @@ export interface AutonomyEvidenceWorkflowReportFile {
       missing_steps: string[];
       non_passed_count?: number;
       non_passed_steps: AutonomyEvidenceWorkflowValidationStepResult[];
+      superseded_count?: number;
+      superseded_steps: AutonomyEvidenceWorkflowValidationStepResult[];
     }>;
     log_archive?: string;
   };

@@ -323,8 +323,10 @@ function SupportBundleDetailPanel({
   const workflowMissingSteps = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_steps));
   const workflowMissingMarkers = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_markers));
   const workflowNonPassedSteps = workflowBlockingChecks.flatMap((check) => check.non_passed_steps);
+  const workflowSupersededSteps = workflowBlockingChecks.flatMap((check) => check.superseded_steps ?? []);
   const hasWorkflowBlockerDetails = workflowMissingSteps.length > 0
     || workflowNonPassedSteps.length > 0
+    || workflowSupersededSteps.length > 0
     || workflowMissingMarkers.length > 0
     || workflowBlockingChecks.length > 0;
   const showEvidenceWorkflow = Boolean(workflowValidation || (workflowStatus && workflowStatus !== "not_provided"));
@@ -540,6 +542,20 @@ function SupportBundleDetailPanel({
                 ))}
                 {workflowNonPassedSteps.length > 4 && (
                   <div className="font-mono text-slate-500">+{workflowNonPassedSteps.length - 4} more non-passing workflow steps</div>
+                )}
+                {workflowSupersededSteps.slice(0, 4).map((step, index) => (
+                  <div
+                    key={`superseded-${step.name ?? "workflow-step"}-${step.status ?? "status"}-${index}`}
+                    className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500"
+                    title={workflowStepTitle(step) || undefined}
+                  >
+                    <span className="badge-yellow">superseded</span>
+                    <span className="truncate">{formatWorkflowStep(step)}</span>
+                    {step.notes && <span className="truncate text-slate-400">{step.notes}</span>}
+                  </div>
+                ))}
+                {workflowSupersededSteps.length > 4 && (
+                  <div className="font-mono text-slate-500">+{workflowSupersededSteps.length - 4} more superseded workflow steps</div>
                 )}
                 {workflowMissingMarkers.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500">

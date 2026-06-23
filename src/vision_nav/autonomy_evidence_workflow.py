@@ -464,6 +464,7 @@ def last_workflow_step(steps: list[Any], name: str) -> dict[str, Any] | None:
 def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] | None = None) -> dict[str, Any]:
     by_name = {str(step.get("name")): step for step in steps if isinstance(step, dict) and step.get("name")}
     non_passed_steps: list[dict[str, Any]] = []
+    superseded_steps: list[dict[str, Any]] = []
     missing_steps: list[str] = []
     active_preflight_report = current_preflight_report(markers) if isinstance(markers, dict) else None
     active_preflight_report_path = (
@@ -489,12 +490,17 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
                 active_preflight_report,
                 active_preflight_report_path,
             )
-            non_passed_steps.append(non_passed_step)
+            if is_superseded_preflight_step(non_passed_step):
+                superseded_steps.append(non_passed_step)
+            else:
+                non_passed_steps.append(non_passed_step)
     details = {
         "required_count": len(REQUIRED_WORKFLOW_STEPS),
         "missing_steps": missing_steps,
         "non_passed_steps": non_passed_steps,
         "non_passed_count": len(non_passed_steps),
+        "superseded_steps": superseded_steps,
+        "superseded_count": len(superseded_steps),
         "next_required_step": workflow_next_required_step(steps, markers=markers),
     }
     if missing_steps:
@@ -516,6 +522,10 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
     )
 
 
+def is_superseded_preflight_step(step: dict[str, Any]) -> bool:
+    return step.get("name") == "preflight_field_capture" and step.get("current_preflight_allows_capture") is True
+
+
 def annotate_current_preflight_override(
     step: dict[str, Any],
     report: dict[str, Any] | None,
@@ -534,8 +544,8 @@ def annotate_current_preflight_override(
         step["current_ready_for_registration"] = report["ready_for_registration"]
     step["guidance"] = (
         "A newer field-capture preflight report is capture-ready; the stale "
-        "non-passing preflight step remains diagnostic, and the next required "
-        "workflow step advances to terrain-log capture."
+        "preflight step is superseded for capture guidance, and the next "
+        "required workflow step advances to terrain-log capture."
     )
 
 
@@ -1058,6 +1068,26 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                 step_name = step.get("name") or "unknown"
                 step_status = step.get("status") or "unknown"
                 lines.append(f"- Non-passing workflow step: {step_name} [{step_status}]")
+                if step.get("notes"):
+                    lines.append(f"  Notes: {step.get('notes')}")
+                if step.get("current_preflight_allows_capture") is True:
+                    status = step.get("current_preflight_status") or "unknown"
+                    lines.append(f"  Current preflight report: capture-ready ({status})")
+                    if step.get("current_preflight_report"):
+                        lines.append(f"  Current preflight path: {step.get('current_preflight_report')}")
+                    if step.get("guidance"):
+                        lines.append(f"  Guidance: {step.get('guidance')}")
+
+        superseded_steps = details.get("superseded_steps")
+        if not isinstance(superseded_steps, list):
+            superseded_steps = check_item.get("superseded_steps")
+        if isinstance(superseded_steps, list):
+            for step in superseded_steps[:4]:
+                if not isinstance(step, dict):
+                    continue
+                step_name = step.get("name") or "unknown"
+                step_status = step.get("status") or "unknown"
+                lines.append(f"- Superseded workflow step: {step_name} [{step_status}]")
                 if step.get("notes"):
                     lines.append(f"  Notes: {step.get('notes')}")
                 if step.get("current_preflight_allows_capture") is True:

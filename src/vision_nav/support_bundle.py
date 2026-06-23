@@ -1680,6 +1680,7 @@ def summarize_workflow_validation(validation: dict[str, Any]) -> dict[str, Any]:
         details = check.get("details") if isinstance(check.get("details"), dict) else {}
         if check.get("name") == "required_step_results":
             item["non_passed_count"] = details.get("non_passed_count")
+            item["superseded_count"] = details.get("superseded_count")
             item["missing_steps"] = details.get("missing_steps") or []
             non_passed_steps = [
                 compact_workflow_validation_step(step)
@@ -1688,6 +1689,13 @@ def summarize_workflow_validation(validation: dict[str, Any]) -> dict[str, Any]:
             ]
             if non_passed_steps:
                 item["non_passed_steps"] = non_passed_steps
+            superseded_steps = [
+                compact_workflow_validation_step(step)
+                for step in (details.get("superseded_steps") or check.get("superseded_steps") or [])
+                if isinstance(step, dict)
+            ]
+            if superseded_steps:
+                item["superseded_steps"] = superseded_steps
         elif check.get("name") == "workflow_provenance":
             item["repo_commit"] = details.get("repo_commit")
             item["repo_dirty"] = details.get("repo_dirty")

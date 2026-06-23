@@ -3847,11 +3847,17 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             item["name"]
             for item in stale_preflight_ready_checks["required_step_results"]["details"]["non_passed_steps"]
         ]
-        if "preflight_field_capture" not in non_passed_names:
-            raise AssertionError("workflow validation must still preserve the stale non-passing preflight proof gap")
+        if "preflight_field_capture" in non_passed_names:
+            raise AssertionError("workflow validation should not keep superseded preflight in active blockers")
+        superseded_names = [
+            item["name"]
+            for item in stale_preflight_ready_checks["required_step_results"]["details"]["superseded_steps"]
+        ]
+        if "preflight_field_capture" not in superseded_names:
+            raise AssertionError("workflow validation must preserve the stale preflight in superseded diagnostics")
         stale_preflight_detail = next(
             item
-            for item in stale_preflight_ready_checks["required_step_results"]["details"]["non_passed_steps"]
+            for item in stale_preflight_ready_checks["required_step_results"]["details"]["superseded_steps"]
             if item.get("name") == "preflight_field_capture"
         )
         assert_equal(
@@ -3864,7 +3870,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             "degraded",
             "workflow validation should preserve current preflight status on stale proof gap",
         )
-        if "next required workflow step advances to terrain-log capture" not in stale_preflight_detail.get("guidance", ""):
+        if "superseded for capture guidance" not in stale_preflight_detail.get("guidance", ""):
             raise AssertionError("workflow validation should explain why stale preflight no longer blocks capture guidance")
         stale_preflight_ready_output = io.StringIO()
         with contextlib.redirect_stdout(stale_preflight_ready_output):
@@ -3872,6 +3878,8 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         stale_preflight_ready_text = stale_preflight_ready_output.getvalue()
         if "Current preflight report: capture-ready (degraded)" not in stale_preflight_ready_text:
             raise AssertionError("workflow validation human output should explain current preflight readiness")
+        if "Superseded workflow step: preflight_field_capture [failed]" not in stale_preflight_ready_text:
+            raise AssertionError("workflow validation human output should list stale preflight as superseded")
         if "Guidance: A newer field-capture preflight report is capture-ready" not in stale_preflight_ready_text:
             raise AssertionError("workflow validation human output should explain stale preflight guidance")
 

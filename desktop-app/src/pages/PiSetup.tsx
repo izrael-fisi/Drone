@@ -944,9 +944,6 @@ function validationCheckDetail(check: WorkflowValidationCheck) {
     const extra = check.missing_steps.length > 3 ? ` +${check.missing_steps.length - 3}` : "";
     return `missing steps ${missing}${extra}`;
   }
-  if (check.non_passed_steps.some((step) => step.current_preflight_allows_capture)) {
-    return "current preflight capture-ready";
-  }
   if ((check.non_passed_count ?? 0) > 0 || check.non_passed_steps.length > 0) {
     const steps = check.non_passed_steps
       .slice(0, 3)
@@ -955,6 +952,9 @@ function validationCheckDetail(check: WorkflowValidationCheck) {
     const count = check.non_passed_count ?? check.non_passed_steps.length;
     const extra = count > 3 ? ` +${count - 3}` : "";
     return steps ? `steps ${steps}${extra}` : `steps not passed ${count}`;
+  }
+  if ((check.superseded_steps ?? []).some((step) => step.current_preflight_allows_capture)) {
+    return "current preflight capture-ready";
   }
   if (check.missing_markers.length > 0) {
     const missing = check.missing_markers.slice(0, 3).map(formatReadinessLabel).join(", ");
@@ -1059,12 +1059,29 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
               .join(" - "),
           )
           .join("\n");
+        const supersededStepTitle = (check.superseded_steps ?? [])
+          .map((step) =>
+            [
+              `Superseded ${formatReadinessLabel(step.name)}`,
+              formatReadinessLabel(step.status),
+              step.notes,
+              step.current_preflight_allows_capture
+                ? `Current preflight capture-ready (${formatReadinessLabel(step.current_preflight_status)})`
+                : undefined,
+              step.current_preflight_report ? `Current preflight: ${step.current_preflight_report}` : undefined,
+              step.guidance,
+            ]
+              .filter(Boolean)
+              .join(" - "),
+          )
+          .join("\n");
         const title = [
           check.message,
           detail,
           ...check.missing_markers,
           ...check.missing_steps,
           nonPassedStepTitle,
+          supersededStepTitle,
         ]
           .filter(Boolean)
           .join("\n");

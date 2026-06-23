@@ -844,6 +844,8 @@ pub struct AutonomyEvidenceWorkflowValidationCheck {
     pub missing_steps: Vec<String>,
     pub non_passed_count: Option<u64>,
     pub non_passed_steps: Vec<AutonomyEvidenceWorkflowValidationStepResult>,
+    pub superseded_count: Option<u64>,
+    pub superseded_steps: Vec<AutonomyEvidenceWorkflowValidationStepResult>,
 }
 
 #[derive(Serialize)]
@@ -3895,34 +3897,20 @@ fn workflow_validation_summary_from_json(
                         .and_then(|details| details.get("non_passed_count"))
                         .or_else(|| item.get("non_passed_count"))
                         .and_then(|value| value.as_u64());
-                    let non_passed_steps = details
-                        .and_then(|details| details.get("non_passed_steps"))
-                        .or_else(|| item.get("non_passed_steps"))
-                        .and_then(|value| value.as_array())
-                        .map(|items| {
-                            items
-                                .iter()
-                                .filter(|item| item.is_object())
-                                .map(|item| AutonomyEvidenceWorkflowValidationStepResult {
-                                    name: json_string(item.get("name")),
-                                    status: json_string(item.get("status")),
-                                    exit_code: item
-                                        .get("exit_code")
-                                        .and_then(|value| value.as_i64()),
-                                    notes: json_string(item.get("notes")),
-                                    current_preflight_allows_capture: item
-                                        .get("current_preflight_allows_capture")
-                                        .and_then(|value| value.as_bool()),
-                                    current_preflight_report: json_string(item.get("current_preflight_report")),
-                                    current_preflight_status: json_string(item.get("current_preflight_status")),
-                                    current_ready_for_registration: item
-                                        .get("current_ready_for_registration")
-                                        .and_then(|value| value.as_bool()),
-                                    guidance: json_string(item.get("guidance")),
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
+                    let superseded_count = details
+                        .and_then(|details| details.get("superseded_count"))
+                        .or_else(|| item.get("superseded_count"))
+                        .and_then(|value| value.as_u64());
+                    let non_passed_steps = workflow_validation_step_results_from_json(
+                        details
+                            .and_then(|details| details.get("non_passed_steps"))
+                            .or_else(|| item.get("non_passed_steps")),
+                    );
+                    let superseded_steps = workflow_validation_step_results_from_json(
+                        details
+                            .and_then(|details| details.get("superseded_steps"))
+                            .or_else(|| item.get("superseded_steps")),
+                    );
                     AutonomyEvidenceWorkflowValidationCheck {
                         name: json_string(item.get("name")),
                         status: json_string(item.get("status")),
@@ -3933,6 +3921,8 @@ fn workflow_validation_summary_from_json(
                         missing_steps: json_string_array(missing_steps),
                         non_passed_count,
                         non_passed_steps,
+                        superseded_count,
+                        superseded_steps,
                     }
                 })
                 .collect::<Vec<_>>()
@@ -3951,6 +3941,35 @@ fn workflow_validation_summary_from_json(
         checks,
         log_archive: json_string(value.get("log_archive")),
     })
+}
+
+fn workflow_validation_step_results_from_json(
+    value: Option<&serde_json::Value>,
+) -> Vec<AutonomyEvidenceWorkflowValidationStepResult> {
+    value
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| AutonomyEvidenceWorkflowValidationStepResult {
+                    name: json_string(item.get("name")),
+                    status: json_string(item.get("status")),
+                    exit_code: item.get("exit_code").and_then(|value| value.as_i64()),
+                    notes: json_string(item.get("notes")),
+                    current_preflight_allows_capture: item
+                        .get("current_preflight_allows_capture")
+                        .and_then(|value| value.as_bool()),
+                    current_preflight_report: json_string(item.get("current_preflight_report")),
+                    current_preflight_status: json_string(item.get("current_preflight_status")),
+                    current_ready_for_registration: item
+                        .get("current_ready_for_registration")
+                        .and_then(|value| value.as_bool()),
+                    guidance: json_string(item.get("guidance")),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
 }
 
 fn workflow_validation_next_step_from_json(

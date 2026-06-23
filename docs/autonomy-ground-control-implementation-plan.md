@@ -1354,16 +1354,16 @@ Status:
   the workflow blocker.
 - Done: workflow validation now annotates stale non-passing
   `preflight_field_capture` proof rows when the latest downloaded
-  field-preflight report is capture-ready, preserving the proof gap while
-  making it clear that the next operator action should advance to terrain-log
-  capture.
+  field-preflight report is capture-ready, moving the stale row into
+  `superseded_steps` so it stays auditable without counting as an active
+  required-step blocker before terrain-log capture.
 - Done: Tauri parsers, evidence-package summaries, Module Setup workflow cards,
   and support-bundle detail views now preserve and expose those bundle-aware
   next-step fields, including the post-bundle field-capture command.
-- Done: evidence packages, support-bundle summaries, Tauri parsing, and desktop
-  workflow cards now preserve stale-preflight proof rows that are superseded by
-  a current capture-ready preflight report, including current report path,
-  readiness, status, and operator guidance.
+- Done: evidence packages, support-bundle summaries, Tauri parsing, desktop
+  workflow cards, and CLI goal-status output now preserve stale-preflight
+  `superseded_steps` separately from active `non_passed_steps`, including the
+  current report path, readiness, status, and operator guidance.
 - Done: CLI workflow-validation summaries now print bundle path, expected log,
   capture output, metadata update, and post-bundle capture commands, keeping
   terminal audits aligned with Module Setup guidance.
