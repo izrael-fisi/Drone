@@ -129,6 +129,9 @@ FIELD_CAPTURE_PREFLIGHT_MARKER = "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"
 FIELD_CAPTURE_PREFLIGHT_STATUS_MARKER = "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT_STATUS__"
 FIELD_CAPTURE_READY_MARKER = "__VISION_NAV_FIELD_CAPTURE_READY__"
 FIELD_REGISTRATION_READY_MARKER = "__VISION_NAV_FIELD_REGISTRATION_READY__"
+FIELD_SELECTED_CONDITION_MARKER = "__VISION_NAV_FIELD_SELECTED_CONDITION__"
+FIELD_SELECTED_CASE_MARKER = "__VISION_NAV_FIELD_SELECTED_CASE__"
+FIELD_SELECTED_LOG_MARKER = "__VISION_NAV_FIELD_SELECTED_LOG__"
 
 
 def parse_args() -> argparse.Namespace:
@@ -490,7 +493,8 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
                 active_preflight_report,
                 active_preflight_report_path,
             )
-            if is_superseded_preflight_step(non_passed_step):
+            annotate_selected_condition_override(non_passed_step, markers)
+            if is_superseded_workflow_step(non_passed_step):
                 superseded_steps.append(non_passed_step)
             else:
                 non_passed_steps.append(non_passed_step)
@@ -522,8 +526,12 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
     )
 
 
-def is_superseded_preflight_step(step: dict[str, Any]) -> bool:
-    return step.get("name") == "preflight_field_capture" and step.get("current_preflight_allows_capture") is True
+def is_superseded_workflow_step(step: dict[str, Any]) -> bool:
+    if step.get("name") == "preflight_field_capture" and step.get("current_preflight_allows_capture") is True:
+        return True
+    if step.get("name") == "select_field_collection_condition" and step.get("current_selected_condition"):
+        return True
+    return False
 
 
 def annotate_current_preflight_override(
@@ -546,6 +554,28 @@ def annotate_current_preflight_override(
         "A newer field-capture preflight report is capture-ready; the stale "
         "preflight step is superseded for capture guidance, and the next "
         "required workflow step advances to terrain-log capture."
+    )
+
+
+def annotate_selected_condition_override(step: dict[str, Any], markers: dict[str, Any] | None) -> None:
+    if step.get("name") != "select_field_collection_condition" or not isinstance(markers, dict):
+        return
+    status = str(step.get("status") or "unknown")
+    if not should_defer_selected_condition_step("select_field_collection_condition", status, markers):
+        return
+    selected_condition = marker_string(markers, FIELD_SELECTED_CONDITION_MARKER)
+    selected_case = marker_string(markers, FIELD_SELECTED_CASE_MARKER)
+    selected_log = marker_string(markers, FIELD_SELECTED_LOG_MARKER)
+    if selected_condition:
+        step["current_selected_condition"] = selected_condition
+    if selected_case:
+        step["current_selected_case"] = selected_case
+    if selected_log:
+        step["current_selected_log"] = selected_log
+    step["guidance"] = (
+        "A field collection condition is already selected; the stale selection "
+        "step is superseded for capture guidance, and the next required "
+        "workflow step advances to terrain-log capture or registration."
     )
 
 
@@ -595,8 +625,8 @@ def should_defer_selected_condition_step(
         return False
     if not isinstance(markers, dict):
         return False
-    selected_condition = markers.get("__VISION_NAV_FIELD_SELECTED_CONDITION__")
-    selected_case = markers.get("__VISION_NAV_FIELD_SELECTED_CASE__")
+    selected_condition = markers.get(FIELD_SELECTED_CONDITION_MARKER)
+    selected_case = markers.get(FIELD_SELECTED_CASE_MARKER)
     return any(isinstance(value, str) and value.strip() for value in (selected_condition, selected_case))
 
 
@@ -1070,6 +1100,12 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                 lines.append(f"- Non-passing workflow step: {step_name} [{step_status}]")
                 if step.get("notes"):
                     lines.append(f"  Notes: {step.get('notes')}")
+                if step.get("current_selected_condition"):
+                    lines.append(f"  Current condition: {step.get('current_selected_condition')}")
+                if step.get("current_selected_case"):
+                    lines.append(f"  Current case: {step.get('current_selected_case')}")
+                if step.get("current_selected_log"):
+                    lines.append(f"  Current log: {step.get('current_selected_log')}")
                 if step.get("current_preflight_allows_capture") is True:
                     status = step.get("current_preflight_status") or "unknown"
                     lines.append(f"  Current preflight report: capture-ready ({status})")
@@ -1090,6 +1126,12 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                 lines.append(f"- Superseded workflow step: {step_name} [{step_status}]")
                 if step.get("notes"):
                     lines.append(f"  Notes: {step.get('notes')}")
+                if step.get("current_selected_condition"):
+                    lines.append(f"  Current condition: {step.get('current_selected_condition')}")
+                if step.get("current_selected_case"):
+                    lines.append(f"  Current case: {step.get('current_selected_case')}")
+                if step.get("current_selected_log"):
+                    lines.append(f"  Current log: {step.get('current_selected_log')}")
                 if step.get("current_preflight_allows_capture") is True:
                     status = step.get("current_preflight_status") or "unknown"
                     lines.append(f"  Current preflight report: capture-ready ({status})")

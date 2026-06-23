@@ -830,6 +830,12 @@ if workflow_validation:
                     print(f"- non-passing workflow step: {step_name} [{step_status}]")
                     if step.get("notes"):
                         print(f"  notes: {step.get('notes')}")
+                    if step.get("current_selected_condition"):
+                        print(f"  current condition: {step.get('current_selected_condition')}")
+                    if step.get("current_selected_case"):
+                        print(f"  current case: {step.get('current_selected_case')}")
+                    if step.get("current_selected_log"):
+                        print(f"  current log: {step.get('current_selected_log')}")
                     if step.get("current_preflight_allows_capture") is True:
                         preflight_status = step.get("current_preflight_status") or "unknown"
                         print(f"  current preflight: capture-ready ({preflight_status})")
@@ -849,6 +855,12 @@ if workflow_validation:
                     print(f"- superseded workflow step: {step_name} [{step_status}]")
                     if step.get("notes"):
                         print(f"  notes: {step.get('notes')}")
+                    if step.get("current_selected_condition"):
+                        print(f"  current condition: {step.get('current_selected_condition')}")
+                    if step.get("current_selected_case"):
+                        print(f"  current case: {step.get('current_selected_case')}")
+                    if step.get("current_selected_log"):
+                        print(f"  current log: {step.get('current_selected_log')}")
                     if step.get("current_preflight_allows_capture") is True:
                         preflight_status = step.get("current_preflight_status") or "unknown"
                         print(f"  current preflight: capture-ready ({preflight_status})")

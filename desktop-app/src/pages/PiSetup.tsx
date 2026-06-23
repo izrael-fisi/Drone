@@ -956,6 +956,9 @@ function validationCheckDetail(check: WorkflowValidationCheck) {
   if ((check.superseded_steps ?? []).some((step) => step.current_preflight_allows_capture)) {
     return "current preflight capture-ready";
   }
+  if ((check.superseded_steps ?? []).some((step) => step.current_selected_condition)) {
+    return "field condition selected";
+  }
   if (check.missing_markers.length > 0) {
     const missing = check.missing_markers.slice(0, 3).map(formatReadinessLabel).join(", ");
     const extra = check.missing_markers.length > 3 ? ` +${check.missing_markers.length - 3}` : "";
@@ -1049,6 +1052,9 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
               formatReadinessLabel(step.name),
               formatReadinessLabel(step.status),
               step.notes,
+              step.current_selected_condition ? `Selected condition: ${step.current_selected_condition}` : undefined,
+              step.current_selected_case ? `Selected case: ${step.current_selected_case}` : undefined,
+              step.current_selected_log ? `Selected log: ${step.current_selected_log}` : undefined,
               step.current_preflight_allows_capture
                 ? `Current preflight capture-ready (${formatReadinessLabel(step.current_preflight_status)})`
                 : undefined,
@@ -1065,6 +1071,9 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
               `Superseded ${formatReadinessLabel(step.name)}`,
               formatReadinessLabel(step.status),
               step.notes,
+              step.current_selected_condition ? `Selected condition: ${step.current_selected_condition}` : undefined,
+              step.current_selected_case ? `Selected case: ${step.current_selected_case}` : undefined,
+              step.current_selected_log ? `Selected log: ${step.current_selected_log}` : undefined,
               step.current_preflight_allows_capture
                 ? `Current preflight capture-ready (${formatReadinessLabel(step.current_preflight_status)})`
                 : undefined,

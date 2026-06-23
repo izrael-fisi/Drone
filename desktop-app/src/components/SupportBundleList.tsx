@@ -81,6 +81,9 @@ function formatWorkflowStep(step: WorkflowValidationStep) {
 function workflowStepTitle(step: WorkflowValidationStep) {
   return [
     step.notes,
+    step.current_selected_condition ? `Selected condition: ${step.current_selected_condition}` : undefined,
+    step.current_selected_case ? `Selected case: ${step.current_selected_case}` : undefined,
+    step.current_selected_log ? `Selected log: ${step.current_selected_log}` : undefined,
     step.current_preflight_allows_capture
       ? `Current preflight capture-ready (${formatLabel(step.current_preflight_status)})`
       : undefined,

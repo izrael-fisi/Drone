@@ -1341,9 +1341,10 @@ Status:
   records, missing final-proof markers, and failed/degraded validation checks,
   so support review can identify the next proof gap without opening raw JSON.
 - Done: workflow validation now treats an already-loaded field collection
-  condition as satisfied for next-action guidance, so a degraded selected
-  condition no longer masks the actionable field-log capture or registration
-  step that operators need to run next.
+  condition as satisfied for next-action guidance, and moves degraded selected
+  condition rows into `superseded_steps` with the active condition/case/log so
+  they stay auditable without counting as active blockers before field-log
+  capture or registration.
 - Done: the evidence workflow now records expected terrain-log, capture-output,
   selected-bundle, and capture-command markers; workflow validation uses those
   markers to route missing-bundle captures through Mission Planner bundle
@@ -1361,9 +1362,10 @@ Status:
   and support-bundle detail views now preserve and expose those bundle-aware
   next-step fields, including the post-bundle field-capture command.
 - Done: evidence packages, support-bundle summaries, Tauri parsing, desktop
-  workflow cards, and CLI goal-status output now preserve stale-preflight
-  `superseded_steps` separately from active `non_passed_steps`, including the
-  current report path, readiness, status, and operator guidance.
+  workflow cards, and CLI goal-status output now preserve stale-preflight and
+  already-loaded selected-condition `superseded_steps` separately from active
+  `non_passed_steps`, including the current report/condition/case/log path,
+  readiness, status, and operator guidance.
 - Done: CLI workflow-validation summaries now print bundle path, expected log,
   capture output, metadata update, and post-bundle capture commands, keeping
   terminal audits aligned with Module Setup guidance.

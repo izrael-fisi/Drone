@@ -854,6 +854,9 @@ pub struct AutonomyEvidenceWorkflowValidationStepResult {
     pub status: Option<String>,
     pub exit_code: Option<i64>,
     pub notes: Option<String>,
+    pub current_selected_condition: Option<String>,
+    pub current_selected_case: Option<String>,
+    pub current_selected_log: Option<String>,
     pub current_preflight_allows_capture: Option<bool>,
     pub current_preflight_report: Option<String>,
     pub current_preflight_status: Option<String>,
@@ -3957,6 +3960,9 @@ fn workflow_validation_step_results_from_json(
                     status: json_string(item.get("status")),
                     exit_code: item.get("exit_code").and_then(|value| value.as_i64()),
                     notes: json_string(item.get("notes")),
+                    current_selected_condition: json_string(item.get("current_selected_condition")),
+                    current_selected_case: json_string(item.get("current_selected_case")),
+                    current_selected_log: json_string(item.get("current_selected_log")),
                     current_preflight_allows_capture: item
                         .get("current_preflight_allows_capture")
                         .and_then(|value| value.as_bool()),

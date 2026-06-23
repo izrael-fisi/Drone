@@ -894,6 +894,9 @@ export interface AutonomyEvidenceWorkflowValidationStepResult {
   status?: "passed" | "failed" | "degraded" | "skipped" | string;
   exit_code?: number;
   notes?: string;
+  current_selected_condition?: string;
+  current_selected_case?: string;
+  current_selected_log?: string;
   current_preflight_allows_capture?: boolean;
   current_preflight_report?: string;
   current_preflight_status?: "passed" | "failed" | "degraded" | "skipped" | string;

@@ -3951,6 +3951,29 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             "capture_field_terrain_log",
             "workflow validation required-step detail should surface capture after selected condition",
         )
+        capture_non_passed_names = [
+            item["name"]
+            for item in capture_blocked_checks["required_step_results"]["details"]["non_passed_steps"]
+        ]
+        if "select_field_collection_condition" in capture_non_passed_names:
+            raise AssertionError("workflow validation should not keep selected condition in active blockers")
+        capture_superseded_condition = next(
+            item
+            for item in capture_blocked_checks["required_step_results"]["details"]["superseded_steps"]
+            if item.get("name") == "select_field_collection_condition"
+        )
+        assert_equal(
+            capture_superseded_condition["current_selected_condition"],
+            "good_texture",
+            "workflow validation selected condition superseded detail",
+        )
+        assert_equal(
+            capture_superseded_condition["current_selected_case"],
+            "dronecompute-test-area-good_texture",
+            "workflow validation selected case superseded detail",
+        )
+        if "superseded for capture guidance" not in capture_superseded_condition.get("guidance", ""):
+            raise AssertionError("workflow validation should explain why selected condition no longer blocks capture")
         capture_blocked_output = io.StringIO()
         with contextlib.redirect_stdout(capture_blocked_output):
             print_workflow_validation_human(capture_blocked_validation)
@@ -3963,6 +3986,10 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation human output should include expected terrain log")
         if "Metadata update: " not in capture_blocked_text:
             raise AssertionError("workflow validation human output should include metadata update command")
+        if "Superseded workflow step: select_field_collection_condition [degraded]" not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should show selected condition as superseded")
+        if "Current condition: good_texture" not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should show current selected condition")
 
         metadata_blocked_report = json.loads(report_path.read_text())
         metadata_command = (
