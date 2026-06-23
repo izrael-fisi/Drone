@@ -200,6 +200,9 @@ def build_diagnostic_summary(report: dict[str, Any]) -> dict[str, Any] | None:
     px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
     if isinstance(px4_prereqs, dict):
         summary["px4_sitl_prereqs"] = compact_px4_prereq_diagnostic(px4_prereqs)
+    field_preflight = diagnostics.get("field_capture_preflight") if isinstance(diagnostics, dict) else None
+    if isinstance(field_preflight, dict):
+        summary["field_capture_preflight"] = compact_field_capture_preflight_diagnostic(field_preflight)
     return summary
 
 
@@ -232,6 +235,66 @@ def compact_px4_prereq_diagnostic(item: dict[str, Any]) -> dict[str, Any]:
             }
             for command in fix_commands[:MAX_MANIFEST_RUNBOOK_ACTIONS]
             if command.get("command")
+        ]
+    return compact
+
+
+def compact_field_capture_preflight_diagnostic(item: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in (
+        "status",
+        "path",
+        "schema_version",
+        "condition",
+        "case_name",
+        "expected",
+        "bundle_path",
+        "capture_output_dir",
+        "source_log",
+        "runtime_status_path",
+        "capture_script_path",
+        "capture_script_hint",
+    ):
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            compact[key] = value
+    if isinstance(item.get("ready_for_capture"), bool):
+        compact["ready_for_capture"] = item["ready_for_capture"]
+    if isinstance(item.get("ready_for_registration"), bool):
+        compact["ready_for_registration"] = item["ready_for_registration"]
+    for key in ("failed_checks", "degraded_checks"):
+        checks = dict_items(item.get(key))
+        if checks:
+            compact[key] = [
+                {
+                    check_key: str(check.get(check_key))
+                    for check_key in ("name", "status", "message")
+                    if check.get(check_key) is not None
+                }
+                for check in checks[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+            ]
+    next_actions = dict_items(item.get("next_actions"))
+    if next_actions:
+        compact["next_actions"] = [
+            {
+                action_key: str(action.get(action_key))
+                for action_key in (
+                    "id",
+                    "status",
+                    "title",
+                    "desktop_action",
+                    "command",
+                    "bundle_path",
+                    "capture_output_dir",
+                    "source_log",
+                    "runtime_status_path",
+                    "capture_script_path",
+                    "capture_script_hint",
+                    "notes",
+                )
+                if action.get(action_key) is not None
+            }
+            for action in next_actions[:MAX_MANIFEST_RUNBOOK_ACTIONS]
         ]
     return compact
 

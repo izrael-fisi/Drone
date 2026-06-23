@@ -6512,6 +6512,45 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         scriptless_handoff = render_handoff_markdown(scriptless_handoff_report)
         if "Capture script hint: Rerun field capture preflight" not in scriptless_handoff:
             raise AssertionError("autonomy handoff should preserve field preflight capture-script hints")
+        diagnostic_package_report = root / "autonomy_readiness_diagnostics.json"
+        diagnostic_package_handoff = root / "autonomy_readiness_diagnostics.md"
+        diagnostic_package_report.write_text(json.dumps(missing_proof_ready))
+        diagnostic_package_handoff.write_text(diagnostic_handoff)
+        diagnostic_package_result = create_evidence_package(
+            diagnostic_package_report,
+            handoff_path=diagnostic_package_handoff,
+            output_path=root / "autonomy_evidence_package_diagnostics.zip",
+        )
+        with zipfile.ZipFile(Path(diagnostic_package_result["zip_path"])) as archive:
+            diagnostic_package_manifest = json.loads(archive.read("manifest.json"))
+            package_field_preflight = diagnostic_package_manifest["diagnostic_summary"].get("field_capture_preflight")
+            if not isinstance(package_field_preflight, dict):
+                raise AssertionError("autonomy evidence package missing field preflight diagnostic summary")
+            assert_equal(
+                package_field_preflight["status"],
+                "failed",
+                "autonomy evidence package field preflight status",
+            )
+            assert_equal(
+                package_field_preflight["ready_for_capture"],
+                False,
+                "autonomy evidence package field preflight capture readiness",
+            )
+            assert_equal(
+                package_field_preflight["capture_output_dir"],
+                str(root / "field-captures/good_texture"),
+                "autonomy evidence package field preflight capture output",
+            )
+            assert_equal(
+                package_field_preflight["failed_checks"][0]["name"],
+                "bundle_path",
+                "autonomy evidence package field preflight failed check",
+            )
+            assert_equal(
+                package_field_preflight["next_actions"][0]["id"],
+                "prepare_bundle",
+                "autonomy evidence package field preflight next action",
+            )
         if "## Field Collection Plan" not in handoff:
             raise AssertionError("autonomy handoff field collection plan")
         if "## Plan Source Snapshot" not in handoff:

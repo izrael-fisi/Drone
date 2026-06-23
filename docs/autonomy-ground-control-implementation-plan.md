@@ -1440,6 +1440,9 @@ Status:
 - Done: autonomy Markdown handoffs now include a Field Capture Preflight section
   with readiness, failed/degraded checks, next actions, and capture-script
   guidance so operators do not need to open raw JSON for preflight context.
+- Done: evidence-package diagnostic summaries now include compact field-capture
+  preflight status, readiness, failed/degraded checks, next actions, and
+  capture-script guidance alongside PX4 prerequisite diagnostics.
 - Done: Module Setup lists downloaded autonomy-readiness JSON reports from
   `~/DroneTransfer/from-pi/replay-cases/` with pass/degraded/fail counts and
   the support-bundle, PX4 receiver, field-evidence, feature-benchmark, and
