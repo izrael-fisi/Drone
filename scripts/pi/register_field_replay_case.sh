@@ -5,6 +5,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 venv_python="${VISION_NAV_PYTHON:-$HOME/drone_vision_nav_venv/bin/python}"
 manifest="${VISION_NAV_FIELD_MANIFEST:-$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json}"
 report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json}"
+field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$(dirname "$manifest")/field_collection_plan.json}"
+field_collection_plan_md="${VISION_NAV_FIELD_COLLECTION_PLAN_MD:-${field_collection_plan%.json}.md}"
 case_report_dir="${VISION_NAV_FIELD_CASE_REPORT_DIR:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_cases}"
 case_name="${VISION_NAV_FIELD_CASE_NAME:-}"
 expected="${VISION_NAV_FIELD_EXPECTED:-}"
@@ -34,6 +36,8 @@ Common optional overrides:
   VISION_NAV_FIELD_LOG            Default: $HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl
   VISION_NAV_FIELD_MANIFEST       Default: $HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json
   VISION_NAV_FIELD_EVIDENCE_REPORT Default: $HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json
+  VISION_NAV_FIELD_COLLECTION_PLAN Default: $HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.json
+  VISION_NAV_FIELD_COLLECTION_PLAN_MD Default: $HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.md
   VISION_NAV_FIELD_BUNDLE         Default: $bundle
   VISION_NAV_FIELD_NOTES          Human-readable setup notes.
   VISION_NAV_FIELD_CAPTURE_METADATA Optional JSON object with capture metadata.
@@ -128,6 +132,13 @@ The support-bundle wrapper auto-includes this report when present:
 EOF
 
 echo "__VISION_NAV_FIELD_EVIDENCE_REPORT__=$report"
+
+if [[ -f "$manifest" ]]; then
+  VISION_NAV_FIELD_MANIFEST="$manifest" \
+  VISION_NAV_FIELD_COLLECTION_PLAN="$field_collection_plan" \
+  VISION_NAV_FIELD_COLLECTION_PLAN_MD="$field_collection_plan_md" \
+    ./scripts/pi/create_field_collection_plan.sh
+fi
 
 if [[ "$gate_status" -ne 0 ]]; then
   echo

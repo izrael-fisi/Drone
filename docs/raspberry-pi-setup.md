@@ -717,7 +717,10 @@ default, writes
 the report where `./scripts/pi/create_support_bundle.sh` automatically includes
 it. The wrapper also prints `__VISION_NAV_FIELD_EVIDENCE_REPORT__=...` so
 Module Setup can download the current coverage report after each registration
-and show which required field conditions are still missing. Set
+and show which required field conditions are still missing. When the active
+manifest exists, it also refreshes `field_collection_plan.json` and the Markdown
+checklist, emits their transfer markers, and lets Module Setup download the
+updated next-condition plan after the same registration action. Set
 `VISION_NAV_FIELD_REPLACE=1` to retest a case, or
 `VISION_NAV_FIELD_GATE_STRICT=1` once the full eight-condition field dataset is
 expected to pass.

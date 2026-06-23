@@ -5987,6 +5987,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteReport = parseFieldEvidenceReport(output);
+      const remotePlan = parseFieldCollectionPlan(output);
+      const remoteMarkdown = parseFieldCollectionPlanMarkdown(output);
       if (!remoteReport) {
         setResult("field-evidence", {
           status: result.exit_code === 0 ? "passed" : "failed",
@@ -6008,12 +6010,46 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         remoteReport,
         AUTONOMY_REPORT_DOWNLOAD_DIR,
       );
+      let planDownloadText = "";
+      if (remotePlan) {
+        setResult("field-evidence", {
+          status: "running",
+          output: `$ Register Field Evidence Case\n${output}\n\n$ download field evidence report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n\n$ download field collection plan\nDownloading ${remotePlan}...`,
+        });
+        const downloadedPlan = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remotePlan,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldCollectionPlanLocalPath(downloadedPlan.local_path);
+        planDownloadText += `\n\n$ download field collection plan\nSaved to ${downloadedPlan.local_path}\n[${downloadedPlan.bytes_received} bytes]`;
+      }
+      if (remoteMarkdown) {
+        setResult("field-evidence", {
+          status: "running",
+          output: `$ Register Field Evidence Case\n${output}\n\n$ download field evidence report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${planDownloadText}\n\n$ download field checklist\nDownloading ${remoteMarkdown}...`,
+        });
+        const downloadedMarkdown = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteMarkdown,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        setFieldCollectionPlanMarkdownLocalPath(downloadedMarkdown.local_path);
+        planDownloadText += `\n\n$ download field checklist\nSaved to ${downloadedMarkdown.local_path}\n[${downloadedMarkdown.bytes_received} bytes]`;
+      }
       setResult("field-evidence", {
         status: result.exit_code === 0 ? "passed" : "failed",
-        output: `$ Register Field Evidence Case\n${output}\n\n$ download field evidence report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]\n[exit ${result.exit_code}]`,
+        output: `$ Register Field Evidence Case\n${output}\n\n$ download field evidence report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]${planDownloadText}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
       await refreshFieldEvidenceReports();
+      await refreshFieldCollectionPlans();
     } catch (err) {
       setResult("field-evidence", { status: "failed", output: `$ Register Field Evidence Case\nERROR: ${err}` });
     } finally {

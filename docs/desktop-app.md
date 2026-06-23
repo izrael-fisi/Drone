@@ -499,9 +499,11 @@ tags, capture metadata, notes, and whether to replace an existing case. The app 
 `scripts/pi/register_field_replay_case.sh` over SSH, which updates the Pi-side
 field replay manifest and writes the field-evidence report that the next
 support bundle will include automatically. The same action downloads
-`field_evidence_report.json` to `~/DroneTransfer/from-pi/replay-cases/` and the
-Field Evidence Coverage list shows which required real-world conditions are
-covered or still missing.
+`field_evidence_report.json` to `~/DroneTransfer/from-pi/replay-cases/`, then
+downloads the refreshed field collection plan/checklist when the Pi emits those
+paths. The Field Evidence Coverage list shows which required real-world
+conditions are covered or still missing, and the refreshed plan list can load the
+next pending condition without a separate Create Plan run.
 The Field Evidence Case form sends `VISION_NAV_FIELD_CAPTURE_METADATA` during
 registration. The Evidence Workflow only includes the optional registration
 step when that metadata is complete, so it does not create field cases that are
