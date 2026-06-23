@@ -1731,6 +1731,47 @@ def test_build_bundle_from_map_source_creates_valid_terrain_bundle() -> None:
                 }
             )
         )
+        gnss_denied = {
+            "status": "passed",
+            "satellite_source_disabled": True,
+            "map_position_reset": {"lat": 37.777431, "lon": -122.41465},
+            "home_position": {"lat": 37.777431, "lon": -122.41465},
+            "heading_deg": 42.0,
+            "estimator_health": "ready",
+            "checks": [
+                {"name": "satellite_source_disabled", "status": "passed"},
+                {"name": "map_position_reset", "status": "passed"},
+                {"name": "home_position", "status": "passed"},
+                {"name": "heading", "status": "passed"},
+                {"name": "estimator_health", "status": "passed"},
+            ],
+        }
+        mission_plan = root / "unit_mission_plan.json"
+        mission_plan.write_text(
+            json.dumps(
+                {
+                    "mission": {
+                        "altitude_m": 35,
+                        "speed_mps": 4,
+                        "items": [
+                            {"id": "takeoff", "type": "takeoff", "lat": 37.777431, "lon": -122.41465},
+                            {"id": "wp1", "type": "waypoint", "lat": 37.7779, "lon": -122.4142},
+                        ],
+                    },
+                    "gnss_denied": gnss_denied,
+                }
+            )
+        )
+        qgc_plan = root / "unit_qgc.plan"
+        qgc_plan.write_text(
+            json.dumps(
+                {
+                    "fileType": "Plan",
+                    "mission": {"items": [], "plannedHomePosition": [37.777431, -122.41465, 35]},
+                    "visionNavigation": {"gnss_denied": gnss_denied},
+                }
+            )
+        )
         bundle = root / "drone-data" / "map_bundles" / "mission_bundle"
         result = build_bundle_from_map_source(
             map_source,
@@ -1738,12 +1779,24 @@ def test_build_bundle_from_map_source_creates_valid_terrain_bundle() -> None:
             repo=Path.cwd(),
             feature_method="orb",
             max_features=500,
+            mission_plan_json=mission_plan,
+            qgc_plan_json=qgc_plan,
             write_checksums=True,
         )
 
         assert_equal(result["map_source_dir"], str(map_source), "map-source builder source")
+        assert_equal(result["mission_plan_path"], str(bundle / "mission" / "mission_plan.json"), "map-source builder mission plan")
+        assert_equal(result["qgc_plan_path"], str(bundle / "mission" / "qgc.plan"), "map-source builder qgc plan")
         assert_equal((bundle / "ortho" / "map.png").is_file(), True, "map-source builder orthophoto")
+        assert_equal((bundle / "mission" / "mission_plan.json").is_file(), True, "map-source builder mission plan file")
+        assert_equal((bundle / "mission" / "qgc.plan").is_file(), True, "map-source builder qgc plan file")
         assert_equal((bundle / "high_compute_region" / "metadata.json").is_file(), True, "map-source builder high-compute metadata")
+        manifest = json.loads((bundle / "manifest.json").read_text())
+        assert_equal(manifest["mission"]["desktop_plan_path"], "mission/mission_plan.json", "map-source manifest mission plan path")
+        assert_equal(manifest["mission"]["qgc_plan_path"], "mission/qgc.plan", "map-source manifest qgc plan path")
+        assert_equal(manifest["mission"]["mavlink_upload_ready"], True, "map-source manifest qgc upload readiness")
+        gnss_check = evaluate_gnss_denied_plan(bundle_path=bundle)
+        assert_equal(gnss_check["status"], "passed", "map-source mission GNSS-denied readiness")
         validation = validate_bundle(
             str(bundle),
             require_features=True,
@@ -1899,12 +1952,20 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
             raise AssertionError("Expected compact diagnostic to preserve raw map import hint")
         if compact["recommended_actions"][0]["id"] != "build_or_upload_selected_bundle":
             raise AssertionError("Expected bundle build/upload to remain the first diagnostic action")
+        compact_saved_source_action = next(
+            (action for action in compact["recommended_actions"] if action["id"] == "build_from_detected_map_source"),
+            None,
+        )
+        if not compact_saved_source_action or "VISION_NAV_MISSION_PLAN_JSON" not in str(compact_saved_source_action.get("notes", "")):
+            raise AssertionError("Expected compact diagnostic to preserve optional mission plan rebuild notes")
         saved_source_action = next(
             (action for action in report["recommended_actions"] if action["id"] == "build_from_detected_map_source"),
             None,
         )
         if not saved_source_action or "build_bundle_from_map_source.sh" not in saved_source_action.get("command", ""):
             raise AssertionError("Expected saved map source diagnostic to include copyable build command")
+        if "VISION_NAV_MISSION_PLAN_JSON" not in str(saved_source_action.get("notes", "")):
+            raise AssertionError("Expected saved map source diagnostic to mention optional mission plan inputs")
         old_cwd = Path.cwd()
         old_home_for_raw = os.environ.get("HOME")
         try:

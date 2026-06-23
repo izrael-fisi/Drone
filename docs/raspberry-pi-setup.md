@@ -391,6 +391,17 @@ VISION_NAV_MAP_SOURCE=$HOME/DroneVisionNav/maps/flight-region \
   ./scripts/pi/build_bundle_from_map_source.sh
 ```
 
+When a Mission Planner JSON or QGroundControl `.plan` export exists, include it
+so the rebuilt bundle still carries GNSS-denied readiness metadata:
+
+```bash
+VISION_NAV_MAP_SOURCE=$HOME/DroneVisionNav/maps/flight-region \
+  VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
+  VISION_NAV_MISSION_PLAN_JSON=$HOME/DroneTransfer/outgoing/mission_plan.json \
+  VISION_NAV_QGC_PLAN_JSON=$HOME/DroneTransfer/outgoing/mission.plan \
+  ./scripts/pi/build_bundle_from_map_source.sh
+```
+
 This copies the map source into the mission-bundle layout, builds the ORB/AKAZE
 terrain tile index, writes STAC/health/checksum artifacts, and keeps the same
 `VISION_NAV_BUNDLE` path used by field-capture preflight.

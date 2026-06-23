@@ -1144,6 +1144,8 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
             title = recommendation.get("title") or recommendation.get("id") or "bundle action"
             status = recommendation.get("status") or "unknown"
             lines.append(f"Recommended bundle action: {title} [{status}]")
+            if recommendation.get("notes"):
+                lines.append(f"Recommended notes: {recommendation['notes']}")
             if recommendation.get("desktop_action"):
                 lines.append(f"Recommended app action: {recommendation['desktop_action']}")
             if recommendation.get("command"):

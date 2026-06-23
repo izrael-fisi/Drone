@@ -579,6 +579,8 @@ def print_bundle_recommendations(diagnostic, indent):
         title = recommendation.get("title") or recommendation.get("id") or "bundle action"
         status = recommendation.get("status") or "unknown"
         print(f"{indent}recommended bundle action: {title} [{status}]")
+        if recommendation.get("notes"):
+            print(f"{indent}  notes: {recommendation.get('notes')}")
         if recommendation.get("desktop_action"):
             print(f"{indent}  app: {recommendation.get('desktop_action')}")
         if recommendation.get("command"):

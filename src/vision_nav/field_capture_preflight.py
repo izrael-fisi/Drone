@@ -647,6 +647,8 @@ def print_human(report: dict[str, Any]) -> None:
                         title = recommendation.get("title") or recommendation.get("id") or "bundle action"
                         status = recommendation.get("status") or "unknown"
                         print(f"    - {title} [{status}]")
+                        if recommendation.get("notes"):
+                            print(f"      notes: {recommendation['notes']}")
                         if recommendation.get("desktop_action"):
                             print(f"      app: {recommendation['desktop_action']}")
                         if recommendation.get("command"):

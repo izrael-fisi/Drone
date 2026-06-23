@@ -391,6 +391,7 @@ pub struct SupportBundleDiagnosticAction {
     pub title: Option<String>,
     pub desktop_action: Option<String>,
     pub command: Option<String>,
+    pub notes: Option<String>,
     pub bundle_path: Option<String>,
     pub map_source_path: Option<String>,
 }
@@ -4268,6 +4269,7 @@ fn support_bundle_diagnostic_from_json(
                     title: json_string(item.get("title")),
                     desktop_action: json_string(item.get("desktop_action")),
                     command: json_string(item.get("command")),
+                    notes: json_string(item.get("notes")),
                     bundle_path: json_string(item.get("bundle_path")),
                     map_source_path: json_string(item.get("map_source_path")),
                 })
@@ -7838,6 +7840,7 @@ mod tests {
                                         "status": "action_required",
                                         "title": "Build and upload the selected Mission Planner terrain bundle.",
                                         "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+                                        "notes": "Set VISION_NAV_MISSION_PLAN_JSON when rebuilding from a shell.",
                                         "command": "VISION_NAV_BUNDLE=/home/user/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh"
                                     }
                                 ]
@@ -8371,6 +8374,10 @@ mod tests {
                 .desktop_action
                 .as_deref(),
             Some("Mission Planner > Build Bundle, Upload Bundle")
+        );
+        assert_eq!(
+            bundle_diagnostic.recommended_actions[0].notes.as_deref(),
+            Some("Set VISION_NAV_MISSION_PLAN_JSON when rebuilding from a shell.")
         );
         assert_eq!(
             details.field_capture_preflight_reports[0].checks[1].issue_count,

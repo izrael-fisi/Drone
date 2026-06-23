@@ -117,6 +117,12 @@ The Pi wrappers are:
 ./scripts/pi/replay_terrain_nav_log.sh
 ```
 
+`build_bundle_from_map_source.sh` accepts optional
+`VISION_NAV_MISSION_PLAN_JSON` and `VISION_NAV_QGC_PLAN_JSON` inputs. Use those
+when rebuilding outside Mission Planner so `mission/mission_plan.json`,
+`mission/qgc.plan`, and GNSS-denied readiness metadata stay in the runtime
+bundle.
+
 The runtime emits local ENU, optional lat/lon, covariance, confidence, tile id,
 inliers, reprojection error, scale confidence, and barometer health fields. When
 optional barometer input is unavailable, `z_m` and `z_m2` stay `null`.

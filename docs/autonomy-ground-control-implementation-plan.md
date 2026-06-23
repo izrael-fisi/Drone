@@ -475,6 +475,10 @@ Status:
   `satellite.png` plus `metadata.json` source into the selected terrain mission
   bundle, and missing-bundle diagnostics now print that copyable command when a
   saved map source is detected.
+- Done: the saved-map-source bundle wrapper now accepts optional Mission
+  Planner JSON and QGroundControl plan inputs, preserving
+  `mission/mission_plan.json`, `mission/qgc.plan`, and GNSS-denied readiness
+  metadata when support rebuilds a bundle from a terminal.
 - Done: support-bundle and final-readiness parsers backfill that bundle
   diagnostic onto `prepare_bundle` next actions from older field-preflight JSON
   files, so stale downloaded reports still show missing files and candidate

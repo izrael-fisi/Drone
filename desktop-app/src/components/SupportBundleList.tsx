@@ -1183,7 +1183,7 @@ function SupportBundleDetailPanel({
                                   type="button"
                                   onClick={() => action.command && navigator.clipboard.writeText(action.command)}
                                   className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/60 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
-                                  title={action.command}
+                                  title={[action.command, action.notes].filter(Boolean).join("\n") || undefined}
                                 >
                                   <Clipboard size={9} className="shrink-0" />
                                   <span className="shrink-0 text-slate-500">{formatLabel(action.id)}</span>
@@ -1194,6 +1194,7 @@ function SupportBundleDetailPanel({
                                 <div
                                   key={`${report.condition}-diagnostic-action-${action.id}-${actionIndex}`}
                                   className="flex min-w-0 flex-wrap items-center gap-1 rounded border border-border/40 bg-bg-base/40 px-2 py-1"
+                                  title={action.notes || undefined}
                                 >
                                   <span className={statusClass(action.status)}>{formatLabel(action.status)}</span>
                                   <span className="truncate">{formatLabel(action.title)}</span>

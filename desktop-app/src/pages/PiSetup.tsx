@@ -6767,7 +6767,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                                           type="button"
                                           onClick={() => recommendation.command && navigator.clipboard.writeText(recommendation.command)}
                                           className="flex w-full min-w-0 items-center gap-1.5 rounded border border-border/50 bg-bg-base/60 px-2 py-1 text-left font-mono text-[10px] text-slate-400 hover:border-cyan-500/40 hover:text-cyan-200"
-                                          title={recommendation.command}
+                                          title={[recommendation.command, recommendation.notes].filter(Boolean).join("\n") || undefined}
                                         >
                                           <Copy size={9} className="shrink-0" />
                                           <span className={cn(readinessBadgeClass(recommendation.status), "text-[10px] shrink-0")}>
@@ -6779,6 +6779,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                                         <div
                                           key={`${action.id ?? "action"}-diagnostic-recommendation-${recommendation.id}-${recommendationIndex}`}
                                           className="flex min-w-0 flex-wrap items-center gap-1 rounded border border-border/40 bg-bg-base/40 px-2 py-1"
+                                          title={recommendation.notes || undefined}
                                         >
                                           <span className={cn(readinessBadgeClass(recommendation.status), "text-[10px] shrink-0")}>
                                             {formatReadinessLabel(recommendation.status)}

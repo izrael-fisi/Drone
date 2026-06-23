@@ -455,6 +455,7 @@ export interface SupportBundleDetails {
           title?: string;
           desktop_action?: string;
           command?: string;
+          notes?: string;
           bundle_path?: string;
           map_source_path?: string;
         }>;
@@ -500,6 +501,7 @@ export interface SupportBundleDetails {
           title?: string;
           desktop_action?: string;
           command?: string;
+          notes?: string;
           bundle_path?: string;
           map_source_path?: string;
         }>;

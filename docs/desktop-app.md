@@ -264,6 +264,17 @@ VISION_NAV_MAP_SOURCE=$HOME/DroneVisionNav/maps/flight-region \
   ./scripts/pi/build_bundle_from_map_source.sh
 ```
 
+If you also have a Mission Planner JSON export or QGroundControl `.plan`, pass
+it into that shell rebuild so GNSS-denied prep metadata is preserved:
+
+```bash
+VISION_NAV_MAP_SOURCE=$HOME/DroneVisionNav/maps/flight-region \
+  VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
+  VISION_NAV_MISSION_PLAN_JSON=$HOME/DroneTransfer/outgoing/mission_plan.json \
+  VISION_NAV_QGC_PLAN_JSON=$HOME/DroneTransfer/outgoing/mission.plan \
+  ./scripts/pi/build_bundle_from_map_source.sh
+```
+
 Missing-bundle diagnostics print this command when they detect a saved map
 source under the app map library.
 

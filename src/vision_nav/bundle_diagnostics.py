@@ -117,6 +117,7 @@ def compact_bundle_diagnostic(report: Any, *, max_items: int = 3) -> dict[str, A
             "title": item.get("title"),
             "desktop_action": item.get("desktop_action"),
             "command": item.get("command"),
+            "notes": item.get("notes"),
             "bundle_path": item.get("bundle_path"),
             "map_source_path": item.get("map_source_path"),
         }
@@ -548,6 +549,11 @@ def recommended_actions(
                     "status": "optional",
                     "title": "Use a detected saved map source to build the runtime bundle.",
                     "desktop_action": "Mission Planner > Select Map Source, Build Bundle, Upload Bundle",
+                    "notes": (
+                        "Set VISION_NAV_MISSION_PLAN_JSON and/or VISION_NAV_QGC_PLAN_JSON "
+                        "when rebuilding from a shell so GNSS-denied mission-prep metadata "
+                        "is preserved in the bundle."
+                    ),
                     "command": (
                         f"VISION_NAV_MAP_SOURCE={shell_quote(str(first_source['path']))} "
                         f"VISION_NAV_BUNDLE={shell_quote(str(bundle))} "
