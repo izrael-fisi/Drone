@@ -470,7 +470,12 @@ registered.
 The same Field Evidence Case panel has a `Validate Bundle` action. It runs the
 current field bundle validation command over SSH, preferring the
 `bundle_validation_command` from the latest downloaded preflight report when one
-exists, and saved setup reports record the exact command shown to the operator.
+exists. The Pi wrapper writes `bundle_validation_report.json`, emits a
+`__VISION_NAV_TERRAIN_BUNDLE_VALIDATION__=...` marker, and Module Setup downloads
+that report beside the other replay-cases artifacts. Saved setup reports still
+record the exact command shown to the operator. Bundle diagnostics consume the
+latest matching passed report, so the selected-bundle validation recommendation
+is marked passed after the operator validates the same runtime bundle.
 When the all-in-one Evidence Workflow runs without an explicit field case, it
 also auto-loads the plan's next pending condition, captures into that
 condition-specific output folder, and uses the matching terrain log path for

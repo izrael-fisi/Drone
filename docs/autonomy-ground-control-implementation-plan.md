@@ -527,6 +527,12 @@ Status:
   Evidence Case panel, using the latest preflight-reported
   `bundle_validation_command` when available and preserving that command in saved
   setup reports.
+- Done: `scripts/pi/validate_terrain_bundle.sh` now writes a durable combined
+  terrain-bundle validation JSON report, emits
+  `__VISION_NAV_TERRAIN_BUNDLE_VALIDATION__`, and Module Setup downloads that
+  report from the direct Validate Bundle action; bundle diagnostics consume a
+  matching passed report and mark the selected-bundle validation recommendation
+  as passed instead of repeatedly requiring validation.
 - Done: Module Setup now parses the downloaded field-capture preflight report
   into a compact operator summary with capture and registration readiness,
   failed or degraded checks, active bundle/log/runtime-status paths, and

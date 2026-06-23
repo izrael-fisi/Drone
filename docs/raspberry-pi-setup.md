@@ -532,7 +532,12 @@ rolls up readiness flags, failed/degraded checks, and next-action counts in
 In the same desktop panel, `Validate Bundle` runs the selected field bundle
 validation command over SSH. When a preflight report has already been downloaded,
 the app uses that report's `bundle_validation_command`; otherwise it validates
-the current runtime bundle path.
+the current runtime bundle path. The Pi validation wrapper writes
+`~/DroneTransfer/outgoing/replay-cases/bundle_validation_report.json` and emits
+`__VISION_NAV_TERRAIN_BUNDLE_VALIDATION__=...`, so Module Setup downloads the
+durable report even when validation fails. Later bundle diagnostics treat a
+matching passed report as proof that the selected runtime bundle has already
+been validated for the next field-capture step.
 The Field Evidence Case form keeps a local desktop draft with a visible
 saved-at timestamp and Reset Draft action, and saved setup reports include the
 draft's metadata-readiness status so support can see whether registration was

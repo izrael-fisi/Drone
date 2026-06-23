@@ -290,6 +290,14 @@ function parseBundleDiagnosticReport(output: string) {
     ?.replace("__VISION_NAV_BUNDLE_DIAGNOSTIC__=", "");
 }
 
+function parseTerrainBundleValidationReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_TERRAIN_BUNDLE_VALIDATION__="))
+    ?.replace("__VISION_NAV_TERRAIN_BUNDLE_VALIDATION__=", "");
+}
+
 function parseAutonomyReadinessReport(output: string) {
   return output
     .split(/\r?\n/)
@@ -4941,9 +4949,26 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         validationCommand,
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      const remoteReport = parseTerrainBundleValidationReport(output);
+      let downloadText = "";
+      if (remoteReport) {
+        setResult("field-bundle-validation", {
+          status: "running",
+          output: `$ validate field bundle\n${validationCommand}\n\n${output || "(no output)"}\n\n$ download bundle validation report\nDownloading ${remoteReport}...`,
+        });
+        const downloaded = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteReport,
+          AUTONOMY_REPORT_DOWNLOAD_DIR,
+        );
+        downloadText = `\n\n$ download bundle validation report\nSaved to ${downloaded.local_path}\n[${downloaded.bytes_received} bytes]`;
+      }
       setResult("field-bundle-validation", {
         status: result.exit_code === 0 ? "passed" : "failed",
-        output: `$ validate field bundle\n${validationCommand}\n\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+        output: `$ validate field bundle\n${validationCommand}\n\n${output || "(no output)"}${downloadText}\n[exit ${result.exit_code}]`,
         exitCode: result.exit_code,
       });
     } catch (err) {

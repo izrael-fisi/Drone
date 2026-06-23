@@ -108,6 +108,7 @@ from vision_nav.support_bundle import (
 from vision_nav.threshold_tuning import evaluate_threshold_tuning
 from vision_nav.terrain_estimator import TerrainEstimator
 from vision_nav.terrain_bundle import load_terrain_bundle
+from vision_nav.terrain_bundle_validation import create_terrain_bundle_validation_report
 from vision_nav.terrain_tiles import (
     TerrainTile,
     create_tile_schema,
@@ -1697,6 +1698,41 @@ rotation_quat_xyzw: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
         assert_equal(summary["status"], "passed", "bundle validation status")
         assert_equal(summary["feature_index"]["keypoints"], 2, "bundle validation keypoints")
         assert_equal(summary["checksums"]["status"], "passed", "bundle validation checksums")
+
+
+def test_terrain_bundle_validation_report_writes_durable_json() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bundle = create_minimal_terrain_bundle(root)
+        output = root / "bundle_validation_report.json"
+        report = create_terrain_bundle_validation_report(bundle, output_path=output)
+        assert_equal(report["schema_version"], "vision_nav_terrain_bundle_validation_v1", "validation schema")
+        assert_equal(report["status"], "passed", "terrain bundle validation report status")
+        assert_equal(report["map_bundle_status"], "passed", "terrain validation map bundle status")
+        assert_equal(report["terrain_bundle_status"], "passed", "terrain validation terrain bundle status")
+        assert_equal(report["report_path"], str(output), "terrain validation report path")
+        if not output.exists():
+            raise AssertionError("Expected terrain bundle validation report JSON to be written")
+        saved = json.loads(output.read_text())
+        assert_equal(saved["summary"]["bundle_id"], "health-test", "terrain validation report bundle id")
+        assert_equal(saved["summary"]["has_tile_index"], True, "terrain validation report tile index")
+        old_report_env = os.environ.get("VISION_NAV_TERRAIN_BUNDLE_VALIDATION")
+        os.environ["VISION_NAV_TERRAIN_BUNDLE_VALIDATION"] = str(output)
+        try:
+            diagnostic = diagnose_bundle_inputs(bundle, search_roots=[root])
+        finally:
+            if old_report_env is None:
+                os.environ.pop("VISION_NAV_TERRAIN_BUNDLE_VALIDATION", None)
+            else:
+                os.environ["VISION_NAV_TERRAIN_BUNDLE_VALIDATION"] = old_report_env
+        selected_action = diagnostic["recommended_actions"][0]
+        assert_equal(selected_action["id"], "validate_selected_bundle", "terrain validation diagnostic action id")
+        assert_equal(selected_action["status"], "passed", "terrain validation diagnostic action status")
+        assert_equal(
+            selected_action["validation_report"]["matches_bundle"],
+            True,
+            "terrain validation diagnostic report match",
+        )
 
 
 def test_build_bundle_from_map_source_creates_valid_terrain_bundle() -> None:
@@ -8627,6 +8663,7 @@ def main() -> None:
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
+        test_terrain_bundle_validation_report_writes_durable_json,
         test_build_bundle_from_map_source_creates_valid_terrain_bundle,
         test_bundle_diagnostics_finds_bundle_and_map_source_candidates,
         test_geospatial_health_report_validates_stac_tiles_and_bounds,

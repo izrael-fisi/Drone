@@ -709,6 +709,7 @@ def recommended_actions(
 
 def selected_bundle_action(bundle: Path, *, missing_required_files: list[str]) -> dict[str, Any]:
     validation_command = f"VISION_NAV_BUNDLE={shell_quote(str(bundle))} ./scripts/pi/validate_terrain_bundle.sh"
+    validation_report = terrain_bundle_validation_report(bundle)
     if missing_required_files:
         missing_label = ", ".join(missing_required_files[:4])
         if len(missing_required_files) > 4:
@@ -721,16 +722,70 @@ def selected_bundle_action(bundle: Path, *, missing_required_files: list[str]) -
             "command": validation_command,
             "notes": f"Missing required bundle files: {missing_label}.",
             "bundle_path": str(bundle),
+            "validation_report": validation_report,
         }
+    if validation_report.get("matches_bundle") and validation_report.get("status") == "passed":
+        return {
+            "id": "validate_selected_bundle",
+            "status": "passed",
+            "title": "Selected Mission Planner terrain bundle has a passing validation report.",
+            "desktop_action": "Mission Planner > Validate Bundle",
+            "command": validation_command,
+            "notes": f"Latest validation report passed: {validation_report.get('path')}.",
+            "bundle_path": str(bundle),
+            "validation_report": validation_report,
+        }
+    report_note = ""
+    if validation_report.get("exists") and validation_report.get("matches_bundle"):
+        report_note = f" Latest validation report status: {validation_report.get('status')}."
+    elif validation_report.get("exists"):
+        report_note = " Existing validation report does not match the selected bundle."
     return {
         "id": "validate_selected_bundle",
         "status": "action_required",
         "title": "Validate the selected Mission Planner terrain bundle before field capture.",
         "desktop_action": "Mission Planner > Validate Bundle",
         "command": validation_command,
-        "notes": "The selected bundle has the required terrain files; validate it before collecting field evidence.",
+        "notes": "The selected bundle has the required terrain files; validate it before collecting field evidence."
+        + report_note,
         "bundle_path": str(bundle),
+        "validation_report": validation_report,
     }
+
+
+def terrain_bundle_validation_report(bundle: Path) -> dict[str, Any]:
+    report_path = Path(
+        os.environ.get(
+            "VISION_NAV_TERRAIN_BUNDLE_VALIDATION",
+            str(Path.home() / "DroneTransfer" / "outgoing" / "replay-cases" / "bundle_validation_report.json"),
+        )
+    ).expanduser()
+    summary: dict[str, Any] = {
+        "path": str(report_path),
+        "exists": report_path.exists(),
+        "matches_bundle": False,
+    }
+    if not report_path.exists():
+        return summary
+    try:
+        raw = json.loads(report_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("validation report root is not a JSON object")
+    except Exception as exc:
+        summary["status"] = "failed"
+        summary["error"] = str(exc)
+        return summary
+    summary["schema_version"] = raw.get("schema_version")
+    summary["status"] = raw.get("status")
+    summary["bundle_path"] = raw.get("bundle_path")
+    summary["map_bundle_status"] = raw.get("map_bundle_status")
+    summary["terrain_bundle_status"] = raw.get("terrain_bundle_status")
+    summary["matches_bundle"] = (
+        raw.get("schema_version") == "vision_nav_terrain_bundle_validation_v1"
+        and isinstance(raw.get("bundle_path"), str)
+        and normalized_path_key(Path(str(raw["bundle_path"])).expanduser()) == normalized_path_key(bundle)
+    )
+    return summary
 
 
 def selected_mission_plan_inputs(candidates: list[dict[str, Any]]) -> dict[str, str]:

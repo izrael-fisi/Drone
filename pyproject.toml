@@ -76,6 +76,7 @@ vision-nav-support-bundle = "vision_nav.support_bundle:main"
 vision-nav-tune-replay-thresholds = "vision_nav.threshold_tuning:main"
 vision-nav-validate-bundle = "vision_nav.validate_map_bundle:main"
 vision-nav-validate-terrain-bundle = "vision_nav.terrain_bundle:main"
+vision-nav-validate-terrain-bundle-report = "vision_nav.terrain_bundle_validation:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
