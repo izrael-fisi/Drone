@@ -15,14 +15,19 @@ field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$(dirname "$field_man
 field_collection_plan_md="${VISION_NAV_FIELD_COLLECTION_PLAN_MD:-${field_collection_plan%.json}.md}"
 field_log_was_explicit=0
 field_capture_output_dir_was_explicit=0
+field_log_capture_report_was_explicit=0
 if [[ -n "${VISION_NAV_FIELD_LOG+x}" ]]; then
   field_log_was_explicit=1
 fi
 if [[ -n "${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR+x}" ]]; then
   field_capture_output_dir_was_explicit=1
 fi
+if [[ -n "${VISION_NAV_FIELD_LOG_CAPTURE_REPORT+x}" ]]; then
+  field_log_capture_report_was_explicit=1
+fi
 field_log="${VISION_NAV_FIELD_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}"
 field_capture_output_dir="${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR:-$(dirname "$field_log")}"
+field_log_capture_report="${VISION_NAV_FIELD_LOG_CAPTURE_REPORT:-$field_capture_output_dir/field_log_capture_report.json}"
 field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-$(dirname "$field_collection_plan")/field_capture_preflight.json}"
 field_capture_count="${VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT:-30}"
 terrain_capture_command="${VISION_NAV_EVIDENCE_WORKFLOW_TERRAIN_CAPTURE_COMMAND:-./scripts/pi/run_terrain_nav_loop.sh}"
@@ -69,6 +74,7 @@ field_log_ready=0
 export VISION_NAV_FIELD_COLLECTION_PLAN="$field_collection_plan"
 export VISION_NAV_FIELD_COLLECTION_PLAN_MD="$field_collection_plan_md"
 export VISION_NAV_FIELD_CAPTURE_PREFLIGHT="$field_capture_preflight"
+export VISION_NAV_FIELD_LOG_CAPTURE_REPORT="$field_log_capture_report"
 export VISION_NAV_ROSBAG_EXPORT_VALIDATION="$rosbag_export_validation"
 export VISION_NAV_ROSBAG2_CLI_REVIEW="$rosbag2_cli_review"
 
@@ -103,6 +109,7 @@ Common optional overrides:
   VISION_NAV_FIELD_COLLECTION_PLAN_MD    Default: $field_collection_plan_md
   VISION_NAV_FIELD_LOG                    Default: $field_log
   VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR     Default: $field_capture_output_dir
+  VISION_NAV_FIELD_LOG_CAPTURE_REPORT     Default: $field_log_capture_report
   VISION_NAV_FIELD_CAPTURE_PREFLIGHT      Default: $field_capture_preflight
   VISION_NAV_EVIDENCE_WORKFLOW_CAPTURE_COUNT=30
   VISION_NAV_EVIDENCE_WORKFLOW_TERRAIN_CAPTURE_COMMAND=$terrain_capture_command
@@ -629,6 +636,7 @@ load_field_collection_condition() {
       "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_CASE_NAME:-}" \
       "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log" \
       "__VISION_NAV_EXPECTED_TERRAIN_LOG__=$field_log" \
+      "__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=$field_log_capture_report" \
       "__VISION_NAV_TERRAIN_BUNDLE__=$bundle" \
       "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__=$field_capture_output_dir" \
       "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__=$capture_command_marker" \
@@ -664,6 +672,12 @@ load_field_collection_condition() {
   else
     field_capture_output_dir="${VISION_NAV_FIELD_CAPTURE_OUTPUT_DIR:-$field_capture_output_dir}"
   fi
+  if [[ "$field_log_capture_report_was_explicit" == "1" ]]; then
+    export VISION_NAV_FIELD_LOG_CAPTURE_REPORT="$field_log_capture_report"
+  else
+    field_log_capture_report="${VISION_NAV_FIELD_LOG_CAPTURE_REPORT:-$field_capture_output_dir/field_log_capture_report.json}"
+    export VISION_NAV_FIELD_LOG_CAPTURE_REPORT="$field_log_capture_report"
+  fi
   bundle="${VISION_NAV_BUNDLE:-$bundle}"
 
   if [[ "${VISION_NAV_FIELD_AUTO_SELECTION_STATUS:-}" == "no_pending_condition" ]]; then
@@ -679,6 +693,7 @@ load_field_collection_condition() {
       "__VISION_NAV_FIELD_SELECTED_CASE__=${VISION_NAV_FIELD_AUTO_SELECTED_CASE:-}"
       "__VISION_NAV_FIELD_SELECTED_LOG__=$field_log"
       "__VISION_NAV_EXPECTED_TERRAIN_LOG__=$field_log"
+      "__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=$field_log_capture_report"
       "__VISION_NAV_TERRAIN_BUNDLE__=$bundle"
       "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__=$field_capture_output_dir"
       "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__=$capture_command_marker"
@@ -790,6 +805,9 @@ if [[ -f "$field_log" ]]; then
     "__VISION_NAV_TERRAIN_BUNDLE__=$bundle"
     "__VISION_NAV_TERRAIN_BUNDLE_STATUS__=available"
   )
+  if [[ -f "$field_log_capture_report" ]]; then
+    marker_lines+=("__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=$field_log_capture_report")
+  fi
   runtime_status_eval="degraded|Runtime status snapshot is missing; fetch or generate runtime_status.json before final bench evidence."
   if [[ -f "$runtime_status" ]]; then
     marker_lines+=("__VISION_NAV_RUNTIME_STATUS__=$runtime_status")
@@ -822,6 +840,7 @@ elif [[ -e "$bundle" ]]; then
     "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__=$field_capture_output_dir"
     "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__=$capture_command_marker"
     "__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__=$preflight_capture_command_marker"
+    "__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=$field_log_capture_report"
   )
   echo
   echo "== capture_field_terrain_log =="
@@ -831,6 +850,7 @@ elif [[ -e "$bundle" ]]; then
     export VISION_NAV_COUNT="$field_capture_count"
     export VISION_NAV_OUTPUT_DIR="$field_capture_output_dir"
     export VISION_NAV_BUNDLE="$bundle"
+    export VISION_NAV_FIELD_LOG_CAPTURE_REPORT="$field_log_capture_report"
     "$terrain_capture_command" && \
       VISION_NAV_RUNTIME_STATUS_ROOTS="$field_capture_output_dir" ./scripts/pi/read_runtime_status.sh
   ) >"$capture_log_path" 2>&1
@@ -875,6 +895,9 @@ elif [[ -e "$bundle" ]]; then
     if [[ -f "$captured_runtime_status" ]]; then
       captured_marker_lines+=("__VISION_NAV_RUNTIME_STATUS__=$captured_runtime_status")
       captured_runtime_status_eval="$(evaluate_runtime_status "$captured_runtime_status")"
+    fi
+    if [[ -f "$field_log_capture_report" ]]; then
+      captured_marker_lines+=("__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=$field_log_capture_report")
     fi
     captured_runtime_status_status="${captured_runtime_status_eval%%|*}"
     captured_runtime_status_message="${captured_runtime_status_eval#*|}"
@@ -925,7 +948,8 @@ else
     "__VISION_NAV_TERRAIN_BUNDLE_STATUS__=missing" \
     "__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__=$field_capture_output_dir" \
     "__VISION_NAV_TERRAIN_CAPTURE_COMMAND__=$capture_command_marker" \
-    "__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__=$preflight_capture_command_marker"
+    "__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__=$preflight_capture_command_marker" \
+    "__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=$field_log_capture_report"
 fi
 
 if [[ "$field_log_ready" != "1" ]]; then

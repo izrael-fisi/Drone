@@ -554,6 +554,11 @@ Status:
   `__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__`, and Module Setup downloads that
   report so terminal and app-driven field captures share the same audit-list
   surface.
+- Done: the guided evidence workflow now exports and preserves
+  `__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__` for existing or newly captured
+  field logs, and workflow-validation summaries surface the report path when it
+  is present without making older workflow reports fail solely for lacking the
+  newer breadcrumb.
 - Done: Field Log Capture audit files now include next-action metadata update
   and registration commands, plus registration readiness, so support can recover
   the exact follow-up proof commands from the downloaded capture audit.

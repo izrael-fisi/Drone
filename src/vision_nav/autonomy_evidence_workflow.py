@@ -133,6 +133,7 @@ FIELD_CAPTURE_PREFLIGHT_MARKER = "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"
 FIELD_CAPTURE_PREFLIGHT_STATUS_MARKER = "__VISION_NAV_FIELD_CAPTURE_PREFLIGHT_STATUS__"
 FIELD_CAPTURE_READY_MARKER = "__VISION_NAV_FIELD_CAPTURE_READY__"
 FIELD_REGISTRATION_READY_MARKER = "__VISION_NAV_FIELD_REGISTRATION_READY__"
+FIELD_LOG_CAPTURE_REPORT_MARKER = "__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__"
 FIELD_SELECTED_CONDITION_MARKER = "__VISION_NAV_FIELD_SELECTED_CONDITION__"
 FIELD_SELECTED_CASE_MARKER = "__VISION_NAV_FIELD_SELECTED_CASE__"
 FIELD_SELECTED_LOG_MARKER = "__VISION_NAV_FIELD_SELECTED_LOG__"
@@ -838,6 +839,7 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
     capture_command = marker_string(markers, TERRAIN_CAPTURE_COMMAND_MARKER)
     capture_script_path = marker_string(markers, TERRAIN_CAPTURE_SCRIPT_MARKER)
     preflight_capture_command = marker_string(markers, TERRAIN_PREFLIGHT_CAPTURE_COMMAND_MARKER)
+    field_log_capture_report = marker_string(markers, FIELD_LOG_CAPTURE_REPORT_MARKER)
     metadata_update_command = marker_string(markers, FIELD_METADATA_UPDATE_COMMAND_MARKER)
     if preflight_report:
         summary["preflight_report"] = preflight_report
@@ -851,6 +853,8 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
         summary["bundle_path"] = bundle_path
     if expected_log:
         summary["expected_log"] = expected_log
+    if field_log_capture_report:
+        summary["field_log_capture_report"] = field_log_capture_report
     if output_dir:
         summary["output_dir"] = output_dir
         summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)
@@ -961,6 +965,7 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
     bundle_status = marker_string(markers, TERRAIN_BUNDLE_STATUS_MARKER)
     expected_log = marker_string(markers, EXPECTED_TERRAIN_LOG_MARKER)
     output_dir = marker_string(markers, TERRAIN_CAPTURE_OUTPUT_DIR_MARKER)
+    field_log_capture_report = marker_string(markers, FIELD_LOG_CAPTURE_REPORT_MARKER)
     metadata_update_command = marker_string(markers, FIELD_METADATA_UPDATE_COMMAND_MARKER)
     if capture_command:
         summary["command"] = capture_command
@@ -970,6 +975,8 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
         summary["preflight_capture_command"] = preflight_capture_command
     if expected_log:
         summary["expected_log"] = expected_log
+    if field_log_capture_report:
+        summary["field_log_capture_report"] = field_log_capture_report
     if output_dir:
         summary["output_dir"] = output_dir
         summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)

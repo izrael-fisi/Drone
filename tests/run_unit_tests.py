@@ -3832,6 +3832,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         preflight_blocked_report = json.loads(report_path.read_text())
         missing_bundle_path = root / "missing_mission_bundle"
         capture_output_dir = root / "field-captures" / "good_texture"
+        workflow_field_log_capture_report = capture_output_dir / "field_log_capture_report.json"
         capture_script_path = root / "replay-cases" / "run_field_capture.sh"
         capture_command = (
             f"VISION_NAV_BUNDLE={missing_bundle_path} "
@@ -3913,6 +3914,9 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         preflight_blocked_report["markers"]["__VISION_NAV_EXPECTED_TERRAIN_LOG__"] = str(
             capture_output_dir / "terrain_matches.jsonl"
         )
+        preflight_blocked_report["markers"]["__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__"] = str(
+            workflow_field_log_capture_report
+        )
         preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE__"] = str(missing_bundle_path)
         preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE_STATUS__"] = "missing"
         preflight_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"] = str(capture_output_dir)
@@ -3958,6 +3962,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             preflight_blocked_validation["next_required_step"]["capture_script_path"],
             str(capture_script_path),
             "workflow validation preserves generated capture script path",
+        )
+        assert_equal(
+            preflight_blocked_validation["next_required_step"]["field_log_capture_report"],
+            str(workflow_field_log_capture_report),
+            "workflow validation preserves field log capture report path after preflight",
         )
         assert_equal(
             preflight_blocked_validation["next_required_step"]["ready_for_capture"],
@@ -4224,6 +4233,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CONDITION__"] = "good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CASE__"] = "dronecompute-test-area-good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_EXPECTED_TERRAIN_LOG__"] = str(capture_output_dir / "terrain_matches.jsonl")
+        capture_blocked_report["markers"]["__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__"] = str(workflow_field_log_capture_report)
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE__"] = str(missing_bundle_path)
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE_STATUS__"] = "missing"
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"] = str(capture_output_dir)
@@ -4272,6 +4282,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             capture_blocked_validation["next_required_step"]["capture_script_path"],
             str(capture_script_path),
             "workflow validation surfaces generated capture script path",
+        )
+        assert_equal(
+            capture_blocked_validation["next_required_step"]["field_log_capture_report"],
+            str(workflow_field_log_capture_report),
+            "workflow validation surfaces expected field log capture report path",
         )
         assert_equal(
             capture_blocked_validation["next_required_step"]["metadata_update_command"],

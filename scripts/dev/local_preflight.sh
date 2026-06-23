@@ -120,6 +120,31 @@ EOF
 cat >"$workflow_smoke_dir/runtime_status.json" <<'EOF'
 {"schema_version":"vision_nav_runtime_status_v1","active_map":{"bundle_id":"preflight"},"output":{"output_dir":"preflight-output","log_path":"preflight-output/terrain_matches.jsonl"},"last_match":{"status":"accepted"},"estimator":{"health":"healthy"},"external_position_health":{"status":"not_configured"}}
 EOF
+cat >"$workflow_smoke_dir/field_log_capture_report.json" <<EOF
+{
+  "schema_version": "vision_nav_desktop_field_log_capture_v1",
+  "generated_at_utc": "2026-06-21T00:05:00Z",
+  "status": "passed",
+  "command_source": "local preflight",
+  "exit_code": 0,
+  "field_case": {
+    "case_name": "preflight-good-texture",
+    "expected": "good_map",
+    "condition": "good_texture",
+    "conditions": "good_texture",
+    "capture_output_dir": "$workflow_smoke_dir",
+    "metadata_ready": false,
+    "metadata_issues": ["operator is required"],
+    "runtime_status_path": "$workflow_smoke_dir/runtime_status.json"
+  },
+  "artifacts": {
+    "remote_terrain_log": "$workflow_smoke_dir/terrain_matches.jsonl",
+    "remote_runtime_status": "$workflow_smoke_dir/runtime_status.json"
+  },
+  "next_actions": {"registration_ready": false},
+  "summary": {"record_count": 1, "status_counts": {"accepted": 1}, "issues": []}
+}
+EOF
 VISION_NAV_RUNTIME_STATUS_ROOTS="$workflow_smoke_dir" \
 VISION_NAV_RUNTIME_STATUS_MAX_BYTES=4096 \
 ./scripts/pi/read_runtime_status.sh >"$runtime_status_output"
@@ -265,6 +290,7 @@ assert "__VISION_NAV_FIELD_COLLECTION_PLAN__" in report["markers"]
 assert "__VISION_NAV_FIELD_COLLECTION_PLAN_MD__" in report["markers"]
 assert "__VISION_NAV_TERRAIN_LOG__" in report["markers"]
 assert "__VISION_NAV_RUNTIME_STATUS__" in report["markers"]
+assert "__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__" in report["markers"]
 assert "__VISION_NAV_ROSBAG_EXPORT_VALIDATION__" in report["markers"]
 assert "__VISION_NAV_ROSBAG2_CLI_REVIEW__" in report["markers"]
 assert "__VISION_NAV_PX4_SITL_PREREQS__" in report["markers"]
@@ -273,6 +299,7 @@ assert "__VISION_NAV_PX4_SITL_REPORT__" not in report["markers"]
 assert report["status"] == "failed"
 assert Path(report["markers"]["__VISION_NAV_ROSBAG_EXPORT_VALIDATION__"]).exists()
 assert Path(report["markers"]["__VISION_NAV_ROSBAG2_CLI_REVIEW__"]).exists()
+assert Path(report["markers"]["__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__"]).exists()
 log_archive = Path(report["markers"]["__VISION_NAV_EVIDENCE_WORKFLOW_LOGS__"])
 assert log_archive.exists()
 with tarfile.open(log_archive, "r:gz") as archive:
@@ -407,6 +434,7 @@ assert "parseable with" in capture["notes"]
 assert "Runtime status snapshot is usable" in capture["notes"]
 assert "__VISION_NAV_TERRAIN_LOG__" in capture["markers"]
 assert "__VISION_NAV_RUNTIME_STATUS__" in capture["markers"]
+assert "__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__" in capture["markers"]
 assert "read_runtime_status.sh" in capture["markers"]["__VISION_NAV_TERRAIN_CAPTURE_COMMAND__"]
 assert "preflight_field_capture.sh" in capture["markers"]["__VISION_NAV_TERRAIN_PREFLIGHT_CAPTURE_COMMAND__"]
 assert Path(capture["markers"]["__VISION_NAV_TERRAIN_LOG__"]).exists()
