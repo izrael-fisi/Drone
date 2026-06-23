@@ -953,6 +953,15 @@ function validationCheckDetail(check: WorkflowValidationCheck) {
     const extra = count > 3 ? ` +${count - 3}` : "";
     return steps ? `steps ${steps}${extra}` : `steps not passed ${count}`;
   }
+  if ((check.blocked_count ?? 0) > 0 || (check.blocked_steps ?? []).length > 0) {
+    const steps = (check.blocked_steps ?? [])
+      .slice(0, 3)
+      .map((step) => formatReadinessLabel(step.name))
+      .join(", ");
+    const count = check.blocked_count ?? (check.blocked_steps ?? []).length;
+    const extra = count > 3 ? ` +${count - 3}` : "";
+    return steps ? `blocked ${steps}${extra}` : `blocked steps ${count}`;
+  }
   if ((check.superseded_steps ?? []).some((step) => step.current_preflight_allows_capture)) {
     return "current preflight capture-ready";
   }
@@ -1052,6 +1061,9 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
               formatReadinessLabel(step.name),
               formatReadinessLabel(step.status),
               step.notes,
+              step.blocked_by ? `Blocked by: ${step.blocked_by}` : undefined,
+              step.required_log ? `Required log: ${step.required_log}` : undefined,
+              step.required_runtime_status ? `Required runtime status: ${step.required_runtime_status}` : undefined,
               step.current_selected_condition ? `Selected condition: ${step.current_selected_condition}` : undefined,
               step.current_selected_case ? `Selected case: ${step.current_selected_case}` : undefined,
               step.current_selected_log ? `Selected log: ${step.current_selected_log}` : undefined,
@@ -1059,6 +1071,21 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
                 ? `Current preflight capture-ready (${formatReadinessLabel(step.current_preflight_status)})`
                 : undefined,
               step.current_preflight_report ? `Current preflight: ${step.current_preflight_report}` : undefined,
+              step.guidance,
+            ]
+              .filter(Boolean)
+              .join(" - "),
+          )
+          .join("\n");
+        const blockedStepTitle = (check.blocked_steps ?? [])
+          .map((step) =>
+            [
+              `Blocked ${formatReadinessLabel(step.name)}`,
+              formatReadinessLabel(step.status),
+              step.blocked_by ? `Blocked by: ${step.blocked_by}` : undefined,
+              step.required_log ? `Required log: ${step.required_log}` : undefined,
+              step.required_runtime_status ? `Required runtime status: ${step.required_runtime_status}` : undefined,
+              step.notes,
               step.guidance,
             ]
               .filter(Boolean)
@@ -1090,6 +1117,7 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
           ...check.missing_markers,
           ...check.missing_steps,
           nonPassedStepTitle,
+          blockedStepTitle,
           supersededStepTitle,
         ]
           .filter(Boolean)

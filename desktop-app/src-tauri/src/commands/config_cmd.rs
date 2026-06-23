@@ -844,6 +844,8 @@ pub struct AutonomyEvidenceWorkflowValidationCheck {
     pub missing_steps: Vec<String>,
     pub non_passed_count: Option<u64>,
     pub non_passed_steps: Vec<AutonomyEvidenceWorkflowValidationStepResult>,
+    pub blocked_count: Option<u64>,
+    pub blocked_steps: Vec<AutonomyEvidenceWorkflowValidationStepResult>,
     pub superseded_count: Option<u64>,
     pub superseded_steps: Vec<AutonomyEvidenceWorkflowValidationStepResult>,
 }
@@ -857,6 +859,9 @@ pub struct AutonomyEvidenceWorkflowValidationStepResult {
     pub current_selected_condition: Option<String>,
     pub current_selected_case: Option<String>,
     pub current_selected_log: Option<String>,
+    pub blocked_by: Option<String>,
+    pub required_log: Option<String>,
+    pub required_runtime_status: Option<String>,
     pub current_preflight_allows_capture: Option<bool>,
     pub current_preflight_report: Option<String>,
     pub current_preflight_status: Option<String>,
@@ -3900,6 +3905,10 @@ fn workflow_validation_summary_from_json(
                         .and_then(|details| details.get("non_passed_count"))
                         .or_else(|| item.get("non_passed_count"))
                         .and_then(|value| value.as_u64());
+                    let blocked_count = details
+                        .and_then(|details| details.get("blocked_count"))
+                        .or_else(|| item.get("blocked_count"))
+                        .and_then(|value| value.as_u64());
                     let superseded_count = details
                         .and_then(|details| details.get("superseded_count"))
                         .or_else(|| item.get("superseded_count"))
@@ -3908,6 +3917,11 @@ fn workflow_validation_summary_from_json(
                         details
                             .and_then(|details| details.get("non_passed_steps"))
                             .or_else(|| item.get("non_passed_steps")),
+                    );
+                    let blocked_steps = workflow_validation_step_results_from_json(
+                        details
+                            .and_then(|details| details.get("blocked_steps"))
+                            .or_else(|| item.get("blocked_steps")),
                     );
                     let superseded_steps = workflow_validation_step_results_from_json(
                         details
@@ -3924,6 +3938,8 @@ fn workflow_validation_summary_from_json(
                         missing_steps: json_string_array(missing_steps),
                         non_passed_count,
                         non_passed_steps,
+                        blocked_count,
+                        blocked_steps,
                         superseded_count,
                         superseded_steps,
                     }
@@ -3963,6 +3979,9 @@ fn workflow_validation_step_results_from_json(
                     current_selected_condition: json_string(item.get("current_selected_condition")),
                     current_selected_case: json_string(item.get("current_selected_case")),
                     current_selected_log: json_string(item.get("current_selected_log")),
+                    blocked_by: json_string(item.get("blocked_by")),
+                    required_log: json_string(item.get("required_log")),
+                    required_runtime_status: json_string(item.get("required_runtime_status")),
                     current_preflight_allows_capture: item
                         .get("current_preflight_allows_capture")
                         .and_then(|value| value.as_bool()),

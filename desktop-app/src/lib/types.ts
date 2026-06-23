@@ -897,6 +897,9 @@ export interface AutonomyEvidenceWorkflowValidationStepResult {
   current_selected_condition?: string;
   current_selected_case?: string;
   current_selected_log?: string;
+  blocked_by?: string;
+  required_log?: string;
+  required_runtime_status?: string;
   current_preflight_allows_capture?: boolean;
   current_preflight_report?: string;
   current_preflight_status?: "passed" | "failed" | "degraded" | "skipped" | string;
@@ -947,6 +950,8 @@ export interface AutonomyEvidenceWorkflowReportFile {
       missing_steps: string[];
       non_passed_count?: number;
       non_passed_steps: AutonomyEvidenceWorkflowValidationStepResult[];
+      blocked_count?: number;
+      blocked_steps: AutonomyEvidenceWorkflowValidationStepResult[];
       superseded_count?: number;
       superseded_steps: AutonomyEvidenceWorkflowValidationStepResult[];
     }>;

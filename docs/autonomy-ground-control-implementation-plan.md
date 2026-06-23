@@ -1366,6 +1366,11 @@ Status:
   already-loaded selected-condition `superseded_steps` separately from active
   `non_passed_steps`, including the current report/condition/case/log path,
   readiness, status, and operator guidance.
+- Done: workflow validation now separates terrain-log-dependent skipped steps
+  into `blocked_steps` with `blocked_by`, required log, and required runtime
+  status fields, so the active root blocker remains field-log capture while
+  registration, feature benchmarking, ROS replay, native rosbag2 review, and
+  final audit stay auditable as downstream waits.
 - Done: CLI workflow-validation summaries now print bundle path, expected log,
   capture output, metadata update, and post-bundle capture commands, keeping
   terminal audits aligned with Module Setup guidance.

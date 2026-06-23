@@ -414,6 +414,9 @@ def compact_workflow_validation_check(check: dict[str, Any]) -> dict[str, Any]:
     non_passed_count = details.get("non_passed_count", check.get("non_passed_count"))
     if isinstance(non_passed_count, int):
         compact["non_passed_count"] = non_passed_count
+    blocked_count = details.get("blocked_count", check.get("blocked_count"))
+    if isinstance(blocked_count, int):
+        compact["blocked_count"] = blocked_count
     superseded_count = details.get("superseded_count", check.get("superseded_count"))
     if isinstance(superseded_count, int):
         compact["superseded_count"] = superseded_count
@@ -423,6 +426,13 @@ def compact_workflow_validation_check(check: dict[str, Any]) -> dict[str, Any]:
         compact["non_passed_steps"] = [
             compact_workflow_validation_step(step)
             for step in non_passed_steps[:MAX_MANIFEST_RUNBOOK_ACTIONS]
+        ]
+    blocked_steps = dict_items(details.get("blocked_steps") or check.get("blocked_steps"))
+    if blocked_steps:
+        compact["blocked_steps_truncated"] = len(blocked_steps) > MAX_MANIFEST_RUNBOOK_ACTIONS
+        compact["blocked_steps"] = [
+            compact_workflow_validation_step(step)
+            for step in blocked_steps[:MAX_MANIFEST_RUNBOOK_ACTIONS]
         ]
     superseded_steps = dict_items(details.get("superseded_steps") or check.get("superseded_steps"))
     if superseded_steps:
@@ -444,6 +454,9 @@ def compact_workflow_validation_step(step: dict[str, Any]) -> dict[str, Any]:
             "current_selected_condition",
             "current_selected_case",
             "current_selected_log",
+            "blocked_by",
+            "required_log",
+            "required_runtime_status",
             "current_preflight_report",
             "current_preflight_status",
             "guidance",

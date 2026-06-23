@@ -132,6 +132,16 @@ FIELD_REGISTRATION_READY_MARKER = "__VISION_NAV_FIELD_REGISTRATION_READY__"
 FIELD_SELECTED_CONDITION_MARKER = "__VISION_NAV_FIELD_SELECTED_CONDITION__"
 FIELD_SELECTED_CASE_MARKER = "__VISION_NAV_FIELD_SELECTED_CASE__"
 FIELD_SELECTED_LOG_MARKER = "__VISION_NAV_FIELD_SELECTED_LOG__"
+TERRAIN_LOG_MARKER = "__VISION_NAV_TERRAIN_LOG__"
+
+TERRAIN_LOG_DEPENDENT_STEPS = {
+    "register_field_replay_case",
+    "run_feature_method_benchmark",
+    "run_threshold_tuning_report",
+    "validate_rosbag_export",
+    "check_native_rosbag2_review",
+    "run_autonomy_readiness_audit",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -467,6 +477,7 @@ def last_workflow_step(steps: list[Any], name: str) -> dict[str, Any] | None:
 def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] | None = None) -> dict[str, Any]:
     by_name = {str(step.get("name")): step for step in steps if isinstance(step, dict) and step.get("name")}
     non_passed_steps: list[dict[str, Any]] = []
+    blocked_steps: list[dict[str, Any]] = []
     superseded_steps: list[dict[str, Any]] = []
     missing_steps: list[str] = []
     active_preflight_report = current_preflight_report(markers) if isinstance(markers, dict) else None
@@ -475,6 +486,7 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
         if isinstance(markers, dict)
         else None
     )
+    next_required_step = workflow_next_required_step(steps, markers=markers)
     for name in REQUIRED_WORKFLOW_STEPS:
         step = by_name.get(name)
         if step is None:
@@ -496,6 +508,9 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
             annotate_selected_condition_override(non_passed_step, markers)
             if is_superseded_workflow_step(non_passed_step):
                 superseded_steps.append(non_passed_step)
+            elif is_terrain_log_dependent_step(non_passed_step, markers, next_required_step):
+                annotate_terrain_log_dependency(non_passed_step, markers)
+                blocked_steps.append(non_passed_step)
             else:
                 non_passed_steps.append(non_passed_step)
     details = {
@@ -503,9 +518,11 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
         "missing_steps": missing_steps,
         "non_passed_steps": non_passed_steps,
         "non_passed_count": len(non_passed_steps),
+        "blocked_steps": blocked_steps,
+        "blocked_count": len(blocked_steps),
         "superseded_steps": superseded_steps,
         "superseded_count": len(superseded_steps),
-        "next_required_step": workflow_next_required_step(steps, markers=markers),
+        "next_required_step": next_required_step,
     }
     if missing_steps:
         return failed(
@@ -513,7 +530,7 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
             "Workflow report is missing required step result records.",
             details,
         )
-    if non_passed_steps:
+    if non_passed_steps or blocked_steps:
         return degraded(
             "required_step_results",
             "Some required workflow steps did not pass; preserve the report for diagnostics and rerun after collecting prerequisites.",
@@ -532,6 +549,37 @@ def is_superseded_workflow_step(step: dict[str, Any]) -> bool:
     if step.get("name") == "select_field_collection_condition" and step.get("current_selected_condition"):
         return True
     return False
+
+
+def is_terrain_log_dependent_step(
+    step: dict[str, Any],
+    markers: dict[str, Any] | None,
+    next_required_step: dict[str, Any] | None,
+) -> bool:
+    if step.get("name") not in TERRAIN_LOG_DEPENDENT_STEPS:
+        return False
+    if not isinstance(markers, dict):
+        return False
+    if marker_string(markers, TERRAIN_LOG_MARKER):
+        return False
+    if not isinstance(next_required_step, dict):
+        return False
+    return next_required_step.get("name") == "capture_field_terrain_log"
+
+
+def annotate_terrain_log_dependency(step: dict[str, Any], markers: dict[str, Any] | None) -> None:
+    step["blocked_by"] = "capture_field_terrain_log"
+    if isinstance(markers, dict):
+        expected_log = marker_string(markers, EXPECTED_TERRAIN_LOG_MARKER)
+        output_dir = marker_string(markers, TERRAIN_CAPTURE_OUTPUT_DIR_MARKER)
+        if expected_log:
+            step["required_log"] = expected_log
+        if output_dir:
+            step["required_runtime_status"] = runtime_status_path_for_output(output_dir)
+    step["guidance"] = (
+        "This workflow step waits for a parseable terrain log and runtime_status.json; "
+        "capture those artifacts before rerunning this step."
+    )
 
 
 def annotate_current_preflight_override(
@@ -1113,6 +1161,27 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                         lines.append(f"  Current preflight path: {step.get('current_preflight_report')}")
                     if step.get("guidance"):
                         lines.append(f"  Guidance: {step.get('guidance')}")
+
+        blocked_steps = details.get("blocked_steps")
+        if not isinstance(blocked_steps, list):
+            blocked_steps = check_item.get("blocked_steps")
+        if isinstance(blocked_steps, list):
+            for step in blocked_steps[:4]:
+                if not isinstance(step, dict):
+                    continue
+                step_name = step.get("name") or "unknown"
+                step_status = step.get("status") or "unknown"
+                lines.append(f"- Blocked workflow step: {step_name} [{step_status}]")
+                if step.get("blocked_by"):
+                    lines.append(f"  Blocked by: {step.get('blocked_by')}")
+                if step.get("required_log"):
+                    lines.append(f"  Required log: {step.get('required_log')}")
+                if step.get("required_runtime_status"):
+                    lines.append(f"  Required runtime status: {step.get('required_runtime_status')}")
+                if step.get("notes"):
+                    lines.append(f"  Notes: {step.get('notes')}")
+                if step.get("guidance"):
+                    lines.append(f"  Guidance: {step.get('guidance')}")
 
         superseded_steps = details.get("superseded_steps")
         if not isinstance(superseded_steps, list):

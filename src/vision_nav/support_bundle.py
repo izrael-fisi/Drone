@@ -1680,6 +1680,7 @@ def summarize_workflow_validation(validation: dict[str, Any]) -> dict[str, Any]:
         details = check.get("details") if isinstance(check.get("details"), dict) else {}
         if check.get("name") == "required_step_results":
             item["non_passed_count"] = details.get("non_passed_count")
+            item["blocked_count"] = details.get("blocked_count")
             item["superseded_count"] = details.get("superseded_count")
             item["missing_steps"] = details.get("missing_steps") or []
             non_passed_steps = [
@@ -1689,6 +1690,13 @@ def summarize_workflow_validation(validation: dict[str, Any]) -> dict[str, Any]:
             ]
             if non_passed_steps:
                 item["non_passed_steps"] = non_passed_steps
+            blocked_steps = [
+                compact_workflow_validation_step(step)
+                for step in (details.get("blocked_steps") or check.get("blocked_steps") or [])
+                if isinstance(step, dict)
+            ]
+            if blocked_steps:
+                item["blocked_steps"] = blocked_steps
             superseded_steps = [
                 compact_workflow_validation_step(step)
                 for step in (details.get("superseded_steps") or check.get("superseded_steps") or [])
@@ -1729,6 +1737,9 @@ def compact_workflow_validation_step(step: dict[str, Any]) -> dict[str, Any]:
             "current_selected_condition",
             "current_selected_case",
             "current_selected_log",
+            "blocked_by",
+            "required_log",
+            "required_runtime_status",
             "current_preflight_report",
             "current_preflight_status",
             "guidance",

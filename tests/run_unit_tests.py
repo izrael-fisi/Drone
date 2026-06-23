@@ -3955,8 +3955,41 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             item["name"]
             for item in capture_blocked_checks["required_step_results"]["details"]["non_passed_steps"]
         ]
+        assert_equal(
+            capture_non_passed_names,
+            ["capture_field_terrain_log"],
+            "workflow validation should keep only terrain capture as the active root blocker",
+        )
         if "select_field_collection_condition" in capture_non_passed_names:
             raise AssertionError("workflow validation should not keep selected condition in active blockers")
+        capture_blocked_names = [
+            item["name"]
+            for item in capture_blocked_checks["required_step_results"]["details"]["blocked_steps"]
+        ]
+        if "register_field_replay_case" not in capture_blocked_names:
+            raise AssertionError("workflow validation should mark registration as blocked by missing terrain log")
+        if "run_autonomy_readiness_audit" not in capture_blocked_names:
+            raise AssertionError("workflow validation should mark final audit as blocked by missing terrain log proof")
+        blocked_registration = next(
+            item
+            for item in capture_blocked_checks["required_step_results"]["details"]["blocked_steps"]
+            if item.get("name") == "register_field_replay_case"
+        )
+        assert_equal(
+            blocked_registration["blocked_by"],
+            "capture_field_terrain_log",
+            "workflow validation blocked registration dependency",
+        )
+        assert_equal(
+            blocked_registration["required_log"],
+            str(capture_output_dir / "terrain_matches.jsonl"),
+            "workflow validation blocked registration required log",
+        )
+        assert_equal(
+            blocked_registration["required_runtime_status"],
+            str(capture_output_dir / "runtime_status.json"),
+            "workflow validation blocked registration runtime status",
+        )
         capture_superseded_condition = next(
             item
             for item in capture_blocked_checks["required_step_results"]["details"]["superseded_steps"]
@@ -3990,6 +4023,10 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation human output should show selected condition as superseded")
         if "Current condition: good_texture" not in capture_blocked_text:
             raise AssertionError("workflow validation human output should show current selected condition")
+        if "Blocked workflow step: register_field_replay_case [skipped]" not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should show registration as blocked by capture")
+        if "Required runtime status: " not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should show blocked-step runtime status")
 
         metadata_blocked_report = json.loads(report_path.read_text())
         metadata_command = (

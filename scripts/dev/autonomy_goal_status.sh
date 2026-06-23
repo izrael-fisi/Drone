@@ -843,6 +843,26 @@ if workflow_validation:
                             print(f"  current preflight report: {step.get('current_preflight_report')}")
                         if step.get("guidance"):
                             print(f"  guidance: {step.get('guidance')}")
+            blocked_steps = details.get("blocked_steps")
+            if not isinstance(blocked_steps, list):
+                blocked_steps = check.get("blocked_steps")
+            if isinstance(blocked_steps, list):
+                for step in blocked_steps[:4]:
+                    if not isinstance(step, dict):
+                        continue
+                    step_name = step.get("name") or "unknown"
+                    step_status = step.get("status") or "unknown"
+                    print(f"- blocked workflow step: {step_name} [{step_status}]")
+                    if step.get("blocked_by"):
+                        print(f"  blocked by: {step.get('blocked_by')}")
+                    if step.get("required_log"):
+                        print(f"  required log: {step.get('required_log')}")
+                    if step.get("required_runtime_status"):
+                        print(f"  required runtime status: {step.get('required_runtime_status')}")
+                    if step.get("notes"):
+                        print(f"  notes: {step.get('notes')}")
+                    if step.get("guidance"):
+                        print(f"  guidance: {step.get('guidance')}")
             superseded_steps = details.get("superseded_steps")
             if not isinstance(superseded_steps, list):
                 superseded_steps = check.get("superseded_steps")

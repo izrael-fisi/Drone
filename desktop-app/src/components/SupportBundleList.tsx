@@ -81,6 +81,9 @@ function formatWorkflowStep(step: WorkflowValidationStep) {
 function workflowStepTitle(step: WorkflowValidationStep) {
   return [
     step.notes,
+    step.blocked_by ? `Blocked by: ${step.blocked_by}` : undefined,
+    step.required_log ? `Required log: ${step.required_log}` : undefined,
+    step.required_runtime_status ? `Required runtime status: ${step.required_runtime_status}` : undefined,
     step.current_selected_condition ? `Selected condition: ${step.current_selected_condition}` : undefined,
     step.current_selected_case ? `Selected case: ${step.current_selected_case}` : undefined,
     step.current_selected_log ? `Selected log: ${step.current_selected_log}` : undefined,
@@ -326,9 +329,11 @@ function SupportBundleDetailPanel({
   const workflowMissingSteps = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_steps));
   const workflowMissingMarkers = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_markers));
   const workflowNonPassedSteps = workflowBlockingChecks.flatMap((check) => check.non_passed_steps);
+  const workflowDependentBlockedSteps = workflowBlockingChecks.flatMap((check) => check.blocked_steps ?? []);
   const workflowSupersededSteps = workflowBlockingChecks.flatMap((check) => check.superseded_steps ?? []);
   const hasWorkflowBlockerDetails = workflowMissingSteps.length > 0
     || workflowNonPassedSteps.length > 0
+    || workflowDependentBlockedSteps.length > 0
     || workflowSupersededSteps.length > 0
     || workflowMissingMarkers.length > 0
     || workflowBlockingChecks.length > 0;
@@ -545,6 +550,21 @@ function SupportBundleDetailPanel({
                 ))}
                 {workflowNonPassedSteps.length > 4 && (
                   <div className="font-mono text-slate-500">+{workflowNonPassedSteps.length - 4} more non-passing workflow steps</div>
+                )}
+                {workflowDependentBlockedSteps.slice(0, 4).map((step, index) => (
+                  <div
+                    key={`blocked-${step.name ?? "workflow-step"}-${step.status ?? "status"}-${index}`}
+                    className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500"
+                    title={workflowStepTitle(step) || undefined}
+                  >
+                    <span className="badge-yellow">blocked</span>
+                    <span className="truncate">{formatWorkflowStep(step)}</span>
+                    {step.blocked_by && <span>by {formatLabel(step.blocked_by)}</span>}
+                    {step.required_log && <span className="truncate text-slate-400">{step.required_log}</span>}
+                  </div>
+                ))}
+                {workflowDependentBlockedSteps.length > 4 && (
+                  <div className="font-mono text-slate-500">+{workflowDependentBlockedSteps.length - 4} more blocked workflow steps</div>
                 )}
                 {workflowSupersededSteps.slice(0, 4).map((step, index) => (
                   <div
