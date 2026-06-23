@@ -1304,6 +1304,15 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
     for action in report.get("next_actions") or []:
         if not isinstance(action, dict):
             continue
+        command = action.get("command")
+        if action.get("id") == "capture_field_terrain_log" and isinstance(command, str):
+            command = command_with_runtime_status_read(
+                command,
+                runtime_status_root=str(
+                    action.get("capture_output_dir") or report.get("capture_output_dir") or ""
+                ).strip()
+                or None,
+            )
         action_bundle_diagnostic = action.get("bundle_diagnostic")
         if not isinstance(action_bundle_diagnostic, dict) and action.get("id") == "prepare_bundle":
             action_bundle_diagnostic = bundle_action_diagnostic
@@ -1313,10 +1322,10 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
                 "status": action.get("status"),
                 "title": action.get("title"),
                 "desktop_action": action.get("desktop_action"),
-                "command": action.get("command"),
+                "command": command,
                 "waits_on": action.get("waits_on") or [],
                 "bundle_path": action.get("bundle_path"),
-                "capture_output_dir": action.get("capture_output_dir"),
+                "capture_output_dir": action.get("capture_output_dir") or report.get("capture_output_dir"),
                 "source_log": action.get("source_log"),
                 "runtime_status_path": action.get("runtime_status_path"),
                 "preflight_capture_command": action.get("preflight_capture_command"),

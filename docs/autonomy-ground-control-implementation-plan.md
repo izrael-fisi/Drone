@@ -463,6 +463,10 @@ Status:
   summaries, goal-status output, and desktop workflow cards now preserve and
   display `capture_script_path` so a capture-ready preflight hands operators
   directly to the generated field-capture script.
+- Done: autonomy-readiness diagnostics and support-bundle preflight summaries
+  now normalize stale field-capture next-action commands so
+  `read_runtime_status.sh` still receives the selected capture output root even
+  when an older preflight report omitted `VISION_NAV_RUNTIME_STATUS_ROOTS`.
 - Done: bundle-prep next actions now carry the same compact missing-bundle
   diagnostic as the failed preflight check, including missing required files,
   detected candidate bundles, detected map sources, and recommended Mission

@@ -2660,7 +2660,7 @@ RC8_OPTION,90
                             "status": "blocked",
                             "title": "Capture the terrain log and runtime status for this condition.",
                             "desktop_action": "Module Setup > Field Log Capture",
-                            "command": f"VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'} ./scripts/pi/read_runtime_status.sh",
+                            "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
                             "waits_on": ["bundle_path"],
                             "source_log": str(root / "field-captures" / "good_texture" / "terrain_matches.jsonl"),
                             "runtime_status_path": str(root / "field-captures" / "good_texture" / "runtime_status.json"),
@@ -3059,6 +3059,19 @@ RC8_OPTION,90
             manifest["field_capture_preflights"]["reports"][0]["next_actions"][0]["id"],
             "prepare_bundle",
             "support field capture preflight next action",
+        )
+        support_capture_preflight_action = next(
+            action
+            for action in manifest["field_capture_preflights"]["reports"][0]["next_actions"]
+            if action.get("id") == "capture_field_terrain_log"
+        )
+        expected_runtime_status_root = f"VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'}"
+        if expected_runtime_status_root not in support_capture_preflight_action.get("command", ""):
+            raise AssertionError("Support field preflight action should normalize stale runtime-status read roots")
+        assert_equal(
+            support_capture_preflight_action["capture_output_dir"],
+            str(root / "field-captures" / "good_texture"),
+            "support field preflight action capture output",
         )
         support_preflight_action_diagnostic = manifest["field_capture_preflights"]["reports"][0]["next_actions"][0].get(
             "bundle_diagnostic"
@@ -4684,7 +4697,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                             "status": "blocked",
                             "title": "Capture the terrain log and runtime status for this condition.",
                             "desktop_action": "Module Setup > Field Log Capture",
-                            "command": f"VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'} ./scripts/pi/read_runtime_status.sh",
+                            "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/read_runtime_status.sh",
                             "waits_on": ["bundle_path"],
                             "source_log": str(root / "field-captures" / "good_texture" / "terrain_matches.jsonl"),
                             "runtime_status_path": str(root / "field-captures" / "good_texture" / "runtime_status.json"),
@@ -4992,6 +5005,19 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("Autonomy readiness should backfill preflight action missing-file diagnostics")
         if not readiness_prepare_diagnostic.get("bundle_candidates"):
             raise AssertionError("Autonomy readiness should backfill preflight action bundle candidates")
+        readiness_capture_action = next(
+            action
+            for action in missing_proof_ready["diagnostics"]["field_capture_preflight"]["next_actions"]
+            if action.get("id") == "capture_field_terrain_log"
+        )
+        expected_runtime_status_root = f"VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'}"
+        if expected_runtime_status_root not in readiness_capture_action.get("command", ""):
+            raise AssertionError("Autonomy readiness should normalize stale preflight runtime-status read roots")
+        assert_equal(
+            readiness_capture_action["capture_output_dir"],
+            str(root / "field-captures" / "good_texture"),
+            "autonomy readiness preflight action capture output",
+        )
         if "px4_sitl_prereqs" in {item.get("name") for item in missing_proof_ready["evidence_manifest"]["proof_items"]}:
             raise AssertionError("PX4 prerequisite diagnostics must not become a goal proof item")
         if "field_capture_preflight" in {
