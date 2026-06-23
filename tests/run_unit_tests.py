@@ -3080,6 +3080,20 @@ RC8_OPTION,90
             raise AssertionError("Support field preflight action should inherit missing bundle diagnostics from old reports")
         if not support_preflight_action_diagnostic.get("bundle_candidates"):
             raise AssertionError("Support field preflight action should inherit bundle candidates from old reports")
+        if support_preflight_action_diagnostic.get("search_root_count", 0) <= 0:
+            raise AssertionError("Support field preflight action should refresh current bundle search roots")
+        support_action_ids = {
+            item.get("id")
+            for item in support_preflight_action_diagnostic.get("recommended_actions", [])
+            if isinstance(item, dict)
+        }
+        if "build_or_upload_selected_bundle" not in support_action_ids:
+            raise AssertionError("Support field preflight action should refresh selected-bundle repair guidance")
+        support_failed_check_diagnostic = manifest["field_capture_preflights"]["reports"][0]["failed_checks"][0].get(
+            "bundle_diagnostic"
+        ) or {}
+        if support_failed_check_diagnostic.get("search_root_count", 0) <= 0:
+            raise AssertionError("Support field preflight failed check should refresh current bundle search roots")
         assert_equal(
             manifest["logs"]["runtime_statuses"][0]["schema_version"],
             "vision_nav_runtime_status_v1",

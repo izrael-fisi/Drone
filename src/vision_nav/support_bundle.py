@@ -1283,9 +1283,12 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
             if details.get("issue_count") is not None:
                 item["issue_count"] = details.get("issue_count")
             if details.get("diagnostic") is not None:
-                from vision_nav.bundle_diagnostics import compact_bundle_diagnostic
+                from vision_nav.bundle_diagnostics import compact_bundle_diagnostic, refresh_compact_bundle_diagnostic
 
-                item["bundle_diagnostic"] = compact_bundle_diagnostic(details.get("diagnostic"))
+                item["bundle_diagnostic"] = refresh_compact_bundle_diagnostic(
+                    report.get("bundle_path") or details.get("path"),
+                    compact_bundle_diagnostic(details.get("diagnostic")),
+                )
         checks.append(item)
         if item.get("status") == "failed":
             failed_checks.append(item)
@@ -1316,6 +1319,16 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
         action_bundle_diagnostic = action.get("bundle_diagnostic")
         if not isinstance(action_bundle_diagnostic, dict) and action.get("id") == "prepare_bundle":
             action_bundle_diagnostic = bundle_action_diagnostic
+        if action.get("id") == "prepare_bundle":
+            try:
+                from vision_nav.bundle_diagnostics import refresh_compact_bundle_diagnostic
+
+                action_bundle_diagnostic = refresh_compact_bundle_diagnostic(
+                    action.get("bundle_path") or report.get("bundle_path"),
+                    action_bundle_diagnostic,
+                )
+            except Exception:
+                pass
         next_actions.append(
             {
                 "id": action.get("id"),

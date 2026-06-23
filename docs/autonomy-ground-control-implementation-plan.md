@@ -467,6 +467,9 @@ Status:
   now normalize stale field-capture next-action commands so
   `read_runtime_status.sh` still receives the selected capture output root even
   when an older preflight report omitted `VISION_NAV_RUNTIME_STATUS_ROOTS`.
+- Done: support-bundle field-preflight summaries now refresh compact
+  missing-bundle diagnostics against current bundle search roots, matching the
+  workflow-validation and autonomy-readiness repair guidance.
 - Done: bundle-prep next actions now carry the same compact missing-bundle
   diagnostic as the failed preflight check, including missing required files,
   detected candidate bundles, detected map sources, and recommended Mission
