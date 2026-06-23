@@ -82,6 +82,12 @@ def parse_args() -> argparse.Namespace:
         help="Field capture preflight JSON report. Can be repeated.",
     )
     parser.add_argument(
+        "--field-log-capture-report",
+        action="append",
+        default=[],
+        help="Field log capture audit JSON report. Can be repeated.",
+    )
+    parser.add_argument(
         "--gnss-denied-plan-check",
         action="append",
         default=[],
@@ -1459,6 +1465,113 @@ def copy_field_capture_preflights(paths: list[str], support_dir: Path) -> dict[s
     }
 
 
+def summarize_field_log_capture_report(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    field_case = report.get("field_case") if isinstance(report.get("field_case"), dict) else {}
+    artifacts = report.get("artifacts") if isinstance(report.get("artifacts"), dict) else {}
+    preflight = report.get("preflight") if isinstance(report.get("preflight"), dict) else {}
+    next_actions = report.get("next_actions") if isinstance(report.get("next_actions"), dict) else {}
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    return {
+        "path": str(report_path),
+        "status": report.get("status"),
+        "generated_at_utc": report.get("generated_at_utc"),
+        "command_source": report.get("command_source"),
+        "command": report.get("command"),
+        "exit_code": report.get("exit_code"),
+        "case_name": field_case.get("case_name"),
+        "expected": field_case.get("expected"),
+        "condition": field_case.get("condition"),
+        "conditions": field_case.get("conditions"),
+        "capture_output_dir": field_case.get("capture_output_dir"),
+        "metadata_ready": field_case.get("metadata_ready"),
+        "metadata_issue_count": len(field_case.get("metadata_issues") or []),
+        "preflight_status": preflight.get("status"),
+        "preflight_ready_for_capture": preflight.get("ready_for_capture"),
+        "preflight_ready_for_registration": preflight.get("ready_for_registration"),
+        "remote_terrain_log": artifacts.get("remote_terrain_log"),
+        "remote_runtime_status": artifacts.get("remote_runtime_status"),
+        "local_terrain_log": artifacts.get("local_terrain_log"),
+        "local_runtime_status": artifacts.get("local_runtime_status"),
+        "registration_ready": next_actions.get("registration_ready"),
+        "metadata_update_command": next_actions.get("metadata_update_command"),
+        "register_command": next_actions.get("register_command"),
+        "record_count": summary.get("record_count"),
+        "status_counts": summary.get("status_counts") if isinstance(summary.get("status_counts"), dict) else {},
+        "bundle": summary.get("bundle"),
+        "issue_count": len(summary.get("issues") or []),
+        "issues": summary.get("issues") or [],
+    }
+
+
+def copy_field_log_capture_reports(paths: list[str], support_dir: Path) -> dict[str, Any]:
+    if not paths:
+        return {"status": "not_provided", "report_count": 0}
+
+    summary_dir = support_dir / "summaries" / "field_log_capture_reports"
+    raw_dir = support_dir / "extras" / "field_log_capture_reports"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    seen_sources: set[str] = set()
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        source_key = str(source.resolve()) if source.exists() else str(source)
+        if source_key in seen_sources:
+            continue
+        seen_sources.add(source_key)
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"Field log capture report is missing: {source}"})
+            continue
+        if source.is_dir():
+            copied.append(copy_tree(source, raw_dir / safe_relpath(source)))
+            json_files = sorted(source.rglob("*.json"))
+        else:
+            copied.append(copy_file(source, raw_dir / source.name))
+            json_files = [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception as exc:
+                issues.append({"severity": "warning", "message": f"Could not parse field log capture report {report_file}: {exc}"})
+                continue
+            if not isinstance(report, dict) or report.get("schema_version") != "vision_nav_desktop_field_log_capture_v1":
+                continue
+            report_summary = summarize_field_log_capture_report(report, report_path=report_file)
+            reports.append(report_summary)
+            name_source = str(report_summary.get("case_name") or report_summary.get("condition") or report_file.stem)
+            output_name = f"{sanitize_filename(name_source)}-{len(reports):02d}.json"
+            (summary_dir / output_name).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+    statuses = {str(report.get("status") or "").lower() for report in reports}
+    if missing or "failed" in statuses:
+        status = "failed"
+    elif not reports:
+        status = "degraded" if issues else "not_provided"
+    elif statuses.intersection({"degraded", "warming_up"}):
+        status = "degraded"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "report_count": len(reports),
+        "reports": reports,
+        "registration_ready_count": sum(1 for report in reports if report.get("registration_ready") is True),
+        "metadata_ready_count": sum(1 for report in reports if report.get("metadata_ready") is True),
+        "preflight_ready_for_capture_count": sum(1 for report in reports if report.get("preflight_ready_for_capture") is True),
+        "preflight_ready_for_registration_count": sum(1 for report in reports if report.get("preflight_ready_for_registration") is True),
+        "record_count": sum(int(report.get("record_count") or 0) for report in reports),
+        "issue_count": sum(int(report.get("issue_count") or 0) for report in reports),
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
 def summarize_gnss_denied_plan_check(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
     check = report.get("check") if isinstance(report.get("check"), dict) else {}
     mission_plan = report.get("mission_plan") if isinstance(report.get("mission_plan"), dict) else {}
@@ -2015,6 +2128,7 @@ def create_support_bundle(
     field_evidence_report_paths: list[str] | None = None,
     field_collection_plan_paths: list[str] | None = None,
     field_capture_preflight_paths: list[str] | None = None,
+    field_log_capture_report_paths: list[str] | None = None,
     gnss_denied_plan_check_paths: list[str] | None = None,
     threshold_tuning_report_paths: list[str] | None = None,
     rosbag_export_validation_paths: list[str] | None = None,
@@ -2107,6 +2221,10 @@ def create_support_bundle(
         field_capture_preflight_paths or [],
         support_dir,
     )
+    field_log_capture_reports = copy_field_log_capture_reports(
+        field_log_capture_report_paths or [],
+        support_dir,
+    )
     gnss_denied_plan_checks = copy_gnss_denied_plan_checks(
         gnss_denied_plan_check_paths or [],
         support_dir,
@@ -2144,6 +2262,7 @@ def create_support_bundle(
         "field_evidence": field_evidence,
         "field_collection_plans": field_collection_plans,
         "field_capture_preflights": field_capture_preflights,
+        "field_log_capture_reports": field_log_capture_reports,
         "gnss_denied_plan_checks": gnss_denied_plan_checks,
         "threshold_tuning": threshold_tuning,
         "rosbag_export_validations": rosbag_export_validations,
@@ -2217,6 +2336,12 @@ def print_human(result: dict[str, Any]) -> None:
             "Field capture preflights: "
             f"{field_capture_preflights.get('status')} ({field_capture_preflights.get('report_count')} report(s))"
         )
+    field_log_capture_reports = manifest.get("field_log_capture_reports") or {}
+    if field_log_capture_reports.get("status") not in {None, "not_provided"}:
+        print(
+            "Field log captures: "
+            f"{field_log_capture_reports.get('status')} ({field_log_capture_reports.get('report_count')} report(s))"
+        )
     gnss_denied_plan_checks = manifest.get("gnss_denied_plan_checks") or {}
     if gnss_denied_plan_checks.get("status") not in {None, "not_provided"}:
         print(
@@ -2265,6 +2390,7 @@ def main() -> None:
         field_evidence_report_paths=args.field_evidence_report,
         field_collection_plan_paths=args.field_collection_plan,
         field_capture_preflight_paths=args.field_capture_preflight,
+        field_log_capture_report_paths=args.field_log_capture_report,
         gnss_denied_plan_check_paths=args.gnss_denied_plan_check,
         threshold_tuning_report_paths=args.threshold_tuning_report,
         rosbag_export_validation_paths=args.rosbag_export_validation,

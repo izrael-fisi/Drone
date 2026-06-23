@@ -795,6 +795,11 @@ Status:
   JSON under `extras/field_capture_preflights/`, publish parseable reports under
   `summaries/field_capture_preflights/`, and roll up readiness flags,
   failed/degraded checks, and blocked next-action counts for support review.
+- Done: support bundles ingest Pi-side field log capture audit reports, copy
+  raw JSON under `extras/field_log_capture_reports/`, publish desktop-readable
+  reports under `summaries/field_log_capture_reports/`, and roll up record
+  count, metadata readiness, registration readiness, and issue count in
+  `support_manifest.json`.
 - Done: support bundles now auto-ingest existing runtime logs referenced by
   field collection plans, including sibling `runtime_status.json` snapshots, so
   per-condition field captures are included in bench evidence without requiring

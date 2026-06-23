@@ -2810,6 +2810,22 @@ RC8_OPTION,90
             started_at_utc="2026-06-21T00:05:00+00:00",
         )
         write_runtime_status(field_capture_log.parent / "runtime_status.json", field_capture_status)
+        field_log_capture_report = root / "field_log_capture_report.json"
+        create_field_log_capture_report(
+            log_path=field_capture_log,
+            runtime_status_path=field_capture_log.parent / "runtime_status.json",
+            output_path=field_log_capture_report,
+            bundle=str(bundle),
+            capture_output_dir=str(field_capture_log.parent),
+            condition="good_texture",
+            case_name="unit-good_texture",
+            expected="good_map",
+            conditions="good_texture",
+            preflight_path=field_capture_preflight,
+            command_source="unit test",
+            command="./scripts/pi/run_terrain_nav_loop.sh",
+            exit_code=0,
+        )
         threshold_tuning_report = root / "threshold_tuning_report.json"
         threshold_tuning_report.write_text(
             json.dumps(
@@ -2981,6 +2997,7 @@ RC8_OPTION,90
             field_evidence_report_paths=[str(field_evidence_report)],
             field_collection_plan_paths=[str(field_collection_plan)],
             field_capture_preflight_paths=[str(field_capture_preflight)],
+            field_log_capture_report_paths=[str(field_log_capture_report)],
             gnss_denied_plan_check_paths=[str(gnss_denied_plan_check)],
             threshold_tuning_report_paths=[str(threshold_tuning_report)],
             rosbag_export_validation_paths=[str(rosbag_export_validation)],
@@ -3024,6 +3041,7 @@ RC8_OPTION,90
             "summaries/field_evidence/field_manifest-01.json",
             "summaries/field_collection_plans/field_manifest-01.json",
             "summaries/field_capture_preflights/good_texture-01.json",
+            "summaries/field_log_capture_reports/unit-good_texture-01.json",
             "summaries/gnss_denied_plan_checks/passed-01.json",
             "summaries/threshold_tuning/field_manifest-01.json",
             "summaries/rosbag_export_validations/vision_nav_rosbag_jsonl_v1-01.json",
@@ -3046,6 +3064,7 @@ RC8_OPTION,90
             "extras/feature_method_benchmarks/feature-method-bench/unit-method-benchmark.json",
             "extras/field_evidence/field_evidence_report.json",
             "extras/field_capture_preflights/field_capture_preflight.json",
+            "extras/field_log_capture_reports/field_log_capture_report.json",
             "extras/gnss_denied_plan_checks/gnss_denied_plan_check.json",
             "extras/threshold_tuning/threshold_tuning_report.json",
             "extras/rosbag_export_validations/rosbag-jsonl-validation.json",
@@ -3178,6 +3197,36 @@ RC8_OPTION,90
             support_capture_preflight_action["capture_output_dir"],
             str(root / "field-captures" / "good_texture"),
             "support field preflight action capture output",
+        )
+        assert_equal(
+            manifest["field_log_capture_reports"]["status"],
+            "passed",
+            "support field log capture report status",
+        )
+        assert_equal(
+            manifest["field_log_capture_reports"]["report_count"],
+            1,
+            "support field log capture report count",
+        )
+        assert_equal(
+            manifest["field_log_capture_reports"]["record_count"],
+            1,
+            "support field log capture record count",
+        )
+        assert_equal(
+            manifest["field_log_capture_reports"]["reports"][0]["case_name"],
+            "unit-good_texture",
+            "support field log capture case",
+        )
+        assert_equal(
+            manifest["field_log_capture_reports"]["reports"][0]["metadata_ready"],
+            False,
+            "support field log capture metadata readiness",
+        )
+        assert_equal(
+            manifest["field_log_capture_reports"]["reports"][0]["remote_terrain_log"],
+            str(field_capture_log),
+            "support field log capture remote log",
         )
         ready_scriptless_preflight = json.loads(field_capture_preflight.read_text())
         ready_scriptless_preflight["status"] = "degraded"

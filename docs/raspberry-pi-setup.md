@@ -536,7 +536,11 @@ field evidence. When the default preflight report exists,
 `create_support_bundle.sh` copies it under `extras/field_capture_preflights/`,
 publishes the parseable report under `summaries/field_capture_preflights/`, and
 rolls up readiness flags, failed/degraded checks, and next-action counts in
-`support_manifest.json`.
+`support_manifest.json`. The same support-bundle wrapper also auto-detects
+`field_log_capture_report.json` from the default terrain-match folder and
+per-condition `~/DroneTransfer/outgoing/field-captures/*/` folders, copies the
+raw audit reports under `extras/field_log_capture_reports/`, and publishes
+desktop-readable summaries under `summaries/field_log_capture_reports/`.
 In the same desktop panel, `Validate Bundle` runs the selected field bundle
 validation command over SSH. When a preflight report has already been downloaded,
 the app uses that report's `bundle_validation_command`; otherwise it validates
@@ -932,6 +936,10 @@ under `extras/field_collection_plans/`, then publishes parsed JSON under
 When `~/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json`
 exists, the same support bundle also preserves the selected condition preflight
 report plus its ordered next actions.
+When `field_log_capture_report.json` exists in the default terrain-match folder
+or any per-condition field-capture folder, the support bundle also preserves
+that capture audit and rolls up record count, metadata readiness, registration
+readiness, and issue count in `support_manifest.json`.
 
 To include PX4 SITL receiver evidence, save the PX4 console outputs from
 repeated `listener vehicle_visual_odometry` commands and `mavlink status`, then pass those files

@@ -403,6 +403,9 @@ locations into `scripts/pi/create_support_bundle.sh`:
 `$HOME/px4-sitl-evidence`, `$HOME/px4.params`, `$HOME/ardupilot.params`,
 `$HOME/DroneTransfer/outgoing/feature-method-bench`, and
 `$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json`.
+They also collect Pi-side `field_log_capture_report.json` files from the
+default terrain-match output and per-condition field-capture output folders, so
+support bundle details can show which capture command produced each terrain log.
 Missing files are ignored by the Pi wrapper; present files are packaged and
 counted in the bench-readiness report.
 

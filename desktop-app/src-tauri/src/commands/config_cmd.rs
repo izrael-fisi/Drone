@@ -71,6 +71,12 @@ pub struct SupportBundleSummary {
     pub field_capture_preflight_degraded_check_count: Option<u64>,
     pub field_capture_preflight_next_action_count: Option<u64>,
     pub field_capture_preflight_blocked_action_count: Option<u64>,
+    pub field_log_capture_report_status: Option<String>,
+    pub field_log_capture_report_count: Option<u64>,
+    pub field_log_capture_report_record_count: Option<u64>,
+    pub field_log_capture_report_registration_ready_count: Option<u64>,
+    pub field_log_capture_report_metadata_ready_count: Option<u64>,
+    pub field_log_capture_report_issue_count: Option<u64>,
     pub threshold_tuning_status: Option<String>,
     pub threshold_tuning_field_case_count: Option<u64>,
     pub threshold_tuning_capture_metadata_issue_count: Option<u64>,
@@ -1151,6 +1157,7 @@ pub struct SupportBundleDetails {
     pub field_evidence_reports: Vec<SupportBundleFieldEvidenceReport>,
     pub field_collection_plan_reports: Vec<SupportBundleFieldCollectionPlanReport>,
     pub field_capture_preflight_reports: Vec<SupportBundleFieldCapturePreflightReport>,
+    pub field_log_capture_reports: Vec<FieldLogCaptureReport>,
     pub threshold_tuning_reports: Vec<SupportBundleThresholdTuningReport>,
     pub rosbag_export_validation_reports: Vec<SupportBundleRosbagExportValidationReport>,
     pub rosbag2_cli_review_reports: Vec<SupportBundleRosbag2CliReviewReport>,
@@ -1479,6 +1486,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut field_evidence_reports = Vec::new();
     let mut field_collection_plan_reports = Vec::new();
     let mut field_capture_preflight_reports = Vec::new();
+    let mut field_log_capture_reports = Vec::new();
     let mut threshold_tuning_reports = Vec::new();
     let mut rosbag_export_validation_reports = Vec::new();
     let mut rosbag2_cli_review_reports = Vec::new();
@@ -1565,6 +1573,14 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
                     field_capture_preflight_reports.push(report);
                 }
             }
+        } else if name.starts_with("summaries/field_log_capture_reports/")
+            && name.ends_with(".json")
+        {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                if let Some(report) = field_log_capture_report_from_json(&value) {
+                    field_log_capture_reports.push(report);
+                }
+            }
         } else if name.starts_with("summaries/threshold_tuning/") && name.ends_with(".json") {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 threshold_tuning_reports.push(threshold_tuning_report_from_json(&value));
@@ -1617,6 +1633,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         field_evidence_reports,
         field_collection_plan_reports,
         field_capture_preflight_reports,
+        field_log_capture_reports,
         threshold_tuning_reports,
         rosbag_export_validation_reports,
         rosbag2_cli_review_reports,
@@ -5088,6 +5105,11 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
     {
         return Some("field capture preflight".to_string());
     }
+    if lower_name.starts_with("summaries/field_log_capture_reports/")
+        && lower_name.ends_with(".json")
+    {
+        return Some("field log capture report".to_string());
+    }
     if lower_name.starts_with("summaries/threshold_tuning/") && lower_name.ends_with(".json") {
         return Some("threshold tuning report".to_string());
     }
@@ -5127,6 +5149,9 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
         }
         if lower_name.starts_with("extras/field_capture_preflights/") {
             return Some("field capture preflight artifact".to_string());
+        }
+        if lower_name.starts_with("extras/field_log_capture_reports/") {
+            return Some("field log capture artifact".to_string());
         }
         if lower_name.starts_with("extras/gnss_denied_plan_checks/") {
             return Some("gnss denied plan check artifact".to_string());
@@ -5471,6 +5496,24 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         field_capture_preflight_blocked_action_count: manifest
             .pointer("/field_capture_preflights/blocked_action_count")
             .and_then(|value| value.as_u64()),
+        field_log_capture_report_status: json_string(
+            manifest.pointer("/field_log_capture_reports/status"),
+        ),
+        field_log_capture_report_count: manifest
+            .pointer("/field_log_capture_reports/report_count")
+            .and_then(|value| value.as_u64()),
+        field_log_capture_report_record_count: manifest
+            .pointer("/field_log_capture_reports/record_count")
+            .and_then(|value| value.as_u64()),
+        field_log_capture_report_registration_ready_count: manifest
+            .pointer("/field_log_capture_reports/registration_ready_count")
+            .and_then(|value| value.as_u64()),
+        field_log_capture_report_metadata_ready_count: manifest
+            .pointer("/field_log_capture_reports/metadata_ready_count")
+            .and_then(|value| value.as_u64()),
+        field_log_capture_report_issue_count: manifest
+            .pointer("/field_log_capture_reports/issue_count")
+            .and_then(|value| value.as_u64()),
         threshold_tuning_status: json_string(manifest.pointer("/threshold_tuning/status")),
         threshold_tuning_field_case_count: manifest
             .pointer("/threshold_tuning/field_case_count")
@@ -5541,6 +5584,7 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.field_evidence_status.is_none()
         && summary.field_collection_plan_status.is_none()
         && summary.field_capture_preflight_status.is_none()
+        && summary.field_log_capture_report_status.is_none()
         && summary.threshold_tuning_status.is_none()
         && summary.rosbag_export_validation_status.is_none()
         && summary.rosbag2_cli_review_status.is_none()
@@ -5816,6 +5860,14 @@ mod tests {
                 "next_action_count": 2,
                 "blocked_action_count": 1
             },
+            "field_log_capture_reports": {
+                "status": "passed",
+                "report_count": 1,
+                "record_count": 12,
+                "registration_ready_count": 1,
+                "metadata_ready_count": 1,
+                "issue_count": 0
+            },
             "threshold_tuning": {
                 "status": "passed",
                 "report_count": 1,
@@ -5955,6 +6007,21 @@ mod tests {
             summary.field_capture_preflight_blocked_action_count,
             Some(1)
         );
+        assert_eq!(
+            summary.field_log_capture_report_status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(summary.field_log_capture_report_count, Some(1));
+        assert_eq!(summary.field_log_capture_report_record_count, Some(12));
+        assert_eq!(
+            summary.field_log_capture_report_registration_ready_count,
+            Some(1)
+        );
+        assert_eq!(
+            summary.field_log_capture_report_metadata_ready_count,
+            Some(1)
+        );
+        assert_eq!(summary.field_log_capture_report_issue_count, Some(0));
         assert_eq!(summary.threshold_tuning_status.as_deref(), Some("passed"));
         assert_eq!(summary.threshold_tuning_field_case_count, Some(8));
         assert_eq!(
@@ -8754,6 +8821,61 @@ mod tests {
                 .as_bytes(),
             )
             .expect("write field capture preflight");
+            zip.start_file(
+                "summaries/field_log_capture_reports/unit-good-01.json",
+                options,
+            )
+            .expect("field log capture report entry");
+            zip.write_all(
+                serde_json::json!({
+                    "schema_version": "vision_nav_desktop_field_log_capture_v1",
+                    "generated_at_utc": "2026-06-21T00:05:00Z",
+                    "status": "passed",
+                    "host": "dronecompute",
+                    "device_name": "dronecompute",
+                    "command_source": "pi terrain nav loop wrapper",
+                    "command": "./scripts/pi/run_terrain_nav_loop.sh",
+                    "exit_code": 0,
+                    "field_case": {
+                        "case_name": "unit-good",
+                        "expected": "good_map",
+                        "condition": "good_texture",
+                        "conditions": "good_texture",
+                        "capture_output_dir": "field-captures/good_texture",
+                        "metadata_ready": true,
+                        "metadata_issues": [],
+                        "runtime_status_path": "field-captures/good_texture/runtime_status.json"
+                    },
+                    "preflight": {
+                        "status": "degraded",
+                        "ready_for_capture": true,
+                        "ready_for_registration": true
+                    },
+                    "artifacts": {
+                        "remote_terrain_log": "field-captures/good_texture/terrain_matches.jsonl",
+                        "remote_runtime_status": "field-captures/good_texture/runtime_status.json",
+                        "local_terrain_log": null,
+                        "local_runtime_status": null
+                    },
+                    "next_actions": {
+                        "metadata_update_command": "./scripts/pi/update_field_capture_metadata.sh",
+                        "register_command": "./scripts/pi/register_field_replay_case.sh",
+                        "registration_ready": true
+                    },
+                    "runtime_status": {
+                        "last_match": {"status": "accepted"},
+                        "estimator": {"health": "tracking"}
+                    },
+                    "summary": {
+                        "record_count": 12,
+                        "status_counts": {"accepted": 12},
+                        "issues": []
+                    }
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write field log capture report");
             zip.start_file("summaries/threshold_tuning/field_manifest-01.json", options)
                 .expect("threshold tuning entry");
             zip.write_all(
@@ -8910,6 +9032,13 @@ mod tests {
             zip.write_all(br#"{"schema_version":"vision_nav_field_capture_preflight_v1"}"#)
                 .expect("write field capture preflight artifact");
             zip.start_file(
+                "extras/field_log_capture_reports/field_log_capture_report.json",
+                options,
+            )
+            .expect("field log capture artifact entry");
+            zip.write_all(br#"{"schema_version":"vision_nav_desktop_field_log_capture_v1"}"#)
+                .expect("write field log capture artifact");
+            zip.start_file(
                 "extras/rosbag2_cli_reviews/rosbag2-cli-review.json",
                 options,
             )
@@ -8927,7 +9056,7 @@ mod tests {
         }
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
-        assert_eq!(details.entry_count, 23);
+        assert_eq!(details.entry_count, 25);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(
@@ -9278,6 +9407,33 @@ mod tests {
         assert!(details.artifacts.iter().any(|artifact| {
             artifact.path == "extras/field_capture_preflights/field_capture_preflight.json"
                 && artifact.kind == "field capture preflight artifact"
+        }));
+        assert_eq!(details.field_log_capture_reports.len(), 1);
+        assert_eq!(
+            details.field_log_capture_reports[0].status.as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            details.field_log_capture_reports[0].case_name.as_deref(),
+            Some("unit-good")
+        );
+        assert_eq!(
+            details.field_log_capture_reports[0]
+                .remote_terrain_log
+                .as_deref(),
+            Some("field-captures/good_texture/terrain_matches.jsonl")
+        );
+        assert_eq!(
+            details.field_log_capture_reports[0].registration_ready,
+            Some(true)
+        );
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "summaries/field_log_capture_reports/unit-good-01.json"
+                && artifact.kind == "field log capture report"
+        }));
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "extras/field_log_capture_reports/field_log_capture_report.json"
+                && artifact.kind == "field log capture artifact"
         }));
         assert_eq!(details.threshold_tuning_reports.len(), 1);
         assert_eq!(

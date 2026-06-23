@@ -10,6 +10,7 @@ feature_method_benchmark="${VISION_NAV_FEATURE_METHOD_BENCHMARK:-$HOME/DroneTran
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json}"
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.json}"
 field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-$HOME/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json}"
+field_log_capture_report="${VISION_NAV_FIELD_LOG_CAPTURE_REPORT:-$HOME/DroneTransfer/outgoing/terrain-match/field_log_capture_report.json}"
 gnss_denied_plan_check="${VISION_NAV_GNSS_DENIED_PLAN_CHECK:-$HOME/DroneTransfer/outgoing/replay-cases/gnss_denied_plan_check.json}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
@@ -186,6 +187,36 @@ fi
 
 if [[ -n "$field_capture_preflight" && -e "$field_capture_preflight" ]]; then
   args+=(--field-capture-preflight "$field_capture_preflight")
+fi
+
+field_log_capture_reports=()
+add_field_log_capture_report() {
+  local candidate="$1"
+  local existing
+  if [[ -z "$candidate" || ! -e "$candidate" ]]; then
+    return
+  fi
+  if [[ "${#field_log_capture_reports[@]}" -gt 0 ]]; then
+    for existing in "${field_log_capture_reports[@]}"; do
+      if [[ "$existing" == "$candidate" ]]; then
+        return
+      fi
+    done
+  fi
+  field_log_capture_reports+=("$candidate")
+}
+
+add_field_log_capture_report "$field_log_capture_report"
+if [[ -d "$HOME/DroneTransfer/outgoing/field-captures" ]]; then
+  while IFS= read -r candidate; do
+    add_field_log_capture_report "$candidate"
+  done < <(find "$HOME/DroneTransfer/outgoing/field-captures" -maxdepth 2 -type f -name field_log_capture_report.json | sort)
+fi
+
+if [[ "${#field_log_capture_reports[@]}" -gt 0 ]]; then
+  for report in "${field_log_capture_reports[@]}"; do
+    args+=(--field-log-capture-report "$report")
+  done
 fi
 
 if [[ -n "$gnss_denied_plan_check" && -e "$gnss_denied_plan_check" ]]; then
