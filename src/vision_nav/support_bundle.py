@@ -1320,6 +1320,7 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
                 "source_log": action.get("source_log"),
                 "runtime_status_path": action.get("runtime_status_path"),
                 "preflight_capture_command": action.get("preflight_capture_command"),
+                "capture_script_path": action.get("capture_script_path"),
                 "notes": action.get("notes"),
                 "bundle_diagnostic": action_bundle_diagnostic,
             }
@@ -1342,6 +1343,7 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
         "source_log": report.get("source_log"),
         "runtime_status_path": report.get("runtime_status_path"),
         "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},
+        "capture_script_path": report.get("capture_script_path"),
         "check_count": len(checks),
         "failed_checks": failed_checks,
         "degraded_checks": degraded_checks,

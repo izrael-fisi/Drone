@@ -2116,6 +2116,7 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
                 "capture_output_dir": action.get("capture_output_dir"),
                 "source_log": action.get("source_log"),
                 "runtime_status_path": action.get("runtime_status_path"),
+                "capture_script_path": action.get("capture_script_path"),
                 "notes": action.get("notes"),
                 "bundle_diagnostic": action_bundle_diagnostic,
             }
@@ -2137,6 +2138,7 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
         "capture_output_dir": report.get("capture_output_dir"),
         "source_log": report.get("source_log"),
         "runtime_status_path": report.get("runtime_status_path"),
+        "capture_script_path": report.get("capture_script_path"),
         "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},
         "checks": checks,
         "failed_checks": failed_checks,

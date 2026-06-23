@@ -6,6 +6,7 @@ venv_python="${VISION_NAV_PYTHON:-$HOME/drone_vision_nav_venv/bin/python}"
 plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.json}"
 condition="${VISION_NAV_FIELD_CONDITION:-}"
 output="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-$HOME/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json}"
+capture_script="${VISION_NAV_FIELD_CAPTURE_SCRIPT:-$HOME/DroneTransfer/outgoing/replay-cases/run_field_capture.sh}"
 
 usage() {
   cat >&2 <<EOF
@@ -19,6 +20,7 @@ Common optional overrides:
   VISION_NAV_FIELD_COLLECTION_PLAN     Default: $plan
   VISION_NAV_FIELD_CONDITION           Optional condition key; defaults to plan next_condition
   VISION_NAV_FIELD_CAPTURE_PREFLIGHT   Default: $output
+  VISION_NAV_FIELD_CAPTURE_SCRIPT      Default: $capture_script
 EOF
 }
 
@@ -50,4 +52,5 @@ PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.field_capture_preflight
   --plan "$plan" \
   "${condition_args[@]}" \
   --repo-root "$repo_root" \
-  --output "$output"
+  --output "$output" \
+  --capture-script-output "$capture_script"

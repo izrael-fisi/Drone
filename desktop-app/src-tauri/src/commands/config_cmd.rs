@@ -449,6 +449,7 @@ pub struct SupportBundleFieldCapturePreflightAction {
     pub source_log: Option<String>,
     pub runtime_status_path: Option<String>,
     pub preflight_capture_command: Option<String>,
+    pub capture_script_path: Option<String>,
     pub notes: Option<String>,
     pub bundle_diagnostic: Option<SupportBundleDiagnostic>,
 }
@@ -469,6 +470,7 @@ pub struct SupportBundleFieldCapturePreflightReport {
     pub source_log: Option<String>,
     pub runtime_status_path: Option<String>,
     pub preflight_capture_command: Option<String>,
+    pub capture_script_path: Option<String>,
     pub summary: Option<serde_json::Value>,
     pub checks: Vec<SupportBundleFieldCapturePreflightCheck>,
     pub next_actions: Vec<SupportBundleFieldCapturePreflightAction>,
@@ -4446,6 +4448,7 @@ fn field_capture_preflight_action_from_json(
         source_log: json_string(value.get("source_log")),
         runtime_status_path: json_string(value.get("runtime_status_path")),
         preflight_capture_command: json_string(value.get("preflight_capture_command")),
+        capture_script_path: json_string(value.get("capture_script_path")),
         notes: json_string(value.get("notes")),
         bundle_diagnostic: value
             .get("bundle_diagnostic")
@@ -4500,6 +4503,7 @@ fn field_capture_preflight_report_from_json(
         source_log: json_string(value.get("source_log")),
         runtime_status_path: json_string(value.get("runtime_status_path")),
         preflight_capture_command: json_string(value.get("preflight_capture_command")),
+        capture_script_path: json_string(value.get("capture_script_path")),
         summary: value.get("summary").cloned(),
         checks,
         next_actions,

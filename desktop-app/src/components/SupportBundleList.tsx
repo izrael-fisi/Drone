@@ -1167,6 +1167,11 @@ function SupportBundleDetailPanel({
                 <div className="font-mono text-slate-500 truncate">
                   bundle {formatLabel(report.bundle_path)} / log {formatLabel(report.source_log)}
                 </div>
+                {report.capture_script_path && (
+                  <div className="font-mono text-slate-500 truncate">
+                    capture script {report.capture_script_path}
+                  </div>
+                )}
                 {report.checks.filter((check) => check.status !== "passed").length > 0 && (
                   <div className="flex flex-wrap gap-1 pt-0.5">
                     {report.checks.filter((check) => check.status !== "passed").slice(0, 6).map((check) => (

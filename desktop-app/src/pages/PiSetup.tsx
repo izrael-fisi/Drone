@@ -6727,6 +6727,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                         {fieldCapturePreflightReport.runtime_status_path ?? "n/a"}
                       </span>
                     </div>
+                    <div className="min-w-0 text-slate-400">
+                      Capture script{" "}
+                      <span className="font-mono text-slate-300 break-all">
+                        {fieldCapturePreflightReport.capture_script_path ?? "n/a"}
+                      </span>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                     <div className="space-y-2">

@@ -487,21 +487,27 @@ cd Drone
 
 Set `VISION_NAV_FIELD_CONDITION=low_texture` to check a specific condition
 instead of the plan's next pending one. The preflight writes
-`~/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json`, prints
-`ready_for_capture` and `ready_for_registration` status, and fails only when a
-blocking capture prerequisite such as the mission bundle, output path, or Pi
-runtime wrapper is missing. In the desktop app, Module Setup > Field Evidence
-Case > Preflight runs this wrapper over SSH and downloads the JSON report into
-the replay-cases folder. When the selected mission bundle is missing, the
-JSON report includes `bundle_path`, `bundle_validation_command`, and a desktop
-action hint so the operator can return to Mission Planner, build/upload the
-bundle, then rerun preflight. The same report includes ordered `next_actions`
-for bundle prep, capture, metadata completion, and registration, with blocked
-steps listing the prerequisite checks they are waiting on. Bundle-prep actions
-also carry the compact bundle diagnostic so terminal output, Module Setup, and
-support-bundle details can show missing files, detected bundle candidates, and
-detected map sources directly beside the repair command. It does not create or
-register field evidence. When the default preflight report exists,
+`~/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json` and, when
+capture is ready, an executable
+`~/DroneTransfer/outgoing/replay-cases/run_field_capture.sh` script containing
+the selected condition's bounded terrain capture plus runtime-status read. The
+script path is also emitted as `__VISION_NAV_TERRAIN_CAPTURE_SCRIPT__=...`.
+Set `VISION_NAV_FIELD_CAPTURE_SCRIPT=/path/to/run_capture.sh` to write that
+script elsewhere. The preflight prints `ready_for_capture` and
+`ready_for_registration` status, and fails only when a blocking capture
+prerequisite such as the mission bundle, output path, or Pi runtime wrapper is
+missing. In the desktop app, Module Setup > Field Evidence Case > Preflight
+runs this wrapper over SSH and downloads the JSON report into the replay-cases
+folder. When the selected mission bundle is missing, the JSON report includes
+`bundle_path`, `bundle_validation_command`, and a desktop action hint so the
+operator can return to Mission Planner, build/upload the bundle, then rerun
+preflight. The same report includes ordered `next_actions` for bundle prep,
+capture, metadata completion, and registration, with blocked steps listing the
+prerequisite checks they are waiting on. Bundle-prep actions also carry the
+compact bundle diagnostic so terminal output, Module Setup, and support-bundle
+details can show missing files, detected bundle candidates, and detected map
+sources directly beside the repair command. It does not create or register
+field evidence. When the default preflight report exists,
 `create_support_bundle.sh` copies it under `extras/field_capture_preflights/`,
 publishes the parseable report under `summaries/field_capture_preflights/`, and
 rolls up readiness flags, failed/degraded checks, and next-action counts in

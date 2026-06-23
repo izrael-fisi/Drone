@@ -7223,13 +7223,31 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             bundle=str(ready_bundle),
             capture_root=str(ready_capture_root),
         )
+        ready_capture_script = base / "run_field_capture.sh"
         ready_preflight = evaluate_field_capture_preflight(
             plan_path=base / "field_collection_plan_ready_capture.json",
             repo_root=Path.cwd(),
+            capture_script_output=ready_capture_script,
         )
         assert_equal(ready_preflight["status"], "degraded", "field preflight waits for log and metadata")
         assert_equal(ready_preflight["ready_for_capture"], True, "field preflight capture readiness")
         assert_equal(ready_preflight["ready_for_registration"], False, "field preflight registration readiness")
+        assert_equal(
+            ready_preflight["capture_script_path"],
+            str(ready_capture_script),
+            "field preflight generated capture script path",
+        )
+        if not ready_capture_script.exists():
+            raise AssertionError("Expected field preflight to write a runnable capture script")
+        if not os.access(ready_capture_script, os.X_OK):
+            raise AssertionError("Expected field preflight capture script to be executable")
+        ready_capture_script_text = ready_capture_script.read_text()
+        if "run_terrain_nav_loop.sh" not in ready_capture_script_text:
+            raise AssertionError("Expected capture script to run terrain capture")
+        if "read_runtime_status.sh" not in ready_capture_script_text:
+            raise AssertionError("Expected capture script to read runtime status")
+        if "preflight_field_capture.sh" in ready_capture_script_text:
+            raise AssertionError("Capture script should not recursively rerun preflight")
         assert_equal(
             ready_preflight["bundle_path"],
             str(ready_bundle),
@@ -7255,6 +7273,11 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "field preflight marks capture action ready",
         )
         assert_equal(
+            ready_actions["capture_field_terrain_log"]["capture_script_path"],
+            str(ready_capture_script),
+            "field preflight capture action carries capture script path",
+        )
+        assert_equal(
             ready_actions["complete_capture_metadata"]["status"],
             "action_required",
             "field preflight marks metadata action required",
@@ -7268,6 +7291,14 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected preflight to select next field condition")
         if not any(check["name"] == "registration_inputs" and check["status"] == "degraded" for check in ready_preflight["checks"]):
             raise AssertionError("Expected preflight to flag missing registration inputs")
+        ready_preflight_output = io.StringIO()
+        with contextlib.redirect_stdout(ready_preflight_output):
+            print_field_capture_preflight_human(ready_preflight)
+        ready_preflight_text = ready_preflight_output.getvalue()
+        if "Capture script: " not in ready_preflight_text:
+            raise AssertionError("Expected field preflight human output to include capture script path")
+        if "__VISION_NAV_TERRAIN_CAPTURE_SCRIPT__=" not in ready_preflight_text:
+            raise AssertionError("Expected field preflight markers to include capture script path")
         nested_output_plan = json.loads(json.dumps(ready_plan))
         nested_output = base / "field-captures-missing-parent" / "nested" / "Site-A-good_texture"
         nested_output_plan["next_condition"]["capture_output_dir"] = str(nested_output)

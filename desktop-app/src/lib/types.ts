@@ -418,6 +418,7 @@ export interface SupportBundleDetails {
     source_log?: string;
     runtime_status_path?: string;
     preflight_capture_command?: string;
+    capture_script_path?: string;
     summary?: unknown;
     checks: Array<{
       name?: string;
@@ -485,6 +486,7 @@ export interface SupportBundleDetails {
       source_log?: string;
       runtime_status_path?: string;
       preflight_capture_command?: string;
+      capture_script_path?: string;
       notes?: string;
       bundle_diagnostic?: {
         bundle_exists?: boolean;
