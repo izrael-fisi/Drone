@@ -1443,6 +1443,10 @@ Status:
 - Done: evidence-package diagnostic summaries now include compact field-capture
   preflight status, readiness, failed/degraded checks, next actions, and
   capture-script guidance alongside PX4 prerequisite diagnostics.
+- Done: Module Setup now parses and renders that evidence-package
+  field-capture preflight diagnostic on downloaded autonomy-readiness cards, so
+  shared ZIP manifests show capture readiness, rerun-preflight hints, problem
+  checks, and copyable next-action commands without opening raw JSON.
 - Done: Module Setup lists downloaded autonomy-readiness JSON reports from
   `~/DroneTransfer/from-pi/replay-cases/` with pass/degraded/fail counts and
   the support-bundle, PX4 receiver, field-evidence, feature-benchmark, and

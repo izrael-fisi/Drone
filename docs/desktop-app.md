@@ -639,6 +639,10 @@ opening the JSON report.
 It also shows audit provenance from the report or evidence package, including
 the generated timestamp, repo branch, commit hash, and dirty/clean state, so
 support can tell which code revision produced the readiness result.
+When the evidence package includes a compact field-capture preflight diagnostic,
+the same report card shows capture/registration readiness, the active condition,
+capture output/runtime/script hints, failed or degraded checks, and a copy
+button for the preflight next-action commands.
 Module Setup also lists downloaded PX4 receiver-evidence JSON reports from
 `~/DroneTransfer/from-pi/px4-sitl-evidence/`, including sample count, latest
 sample age, observed receiver rate, MAVLink version, and issue summaries. The

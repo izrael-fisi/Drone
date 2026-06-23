@@ -80,6 +80,9 @@ const SUPPORT_EVIDENCE_ENV =
 type WorkflowValidationSummary = NonNullable<AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"]>;
 type WorkflowValidationCheck = WorkflowValidationSummary["checks"][number];
 type EvidencePackageArtifact = NonNullable<AutonomyReadinessReportFile["evidence_package_summary"]>["missing_artifacts"][number];
+type EvidencePackageFieldPreflightDiagnostic = NonNullable<
+  NonNullable<AutonomyReadinessReportFile["evidence_package_summary"]>["field_capture_preflight_diagnostic"]
+>;
 type AutonomyCommandBundle = NonNullable<AutonomyReadinessReportFile["command_bundle"]>;
 type FieldCapturePreflightReport = SupportBundleDetails["field_capture_preflight_reports"][number];
 
@@ -938,6 +941,97 @@ function EvidencePackageArtifactPill({
   );
 }
 
+function EvidencePackageFieldPreflightSummary({
+  diagnostic,
+  reportPath,
+}: {
+  diagnostic: EvidencePackageFieldPreflightDiagnostic;
+  reportPath: string;
+}) {
+  const commandActions = diagnostic.next_actions.filter((action) => action.command);
+  const problemChecks = [...diagnostic.failed_checks, ...diagnostic.degraded_checks].filter(
+    (check) => check.status !== "passed",
+  );
+  const copyText = commandActions
+    .map((action) => `# ${formatReadinessLabel(action.id ?? action.title ?? "field_capture_preflight")}\n${action.command}`)
+    .join("\n\n");
+  const title = [
+    diagnostic.path ? `report: ${diagnostic.path}` : undefined,
+    diagnostic.bundle_path ? `bundle: ${diagnostic.bundle_path}` : undefined,
+    diagnostic.capture_output_dir ? `output: ${diagnostic.capture_output_dir}` : undefined,
+    diagnostic.source_log ? `log: ${diagnostic.source_log}` : undefined,
+    diagnostic.runtime_status_path ? `runtime: ${diagnostic.runtime_status_path}` : undefined,
+    diagnostic.capture_script_path ? `script: ${diagnostic.capture_script_path}` : undefined,
+    diagnostic.capture_script_hint,
+  ].filter(Boolean).join("\n");
+
+  return (
+    <div
+      className="rounded border border-cyan-500/20 bg-cyan-500/5 px-2 py-1.5 space-y-1"
+      title={title || "Evidence package field capture preflight"}
+    >
+      <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+        <span className={cn(readinessBadgeClass(diagnostic.status), "text-[10px]")}>
+          {readinessIcon(diagnostic.status)}
+          preflight {formatReadinessLabel(diagnostic.status)}
+        </span>
+        {diagnostic.condition && (
+          <span className="font-mono text-slate-500">{formatReadinessLabel(diagnostic.condition)}</span>
+        )}
+        {typeof diagnostic.ready_for_capture === "boolean" && (
+          <span className={cn(readinessBadgeClass(diagnostic.ready_for_capture ? "passed" : "failed"), "text-[10px]")}>
+            {readinessIcon(diagnostic.ready_for_capture ? "passed" : "failed")}
+            capture {diagnostic.ready_for_capture ? "ready" : "blocked"}
+          </span>
+        )}
+        {typeof diagnostic.ready_for_registration === "boolean" && (
+          <span className={cn(readinessBadgeClass(diagnostic.ready_for_registration ? "passed" : "degraded"), "text-[10px]")}>
+            {readinessIcon(diagnostic.ready_for_registration ? "passed" : "degraded")}
+            register {diagnostic.ready_for_registration ? "ready" : "waiting"}
+          </span>
+        )}
+        {commandActions.length > 0 && (
+          <button
+            type="button"
+            onClick={() => navigator.clipboard.writeText(copyText)}
+            className="btn-secondary px-1.5 py-0.5 text-[10px]"
+            title="Copy field preflight next-action commands"
+          >
+            <Copy size={9} />
+            copy preflight
+          </button>
+        )}
+      </div>
+      {(diagnostic.capture_output_dir || diagnostic.runtime_status_path || diagnostic.capture_script_path) && (
+        <div className="font-mono text-[10px] text-slate-500 truncate">
+          {diagnostic.capture_output_dir ? `output ${diagnostic.capture_output_dir}` : ""}
+          {diagnostic.runtime_status_path ? ` / runtime ${diagnostic.runtime_status_path}` : ""}
+          {diagnostic.capture_script_path ? ` / script ${diagnostic.capture_script_path}` : ""}
+        </div>
+      )}
+      {diagnostic.capture_script_hint && (
+        <div className="font-mono text-[10px] text-amber-200/80 truncate">
+          capture script hint {diagnostic.capture_script_hint}
+        </div>
+      )}
+      {problemChecks.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {problemChecks.slice(0, 4).map((check, index) => (
+            <span
+              key={`${reportPath}-package-preflight-check-${check.name ?? index}`}
+              className={cn(readinessBadgeClass(check.status), "text-[10px]")}
+              title={check.message ?? check.name ?? "field capture preflight check"}
+            >
+              {readinessIcon(check.status)}
+              {formatReadinessLabel(check.name)} {formatReadinessLabel(check.status)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function validationCheckDetail(check: WorkflowValidationCheck) {
   if (check.missing_steps.length > 0) {
     const missing = check.missing_steps.slice(0, 3).map(formatReadinessLabel).join(", ");
@@ -1708,6 +1802,12 @@ function AutonomyReadinessReportList({
                       </div>
                       {report.evidence_package_summary.workflow_validation_summary && (
                         <WorkflowValidationSummaryLine summary={report.evidence_package_summary.workflow_validation_summary} />
+                      )}
+                      {report.evidence_package_summary.field_capture_preflight_diagnostic && (
+                        <EvidencePackageFieldPreflightSummary
+                          diagnostic={report.evidence_package_summary.field_capture_preflight_diagnostic}
+                          reportPath={report.path}
+                        />
                       )}
                       {report.evidence_package_summary.proof_items.length > 0 && (
                         <div className="flex flex-wrap gap-1">

@@ -720,6 +720,27 @@ pub struct AutonomyEvidencePackageArtifactSummary {
 }
 
 #[derive(Serialize)]
+pub struct AutonomyEvidencePackageFieldCapturePreflightDiagnostic {
+    pub status: Option<String>,
+    pub path: Option<String>,
+    pub schema_version: Option<String>,
+    pub condition: Option<String>,
+    pub case_name: Option<String>,
+    pub expected: Option<String>,
+    pub bundle_path: Option<String>,
+    pub capture_output_dir: Option<String>,
+    pub source_log: Option<String>,
+    pub runtime_status_path: Option<String>,
+    pub capture_script_path: Option<String>,
+    pub capture_script_hint: Option<String>,
+    pub ready_for_capture: Option<bool>,
+    pub ready_for_registration: Option<bool>,
+    pub failed_checks: Vec<SupportBundleFieldCapturePreflightCheck>,
+    pub degraded_checks: Vec<SupportBundleFieldCapturePreflightCheck>,
+    pub next_actions: Vec<SupportBundleFieldCapturePreflightAction>,
+}
+
+#[derive(Serialize)]
 pub struct AutonomyEvidencePackageSummary {
     pub schema_version: Option<String>,
     pub readiness_status: Option<String>,
@@ -736,6 +757,8 @@ pub struct AutonomyEvidencePackageSummary {
     pub proof_runbook_summary: Option<AutonomyReadinessProofRunbook>,
     pub command_bundle: Option<AutonomyReadinessCommandBundle>,
     pub workflow_validation_summary: Option<AutonomyEvidenceWorkflowValidationSummary>,
+    pub field_capture_preflight_diagnostic:
+        Option<AutonomyEvidencePackageFieldCapturePreflightDiagnostic>,
     pub proof_items: Vec<AutonomyReadinessEvidenceBlocker>,
     pub included_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
     pub missing_artifacts: Vec<AutonomyEvidencePackageArtifactSummary>,
@@ -2361,12 +2384,76 @@ fn read_autonomy_evidence_package_summary(path: &Path) -> Option<AutonomyEvidenc
         workflow_validation_summary: manifest
             .get("workflow_validation_summary")
             .and_then(workflow_validation_summary_from_json),
+        field_capture_preflight_diagnostic: manifest
+            .pointer("/diagnostic_summary/field_capture_preflight")
+            .and_then(field_capture_preflight_diagnostic_from_json),
         proof_items: autonomy_evidence_blockers_from_value(
             proof_summary.and_then(|value| value.get("proof_items")),
         ),
         included_artifacts: evidence_package_artifacts(manifest.get("included")),
         missing_artifacts: evidence_package_artifacts(manifest.get("missing")),
         skipped_artifacts: evidence_package_artifacts(manifest.get("skipped")),
+    })
+}
+
+fn field_capture_preflight_diagnostic_from_json(
+    value: &serde_json::Value,
+) -> Option<AutonomyEvidencePackageFieldCapturePreflightDiagnostic> {
+    if !value.is_object() {
+        return None;
+    }
+    let failed_checks = value
+        .get("failed_checks")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(field_capture_preflight_check_from_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let degraded_checks = value
+        .get("degraded_checks")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(field_capture_preflight_check_from_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let next_actions = value
+        .get("next_actions")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(field_capture_preflight_action_from_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Some(AutonomyEvidencePackageFieldCapturePreflightDiagnostic {
+        status: json_string(value.get("status")),
+        path: json_string(value.get("path")),
+        schema_version: json_string(value.get("schema_version")),
+        condition: json_string(value.get("condition")),
+        case_name: json_string(value.get("case_name")),
+        expected: json_string(value.get("expected")),
+        bundle_path: json_string(value.get("bundle_path")),
+        capture_output_dir: json_string(value.get("capture_output_dir")),
+        source_log: json_string(value.get("source_log")),
+        runtime_status_path: json_string(value.get("runtime_status_path")),
+        capture_script_path: json_string(value.get("capture_script_path")),
+        capture_script_hint: field_capture_script_hint_from_json(value),
+        ready_for_capture: value
+            .get("ready_for_capture")
+            .and_then(|value| value.as_bool()),
+        ready_for_registration: value
+            .get("ready_for_registration")
+            .and_then(|value| value.as_bool()),
+        failed_checks,
+        degraded_checks,
+        next_actions,
     })
 }
 
@@ -4033,7 +4120,9 @@ fn workflow_validation_step_results_from_json(
                     ready_for_registration: item
                         .get("ready_for_registration")
                         .and_then(|value| value.as_bool()),
-                    capture_command_after_preflight: json_string(item.get("capture_command_after_preflight")),
+                    capture_command_after_preflight: json_string(
+                        item.get("capture_command_after_preflight"),
+                    ),
                     preflight_capture_command: json_string(item.get("preflight_capture_command")),
                     metadata_update_command: json_string(item.get("metadata_update_command")),
                     current_selected_condition: json_string(item.get("current_selected_condition")),
@@ -4176,7 +4265,8 @@ fn field_collection_plan_condition_from_json(
     let capture_command = json_string(item.get("capture_command"));
     let preflight_command = json_string(item.get("preflight_command"));
     let capture_output_dir = json_string(item.get("capture_output_dir"));
-    let capture_command = capture_command_with_runtime_status(capture_command, capture_output_dir.as_deref());
+    let capture_command =
+        capture_command_with_runtime_status(capture_command, capture_output_dir.as_deref());
     let preflight_capture_command = json_string(item.get("preflight_capture_command"))
         .or_else(|| command_sequence(preflight_command.clone(), capture_command.clone()));
     Some(FieldCollectionPlanCondition {
@@ -4205,7 +4295,11 @@ fn field_collection_plan_condition_from_json(
         has_preflight_capture_command: item
             .get("has_preflight_capture_command")
             .and_then(|value| value.as_bool())
-            .or_else(|| preflight_capture_command.as_ref().map(|value| !value.is_empty())),
+            .or_else(|| {
+                preflight_capture_command
+                    .as_ref()
+                    .map(|value| !value.is_empty())
+            }),
         has_metadata_update_command: item
             .get("has_metadata_update_command")
             .and_then(|value| value.as_bool())
@@ -4240,7 +4334,10 @@ fn command_sequence(first: Option<String>, second: Option<String>) -> Option<Str
     }
 }
 
-fn capture_command_with_runtime_status(command: Option<String>, runtime_status_root: Option<&str>) -> Option<String> {
+fn capture_command_with_runtime_status(
+    command: Option<String>,
+    runtime_status_root: Option<&str>,
+) -> Option<String> {
     command.map(|value| {
         let read_command = runtime_status_root
             .filter(|root| !root.trim().is_empty())
@@ -4267,9 +4364,9 @@ fn shell_env_value(value: &str) -> String {
     let expandable_path = ["$HOME/", "${HOME}/", "$PWD/", "${PWD}/"]
         .iter()
         .any(|prefix| value.starts_with(prefix));
-    let has_unsafe = value
-        .chars()
-        .any(|ch| ch.is_whitespace() || matches!(ch, '"' | '\'' | '`' | ';' | '&' | '|' | '<' | '>'));
+    let has_unsafe = value.chars().any(|ch| {
+        ch.is_whitespace() || matches!(ch, '"' | '\'' | '`' | ';' | '&' | '|' | '<' | '>')
+    });
     if expandable_path && !has_unsafe {
         value.to_string()
     } else {
@@ -5242,8 +5339,7 @@ mod tests {
         list_threshold_tuning_reports, read_support_bundle_details,
         run_local_autonomy_readiness_audit_inner, run_local_px4_sitl_prereq_setup_inner,
         run_local_px4_sitl_receiver_capture_inner, run_local_rosbag2_cli_review_inner,
-        support_bundle_diagnostic_from_json,
-        support_summary_from_manifest,
+        support_bundle_diagnostic_from_json, support_summary_from_manifest,
     };
     use std::fs::{self, File};
     use std::io::Write;
@@ -6251,6 +6347,52 @@ mod tests {
                             }
                         ]
                     },
+                    "diagnostic_summary": {
+                        "diagnostic_item_count": 1,
+                        "diagnostic_items": [
+                            {"name": "field_capture_preflight", "status": "degraded"}
+                        ],
+                        "field_capture_preflight": {
+                            "status": "degraded",
+                            "path": "/home/user/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json",
+                            "schema_version": "vision_nav_field_capture_preflight_v1",
+                            "condition": "good_texture",
+                            "case_name": "dronecompute-test-area-good_texture",
+                            "expected": "good_map",
+                            "bundle_path": "/home/user/drone-data/map_bundles/mission_bundle",
+                            "capture_output_dir": "/home/user/DroneTransfer/outgoing/field-captures/good_texture",
+                            "source_log": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/terrain_matches.jsonl",
+                            "runtime_status_path": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/runtime_status.json",
+                            "ready_for_capture": true,
+                            "ready_for_registration": false,
+                            "failed_checks": [
+                                {
+                                    "name": "runtime_status",
+                                    "status": "failed",
+                                    "message": "Runtime status is missing."
+                                }
+                            ],
+                            "degraded_checks": [
+                                {
+                                    "name": "capture_metadata",
+                                    "status": "degraded",
+                                    "message": "Capture metadata still needs operator notes."
+                                }
+                            ],
+                            "next_actions": [
+                                {
+                                    "id": "capture_field_terrain_log",
+                                    "status": "ready",
+                                    "title": "Capture field terrain log",
+                                    "desktop_action": "Module Setup > Field Log Capture",
+                                    "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+                                    "capture_output_dir": "/home/user/DroneTransfer/outgoing/field-captures/good_texture",
+                                    "runtime_status_path": "/home/user/DroneTransfer/outgoing/field-captures/good_texture/runtime_status.json",
+                                    "capture_script_hint": "Rerun field capture preflight to generate run_field_capture.sh for this capture-ready condition."
+                                }
+                            ]
+                        }
+                    },
                     "included": [
                         {"label": "autonomy_report"},
                         {"label": "autonomy_handoff"},
@@ -6525,6 +6667,44 @@ mod tests {
                 .capture_script_path
                 .as_deref(),
             Some("/home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh")
+        );
+        let package_preflight = package_summary
+            .field_capture_preflight_diagnostic
+            .as_ref()
+            .expect("package field capture preflight diagnostic");
+        assert_eq!(package_preflight.status.as_deref(), Some("degraded"));
+        assert_eq!(package_preflight.condition.as_deref(), Some("good_texture"));
+        assert_eq!(
+            package_preflight.case_name.as_deref(),
+            Some("dronecompute-test-area-good_texture")
+        );
+        assert_eq!(package_preflight.ready_for_capture, Some(true));
+        assert_eq!(package_preflight.ready_for_registration, Some(false));
+        assert_eq!(
+            package_preflight.capture_output_dir.as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/field-captures/good_texture")
+        );
+        assert!(package_preflight
+            .capture_script_hint
+            .as_deref()
+            .is_some_and(|hint| hint.contains("run_field_capture.sh")));
+        assert_eq!(
+            package_preflight.failed_checks[0].name.as_deref(),
+            Some("runtime_status")
+        );
+        assert_eq!(
+            package_preflight.degraded_checks[0].name.as_deref(),
+            Some("capture_metadata")
+        );
+        assert_eq!(
+            package_preflight.next_actions[0].id.as_deref(),
+            Some("capture_field_terrain_log")
+        );
+        assert_eq!(
+            package_preflight.next_actions[0]
+                .capture_script_hint
+                .as_deref(),
+            Some("Rerun field capture preflight to generate run_field_capture.sh for this capture-ready condition.")
         );
         assert_eq!(
             package_validation.checks[1].non_passed_steps[0].current_preflight_allows_capture,
@@ -7758,7 +7938,10 @@ mod tests {
                 .as_deref(),
             Some("passed")
         );
-        assert_eq!(diagnostic.mission_plan_candidates[0].has_gnss_denied, Some(true));
+        assert_eq!(
+            diagnostic.mission_plan_candidates[0].has_gnss_denied,
+            Some(true)
+        );
         assert_eq!(
             diagnostic.recommended_actions[0]
                 .mission_plan_path

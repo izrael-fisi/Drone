@@ -713,6 +713,59 @@ export interface AutonomyReadinessProofRunbook {
   }>;
 }
 
+export interface AutonomyEvidencePackageFieldCapturePreflightDiagnostic {
+  status?: "passed" | "failed" | "degraded" | string;
+  path?: string;
+  schema_version?: string;
+  condition?: string;
+  case_name?: string;
+  expected?: string;
+  bundle_path?: string;
+  capture_output_dir?: string;
+  source_log?: string;
+  runtime_status_path?: string;
+  capture_script_path?: string;
+  capture_script_hint?: string;
+  ready_for_capture?: boolean;
+  ready_for_registration?: boolean;
+  failed_checks: Array<{
+    name?: string;
+    status?: "passed" | "failed" | "degraded" | string;
+    message?: string;
+    path?: string;
+    desktop_action?: string;
+    validation_command?: string;
+    missing?: unknown;
+    issue_count?: number;
+  }>;
+  degraded_checks: Array<{
+    name?: string;
+    status?: "passed" | "failed" | "degraded" | string;
+    message?: string;
+    path?: string;
+    desktop_action?: string;
+    validation_command?: string;
+    missing?: unknown;
+    issue_count?: number;
+  }>;
+  next_actions: Array<{
+    id?: string;
+    status?: "ready" | "blocked" | "action_required" | string;
+    title?: string;
+    desktop_action?: string;
+    command?: string;
+    waits_on: string[];
+    bundle_path?: string;
+    capture_output_dir?: string;
+    source_log?: string;
+    runtime_status_path?: string;
+    preflight_capture_command?: string;
+    capture_script_path?: string;
+    capture_script_hint?: string;
+    notes?: string;
+  }>;
+}
+
 export interface AutonomyReadinessReportFile {
   name: string;
   path: string;
@@ -757,6 +810,7 @@ export interface AutonomyReadinessReportFile {
       }>;
     };
     workflow_validation_summary?: AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"];
+    field_capture_preflight_diagnostic?: AutonomyEvidencePackageFieldCapturePreflightDiagnostic;
     proof_items: AutonomyReadinessEvidenceBlocker[];
     included_artifacts: Array<{
       label?: string;
