@@ -546,6 +546,10 @@ Status:
 - Done: Module Setup now lists downloaded `field-log-capture-*.json` audit
   files, shows metadata/preflight/capture status, copyable commands and paths,
   and includes the latest capture audits in saved setup reports.
+- Done: successful Module Setup Field Log Capture now loads the captured remote
+  terrain-log and runtime-status paths into the Field Evidence Case form, and
+  downloaded capture audit cards can load those paths back into the form after
+  an app restart.
 - Done: the guided evidence workflow now records
   `__VISION_NAV_TERRAIN_CAPTURE_COMMAND__` with the runtime-status read step
   included, so raw workflow markers match the operator handoff command.

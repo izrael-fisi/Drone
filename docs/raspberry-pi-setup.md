@@ -484,6 +484,10 @@ summary, and compact runtime-status summary.
 Module Setup lists those downloaded audit files under Field Log Captures and
 copies the latest entries into saved setup reports, so support review can trace
 which capture command produced each synced terrain log.
+When Field Log Capture succeeds, the desktop app loads the captured remote
+terrain log and `runtime_status.json` paths into the Field Evidence Case form.
+The Field Log Captures list also has a `Load` action so an operator can restore
+those remote registration paths from a downloaded audit file later.
 
 Before a field capture, run the condition preflight against the generated field
 collection plan:

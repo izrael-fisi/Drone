@@ -324,6 +324,10 @@ bounded runtime-status summary for support review.
 The Field Log Captures list in Module Setup shows those audit files with
 metadata/preflight/capture status, copyable capture commands and paths, and the
 latest entries are included when the operator saves a module setup report.
+After a successful app-driven capture, Module Setup also loads the captured
+remote terrain log and runtime-status paths into the Field Evidence Case form
+for registration. Downloaded Field Log Capture audit cards include a `Load`
+action to restore those same remote paths after an app restart.
 
 The Runtime And MAVLink panel can also create a support bundle on the connected
 Raspberry Pi. Support bundles are written under

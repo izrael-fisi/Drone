@@ -3879,10 +3879,12 @@ function FieldLogCaptureReportList({
   reports,
   downloadDir,
   onRefresh,
+  onLoadReport,
 }: {
   reports: FieldLogCaptureReportFile[];
   downloadDir: string;
   onRefresh: () => void;
+  onLoadReport: (report: FieldLogCaptureReportFile) => void;
 }) {
   const [busyPath, setBusyPath] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -3965,6 +3967,14 @@ function FieldLogCaptureReportList({
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => onLoadReport(file)}
+                      className="btn-secondary text-xs py-1 px-2"
+                      title="Load this capture into the Field Evidence Case form"
+                    >
+                      <FileText size={11} />
+                      Load
+                    </button>
                     {file.report.command && (
                       <button
                         onClick={() => navigator.clipboard.writeText(file.report.command ?? "")}
@@ -4297,6 +4307,34 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       return;
     }
     loadFieldCollectionCondition(plan, plan.next_condition);
+    setSelectedOutputId("field-evidence");
+  };
+
+  const loadFieldLogCaptureReport = (file: FieldLogCaptureReportFile) => {
+    const report = file.report;
+    setFieldCase((value) => ({
+      ...value,
+      caseName: usableFieldText(report.case_name) ?? value.caseName,
+      expected: fieldExpected(report.expected) ?? value.expected,
+      conditions: usableFieldText(report.conditions) ?? usableFieldText(report.condition) ?? value.conditions,
+      fieldLog: usableFieldText(report.remote_terrain_log) ?? value.fieldLog,
+      captureOutputDir: usableFieldText(report.capture_output_dir) ?? value.captureOutputDir,
+      runtimeStatusPath: usableFieldText(report.remote_runtime_status) ?? value.runtimeStatusPath,
+    }));
+    setResult("field-evidence", {
+      status: "idle",
+      output: [
+        "$ Load Field Log Capture",
+        `report: ${file.path}`,
+        `case: ${report.case_name ?? "n/a"}`,
+        `condition: ${report.condition ?? report.conditions ?? "n/a"}`,
+        `expected: ${report.expected ?? "n/a"}`,
+        `remote log: ${report.remote_terrain_log ?? "n/a"}`,
+        `remote runtime status: ${report.remote_runtime_status ?? "n/a"}`,
+        "",
+        "Review metadata, update the active manifest if needed, then register the field evidence case.",
+      ].join("\n"),
+    });
     setSelectedOutputId("field-evidence");
   };
 
@@ -4704,6 +4742,16 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         setRuntimeStatusLocalPath(downloadedStatus.local_path);
         localRuntimeStatusPath = downloadedStatus.local_path;
         downloadText += `\n\n$ download runtime status\nSaved to ${downloadedStatus.local_path}\n[${downloadedStatus.bytes_received} bytes]`;
+      }
+      if (remoteLog || remoteStatus) {
+        const captureOutputDir = fieldCapturePreflightReport?.capture_output_dir || fieldCase.captureOutputDir;
+        setFieldCase((value) => ({
+          ...value,
+          fieldLog: remoteLog ?? value.fieldLog,
+          runtimeStatusPath: remoteStatus ?? value.runtimeStatusPath,
+          captureOutputDir: captureOutputDir || value.captureOutputDir,
+        }));
+        downloadText += "\n\n$ update field evidence form\nLoaded captured remote log/status paths for registration.";
       }
       const localReportParent = localParentPath(localLogPath ?? localRuntimeStatusPath ?? "");
       if (localReportParent) {
@@ -7973,6 +8021,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               reports={fieldLogCaptureReports}
               downloadDir={ROSBAG_VALIDATION_DOWNLOAD_DIR}
               onRefresh={refreshFieldLogCaptureReports}
+              onLoadReport={loadFieldLogCaptureReport}
             />
             <RosbagExportValidationReportList
               reports={rosbagValidationReports}
