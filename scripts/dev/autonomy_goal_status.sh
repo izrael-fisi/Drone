@@ -585,7 +585,11 @@ def print_bundle_recommendations(diagnostic, indent):
             print(f"{indent}  app: {recommendation.get('desktop_action')}")
         if recommendation.get("command"):
             print(f"{indent}  command: {recommendation.get('command')}")
-        elif recommendation.get("map_source_path"):
+        if recommendation.get("mission_plan_path"):
+            print(f"{indent}  mission plan: {recommendation.get('mission_plan_path')}")
+        if recommendation.get("qgc_plan_path"):
+            print(f"{indent}  qgc plan: {recommendation.get('qgc_plan_path')}")
+        if not recommendation.get("command") and recommendation.get("map_source_path"):
             print(f"{indent}  map source: {recommendation.get('map_source_path')}")
 
 

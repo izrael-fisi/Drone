@@ -1150,7 +1150,11 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
                 lines.append(f"Recommended app action: {recommendation['desktop_action']}")
             if recommendation.get("command"):
                 lines.append(f"Recommended command: {recommendation['command']}")
-            elif recommendation.get("map_source_path"):
+            if recommendation.get("mission_plan_path"):
+                lines.append(f"Recommended mission plan: {recommendation['mission_plan_path']}")
+            if recommendation.get("qgc_plan_path"):
+                lines.append(f"Recommended QGC plan: {recommendation['qgc_plan_path']}")
+            if not recommendation.get("command") and recommendation.get("map_source_path"):
                 lines.append(f"Recommended map source: {recommendation['map_source_path']}")
     return lines
 

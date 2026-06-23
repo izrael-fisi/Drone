@@ -402,6 +402,10 @@ VISION_NAV_MAP_SOURCE=$HOME/DroneVisionNav/maps/flight-region \
   ./scripts/pi/build_bundle_from_map_source.sh
 ```
 
+Missing-bundle diagnostics scan the standard DroneTransfer and map-library
+folders for those plan files and include detected paths in the copyable rebuild
+command when possible.
+
 This copies the map source into the mission-bundle layout, builds the ORB/AKAZE
 terrain tile index, writes STAC/health/checksum artifacts, and keeps the same
 `VISION_NAV_BUNDLE` path used by field-capture preflight.

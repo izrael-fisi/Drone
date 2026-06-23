@@ -1910,6 +1910,60 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
         worldfile_image = raw_sources / "worldfile_map.png"
         write_minimal_png(worldfile_image, 32, 32)
         (raw_sources / "worldfile_map.pgw").write_text("0.2\n0\n0\n-0.2\n500000\n4500000\n")
+        plan_sources = root / "DroneTransfer" / "outgoing"
+        plan_sources.mkdir(parents=True)
+        mission_plan = plan_sources / "mission_plan.json"
+        mission_plan.write_text(
+            json.dumps(
+                {
+                    "mission": {
+                        "items": [
+                            {"type": "takeoff", "lat": 40.0, "lon": -75.0},
+                            {"type": "waypoint", "lat": 40.001, "lon": -75.001},
+                        ]
+                    },
+                    "gnss_denied": {
+                        "status": "passed",
+                        "satellite_source_disabled": True,
+                        "map_position_reset": {"lat": 40.0, "lon": -75.0},
+                        "home_position": {"lat": 40.0, "lon": -75.0},
+                        "heading_deg": 15.0,
+                        "estimator_health": "ready",
+                        "checks": [
+                            {"name": "satellite_source_disabled", "status": "passed"},
+                            {"name": "map_position_reset", "status": "passed"},
+                            {"name": "home_position", "status": "passed"},
+                            {"name": "heading", "status": "passed"},
+                            {"name": "estimator_health", "status": "passed"},
+                        ],
+                    },
+                }
+            )
+        )
+        qgc_plan = plan_sources / "qgc.plan"
+        qgc_plan.write_text(
+            json.dumps(
+                {
+                    "fileType": "Plan",
+                    "mission": {
+                        "items": [],
+                        "plannedHomePosition": [40.0, -75.0, 35],
+                    },
+                    "visionNavigation": {
+                        "gnss_denied": {
+                            "status": "passed",
+                            "checks": [
+                                {"name": "satellite_source_disabled", "status": "passed"},
+                                {"name": "map_position_reset", "status": "passed"},
+                                {"name": "home_position", "status": "passed"},
+                                {"name": "heading", "status": "passed"},
+                                {"name": "estimator_health", "status": "passed"},
+                            ],
+                        }
+                    },
+                }
+            )
+        )
 
         old_home_initial = os.environ.get("HOME")
         old_search_roots_initial = os.environ.get("VISION_NAV_BUNDLE_SEARCH_ROOTS")
@@ -1938,6 +1992,10 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
         for raw_source in (raw_geotiff, stac_item, worldfile_image):
             if str(raw_source) not in source_paths:
                 raise AssertionError(f"Expected raw map source {raw_source}, got {source_paths}")
+        plan_paths = {item["path"] for item in report["mission_plan_candidates"]}
+        for plan_path in (mission_plan, qgc_plan):
+            if str(plan_path) not in plan_paths:
+                raise AssertionError(f"Expected mission plan candidate {plan_path}, got {plan_paths}")
         raw_source_summary = next(item for item in report["map_source_candidates"] if item["path"] == str(raw_geotiff))
         assert_equal(raw_source_summary["requires_import"], True, "raw map source requires import")
         assert_equal(raw_source_summary["source_format"], "geotiff_or_cog", "raw geotiff source format")
@@ -1948,6 +2006,8 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
             raise AssertionError("Expected compact diagnostic to preserve searched roots")
         if compact["map_source_candidate_count"] < 4:
             raise AssertionError("Expected compact diagnostic to count map source candidates")
+        if compact["mission_plan_candidate_count"] < 2:
+            raise AssertionError("Expected compact diagnostic to count mission plan candidates")
         if not any(item.get("requires_import") for item in compact["map_source_candidates"]):
             raise AssertionError("Expected compact diagnostic to preserve raw map import hint")
         if compact["recommended_actions"][0]["id"] != "build_or_upload_selected_bundle":
@@ -1956,16 +2016,35 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
             (action for action in compact["recommended_actions"] if action["id"] == "build_from_detected_map_source"),
             None,
         )
-        if not compact_saved_source_action or "VISION_NAV_MISSION_PLAN_JSON" not in str(compact_saved_source_action.get("notes", "")):
-            raise AssertionError("Expected compact diagnostic to preserve optional mission plan rebuild notes")
+        if not compact_saved_source_action or "Detected mission plan inputs" not in str(compact_saved_source_action.get("notes", "")):
+            raise AssertionError("Expected compact diagnostic to preserve detected mission plan rebuild notes")
+        assert_equal(
+            compact_saved_source_action["mission_plan_path"],
+            str(mission_plan),
+            "compact diagnostic mission plan path",
+        )
         saved_source_action = next(
             (action for action in report["recommended_actions"] if action["id"] == "build_from_detected_map_source"),
             None,
         )
         if not saved_source_action or "build_bundle_from_map_source.sh" not in saved_source_action.get("command", ""):
             raise AssertionError("Expected saved map source diagnostic to include copyable build command")
-        if "VISION_NAV_MISSION_PLAN_JSON" not in str(saved_source_action.get("notes", "")):
-            raise AssertionError("Expected saved map source diagnostic to mention optional mission plan inputs")
+        if "VISION_NAV_MISSION_PLAN_JSON" not in saved_source_action.get("command", ""):
+            raise AssertionError("Expected saved map source diagnostic command to include detected mission plan input")
+        if "VISION_NAV_QGC_PLAN_JSON" not in saved_source_action.get("command", ""):
+            raise AssertionError("Expected saved map source diagnostic command to include detected qgc plan input")
+        assert_equal(
+            saved_source_action["mission_plan_path"],
+            str(mission_plan),
+            "saved map source diagnostic mission plan path",
+        )
+        assert_equal(
+            saved_source_action["qgc_plan_path"],
+            str(qgc_plan),
+            "saved map source diagnostic qgc plan path",
+        )
+        if "Detected mission plan inputs" not in str(saved_source_action.get("notes", "")):
+            raise AssertionError("Expected saved map source diagnostic to mention detected mission plan inputs")
         old_cwd = Path.cwd()
         old_home_for_raw = os.environ.get("HOME")
         try:

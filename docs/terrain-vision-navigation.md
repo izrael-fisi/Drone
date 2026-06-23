@@ -121,7 +121,8 @@ The Pi wrappers are:
 `VISION_NAV_MISSION_PLAN_JSON` and `VISION_NAV_QGC_PLAN_JSON` inputs. Use those
 when rebuilding outside Mission Planner so `mission/mission_plan.json`,
 `mission/qgc.plan`, and GNSS-denied readiness metadata stay in the runtime
-bundle.
+bundle. Missing-bundle diagnostics auto-detect nearby plan files and include
+those environment variables in the suggested rebuild command when possible.
 
 The runtime emits local ENU, optional lat/lon, covariance, confidence, tile id,
 inliers, reprojection error, scale confidence, and barometer health fields. When

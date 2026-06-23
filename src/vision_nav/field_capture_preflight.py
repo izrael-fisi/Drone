@@ -653,7 +653,11 @@ def print_human(report: dict[str, Any]) -> None:
                             print(f"      app: {recommendation['desktop_action']}")
                         if recommendation.get("command"):
                             print(f"      command: {recommendation['command']}")
-                        elif recommendation.get("map_source_path"):
+                        if recommendation.get("mission_plan_path"):
+                            print(f"      mission plan: {recommendation['mission_plan_path']}")
+                        if recommendation.get("qgc_plan_path"):
+                            print(f"      qgc plan: {recommendation['qgc_plan_path']}")
+                        if not recommendation.get("command") and recommendation.get("map_source_path"):
                             print(f"      map source: {recommendation['map_source_path']}")
             if action.get("command"):
                 print(f"  command: {action['command']}")

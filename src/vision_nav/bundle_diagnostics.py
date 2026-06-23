@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from vision_nav.bundle import load_manifest, manifest_features_path, manifest_orthophoto_path, resolve_bundle_path
+from vision_nav.gnss_denied_plan import mission_item_count, summarize_gnss_denied_plan
 
 
 REQUIRED_TERRAIN_BUNDLE_FILES = (
@@ -33,6 +34,8 @@ WORLD_FILE_EXTENSIONS = {
     ".wpg",
     ".webpw",
 }
+MISSION_PLAN_FILENAMES = {"mission_plan.json", "qgc.plan"}
+MISSION_PLAN_JSON_NAME_HINTS = ("mission", "plan")
 
 
 def parse_args() -> argparse.Namespace:
@@ -66,8 +69,9 @@ def diagnose_bundle_inputs(
     ]
     bundle_candidates = find_bundle_candidates(roots, expected_bundle=bundle, max_candidates=max_candidates)
     map_source_candidates = find_map_source_candidates(roots, max_candidates=max_candidates)
+    mission_plan_candidates = find_mission_plan_candidates(roots, max_candidates=max_candidates)
 
-    actions = recommended_actions(bundle, bundle_candidates, map_source_candidates)
+    actions = recommended_actions(bundle, bundle_candidates, map_source_candidates, mission_plan_candidates)
     return {
         "schema_version": "vision_nav_bundle_input_diagnostic_v1",
         "bundle_path": str(bundle),
@@ -77,6 +81,7 @@ def diagnose_bundle_inputs(
         "search_roots": [str(root) for root in roots],
         "bundle_candidates": bundle_candidates,
         "map_source_candidates": map_source_candidates,
+        "mission_plan_candidates": mission_plan_candidates,
         "recommended_actions": actions,
     }
 
@@ -110,6 +115,18 @@ def compact_bundle_diagnostic(report: Any, *, max_items: int = 3) -> dict[str, A
         for item in report.get("map_source_candidates") or []
         if isinstance(item, dict)
     ]
+    mission_plans = [
+        {
+            "path": item.get("path"),
+            "type": item.get("type"),
+            "name": item.get("name"),
+            "mission_item_count": item.get("mission_item_count"),
+            "gnss_denied_status": item.get("gnss_denied_status"),
+            "has_gnss_denied": item.get("has_gnss_denied"),
+        }
+        for item in report.get("mission_plan_candidates") or []
+        if isinstance(item, dict)
+    ]
     actions = [
         {
             "id": item.get("id"),
@@ -120,6 +137,8 @@ def compact_bundle_diagnostic(report: Any, *, max_items: int = 3) -> dict[str, A
             "notes": item.get("notes"),
             "bundle_path": item.get("bundle_path"),
             "map_source_path": item.get("map_source_path"),
+            "mission_plan_path": item.get("mission_plan_path"),
+            "qgc_plan_path": item.get("qgc_plan_path"),
         }
         for item in report.get("recommended_actions") or []
         if isinstance(item, dict)
@@ -132,8 +151,10 @@ def compact_bundle_diagnostic(report: Any, *, max_items: int = 3) -> dict[str, A
         "search_roots": compact_search_roots(search_roots, max_items=max_items),
         "bundle_candidate_count": len(raw_bundle_candidates),
         "map_source_candidate_count": len(map_sources),
+        "mission_plan_candidate_count": len(mission_plans),
         "bundle_candidates": bundle_candidates,
         "map_source_candidates": map_sources[:max_items],
+        "mission_plan_candidates": mission_plans[:max_items],
         "recommended_actions": actions[:max_items],
     }
 
@@ -286,6 +307,22 @@ def find_map_source_candidates(roots: list[Path], *, max_candidates: int) -> lis
     return candidates[:max_candidates]
 
 
+def find_mission_plan_candidates(roots: list[Path], *, max_candidates: int) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for plan_path in scan_for_mission_plan_files(roots, max_depth=5):
+        normalized = normalized_path_key(plan_path)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        summary = summarize_mission_plan_candidate(plan_path)
+        if summary is None:
+            continue
+        candidates.append(summary)
+    candidates.sort(key=mission_plan_sort_key)
+    return candidates[:max_candidates]
+
+
 def scan_for_files(roots: list[Path], filename: str, *, max_depth: int) -> list[Path]:
     found: list[Path] = []
     for root in roots:
@@ -306,6 +343,31 @@ def scan_for_files(roots: list[Path], filename: str, *, max_depth: int) -> list[
             dirs[:] = [item for item in dirs if item not in {".git", "node_modules", "target", "__pycache__"}]
             if filename in files:
                 found.append(current_path / filename)
+    return found
+
+
+def scan_for_mission_plan_files(roots: list[Path], *, max_depth: int) -> list[Path]:
+    found: list[Path] = []
+    for root in roots:
+        if not root.exists() or not root.is_dir():
+            continue
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            root_resolved = root
+        for current, dirs, files in os.walk(root):
+            current_path = Path(current)
+            try:
+                relative_depth = len(current_path.resolve().relative_to(root_resolved).parts)
+            except Exception:
+                relative_depth = len(current_path.relative_to(root).parts)
+            if relative_depth >= max_depth:
+                dirs[:] = []
+            dirs[:] = [item for item in dirs if item not in {".git", "node_modules", "target", "__pycache__"}]
+            for filename in files:
+                path = current_path / filename
+                if is_mission_plan_filename(path):
+                    found.append(path)
     return found
 
 
@@ -451,6 +513,63 @@ def summarize_raw_map_source_candidate(path: Path) -> dict[str, Any] | None:
     return None
 
 
+def summarize_mission_plan_candidate(path: Path) -> dict[str, Any] | None:
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    gnss_summary = summarize_gnss_denied_plan(parsed)
+    item_count = mission_item_count(parsed)
+    plan_type = mission_plan_candidate_type(path, parsed)
+    has_gnss_denied = gnss_summary.get("status") not in {None, "not_provided"} or bool(gnss_summary.get("checks"))
+    if plan_type is None and item_count <= 0 and not has_gnss_denied:
+        return None
+    if plan_type is None:
+        plan_type = "mission_plan_json"
+    return {
+        "path": str(path),
+        "name": path.name,
+        "type": plan_type,
+        "mission_item_count": item_count,
+        "gnss_denied_status": gnss_summary.get("status"),
+        "has_gnss_denied": has_gnss_denied,
+    }
+
+
+def mission_plan_candidate_type(path: Path, parsed: dict[str, Any]) -> str | None:
+    name = path.name.lower()
+    suffix = path.suffix.lower()
+    if suffix == ".plan" or name == "qgc.plan" or parsed.get("fileType") == "Plan":
+        return "qgc_plan_json"
+    if name == "mission_plan.json":
+        return "mission_plan_json"
+    if isinstance(parsed.get("gnss_denied") or parsed.get("gnssDenied"), dict):
+        return "mission_plan_json"
+    vision_navigation = parsed.get("visionNavigation")
+    if isinstance(vision_navigation, dict) and isinstance(
+        vision_navigation.get("gnss_denied") or vision_navigation.get("gnssDenied"),
+        dict,
+    ):
+        return "mission_plan_json"
+    if "mission" in name and suffix == ".json":
+        return "mission_plan_json"
+    return None
+
+
+def is_mission_plan_filename(path: Path) -> bool:
+    name = path.name.lower()
+    suffix = path.suffix.lower()
+    if name in MISSION_PLAN_FILENAMES or suffix == ".plan":
+        return True
+    if suffix != ".json":
+        return False
+    if name in {"metadata.json", "manifest.json", "manifest.stac.json", "bundle_health.json", "tiles.json"}:
+        return False
+    return any(hint in name for hint in MISSION_PLAN_JSON_NAME_HINTS)
+
+
 def is_raw_map_source_candidate(path: Path) -> bool:
     suffix = path.suffix.lower()
     if suffix in RASTER_MAP_EXTENSIONS:
@@ -498,6 +617,12 @@ def map_source_sort_key(item: dict[str, Any]) -> tuple[int, str]:
     return rank, str(item.get("path") or "")
 
 
+def mission_plan_sort_key(item: dict[str, Any]) -> tuple[int, int, str]:
+    type_rank = {"mission_plan_json": 0, "qgc_plan_json": 1}.get(str(item.get("type")), 9)
+    gnss_rank = 0 if item.get("has_gnss_denied") else 1
+    return type_rank, gnss_rank, str(item.get("path") or "")
+
+
 def field_proof_warning(bundle_dir: Path, bundle_id: str) -> str | None:
     text = f"{bundle_dir} {bundle_id}".lower()
     if any(marker in text for marker in ("example", "synthetic", "smoke")):
@@ -509,6 +634,7 @@ def recommended_actions(
     bundle: Path,
     bundle_candidates: list[dict[str, Any]],
     map_source_candidates: list[dict[str, Any]],
+    mission_plan_candidates: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = [
         {
@@ -543,24 +669,19 @@ def recommended_actions(
                 }
             )
         else:
+            mission_plan_inputs = selected_mission_plan_inputs(mission_plan_candidates)
             actions.append(
                 {
                     "id": "build_from_detected_map_source",
                     "status": "optional",
                     "title": "Use a detected saved map source to build the runtime bundle.",
                     "desktop_action": "Mission Planner > Select Map Source, Build Bundle, Upload Bundle",
-                    "notes": (
-                        "Set VISION_NAV_MISSION_PLAN_JSON and/or VISION_NAV_QGC_PLAN_JSON "
-                        "when rebuilding from a shell so GNSS-denied mission-prep metadata "
-                        "is preserved in the bundle."
-                    ),
-                    "command": (
-                        f"VISION_NAV_MAP_SOURCE={shell_quote(str(first_source['path']))} "
-                        f"VISION_NAV_BUNDLE={shell_quote(str(bundle))} "
-                        "./scripts/pi/build_bundle_from_map_source.sh"
-                    ),
+                    "notes": mission_plan_rebuild_notes(mission_plan_inputs),
+                    "command": build_from_map_source_command(first_source, bundle, mission_plan_inputs),
                     "map_source_path": first_source["path"],
                     "bundle_path": str(bundle),
+                    "mission_plan_path": mission_plan_inputs.get("mission_plan_path"),
+                    "qgc_plan_path": mission_plan_inputs.get("qgc_plan_path"),
                 }
             )
     else:
@@ -573,6 +694,46 @@ def recommended_actions(
             }
         )
     return actions
+
+
+def selected_mission_plan_inputs(candidates: list[dict[str, Any]]) -> dict[str, str]:
+    selected: dict[str, str] = {}
+    for candidate in candidates:
+        if candidate.get("type") == "mission_plan_json" and not selected.get("mission_plan_path"):
+            selected["mission_plan_path"] = str(candidate.get("path") or "")
+        elif candidate.get("type") == "qgc_plan_json" and not selected.get("qgc_plan_path"):
+            selected["qgc_plan_path"] = str(candidate.get("path") or "")
+    return {key: value for key, value in selected.items() if value}
+
+
+def build_from_map_source_command(
+    map_source: dict[str, Any],
+    bundle: Path,
+    mission_plan_inputs: dict[str, str],
+) -> str:
+    parts = [
+        f"VISION_NAV_MAP_SOURCE={shell_quote(str(map_source['path']))}",
+        f"VISION_NAV_BUNDLE={shell_quote(str(bundle))}",
+    ]
+    if mission_plan_inputs.get("mission_plan_path"):
+        parts.append(f"VISION_NAV_MISSION_PLAN_JSON={shell_quote(mission_plan_inputs['mission_plan_path'])}")
+    if mission_plan_inputs.get("qgc_plan_path"):
+        parts.append(f"VISION_NAV_QGC_PLAN_JSON={shell_quote(mission_plan_inputs['qgc_plan_path'])}")
+    parts.append("./scripts/pi/build_bundle_from_map_source.sh")
+    return " ".join(parts)
+
+
+def mission_plan_rebuild_notes(mission_plan_inputs: dict[str, str]) -> str:
+    if mission_plan_inputs:
+        return (
+            "Detected mission plan inputs are included so GNSS-denied "
+            "mission-prep metadata is preserved in the rebuilt bundle."
+        )
+    return (
+        "Set VISION_NAV_MISSION_PLAN_JSON and/or VISION_NAV_QGC_PLAN_JSON "
+        "when rebuilding from a shell so GNSS-denied mission-prep metadata "
+        "is preserved in the bundle."
+    )
 
 
 def shell_quote(value: str) -> str:
@@ -603,6 +764,15 @@ def print_human(report: dict[str, Any]) -> None:
             if item.get("requires_import"):
                 label_parts.append("import required")
             print(f"- {item.get('path')} [{'; '.join(label_parts)}]")
+    if report.get("mission_plan_candidates"):
+        print("Detected mission plans:")
+        for item in report["mission_plan_candidates"]:
+            label_parts = [str(item.get("type") or "plan")]
+            if item.get("gnss_denied_status"):
+                label_parts.append(f"gnss={item['gnss_denied_status']}")
+            if item.get("mission_item_count") is not None:
+                label_parts.append(f"items={item['mission_item_count']}")
+            print(f"- {item.get('path')} [{'; '.join(label_parts)}]")
     if report.get("search_roots"):
         print("Searched roots:")
         for root in report["search_roots"][:8]:
@@ -612,8 +782,14 @@ def print_human(report: dict[str, Any]) -> None:
         print(f"- {action.get('id')}: {action.get('title')}")
         if action.get("desktop_action"):
             print(f"  app: {action['desktop_action']}")
+        if action.get("notes"):
+            print(f"  notes: {action['notes']}")
         if action.get("command"):
             print(f"  command: {action['command']}")
+        if action.get("mission_plan_path"):
+            print(f"  mission plan: {action['mission_plan_path']}")
+        if action.get("qgc_plan_path"):
+            print(f"  qgc plan: {action['qgc_plan_path']}")
 
 
 def main() -> None:

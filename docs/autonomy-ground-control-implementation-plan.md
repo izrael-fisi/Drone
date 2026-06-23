@@ -479,6 +479,10 @@ Status:
   Planner JSON and QGroundControl plan inputs, preserving
   `mission/mission_plan.json`, `mission/qgc.plan`, and GNSS-denied readiness
   metadata when support rebuilds a bundle from a terminal.
+- Done: missing-bundle diagnostics now discover Mission Planner JSON and
+  QGroundControl plan candidates, include detected paths in saved-map-source
+  rebuild commands, and carry those plan candidates through compact
+  support-bundle/desktop diagnostics.
 - Done: support-bundle and final-readiness parsers backfill that bundle
   diagnostic onto `prepare_bundle` next actions from older field-preflight JSON
   files, so stale downloaded reports still show missing files and candidate

@@ -276,7 +276,9 @@ VISION_NAV_MAP_SOURCE=$HOME/DroneVisionNav/maps/flight-region \
 ```
 
 Missing-bundle diagnostics print this command when they detect a saved map
-source under the app map library.
+source under the app map library. When they also find nearby Mission Planner or
+QGroundControl plan exports, the diagnostic command includes
+`VISION_NAV_MISSION_PLAN_JSON` and/or `VISION_NAV_QGC_PLAN_JSON` automatically.
 
 The Maps page can attach optional DEM and DSM GeoTIFFs to a saved map source.
 Those files are copied into the map folder under `elevation/`, referenced from

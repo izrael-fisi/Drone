@@ -385,6 +385,16 @@ pub struct SupportBundleDiagnosticMapSourceCandidate {
 }
 
 #[derive(Serialize)]
+pub struct SupportBundleDiagnosticMissionPlanCandidate {
+    pub path: Option<String>,
+    pub plan_type: Option<String>,
+    pub name: Option<String>,
+    pub mission_item_count: Option<u64>,
+    pub gnss_denied_status: Option<String>,
+    pub has_gnss_denied: Option<bool>,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundleDiagnosticAction {
     pub id: Option<String>,
     pub status: Option<String>,
@@ -394,6 +404,8 @@ pub struct SupportBundleDiagnosticAction {
     pub notes: Option<String>,
     pub bundle_path: Option<String>,
     pub map_source_path: Option<String>,
+    pub mission_plan_path: Option<String>,
+    pub qgc_plan_path: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -404,8 +416,10 @@ pub struct SupportBundleDiagnostic {
     pub search_roots: Vec<String>,
     pub bundle_candidate_count: Option<u64>,
     pub map_source_candidate_count: Option<u64>,
+    pub mission_plan_candidate_count: Option<u64>,
     pub bundle_candidates: Vec<SupportBundleDiagnosticBundleCandidate>,
     pub map_source_candidates: Vec<SupportBundleDiagnosticMapSourceCandidate>,
+    pub mission_plan_candidates: Vec<SupportBundleDiagnosticMissionPlanCandidate>,
     pub recommended_actions: Vec<SupportBundleDiagnosticAction>,
 }
 
@@ -4256,6 +4270,28 @@ fn support_bundle_diagnostic_from_json(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let mission_plan_candidates = value
+        .get("mission_plan_candidates")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item.is_object())
+                .map(|item| SupportBundleDiagnosticMissionPlanCandidate {
+                    path: json_string(item.get("path")),
+                    plan_type: json_string(item.get("type")),
+                    name: json_string(item.get("name")),
+                    mission_item_count: item
+                        .get("mission_item_count")
+                        .and_then(|value| value.as_u64()),
+                    gnss_denied_status: json_string(item.get("gnss_denied_status")),
+                    has_gnss_denied: item
+                        .get("has_gnss_denied")
+                        .and_then(|value| value.as_bool()),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let recommended_actions = value
         .get("recommended_actions")
         .and_then(|value| value.as_array())
@@ -4272,6 +4308,8 @@ fn support_bundle_diagnostic_from_json(
                     notes: json_string(item.get("notes")),
                     bundle_path: json_string(item.get("bundle_path")),
                     map_source_path: json_string(item.get("map_source_path")),
+                    mission_plan_path: json_string(item.get("mission_plan_path")),
+                    qgc_plan_path: json_string(item.get("qgc_plan_path")),
                 })
                 .collect::<Vec<_>>()
         })
@@ -4291,8 +4329,12 @@ fn support_bundle_diagnostic_from_json(
         map_source_candidate_count: value
             .get("map_source_candidate_count")
             .and_then(|value| value.as_u64()),
+        mission_plan_candidate_count: value
+            .get("mission_plan_candidate_count")
+            .and_then(|value| value.as_u64()),
         bundle_candidates,
         map_source_candidates,
+        mission_plan_candidates,
         recommended_actions,
     })
 }
@@ -5072,6 +5114,7 @@ mod tests {
         list_threshold_tuning_reports, read_support_bundle_details,
         run_local_autonomy_readiness_audit_inner, run_local_px4_sitl_prereq_setup_inner,
         run_local_px4_sitl_receiver_capture_inner, run_local_rosbag2_cli_review_inner,
+        support_bundle_diagnostic_from_json,
         support_summary_from_manifest,
     };
     use std::fs::{self, File};
@@ -7504,6 +7547,73 @@ mod tests {
         assert_eq!(reports[0].report.message_count, Some(4));
         assert_eq!(reports[0].report.topic_count, Some(3));
         assert_eq!(reports[0].report.topics.len(), 3);
+    }
+
+    #[test]
+    fn parses_bundle_diagnostic_mission_plan_candidates() {
+        let diagnostic = support_bundle_diagnostic_from_json(&serde_json::json!({
+            "bundle_exists": false,
+            "missing_required_files": ["manifest.json"],
+            "search_roots": ["/home/user/DroneTransfer/outgoing"],
+            "mission_plan_candidate_count": 2,
+            "mission_plan_candidates": [
+                {
+                    "path": "/home/user/DroneTransfer/outgoing/mission_plan.json",
+                    "type": "mission_plan_json",
+                    "name": "mission_plan.json",
+                    "mission_item_count": 3,
+                    "gnss_denied_status": "passed",
+                    "has_gnss_denied": true
+                },
+                {
+                    "path": "/home/user/DroneTransfer/outgoing/qgc.plan",
+                    "type": "qgc_plan_json",
+                    "name": "qgc.plan",
+                    "mission_item_count": 3,
+                    "gnss_denied_status": "passed",
+                    "has_gnss_denied": true
+                }
+            ],
+            "recommended_actions": [
+                {
+                    "id": "build_from_detected_map_source",
+                    "status": "optional",
+                    "title": "Use a detected saved map source to build the runtime bundle.",
+                    "desktop_action": "Mission Planner > Select Map Source, Build Bundle, Upload Bundle",
+                    "notes": "Detected mission plan inputs are included.",
+                    "command": "VISION_NAV_MAP_SOURCE=/home/user/maps/field VISION_NAV_MISSION_PLAN_JSON=/home/user/DroneTransfer/outgoing/mission_plan.json VISION_NAV_QGC_PLAN_JSON=/home/user/DroneTransfer/outgoing/qgc.plan ./scripts/pi/build_bundle_from_map_source.sh",
+                    "mission_plan_path": "/home/user/DroneTransfer/outgoing/mission_plan.json",
+                    "qgc_plan_path": "/home/user/DroneTransfer/outgoing/qgc.plan"
+                }
+            ]
+        }))
+        .expect("bundle diagnostic");
+        assert_eq!(diagnostic.mission_plan_candidate_count, Some(2));
+        assert_eq!(
+            diagnostic.mission_plan_candidates[0].plan_type.as_deref(),
+            Some("mission_plan_json")
+        );
+        assert_eq!(
+            diagnostic.mission_plan_candidates[1].plan_type.as_deref(),
+            Some("qgc_plan_json")
+        );
+        assert_eq!(
+            diagnostic.mission_plan_candidates[0]
+                .gnss_denied_status
+                .as_deref(),
+            Some("passed")
+        );
+        assert_eq!(diagnostic.mission_plan_candidates[0].has_gnss_denied, Some(true));
+        assert_eq!(
+            diagnostic.recommended_actions[0]
+                .mission_plan_path
+                .as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/mission_plan.json")
+        );
+        assert_eq!(
+            diagnostic.recommended_actions[0].qgc_plan_path.as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/qgc.plan")
+        );
     }
 
     #[test]

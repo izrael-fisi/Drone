@@ -449,6 +449,16 @@ export interface SupportBundleDetails {
           source_format?: string;
           requires_import?: boolean;
         }>;
+        mission_plan_candidate_count?: number;
+        mission_plan_candidates: Array<{
+          path?: string;
+          type?: string;
+          plan_type?: string;
+          name?: string;
+          mission_item_count?: number;
+          gnss_denied_status?: string;
+          has_gnss_denied?: boolean;
+        }>;
         recommended_actions: Array<{
           id?: string;
           status?: string;
@@ -458,6 +468,8 @@ export interface SupportBundleDetails {
           notes?: string;
           bundle_path?: string;
           map_source_path?: string;
+          mission_plan_path?: string;
+          qgc_plan_path?: string;
         }>;
       };
     }>;
@@ -495,6 +507,16 @@ export interface SupportBundleDetails {
           source_format?: string;
           requires_import?: boolean;
         }>;
+        mission_plan_candidate_count?: number;
+        mission_plan_candidates: Array<{
+          path?: string;
+          type?: string;
+          plan_type?: string;
+          name?: string;
+          mission_item_count?: number;
+          gnss_denied_status?: string;
+          has_gnss_denied?: boolean;
+        }>;
         recommended_actions: Array<{
           id?: string;
           status?: string;
@@ -504,6 +526,8 @@ export interface SupportBundleDetails {
           notes?: string;
           bundle_path?: string;
           map_source_path?: string;
+          mission_plan_path?: string;
+          qgc_plan_path?: string;
         }>;
       };
     }>;
