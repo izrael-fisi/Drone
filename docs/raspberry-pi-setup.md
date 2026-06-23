@@ -524,6 +524,10 @@ field evidence. When the default preflight report exists,
 publishes the parseable report under `summaries/field_capture_preflights/`, and
 rolls up readiness flags, failed/degraded checks, and next-action counts in
 `support_manifest.json`.
+The Field Evidence Case form keeps a local desktop draft with a visible
+saved-at timestamp and Reset Draft action, and saved setup reports include the
+draft's metadata-readiness status so support can see whether registration was
+blocked by missing field context.
 
 `runtime_status.json` is the quick operator snapshot. It names the active map
 bundle, output path, latest frame, estimator health, last match status/reason,

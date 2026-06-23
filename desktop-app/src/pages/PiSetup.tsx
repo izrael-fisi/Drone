@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
@@ -75,6 +75,7 @@ const RUNTIME_STATUS_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/runtime-status";
 const DESKTOP_TRANSFER_FROM_PI_DIR = "~/DroneTransfer/from-pi";
 const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 const FIELD_CASE_FORM_STORAGE_KEY = "drone_field_case_form";
+const FIELD_CASE_FORM_SAVED_AT_STORAGE_KEY = "drone_field_case_form_saved_at";
 const SUPPORT_EVIDENCE_ENV =
   'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
 
@@ -913,6 +914,11 @@ function loadFieldCaseForm(): FieldCaseForm {
   } catch {
     return fallback;
   }
+}
+
+function loadFieldCaseDraftSavedAt() {
+  if (typeof localStorage === "undefined") return null;
+  return localStorage.getItem(FIELD_CASE_FORM_SAVED_AT_STORAGE_KEY);
 }
 
 function formFromDevice(device: Device): PiForm {
@@ -4044,6 +4050,8 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [setupReportPath, setSetupReportPath] = useState<string | null>(null);
   const [setupHandoff, setSetupHandoff] = useState<ModuleSetupHandoff | null>(() => readModuleSetupHandoff());
   const [fieldCase, setFieldCase] = useState<FieldCaseForm>(() => loadFieldCaseForm());
+  const [fieldCaseDraftSavedAt, setFieldCaseDraftSavedAt] = useState<string | null>(() => loadFieldCaseDraftSavedAt());
+  const fieldCaseDraftLoaded = useRef(false);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryCandidates, setDiscoveryCandidates] = useState<PiDiscoveryCandidate[]>(() => loadDiscoveryHistory());
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
@@ -4059,7 +4067,20 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
 
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
+    if (!fieldCaseDraftLoaded.current) {
+      fieldCaseDraftLoaded.current = true;
+      if (!fieldCaseDraftSavedAt) {
+        const savedAt = compactUtcNow();
+        localStorage.setItem(FIELD_CASE_FORM_STORAGE_KEY, JSON.stringify(fieldCase));
+        localStorage.setItem(FIELD_CASE_FORM_SAVED_AT_STORAGE_KEY, savedAt);
+        setFieldCaseDraftSavedAt(savedAt);
+      }
+      return;
+    }
+    const savedAt = compactUtcNow();
     localStorage.setItem(FIELD_CASE_FORM_STORAGE_KEY, JSON.stringify(fieldCase));
+    localStorage.setItem(FIELD_CASE_FORM_SAVED_AT_STORAGE_KEY, savedAt);
+    setFieldCaseDraftSavedAt(savedAt);
   }, [fieldCase]);
 
   useEffect(() => {
@@ -4265,6 +4286,19 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
     loadFieldCollectionCondition(plan, plan.next_condition);
     setSelectedOutputId("field-evidence");
+  };
+
+  const resetFieldCaseDraft = () => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(FIELD_CASE_FORM_STORAGE_KEY);
+      localStorage.removeItem(FIELD_CASE_FORM_SAVED_AT_STORAGE_KEY);
+    }
+    setFieldCase(defaultFieldCaseForm());
+    setFieldCaseDraftSavedAt(null);
+    setResult("field-evidence", {
+      status: "idle",
+      output: "$ Reset Field Evidence Draft\nLocal field evidence form draft reset. Load a field collection condition or enter a new case before capture/registration.",
+    });
   };
 
   const browseForKey = async () => {
@@ -6419,6 +6453,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         ssh_fingerprint: connectionResult?.fingerprint ?? selectedDevice?.known_fingerprint ?? null,
       },
       field_evidence_case: fieldCase,
+      field_evidence_case_draft: {
+        storage_key: FIELD_CASE_FORM_STORAGE_KEY,
+        saved_at: fieldCaseDraftSavedAt,
+        metadata_ready: fieldMetadataReady,
+        metadata_issues: fieldMetadataIssues,
+      },
       mission_planner_handoff: activeHandoff,
       local: {
         repo_path: repoPath,
@@ -7053,6 +7093,15 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={resetFieldCaseDraft}
+                    disabled={!!runningStep}
+                    className="btn-secondary text-xs py-1 px-3"
+                    title="Reset the locally saved Field Evidence Case draft"
+                  >
+                    <RefreshCw size={11} />
+                    Reset Draft
+                  </button>
+                  <button
                     onClick={createFieldEvidenceTemplate}
                     disabled={!connectionReady || !!runningStep}
                     className="btn-secondary text-xs py-1 px-3"
@@ -7099,6 +7148,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   {fieldMetadataReady ? "metadata ready" : "metadata incomplete"}
                 </span>
                 <span className="text-slate-500">condition {firstFieldCondition(fieldCase.conditions) || "n/a"}</span>
+                <span className="text-slate-500">local draft {fieldCaseDraftSavedAt ? `saved ${fieldCaseDraftSavedAt}` : "not saved"}</span>
               </div>
               {!fieldMetadataReady && (
                 <div className="flex flex-wrap gap-1.5 text-[10px]">

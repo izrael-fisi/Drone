@@ -713,6 +713,9 @@ Status:
   metadata and passes it through `VISION_NAV_FIELD_CAPTURE_METADATA`; the full
   Evidence Workflow skips optional field registration until that metadata is
   complete.
+- Done: Module Setup now exposes the local Field Evidence Case draft state with
+  a saved-at timestamp, a Reset Draft action, and setup-report fields for the
+  draft storage key, metadata readiness, and missing metadata issues.
 - Done: Module Setup's Field Evidence Case form now shows the exact missing
   proof-grade metadata fields and provides an `Update Metadata` action that
   writes the current form values to the Pi-side active manifest, regenerates the
