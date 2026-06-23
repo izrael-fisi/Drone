@@ -13,92 +13,15 @@ field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-$HOME/DroneTransf
 field_log_capture_report="${VISION_NAV_FIELD_LOG_CAPTURE_REPORT:-$HOME/DroneTransfer/outgoing/terrain-match/field_log_capture_report.json}"
 gnss_denied_plan_check="${VISION_NAV_GNSS_DENIED_PLAN_CHECK:-$HOME/DroneTransfer/outgoing/replay-cases/gnss_denied_plan_check.json}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
-rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
-rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json}"
-evidence_workflow_report="${VISION_NAV_EVIDENCE_WORKFLOW_REPORT:-}"
-evidence_workflow_validation="${VISION_NAV_EVIDENCE_WORKFLOW_VALIDATION:-}"
-evidence_workflow_log_archive="${VISION_NAV_EVIDENCE_WORKFLOW_LOG_ARCHIVE:-}"
-px4_sitl_session="${VISION_NAV_PX4_SITL_SESSION:-}"
-px4_sitl_prereqs="${VISION_NAV_PX4_SITL_PREREQS:-}"
-px4_sitl_report="${VISION_NAV_PX4_SITL_REPORT:-}"
 px4_params="${VISION_NAV_PX4_PARAMS:-}"
-ardupilot_params="${VISION_NAV_ARDUPILOT_PARAMS:-}"
 replay_case_manifest="${VISION_NAV_REPLAY_CASE_MANIFEST:-}"
-home_px4_sitl_dir="$HOME/px4-sitl-evidence"
-repo_px4_sitl_dir="$repo_root/px4-sitl-evidence"
-
-if [[ -z "$px4_sitl_session" && -f "$home_px4_sitl_dir/px4_sitl_evidence_session.json" ]]; then
-  px4_sitl_session="$home_px4_sitl_dir"
-fi
-
-if [[ -z "$px4_sitl_session" && ! -f "$home_px4_sitl_dir/receiver_evidence.json" && ! -f "$home_px4_sitl_dir/px4_sitl_capture_prereqs.json" && -f "$repo_px4_sitl_dir/px4_sitl_evidence_session.json" ]]; then
-  px4_sitl_session="$repo_px4_sitl_dir"
-fi
-
-if [[ -z "$px4_sitl_report" && -f "$home_px4_sitl_dir/receiver_evidence.json" ]]; then
-  px4_sitl_report="$home_px4_sitl_dir/receiver_evidence.json"
-fi
-
-if [[ -z "$px4_sitl_report" && -f "$repo_px4_sitl_dir/receiver_evidence.json" ]]; then
-  px4_sitl_report="$repo_px4_sitl_dir/receiver_evidence.json"
-fi
-
-if [[ -z "$px4_sitl_prereqs" && -f "$home_px4_sitl_dir/px4_sitl_capture_prereqs.json" ]]; then
-  px4_sitl_prereqs="$home_px4_sitl_dir/px4_sitl_capture_prereqs.json"
-fi
-
-if [[ -z "$px4_sitl_prereqs" && -f "$repo_px4_sitl_dir/px4_sitl_capture_prereqs.json" ]]; then
-  px4_sitl_prereqs="$repo_px4_sitl_dir/px4_sitl_capture_prereqs.json"
-fi
 
 if [[ -z "$px4_params" && -f "$HOME/px4.params" ]]; then
   px4_params="$HOME/px4.params"
 fi
 
-if [[ -z "$ardupilot_params" && -f "$HOME/ardupilot.params" ]]; then
-  ardupilot_params="$HOME/ardupilot.params"
-fi
-
 if [[ -z "$replay_case_manifest" && -f "$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json" ]]; then
   replay_case_manifest="$HOME/DroneTransfer/outgoing/replay-cases/field_manifest.json"
-fi
-
-if [[ -z "$evidence_workflow_report" ]]; then
-  for candidate in \
-    "$HOME/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.json" \
-    "$HOME/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.json"
-  do
-    if [[ -f "$candidate" ]]; then
-      evidence_workflow_report="$candidate"
-      break
-    fi
-  done
-fi
-
-if [[ -z "$evidence_workflow_validation" ]]; then
-  for candidate in \
-    "${evidence_workflow_report%.json}.validation.json" \
-    "$HOME/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.validation.json" \
-    "$HOME/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.validation.json"
-  do
-    if [[ -n "$candidate" && -f "$candidate" ]]; then
-      evidence_workflow_validation="$candidate"
-      break
-    fi
-  done
-fi
-
-if [[ -z "$evidence_workflow_log_archive" ]]; then
-  for candidate in \
-    "${evidence_workflow_report%.json}.logs.tar.gz" \
-    "$HOME/DroneTransfer/outgoing/replay-cases/autonomy-evidence-workflow/autonomy_evidence_workflow.logs.tar.gz" \
-    "$HOME/DroneTransfer/outgoing/replay-cases/autonomy_evidence_workflow.logs.tar.gz"
-  do
-    if [[ -n "$candidate" && -f "$candidate" ]]; then
-      evidence_workflow_log_archive="$candidate"
-      break
-    fi
-  done
 fi
 
 if [[ "$venv_python" == */* ]]; then
@@ -145,28 +68,8 @@ if [[ -n "${VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE:-}" && -f "${VISION_NAV_PX4_MA
   args+=(--px4-mavlink-status "$VISION_NAV_PX4_MAVLINK_STATUS_CAPTURE")
 fi
 
-if [[ -n "$px4_sitl_session" && -e "$px4_sitl_session" ]]; then
-  args+=(--px4-sitl-session "$px4_sitl_session")
-fi
-
-if [[ -n "$px4_sitl_prereqs" && -f "$px4_sitl_prereqs" ]]; then
-  args+=(--px4-sitl-prereqs "$px4_sitl_prereqs")
-fi
-
-if [[ -n "$px4_sitl_report" && -f "$px4_sitl_report" ]]; then
-  args+=(--px4-sitl-report "$px4_sitl_report")
-fi
-
 if [[ -n "$px4_params" && -f "$px4_params" ]]; then
   args+=(--px4-params "$px4_params")
-fi
-
-if [[ -n "$ardupilot_params" && -f "$ardupilot_params" ]]; then
-  args+=(--ardupilot-params "$ardupilot_params")
-fi
-
-if [[ -n "${VISION_NAV_SITL_MAVLINK_MESSAGE:-}" ]]; then
-  args+=(--px4-expected-message "$VISION_NAV_SITL_MAVLINK_MESSAGE")
 fi
 
 if [[ -n "$replay_case_manifest" && -f "$replay_case_manifest" ]]; then
@@ -225,30 +128,6 @@ fi
 
 if [[ -n "$threshold_tuning_report" && -e "$threshold_tuning_report" ]]; then
   args+=(--threshold-tuning-report "$threshold_tuning_report")
-fi
-
-if [[ -n "$rosbag_export_validation" && -e "$rosbag_export_validation" ]]; then
-  args+=(--rosbag-export-validation "$rosbag_export_validation")
-fi
-
-if [[ -n "${VISION_NAV_MCAP_EXPORT_VALIDATION:-}" && -e "${VISION_NAV_MCAP_EXPORT_VALIDATION}" ]]; then
-  args+=(--rosbag-export-validation "$VISION_NAV_MCAP_EXPORT_VALIDATION")
-fi
-
-if [[ -n "$rosbag2_cli_review" && -e "$rosbag2_cli_review" ]]; then
-  args+=(--rosbag2-cli-review "$rosbag2_cli_review")
-fi
-
-if [[ -n "$evidence_workflow_report" && -f "$evidence_workflow_report" ]]; then
-  args+=(--evidence-workflow-report "$evidence_workflow_report")
-fi
-
-if [[ -n "$evidence_workflow_validation" && -f "$evidence_workflow_validation" ]]; then
-  args+=(--evidence-workflow-validation "$evidence_workflow_validation")
-fi
-
-if [[ -n "$evidence_workflow_log_archive" && -f "$evidence_workflow_log_archive" ]]; then
-  args+=(--evidence-workflow-log-archive "$evidence_workflow_log_archive")
 fi
 
 if [[ "${VISION_NAV_SUPPORT_INCLUDE_MAP_ASSETS:-0}" == "1" ]]; then

@@ -4,7 +4,6 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 skip_docker="${VISION_NAV_SKIP_DOCKER_SMOKE:-0}"
 skip_camera_health="${VISION_NAV_SKIP_CAMERA_HEALTH:-0}"
-check_xrce="${VISION_NAV_CHECK_XRCE:-0}"
 
 section() {
   printf '\n== %s ==\n' "$*"
@@ -30,10 +29,6 @@ else
 fi
 
 run_step "Run host camera/synthetic vision smoke test" ./scripts/pi/smoke_test_vision.sh
-
-if [[ "$check_xrce" == "1" ]]; then
-  run_step "Check Micro XRCE-DDS Agent" ./scripts/pi/check_micro_xrce_dds_agent.sh
-fi
 
 if [[ "$skip_docker" == "1" ]]; then
   section "Skip Docker smoke test"

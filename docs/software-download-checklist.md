@@ -1,94 +1,93 @@
 # Software Download Checklist
 
-## Desktop PC
+This checklist follows the current hardware-first scaffold. ROS 2, Gazebo, and
+PX4 SITL are not required for the active workflow.
 
-Recommended: keep Windows installed and add Ubuntu 22.04 LTS as a dual boot.
-
-Install on Ubuntu:
-
-- Ubuntu 22.04 LTS
-- NVIDIA proprietary driver
-- Git
-- Git LFS
-- VS Code or Cursor
-- Python 3.10
-- `python3-venv`
-- `pipx`
-- `uv`
-- Docker
-- NVIDIA Container Toolkit, optional
-- QGroundControl
-- PX4-Autopilot
-- ROS 2 Humble Desktop
-- Micro XRCE-DDS Agent
-- `px4_msgs`
-
-## MacBook Pro
+## Desktop / Mac
 
 Install:
 
-- Xcode Command Line Tools
-- Homebrew
 - Git
 - Git LFS
 - VS Code or Cursor
-- Python through Homebrew or `pyenv`
-- `uv`
-- QGroundControl
-- Optional PX4 macOS simulation toolchain
+- Python 3.10 or newer
+- `uv` or a normal Python virtual environment
+- Node.js LTS
+- Rust/Cargo for the Tauri backend
+- QGroundControl for real Pixhawk setup, parameters, radio calibration, and logs
 
-Recommended Mac role:
+Useful Python packages are installed from this repo's project metadata and
+requirements files. For direct local development:
 
-- Editing
-- QGroundControl
-- Git and documentation
-- Dataset review
-- Light Python tools
-- Small simulation checks
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[geo,mavlink]"
+pip install -r requirements/pi-host.txt
+```
+
+Desktop app:
+
+```bash
+cd desktop-app
+npm ci
+npm run build
+cd src-tauri
+cargo check
+cargo test
+```
 
 ## Raspberry Pi 5
 
-Keep two boot images early:
-
-1. Ubuntu Server 22.04 or 24.04 arm64
-   - ROS 2
-   - camera drivers
-   - MAVLink Router or direct MAVLink bridge
-   - Micro XRCE-DDS Agent if needed onboard
-   - visual-navigation runtime services
-
-2. Raspberry Pi OS 64-bit
-   - Raspberry Pi AI HAT+ 2 / Hailo testing
-   - camera and inference benchmarks
-
-## Python Project Packages
-
-Initial packages:
+Use Raspberry Pi OS 64-bit or Ubuntu Server arm64, then run the project
+bootstrap:
 
 ```bash
-pip install numpy scipy opencv-python pydantic pytest pytest-asyncio rich
-pip install mavsdk pymavlink geographiclib pyproj
-pip install torch torchvision ultralytics
+git clone https://github.com/izrael-fisi/Drone.git
+cd Drone
+chmod +x scripts/pi/*.sh
+./scripts/pi/bootstrap_pi5.sh
+sudo reboot
 ```
 
-Later candidates to evaluate, not install blindly:
-
-- OpenVINS
-- ORB-SLAM3 or other VIO/SLAM stack
-- RTAB-Map if map-building experiments require it
-- ONNX Runtime
-- Hailo runtime packages for AI HAT+ 2
-
-## First Simulation Commands
-
-From the PX4-Autopilot repo:
+After reboot:
 
 ```bash
-make px4_sitl gz_x500
-make px4_sitl gz_x500_depth
-make px4_sitl gz_x500_vision
+cd ~/Drone
+./scripts/pi/first_run_checks.sh
 ```
 
-## Docker Guidance
+The active Pi software needs:
 
-Use Docker inside Ubuntu for reproducible experiments, dataset processing, model training, and isolated ROS/Python services. Do not make Windows Docker/WSL2 the primary full-stack simulation environment unless necessary.
+- camera tools (`rpicam-*` or `libcamera-*`)
+- Python vision/navigation dependencies
+- MAVLink Python support
+- Docker only if using the optional Pi container workflow
+- SSH/rsync for desktop transfer
+
+## QGroundControl
+
+Use QGroundControl for real hardware only:
+
+- firmware check
+- airframe setup
+- sensor calibration
+- radio calibration
+- flight mode switch verification
+- parameter export to `px4.params`
+- MAVLink telemetry over USB or SiK radio
+- log download
+
+## Not Required For Active Workflow
+
+Do not install these for the next milestone unless a separate experiment needs
+them:
+
+- robotics middleware desktop stacks
+- DDS bridge agents
+- PX4-Autopilot checkout
+- simulator engines
+- simulated PX4 airframe targets
+- `px4_msgs`
+
+The next validation path is the real Holybro X500 V2 prop-off hardware test.

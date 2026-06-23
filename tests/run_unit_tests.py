@@ -3511,8 +3511,6 @@ RC8_OPTION,90
         assert_equal(readiness_checks["gnss_denied_plan"], "passed", "bench readiness gnss denied plan")
         assert_equal(readiness_checks["runtime_status"], "passed", "bench readiness runtime status")
         assert_equal(readiness_checks["px4_sitl_evidence"], "passed", "bench readiness px4 evidence")
-        assert_equal(readiness_checks["rosbag_export_validations"], "passed", "bench readiness rosbag validation")
-        assert_equal(readiness_checks["rosbag2_cli_reviews"], "passed", "bench readiness rosbag2 cli review")
         assert_equal(
             readiness_check_details["px4_sitl_evidence"]["observed_rate_hz"],
             5.0,
@@ -3529,30 +3527,8 @@ RC8_OPTION,90
             "bench readiness px4 required message",
         )
         assert_equal(readiness_checks["px4_params"], "degraded", "bench readiness px4 params")
-        assert_equal(readiness_checks["ardupilot_params"], "passed", "bench readiness ardupilot params")
         assert_equal(readiness_checks["feature_method_benchmarks"], "passed", "bench readiness feature benchmarks")
         assert_equal(readiness_checks["field_evidence"], "passed", "bench readiness field evidence")
-
-        failed_rosbag_validation = dict(manifest)
-        failed_rosbag_validation["rosbag_export_validations"] = {
-            "status": "failed",
-            "report_count": 1,
-            "reports": [{"status": "failed", "format": "vision_nav_rosbag_jsonl_v1"}],
-        }
-        rosbag_failed = evaluate_bench_readiness(failed_rosbag_validation)
-        rosbag_failed_checks = {check["name"]: check["status"] for check in rosbag_failed["checks"]}
-        rosbag_failed_actions = {action["check"]: action for action in rosbag_failed["next_actions"]}
-        assert_equal(rosbag_failed["status"], "failed", "bench readiness failed rosbag validation")
-        assert_equal(
-            rosbag_failed_checks["rosbag_export_validations"],
-            "failed",
-            "failed rosbag validation check included",
-        )
-        assert_equal(
-            rosbag_failed_actions["rosbag_export_validations"]["desktop_action"],
-            "Module Setup > ROS Bag Validation, then Bench Report",
-            "failed rosbag validation next action app",
-        )
 
         incomplete_gnss = json.loads(json.dumps(manifest))
         incomplete_gnss["bundle"]["mission_plan"]["gnss_denied"]["status"] = "incomplete"
@@ -3666,25 +3642,6 @@ RC8_OPTION,90
             ["velocity_covariance_missing"],
             "bench readiness external warning details",
         )
-
-        failed_ardupilot = dict(manifest)
-        failed_ardupilot["ardupilot_params"] = {
-            "status": "failed",
-            "parameters": {"source_set": 1, "EK3_SRC1_POSXY": 0},
-        }
-        ardupilot_failed = evaluate_bench_readiness(failed_ardupilot)
-        assert_equal(ardupilot_failed["status"], "failed", "bench readiness failed ardupilot params")
-        ardupilot_failed_checks = {check["name"]: check["status"] for check in ardupilot_failed["checks"]}
-        assert_equal(ardupilot_failed_checks["ardupilot_params"], "failed", "failed ardupilot check included")
-
-        missing_ardupilot = dict(manifest)
-        missing_ardupilot["ardupilot_params"] = {"status": "not_provided"}
-        optional_ardupilot = evaluate_bench_readiness(missing_ardupilot)
-        optional_check_names = {check["name"] for check in optional_ardupilot["checks"]}
-        if "ardupilot_params" in optional_check_names:
-            raise AssertionError("ArduPilot params should be optional unless required")
-        required_ardupilot = evaluate_bench_readiness(missing_ardupilot, require_ardupilot_params=True)
-        assert_equal(required_ardupilot["status"], "failed", "bench readiness required missing ardupilot params")
 
         failed_feature_benchmarks = dict(manifest)
         failed_feature_benchmarks["feature_method_benchmarks"] = {"status": "failed", "report_count": 1, "reports": []}
@@ -8897,16 +8854,9 @@ def main() -> None:
         test_mavlink_log_sender_uses_selected_message_type,
         test_mavlink_odometry_requires_mavlink2_dialect,
         test_mavlink_odometry_reports_unsupported_connection,
-        test_px4_sitl_receiver_evidence_gate,
-        test_px4_sitl_session_evaluator_writes_report_and_flags_missing_captures,
         test_px4_param_checker_flags_external_vision_readiness,
-        test_ardupilot_param_checker_flags_external_nav_readiness,
         test_external_position_payloads,
         test_external_position_stream_health,
-        test_ros2_odometry_and_diagnostics_adapters,
-        test_ros2_bag_jsonl_export_writes_topic_records,
-        test_ros2_launch_profiles_static,
-        test_ros2_package_wrapper_static,
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
@@ -8919,8 +8869,6 @@ def main() -> None:
         test_runtime_status_snapshot_reports_active_map_and_last_match,
         test_support_bundle_collects_manifest_health_logs_and_summary,
         test_gnss_denied_plan_checker_reports_ready_and_missing_cases,
-        test_autonomy_evidence_workflow_validation_checks_log_archive,
-        test_autonomy_readiness_requires_external_proof_artifacts,
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,
         test_replay_gates_fail_missing_metrics_motion_jumps_and_weak_covariance,
         test_synthetic_replay_case_manifest_passes_all_cases,

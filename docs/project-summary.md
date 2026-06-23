@@ -2,93 +2,122 @@
 
 ## Project Vision
 
-Build a low-cost drone navigation stack that can estimate position in GNSS-denied environments using onboard computer vision, inertial data, altitude sensing, and pre-installed maps.
+Build a low-cost drone navigation stack that can estimate position in
+GNSS-denied environments using onboard computer vision, flight-controller
+telemetry, optional altitude sensing, and pre-installed georeferenced maps.
 
-The project is not a general autonomy, chatbot, or mission-command project. The only goal is GNSS-denied vision navigation and the flight-control/compute dependencies needed to validate it.
+The project is not a general autonomy, chatbot, ROS middleware, or simulation
+project. The active scope is now hardware-first GNSS-denied vision navigation
+and the ground-control tooling needed to configure, test, and review it.
+
+## Active Project Shape
+
+The repo has two active sections:
+
+1. Drone code operation.
+2. Ground control / mission planner desktop app.
+
+ROS 2, Gazebo, and PX4 SITL are not active project dependencies. Existing
+legacy helper code may remain in the repo until it is safely removed, but new
+operator guidance, readiness planning, and hardware prep should not depend on
+simulation or ROS 2.
 
 ## Primary Objective
 
-Produce a reliable navigation estimate when GNSS is unavailable or untrusted.
+Produce a reliable navigation estimate when GNSS is unavailable, degraded, or
+intentionally ignored.
 
 The navigation estimate should include:
 
-- Local pose and velocity
-- Global georeferenced position when map matching supports it
-- Covariance or confidence score
-- Timestamp and estimator health
-- Failure/degraded-state reporting
+- local east/north/down or east/north position where validated
+- optional global georeferenced position when map matching supports it
+- covariance or confidence score
+- timestamp and estimator health
+- explicit failed/degraded-state reporting
 
 ## Preferred Output Strategy
 
-Do not force everything into NMEA.
+The default output path is MAVLink to PX4/Pixhawk.
 
 Preferred outputs:
 
-1. ROS 2 `nav_msgs/Odometry` or pose-with-covariance topics for internal robotics use.
-2. PX4-compatible external vision via MAVLink `ODOMETRY` or `VISION_POSITION_ESTIMATE` when feeding local pose into the PX4 estimator.
-3. MAVLink `GPS_INPUT` only when intentionally presenting the output as a GPS-like global sensor input.
-4. Optional NMEA adapter only for downstream systems that specifically require NMEA sentences.
+1. MAVLink `ODOMETRY` for PX4 external-vision bench/product readiness.
+2. MAVLink `VISION_POSITION_ESTIMATE` only as a compatibility/debug path.
+3. MAVLink `GPS_INPUT` only when intentionally presenting the output as a
+   GPS-like global source, with quality clearly marked.
+4. Optional NMEA adapter only for downstream systems that specifically require
+   NMEA sentences.
 
 ## Planned Hardware
 
-Known purchases/planned modules:
+Known hardware target:
 
 - Raspberry Pi 5 16GB as the companion computer
-- Holybro Pixhawk 6X Standard V2A as the flight controller
-- Raspberry Pi AI HAT+ 2 only if local inference benchmarks require acceleration
-
-Likely low-cost sensor path:
-
-- Fixed-focus global-shutter camera if budget allows
-- Raspberry Pi camera or low-cost UVC camera for early tests
+- Holybro X500 V2 kit
+- Pixhawk 6C-class flight controller from the Holybro kit
+- Holybro M8N GPS module from the kit, used for setup/ground-truth comparison
+  before GNSS-denied operation
+- SiK telemetry radio from the kit for QGroundControl/PX4 parameter/log access
+- Raspberry Pi camera or global-shutter camera for downward map matching
 - Optional Pixhawk barometer telemetry for relative vertical confidence
-- Optional optical flow only after simulation/bench tests show clear value
+- Optional Raspberry Pi AI HAT+ only after CPU benchmarks prove it is needed
 
 ## Software Architecture
 
 ```text
-Sensor acquisition
-  -> camera calibration and time synchronization
-    -> VIO / visual odometry
-      -> map matching / visual relocalization
-        -> estimator fusion
-          -> navigation output bridge
-            -> ROS 2 topics
-            -> PX4/MAVLink estimator input
-            -> optional legacy output adapters
+Drone code operation
+  -> camera capture and calibration
+  -> terrain bundle loading and tile retrieval
+  -> ORB/AKAZE feature matching
+  -> RANSAC geometry checks
+  -> estimator confidence/covariance
+  -> runtime log and status artifacts
+  -> MAVLink external-vision output to Pixhawk when enabled
+
+Ground control / mission planner app
+  -> import/select map source
+  -> configure vision pipeline defaults
+  -> plan mission/fence/rally/vision checkpoints
+  -> build/upload terrain bundle
+  -> connect to Raspberry Pi over local Wi-Fi/SSH
+  -> run camera, bundle, MAVLink, and hardware bench checks
+  -> download/review support bundles and field evidence
 ```
 
 ## Development Machines
 
-M1 MacBook Pro, 16GB RAM:
+M1 MacBook Pro:
 
-- Code editing
+- code editing
 - Git and documentation
+- desktop app development/testing
 - QGroundControl
-- Light Python tools and smaller tests
+- light Python tools and bundle review
 
-Desktop PC, 24GB RAM, RTX 3060:
+Desktop PC:
 
-- Main development machine
-- Ubuntu 22.04 LTS dual boot preferred
-- PX4 SITL
-- Gazebo
-- ROS 2 Humble
-- Computer vision and VIO experiments
-- Model benchmarking and training experiments
+- desktop app development/testing
+- heavier map processing and feature benchmarking
+- optional model benchmarking
+- no required ROS 2, Gazebo, or SITL workflow
 
 Raspberry Pi 5:
 
-- Onboard companion-computer deployment target
-- Camera capture
-- Runtime estimator and output bridge
-- AI HAT+ 2 benchmarks if needed
+- onboard companion-computer deployment target
+- camera capture
+- terrain runtime estimator
+- MAVLink output bridge
+- logging, field capture, and support-bundle creation
 
 ## Major Decisions
 
-- Use ROS 2 for perception, localization, sensor fusion, logging, and replay.
-- Use PX4 SITL and Gazebo before relying on physical flight tests.
-- Use PX4 external-vision paths before pretending a vision estimate is ordinary GNSS.
-- Keep NMEA as optional, not central.
-- Treat Theseus products/docs as architecture inspiration, not a direct implementation target, because Cyclops and Micro VPS currently document ArduPilot support rather than PX4 support.
-- The referenced `evansfsu/Macula` GitHub URL could not be publicly verified; do not base technical assumptions on it until the correct public repository is available.
+- Use real hardware bench tests instead of ROS 2/SITL simulation as the active
+  validation path.
+- Keep the runtime Python-first and Raspberry-Pi-friendly.
+- Use PX4 external-vision MAVLink paths before pretending a vision estimate is
+  ordinary GNSS.
+- Keep NMEA optional, not central.
+- Keep optical flow hardware optional until downward-camera tests show a clear
+  need.
+- Treat Theseus products/docs as product workflow inspiration, not as a direct
+  implementation target.

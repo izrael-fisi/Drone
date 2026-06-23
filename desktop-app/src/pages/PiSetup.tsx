@@ -77,7 +77,7 @@ const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 const FIELD_CASE_FORM_STORAGE_KEY = "drone_field_case_form";
 const FIELD_CASE_FORM_SAVED_AT_STORAGE_KEY = "drone_field_case_form_saved_at";
 const SUPPORT_EVIDENCE_ENV =
-  'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
+  'VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
 
 type WorkflowValidationSummary = NonNullable<AutonomyEvidenceWorkflowReportFile["workflow_validation_summary"]>;
 type WorkflowValidationCheck = WorkflowValidationSummary["checks"][number];
@@ -871,9 +871,9 @@ function autonomyEvidenceWorkflowCommand(remoteProject: string, remoteBundle: st
     includeFieldRegistration ? `VISION_NAV_FIELD_CAPTURE_METADATA=${shellQuote(captureMetadata)}` : "",
     includeFieldRegistration && fieldCase.notes ? `VISION_NAV_FIELD_NOTES=${shellQuote(fieldCase.notes)}` : "",
     includeFieldRegistration && fieldCase.replace ? "VISION_NAV_FIELD_REPLACE=1" : "",
-    "VISION_NAV_EVIDENCE_WORKFLOW_ALLOW_FAILED=1",
+    "VISION_NAV_COUNT=30",
   ].filter(Boolean).join(" ");
-  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_autonomy_evidence_workflow.sh`;
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/preflight_field_capture.sh && ${env} ./scripts/pi/run_terrain_nav_loop.sh && ${env} ./scripts/pi/replay_terrain_nav_log.sh`;
 }
 
 function defaultRemotePath(username: string) {
@@ -3808,7 +3808,7 @@ function RosbagExportValidationReportList({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h4 className="text-xs font-medium text-slate-300 flex items-center gap-2">
-            <Archive size={13} className="text-cyan-400" /> ROS Bag Validation
+            <Archive size={13} className="text-cyan-400" /> Replay Artifact Validation
           </h4>
           <p className="text-[10px] text-slate-500 font-mono truncate">{downloadDir}</p>
         </div>
@@ -5024,7 +5024,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         form.port,
         form.username,
         resolvedAuth,
-        `cd ${shellQuote(remoteProject)} && ./scripts/pi/run_autonomy_readiness_audit.sh`,
+        `cd ${shellQuote(remoteProject)} && ./scripts/pi/create_support_bundle.sh`,
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteReport = parseAutonomyReadinessReport(output);
@@ -5746,7 +5746,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         form.port,
         form.username,
         resolvedAuth,
-        `cd ${shellQuote(remoteProject)} && ./scripts/pi/run_rosbag_export_validation.sh`,
+        `cd ${shellQuote(remoteProject)} && ./scripts/pi/summarize_vision_nav_logs.sh && ./scripts/pi/create_support_bundle.sh`,
       );
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteReport = parseRosbagExportValidationReport(output);
@@ -6431,24 +6431,6 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       recommended: true,
     },
     {
-      id: "xrce-dds",
-      title: "Micro XRCE-DDS Agent",
-      detail: "Checks the optional PX4 uXRCE-DDS Agent used for ROS 2 telemetry and external-vision bench paths.",
-      command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/check_micro_xrce_dds_agent.sh`,
-    },
-    {
-      id: "local-px4-sitl-prereqs",
-      title: "PX4 Prereq Setup",
-      detail: "Dry-runs local tmux and PX4 checkout setup commands before receiver proof capture.",
-      localOnly: true,
-    },
-    {
-      id: "local-px4-sitl-receiver",
-      title: "PX4 SITL Receiver Capture",
-      detail: "Runs local PX4 SITL and captures receiver proof for the external-vision ODOMETRY path.",
-      localOnly: true,
-    },
-    {
       id: "calibration-capture",
       title: "Calibration Capture",
       detail: "Captures a short chessboard image set for down-camera calibration when the target is ready.",
@@ -6514,34 +6496,6 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       id: "threshold-tuning",
       title: "Threshold Tuning",
       detail: "Generates and downloads the replay-gate threshold report from registered real field cases.",
-    },
-    {
-      id: "rosbag-validation",
-      title: "ROS Bag Validation",
-      detail: "Exports the latest terrain log as ROS bag JSONL and downloads the validation report plus source log.",
-    },
-    {
-      id: "local-rosbag2-cli-review",
-      title: "Native rosbag2 Review",
-      detail: "Runs the desktop ROS 2 rosbag2 CLI review against the downloaded terrain log.",
-      localOnly: true,
-    },
-    {
-      id: "autonomy-evidence-workflow",
-      title: "Evidence Workflow",
-      detail: "Attempts the ordered evidence sequence and downloads a per-step workflow report for support review.",
-    },
-    {
-      id: "autonomy-readiness",
-      title: "Autonomy Readiness",
-      detail: "Runs the strict final audit against the latest Pi support bundle and field evidence artifacts.",
-      command: () => `cd ${shellQuote(remoteProject)} && ./scripts/pi/run_autonomy_readiness_audit.sh`,
-    },
-    {
-      id: "local-autonomy-readiness",
-      title: "Local Readiness Re-Audit",
-      detail: "Re-runs the strict final audit against downloaded desktop evidence without connecting to the module.",
-      localOnly: true,
     },
   ];
 

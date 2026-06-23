@@ -52,14 +52,14 @@ BENCH_NEXT_ACTIONS = {
     },
     "replay_gates": {
         "title": "Run guided field replay evidence.",
-        "desktop_action": "Module Setup > Load Next Field Condition, then Evidence Workflow",
-        "command": "./scripts/pi/run_autonomy_evidence_workflow.sh",
-        "notes": "The workflow captures, validates, and registers condition-specific logs.",
+        "desktop_action": "Module Setup > Field Capture Preflight, Field Log Capture, Replay Gate",
+        "command": "./scripts/pi/preflight_field_capture.sh && VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/replay_terrain_nav_log.sh",
+        "notes": "Capture and validate condition-specific logs on the hardware path.",
     },
     "px4_sitl_evidence": {
         "title": "Capture PX4 receiver proof.",
-        "desktop_action": "Module Setup > PX4 SITL Receiver Capture, then Bench Report",
-        "command": "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
+        "desktop_action": "Module Setup > Field Log Capture during prop-off hardware test, then Bench Report",
+        "command": "VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/create_support_bundle.sh",
         "notes": "Receiver proof must show the MAVLink ODOMETRY path arriving as vehicle_visual_odometry samples.",
     },
     "px4_params": {
@@ -76,8 +76,8 @@ BENCH_NEXT_ACTIONS = {
     },
     "field_evidence": {
         "title": "Collect and register field replay proof.",
-        "desktop_action": "Module Setup > Evidence Workflow",
-        "command": "./scripts/pi/run_autonomy_evidence_workflow.sh",
+        "desktop_action": "Module Setup > Field Capture Preflight, Field Log Capture, Replay Gate",
+        "command": "./scripts/pi/preflight_field_capture.sh && VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/register_field_replay_case.sh",
         "notes": "Field evidence must cover all required terrain conditions with real captured logs.",
     },
     "threshold_tuning": {
@@ -85,24 +85,6 @@ BENCH_NEXT_ACTIONS = {
         "desktop_action": "Module Setup > Threshold Tuning",
         "command": "./scripts/pi/run_threshold_tuning_report.sh",
         "notes": "Threshold tuning should run after the field-evidence manifest passes.",
-    },
-    "rosbag_export_validations": {
-        "title": "Export and validate the ROS replay artifact.",
-        "desktop_action": "Module Setup > ROS Bag Validation, then Bench Report",
-        "command": "./scripts/pi/run_rosbag_export_validation.sh && ./scripts/pi/create_support_bundle.sh",
-        "notes": "Support bundles should include a passed ROS replay export validation summary.",
-    },
-    "rosbag2_cli_reviews": {
-        "title": "Review the native rosbag2 export.",
-        "desktop_action": "Module Setup > Native rosbag2 Review, then Bench Report",
-        "command": "./scripts/dev/run_rosbag2_cli_review.sh && ./scripts/pi/create_support_bundle.sh",
-        "notes": "Run on a sourced ROS 2 workstation when native rosbag2 export is part of the evidence package.",
-    },
-    "ardupilot_params": {
-        "title": "Review ArduPilot ExternalNav parameters.",
-        "desktop_action": "Module Setup > ArduPilot parameter check",
-        "command": "./scripts/pi/check_ardupilot_params.sh",
-        "notes": "ArduPilot remains optional for the PX4-first bench path unless explicitly required.",
     },
 }
 
@@ -120,11 +102,6 @@ def parse_args() -> argparse.Namespace:
         "--allow-missing-px4-params",
         action="store_true",
         help="Do not fail when PX4 parameter export evidence is absent. Use only before autopilot setup.",
-    )
-    parser.add_argument(
-        "--require-ardupilot-params",
-        action="store_true",
-        help="Fail when ArduPilot ExternalNav parameter evidence is absent.",
     )
     parser.add_argument(
         "--require-feature-method-benchmark",
@@ -159,7 +136,6 @@ def evaluate_bench_readiness(
     allow_missing_px4_evidence: bool = False,
     require_px4_evidence: bool = True,
     allow_missing_px4_params: bool = False,
-    require_ardupilot_params: bool = False,
     require_feature_method_benchmark: bool = False,
     require_field_evidence: bool = False,
     allow_missing_replay_gates: bool = False,
@@ -174,21 +150,12 @@ def evaluate_bench_readiness(
     ]
     if require_px4_evidence:
         checks.append(check_px4_evidence(manifest, allow_missing=allow_missing_px4_evidence))
-    ardupilot_check = check_ardupilot_params(manifest, require=require_ardupilot_params)
-    if ardupilot_check is not None:
-        checks.append(ardupilot_check)
     feature_benchmark_check = check_feature_method_benchmark(manifest, require=require_feature_method_benchmark)
     if feature_benchmark_check is not None:
         checks.append(feature_benchmark_check)
     field_evidence_check = check_field_evidence(manifest, require=require_field_evidence)
     if field_evidence_check is not None:
         checks.append(field_evidence_check)
-    rosbag_export_check = check_rosbag_export_validations(manifest)
-    if rosbag_export_check is not None:
-        checks.append(rosbag_export_check)
-    rosbag2_cli_check = check_rosbag2_cli_reviews(manifest)
-    if rosbag2_cli_check is not None:
-        checks.append(rosbag2_cli_check)
     status = readiness_status(checks)
     next_actions = next_actions_for_checks(
         checks,
@@ -736,7 +703,6 @@ def main() -> None:
             args.support_bundle,
             allow_missing_px4_evidence=args.allow_missing_px4_evidence,
             allow_missing_px4_params=args.allow_missing_px4_params,
-            require_ardupilot_params=args.require_ardupilot_params,
             require_feature_method_benchmark=args.require_feature_method_benchmark,
             require_field_evidence=args.require_field_evidence,
             allow_missing_replay_gates=args.allow_missing_replay_gates,

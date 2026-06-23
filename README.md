@@ -1,7 +1,13 @@
 # Drone GNSS-Denied Vision Navigation
 
-This repository contains the setup scripts and first prototype pipeline for a
-Raspberry Pi 5 + Raspberry Pi Global Shutter Camera navigation module.
+This repository contains the two active parts of the GNSS-denied navigation
+project:
+
+1. Drone runtime code for the Raspberry Pi companion computer.
+2. A ground-control / mission-planner desktop app.
+
+ROS 2, Gazebo, and PX4 SITL are no longer part of the active project scaffold.
+Hardware bench testing with the real Pixhawk/Holybro stack is the path forward.
 
 The project goal is narrow:
 
@@ -9,7 +15,7 @@ The project goal is narrow:
 - Precomputed map features from georeferenced imagery, including GeoTIFF-derived map metadata
 - Runtime feature matching with confidence scoring
 - Approximate map-pixel to lat/lon conversion for simple orthophoto bundles
-- PX4/Pixhawk integration as a navigation source after bench validation
+- Pixhawk/PX4 MAVLink integration as a navigation source after bench validation
 
 The first implementation is intentionally classical computer vision:
 
@@ -33,29 +39,40 @@ after the classical pipeline has been measured and its failure modes are known.
 - Raspberry Pi Global Shutter Camera, downward-facing
 - 256GB microSD for current logs and map bundles
 - Optional USB 3 SSD later for larger maps, image logs, and long test runs
-- Pixhawk/PX4 flight controller later
+- Holybro X500 V2 kit with Pixhawk 6C-class flight controller
 - IMU/attitude telemetry from PX4 for vision-estimator context
 - Optional PX4 barometer telemetry for relative vertical confidence
 
-## Main Folders
+## Active Project Sections
 
-- `scripts/pi/`: Raspberry Pi bootstrap, Docker, SSH, and transfer setup
-- `scripts/mac/`: Mac transfer and SSH helpers
-- `docker/pi/`: Docker runtime for the Pi vision environment
-- `desktop-app/`: Tauri + React desktop operator app for map selection/import, Vision Pipeline configuration, QGC-style Mission Planner layers, module setup, camera preview, and MAVLink-enabled runtime checks
-- `src/vision_nav/`: First feature-map and frame-to-map matching tools
-- `transfer/`: Local staging folder for Mac-to-Pi and Pi-to-Mac file movement
-- `docs/`: Setup and architecture notes
+### 1. Drone Code Operation
+
+- `src/vision_nav/`: terrain bundle, map matching, estimator, MAVLink, camera,
+  field-evidence, and support-bundle tools
+- `scripts/pi/`: Raspberry Pi bootstrap, camera checks, MAVLink checks, bundle
+  validation, terrain runtime, field capture, and support-bundle wrappers
+- `scripts/mac/`: Mac transfer and SSH helpers for moving bundles/logs between
+  the desktop and Raspberry Pi
+- `docker/pi/`: optional reproducible Pi runtime container
+- `config/`: camera and Pi runtime configuration examples
+
+### 2. Ground Control / Mission Planner Desktop App
+
+- `desktop-app/`: Tauri + React operator app for map selection/import, Vision
+  Pipeline configuration, Mission Planner layers, module setup, camera preview,
+  MAVLink-enabled runtime checks, and support-bundle review
+- `docs/`: hardware-first setup, calibration, mission planning, and test plans
+- `transfer/`: local staging folder for Mac-to-Pi and Pi-to-Mac file movement
 
 Key docs:
 
+- [Stable Project Scaffold](docs/stable-project-scaffold.md)
 - [Raspberry Pi Setup](docs/raspberry-pi-setup.md)
 - [Camera Calibration](docs/camera-calibration.md)
 - [Vision Pipeline](docs/vision-pipeline.md)
-- [Autonomy And Ground Control Research](docs/autonomy-ground-control-research.md)
-- [Autonomy And Ground Control Implementation Plan](docs/autonomy-ground-control-implementation-plan.md)
+- [Holybro X500 V2 Hardware Data Inputs](docs/holybro-x500v2-hardware-data-inputs.md)
+- [Holybro X500 V2 Prop-Off Hardware Test](docs/holybro-x500v2-prop-off-hardware-test.md)
 - [PX4 External Vision Bench Guide](docs/px4-external-vision-bench.md)
-- [ROS 2 Runtime Adapter](docs/ros2-runtime.md)
 - [SSH And File Transfer](docs/ssh-and-transfer.md)
 - [Desktop App](docs/desktop-app.md)
 - [Operator Handoff](docs/operator-handoff.md)
@@ -101,15 +118,12 @@ It captures camera frames, matches them against the bundle, and writes logs to
 `~/DroneTransfer/outgoing/terrain-match/`.
 By default, Pi runtime matching undistorts frames with
 `config/camera/down_camera.yaml`.
-When `VISION_NAV_MAVLINK_ENDPOINT` is set, accepted local map measurements are
-also sent as MAVLink `VISION_POSITION_ESTIMATE`. Set
-`VISION_NAV_MAVLINK_MESSAGE=odometry` to bench MAVLink `ODOMETRY` output.
+When `VISION_NAV_MAVLINK_ENDPOINT` is set, accepted local map measurements can
+be sent over MAVLink. Use `VISION_NAV_MAVLINK_MESSAGE=odometry` for the preferred
+PX4 external-vision bench path, or `vision_position_estimate` only as a
+compatibility/debug mode.
 MAVLink-enabled logs include external-position health with send rate, latency,
 skip reasons, and covariance warnings.
-
-For ROS 2 bench work, set `VISION_NAV_ROS2_PUBLISH=1` before
-`./scripts/pi/run_terrain_nav_loop.sh` to publish `/vision_nav/odometry` and
-`/diagnostics` while the terrain runtime is running.
 
 Replay saved frames without using the camera:
 

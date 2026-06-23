@@ -175,5 +175,5 @@ The prototype estimator is conservative:
 - weak or stale visual scale reduces `scale_confidence`
 - rejected matches are logged but not sent as MAVLink vision measurements
 
-This produces measurement candidates for PX4 or later ROS2 fusion; it does not
-reset flight state directly.
+This produces measurement candidates for PX4 MAVLink external-vision bench
+tests; it does not reset flight state directly.

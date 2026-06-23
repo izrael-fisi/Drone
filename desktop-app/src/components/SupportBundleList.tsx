@@ -230,15 +230,15 @@ const BENCH_FOLLOW_UPS: Record<string, { title: string; desktopAction: string; c
   },
   replay_gates: {
     title: "Run guided field replay evidence",
-    desktopAction: "Module Setup > Load Next Field Condition, then Evidence Workflow",
-    command: "./scripts/pi/run_autonomy_evidence_workflow.sh",
-    notes: "The workflow captures, validates, and registers condition-specific logs.",
+    desktopAction: "Module Setup > Field Capture Preflight, Field Log Capture, then Replay Gate",
+    command: "./scripts/pi/preflight_field_capture.sh && VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/replay_terrain_nav_log.sh",
+    notes: "Use real field captures and replay gates for the hardware-first readiness path.",
   },
   px4_sitl_evidence: {
     title: "Capture PX4 receiver proof",
-    desktopAction: "Module Setup > PX4 SITL Receiver Capture, then Bench Report",
-    command: "VISION_NAV_SITL_SMOKE_DIR=$PWD/px4-sitl-evidence ./scripts/dev/run_px4_sitl_external_vision_capture.sh",
-    notes: "Receiver proof must show the MAVLink ODOMETRY path arriving as vehicle_visual_odometry samples.",
+    desktopAction: "Module Setup > MAVLink Endpoint, Field Log Capture, then Bench Report",
+    command: "./scripts/pi/check_mavlink_endpoint.sh && VISION_NAV_MAVLINK_MESSAGE=odometry VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh",
+    notes: "Receiver proof is now collected on real hardware with props removed. Legacy SITL reports may still appear in old bundles.",
   },
   px4_params: {
     title: "Export and check PX4 external-vision parameters",
@@ -254,8 +254,8 @@ const BENCH_FOLLOW_UPS: Record<string, { title: string; desktopAction: string; c
   },
   field_evidence: {
     title: "Collect and register field replay proof",
-    desktopAction: "Module Setup > Evidence Workflow",
-    command: "./scripts/pi/run_autonomy_evidence_workflow.sh",
+    desktopAction: "Module Setup > Field Capture Preflight, Field Log Capture, Replay Gate",
+    command: "./scripts/pi/preflight_field_capture.sh && VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ./scripts/pi/register_field_replay_case.sh",
     notes: "Field evidence must cover all required terrain conditions with real captured logs.",
   },
   threshold_tuning: {
@@ -265,22 +265,16 @@ const BENCH_FOLLOW_UPS: Record<string, { title: string; desktopAction: string; c
     notes: "Threshold tuning should run after the field-evidence manifest passes.",
   },
   rosbag_export_validations: {
-    title: "Export and validate the ROS replay artifact",
-    desktopAction: "Module Setup > ROS Bag Validation, then Bench Report",
-    command: "./scripts/pi/run_rosbag_export_validation.sh && ./scripts/pi/create_support_bundle.sh",
-    notes: "Support bundles should include a passed ROS replay export validation summary.",
+    title: "Review runtime replay artifact",
+    desktopAction: "Module Setup > Field Log Capture, then Bench Report",
+    command: "./scripts/pi/summarize_vision_nav_logs.sh && ./scripts/pi/create_support_bundle.sh",
+    notes: "ROS bag validation is legacy-only. Active hardware readiness uses terrain runtime logs and support bundles.",
   },
   rosbag2_cli_reviews: {
-    title: "Review the native rosbag2 export",
-    desktopAction: "Module Setup > Native rosbag2 Review, then Bench Report",
-    command: "./scripts/dev/run_rosbag2_cli_review.sh && ./scripts/pi/create_support_bundle.sh",
-    notes: "Run on a sourced ROS 2 workstation when native rosbag2 export is part of the evidence package.",
-  },
-  ardupilot_params: {
-    title: "Review ArduPilot ExternalNav parameters",
-    desktopAction: "Module Setup > ArduPilot parameter check",
-    command: "./scripts/pi/check_ardupilot_params.sh",
-    notes: "ArduPilot remains optional for the PX4-first bench path unless explicitly required.",
+    title: "Review hardware support bundle",
+    desktopAction: "Module Setup > Bench Report",
+    command: "./scripts/pi/create_support_bundle.sh",
+    notes: "Native rosbag2 review is legacy-only. Active readiness is the prop-off hardware support bundle.",
   },
 };
 

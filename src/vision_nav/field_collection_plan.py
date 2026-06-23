@@ -423,7 +423,7 @@ def next_steps(summary: dict[str, int]) -> list[str]:
         return [
             "Run ./scripts/pi/run_feature_method_benchmark.sh against the latest real field log.",
             "Run ./scripts/pi/run_threshold_tuning_report.sh against the complete field manifest.",
-            "Run ./scripts/pi/run_autonomy_readiness_audit.sh after PX4 receiver proof is available.",
+            "Run ./scripts/pi/create_support_bundle.sh and then vision-nav-bench-readiness after PX4 receiver proof is available.",
         ]
     return [
         "Capture a real terrain runtime/replay log for each unchecked condition.",

@@ -221,7 +221,7 @@ function runtimeStatusReadCommand(runtimeStatusRoot = "$HOME/DroneTransfer/outgo
 const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
 const MODULE_SETUP_HANDOFF_KEY = "drone_module_setup_handoff";
 const SUPPORT_EVIDENCE_ENV =
-  'VISION_NAV_PX4_SITL_SESSION="$HOME/px4-sitl-evidence" VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
+  'VISION_NAV_PX4_PARAMS="$HOME/px4.params" VISION_NAV_ARDUPILOT_PARAMS="$HOME/ardupilot.params" ';
 
 function supportBundleCommand(remoteProject: string, remoteBundle: string, mavlinkEnv: string) {
   return [
