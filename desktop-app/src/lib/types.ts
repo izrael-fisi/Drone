@@ -952,6 +952,10 @@ export interface AutonomyEvidenceWorkflowReportFile {
     step_count?: number;
     marker_count?: number;
     issue_count: number;
+    missing_required_step_count?: number;
+    active_required_step_count?: number;
+    downstream_blocked_step_count?: number;
+    superseded_step_count?: number;
     issues: string[];
     next_required_step?: AutonomyEvidenceWorkflowValidationNextStep;
     checks: Array<{

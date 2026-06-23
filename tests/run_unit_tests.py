@@ -3568,6 +3568,10 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         assert_equal(checks["final_readiness_status"], "passed", "workflow validation final readiness status")
         assert_equal(validation["step_count"], len(REQUIRED_WORKFLOW_STEPS), "workflow validation step count")
         assert_equal(validation["issue_count"], len(validation["issues"]), "workflow validation issue count")
+        assert_equal(validation["missing_required_step_count"], 0, "workflow validation missing required step count")
+        assert_equal(validation["active_required_step_count"], 1, "workflow validation active required step count")
+        assert_equal(validation["downstream_blocked_step_count"], 0, "workflow validation downstream blocked count")
+        assert_equal(validation["superseded_step_count"], 0, "workflow validation superseded step count")
         assert_equal(
             validation["next_required_step"]["name"],
             "run_autonomy_readiness_audit",
@@ -4015,6 +4019,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             for item in capture_blocked_checks["required_step_results"]["details"]["non_passed_steps"]
         ]
         assert_equal(
+            capture_blocked_validation["active_required_step_count"],
+            len(capture_non_passed_names),
+            "workflow validation top-level active blocker count mirrors details",
+        )
+        assert_equal(
             capture_non_passed_names,
             ["capture_field_terrain_log"],
             "workflow validation should keep only terrain capture as the active root blocker",
@@ -4025,6 +4034,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             item["name"]
             for item in capture_blocked_checks["required_step_results"]["details"]["blocked_steps"]
         ]
+        assert_equal(
+            capture_blocked_validation["downstream_blocked_step_count"],
+            len(capture_blocked_names),
+            "workflow validation top-level downstream blocker count mirrors details",
+        )
         if "register_field_replay_case" not in capture_blocked_names:
             raise AssertionError("workflow validation should mark registration as blocked by missing terrain log")
         if "run_autonomy_readiness_audit" not in capture_blocked_names:
@@ -4055,6 +4069,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             if item.get("name") == "select_field_collection_condition"
         )
         assert_equal(
+            capture_blocked_validation["superseded_step_count"],
+            len(capture_blocked_checks["required_step_results"]["details"]["superseded_steps"]),
+            "workflow validation top-level superseded count mirrors details",
+        )
+        assert_equal(
             capture_superseded_condition["current_selected_condition"],
             "good_texture",
             "workflow validation selected condition superseded detail",
@@ -4070,6 +4089,12 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         with contextlib.redirect_stdout(capture_blocked_output):
             print_workflow_validation_human(capture_blocked_validation)
         capture_blocked_text = capture_blocked_output.getvalue()
+        if "active=1" not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should summarize active root blockers")
+        if "downstream=" not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should summarize downstream blockers")
+        if "superseded=" not in capture_blocked_text:
+            raise AssertionError("workflow validation human output should summarize superseded blockers")
         if "After bundle: " not in capture_blocked_text:
             raise AssertionError("workflow validation human output should include post-bundle capture command")
         if "Bundle: " not in capture_blocked_text:
@@ -4742,6 +4767,10 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                     "step_count": 11,
                     "marker_count": 9,
                     "issue_count": 1,
+                    "missing_required_step_count": 0,
+                    "active_required_step_count": 2,
+                    "downstream_blocked_step_count": 0,
+                    "superseded_step_count": 0,
                     "issues": ["unit validation issue"],
                     "next_required_step": {
                         "name": "register_field_replay_case",
@@ -6416,6 +6445,21 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 "autonomy evidence package workflow validation issue count",
             )
             assert_equal(
+                workflow_validation_summary["active_required_step_count"],
+                2,
+                "autonomy evidence package workflow validation active count",
+            )
+            assert_equal(
+                workflow_validation_summary["downstream_blocked_step_count"],
+                0,
+                "autonomy evidence package workflow validation downstream count",
+            )
+            assert_equal(
+                workflow_validation_summary["superseded_step_count"],
+                0,
+                "autonomy evidence package workflow validation superseded count",
+            )
+            assert_equal(
                 workflow_validation_summary["next_required_step"]["command"],
                 "./scripts/pi/register_field_replay_case.sh",
                 "autonomy evidence package workflow validation next command",
@@ -6478,6 +6522,21 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             if "preflight report is capture-ready" not in required_step_check["non_passed_steps"][0].get("guidance", ""):
                 raise AssertionError("autonomy evidence package should preserve stale preflight guidance")
             support_workflow_summary = summarize_workflow_validation(json.loads(workflow_validation_report.read_text()))
+            assert_equal(
+                support_workflow_summary["active_required_step_count"],
+                2,
+                "support workflow validation active count",
+            )
+            assert_equal(
+                support_workflow_summary["downstream_blocked_step_count"],
+                0,
+                "support workflow validation downstream count",
+            )
+            assert_equal(
+                support_workflow_summary["superseded_step_count"],
+                0,
+                "support workflow validation superseded count",
+            )
             support_required_step_check = next(
                 item
                 for item in support_workflow_summary["checks"]

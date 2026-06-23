@@ -1408,6 +1408,11 @@ Status:
   bundles. When the selected terrain bundle has all required files, workflow and
   goal-status handoffs recommend validation before field capture instead of
   telling operators to rebuild or re-upload an already available bundle.
+- Done: workflow-validation summaries now promote active required-step,
+  downstream-blocked, superseded, and missing required-step counts to top-level
+  fields. CLI status, local audit summaries, support bundles, evidence packages,
+  and desktop workflow cards can now show that the current proof gap is one
+  active terrain-log capture blocker plus dependent follow-up waits.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

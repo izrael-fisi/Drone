@@ -734,7 +734,10 @@ if workflow_validation:
         print(
             f"- status {validation_status}, workflow {workflow_status}, "
             f"steps {workflow_validation.get('step_count', 'unknown')}, "
-            f"issues {workflow_validation.get('issue_count', len(issues))}"
+            f"issues {workflow_validation.get('issue_count', len(issues))}, "
+            f"active {workflow_validation.get('active_required_step_count', 0)}, "
+            f"downstream {workflow_validation.get('downstream_blocked_step_count', 0)}, "
+            f"superseded {workflow_validation.get('superseded_step_count', 0)}"
         )
         if next_step:
             name = next_step.get("name") or "unknown"

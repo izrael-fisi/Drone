@@ -223,6 +223,11 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
     next_required_step = workflow_next_required_step(steps, markers=markers)
     step_result_check = validate_required_step_results(steps, markers=markers)
     checks.append(step_result_check)
+    required_step_details = (
+        step_result_check.get("details")
+        if isinstance(step_result_check.get("details"), dict)
+        else {}
+    )
 
     important_presence = marker_presence(
         markers,
@@ -318,6 +323,10 @@ def validate_workflow_report(report_path: str | Path) -> dict[str, Any]:
         "step_count": len(step_names),
         "marker_count": len(markers),
         "issue_count": len(issues),
+        "missing_required_step_count": len(required_step_details.get("missing_steps") or []),
+        "active_required_step_count": int(required_step_details.get("non_passed_count") or 0),
+        "downstream_blocked_step_count": int(required_step_details.get("blocked_count") or 0),
+        "superseded_step_count": int(required_step_details.get("superseded_count") or 0),
         "log_archive": archive_result.get("details", {}).get("path"),
         "next_required_step": next_required_step,
         "checks": checks,
@@ -1392,7 +1401,12 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
 def print_human(report: dict[str, Any]) -> None:
     print(f"Evidence workflow validation: {report.get('report_path')}")
     print(f"Status: {report.get('status')} workflow={report.get('workflow_status')}")
-    print(f"Steps: {report.get('step_count')} markers={report.get('marker_count')}")
+    print(
+        f"Steps: {report.get('step_count')} markers={report.get('marker_count')} "
+        f"active={report.get('active_required_step_count', 0)} "
+        f"downstream={report.get('downstream_blocked_step_count', 0)} "
+        f"superseded={report.get('superseded_step_count', 0)}"
+    )
     if report.get("log_archive"):
         print(f"Log archive: {report.get('log_archive')}")
     next_step = report.get("next_required_step") if isinstance(report.get("next_required_step"), dict) else None

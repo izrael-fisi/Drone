@@ -1011,6 +1011,9 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
         <span className="font-mono text-slate-600">workflow {formatReadinessLabel(summary.workflow_status)}</span>
       )}
       <span className="font-mono text-slate-600">issues {summary.issue_count}</span>
+      <span className="font-mono text-slate-600">active {summary.active_required_step_count ?? 0}</span>
+      <span className="font-mono text-slate-600">downstream {summary.downstream_blocked_step_count ?? 0}</span>
+      <span className="font-mono text-slate-600">superseded {summary.superseded_step_count ?? 0}</span>
       {nextStep && (
         <span
           className="inline-flex max-w-full items-center gap-1 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-amber-200"
@@ -6074,6 +6077,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                       workflow_status: latestWorkflowReport.workflow_validation_summary.workflow_status ?? null,
                       next_required_step: latestWorkflowReport.workflow_validation_summary.next_required_step ?? null,
                       issue_count: latestWorkflowReport.workflow_validation_summary.issue_count,
+                      missing_required_step_count:
+                        latestWorkflowReport.workflow_validation_summary.missing_required_step_count ?? null,
+                      active_required_step_count:
+                        latestWorkflowReport.workflow_validation_summary.active_required_step_count ?? null,
+                      downstream_blocked_step_count:
+                        latestWorkflowReport.workflow_validation_summary.downstream_blocked_step_count ?? null,
+                      superseded_step_count:
+                        latestWorkflowReport.workflow_validation_summary.superseded_step_count ?? null,
                   issues: latestWorkflowReport.workflow_validation_summary.issues.slice(0, 8),
                   checks: latestWorkflowReport.workflow_validation_summary.checks.slice(0, 8).map((check) => ({
                     name: check.name ?? null,

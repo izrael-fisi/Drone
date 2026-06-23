@@ -254,7 +254,10 @@ print()
 print("Workflow validation summary:")
 print(
     f"- status {validation_status}, workflow {workflow_status}, "
-    f"steps {report.get('step_count', 'unknown')}, issues {report.get('issue_count', len(issues))}"
+    f"steps {report.get('step_count', 'unknown')}, issues {report.get('issue_count', len(issues))}, "
+    f"active {report.get('active_required_step_count', 0)}, "
+    f"downstream {report.get('downstream_blocked_step_count', 0)}, "
+    f"superseded {report.get('superseded_step_count', 0)}"
 )
 if next_step:
     name = next_step.get("name") or "unknown"

@@ -906,6 +906,10 @@ pub struct AutonomyEvidenceWorkflowValidationSummary {
     pub step_count: Option<u64>,
     pub marker_count: Option<u64>,
     pub issue_count: u64,
+    pub missing_required_step_count: Option<u64>,
+    pub active_required_step_count: Option<u64>,
+    pub downstream_blocked_step_count: Option<u64>,
+    pub superseded_step_count: Option<u64>,
     pub issues: Vec<String>,
     pub next_required_step: Option<AutonomyEvidenceWorkflowValidationNextStep>,
     pub checks: Vec<AutonomyEvidenceWorkflowValidationCheck>,
@@ -3967,6 +3971,18 @@ fn workflow_validation_summary_from_json(
         step_count: value.get("step_count").and_then(|value| value.as_u64()),
         marker_count: value.get("marker_count").and_then(|value| value.as_u64()),
         issue_count: issues.len() as u64,
+        missing_required_step_count: value
+            .get("missing_required_step_count")
+            .and_then(|value| value.as_u64()),
+        active_required_step_count: value
+            .get("active_required_step_count")
+            .and_then(|value| value.as_u64()),
+        downstream_blocked_step_count: value
+            .get("downstream_blocked_step_count")
+            .and_then(|value| value.as_u64()),
+        superseded_step_count: value
+            .get("superseded_step_count")
+            .and_then(|value| value.as_u64()),
         issues,
         next_required_step: workflow_validation_next_step_from_json(
             value.get("next_required_step"),

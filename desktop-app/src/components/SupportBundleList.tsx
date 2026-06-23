@@ -469,6 +469,11 @@ function SupportBundleDetailPanel({
               )}
               <span className="font-mono text-slate-500">steps {workflowValidation?.step_count ?? 0}</span>
               <span className="font-mono text-slate-500">issues {workflowValidation?.issue_count ?? 0}</span>
+              <span className="font-mono text-slate-500">active {workflowValidation?.active_required_step_count ?? 0}</span>
+              <span className="font-mono text-slate-500">
+                downstream {workflowValidation?.downstream_blocked_step_count ?? 0}
+              </span>
+              <span className="font-mono text-slate-500">superseded {workflowValidation?.superseded_step_count ?? 0}</span>
               <span className="font-mono text-slate-500">commit {workflowRepoCommit ? workflowRepoCommit.slice(0, 8) : "n/a"}</span>
             </div>
             {workflowNextStep && (
