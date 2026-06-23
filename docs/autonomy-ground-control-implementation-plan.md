@@ -1344,6 +1344,11 @@ Status:
   guidance from the referenced field-preflight report, so missing bundle files,
   detected bundle candidates, and detected map sources are visible directly in
   the workflow blocker.
+- Done: workflow validation now annotates stale non-passing
+  `preflight_field_capture` proof rows when the latest downloaded
+  field-preflight report is capture-ready, preserving the proof gap while
+  making it clear that the next operator action should advance to terrain-log
+  capture.
 - Done: Tauri parsers, evidence-package summaries, Module Setup workflow cards,
   and support-bundle detail views now preserve and expose those bundle-aware
   next-step fields, including the post-bundle field-capture command.

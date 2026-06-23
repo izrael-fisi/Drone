@@ -465,6 +465,12 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
     by_name = {str(step.get("name")): step for step in steps if isinstance(step, dict) and step.get("name")}
     non_passed_steps: list[dict[str, Any]] = []
     missing_steps: list[str] = []
+    active_preflight_report = current_preflight_report(markers) if isinstance(markers, dict) else None
+    active_preflight_report_path = (
+        marker_string(markers, FIELD_CAPTURE_PREFLIGHT_MARKER)
+        if isinstance(markers, dict)
+        else None
+    )
     for name in REQUIRED_WORKFLOW_STEPS:
         step = by_name.get(name)
         if step is None:
@@ -472,14 +478,18 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
             continue
         status = str(step.get("status") or "unknown")
         if status != "passed":
-            non_passed_steps.append(
-                {
-                    "name": name,
-                    "status": status,
-                    "exit_code": step.get("exit_code"),
-                    "notes": step.get("notes"),
-                }
+            non_passed_step = {
+                "name": name,
+                "status": status,
+                "exit_code": step.get("exit_code"),
+                "notes": step.get("notes"),
+            }
+            annotate_current_preflight_override(
+                non_passed_step,
+                active_preflight_report,
+                active_preflight_report_path,
             )
+            non_passed_steps.append(non_passed_step)
     details = {
         "required_count": len(REQUIRED_WORKFLOW_STEPS),
         "missing_steps": missing_steps,
@@ -503,6 +513,29 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
         "required_step_results",
         "Every required workflow step passed.",
         details,
+    )
+
+
+def annotate_current_preflight_override(
+    step: dict[str, Any],
+    report: dict[str, Any] | None,
+    report_path: str | None,
+) -> None:
+    if step.get("name") != "preflight_field_capture" or not report:
+        return
+    if report.get("ready_for_capture") is not True:
+        return
+    step["current_preflight_allows_capture"] = True
+    if report_path:
+        step["current_preflight_report"] = report_path
+    if isinstance(report.get("status"), str):
+        step["current_preflight_status"] = report["status"]
+    if isinstance(report.get("ready_for_registration"), bool):
+        step["current_ready_for_registration"] = report["ready_for_registration"]
+    step["guidance"] = (
+        "A newer field-capture preflight report is capture-ready; the stale "
+        "non-passing preflight step remains diagnostic, and the next required "
+        "workflow step advances to terrain-log capture."
     )
 
 
@@ -1027,6 +1060,13 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                 lines.append(f"- Non-passing workflow step: {step_name} [{step_status}]")
                 if step.get("notes"):
                     lines.append(f"  Notes: {step.get('notes')}")
+                if step.get("current_preflight_allows_capture") is True:
+                    status = step.get("current_preflight_status") or "unknown"
+                    lines.append(f"  Current preflight report: capture-ready ({status})")
+                    if step.get("current_preflight_report"):
+                        lines.append(f"  Current preflight path: {step.get('current_preflight_report')}")
+                    if step.get("guidance"):
+                        lines.append(f"  Guidance: {step.get('guidance')}")
 
         missing_markers = details.get("missing_markers")
         if not isinstance(missing_markers, list):

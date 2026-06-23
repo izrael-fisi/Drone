@@ -3709,6 +3709,31 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         ]
         if "preflight_field_capture" not in non_passed_names:
             raise AssertionError("workflow validation must still preserve the stale non-passing preflight proof gap")
+        stale_preflight_detail = next(
+            item
+            for item in stale_preflight_ready_checks["required_step_results"]["details"]["non_passed_steps"]
+            if item.get("name") == "preflight_field_capture"
+        )
+        assert_equal(
+            stale_preflight_detail["current_preflight_allows_capture"],
+            True,
+            "workflow validation should annotate stale preflight with current capture readiness",
+        )
+        assert_equal(
+            stale_preflight_detail["current_preflight_status"],
+            "degraded",
+            "workflow validation should preserve current preflight status on stale proof gap",
+        )
+        if "next required workflow step advances to terrain-log capture" not in stale_preflight_detail.get("guidance", ""):
+            raise AssertionError("workflow validation should explain why stale preflight no longer blocks capture guidance")
+        stale_preflight_ready_output = io.StringIO()
+        with contextlib.redirect_stdout(stale_preflight_ready_output):
+            print_workflow_validation_human(stale_preflight_ready_validation)
+        stale_preflight_ready_text = stale_preflight_ready_output.getvalue()
+        if "Current preflight report: capture-ready (degraded)" not in stale_preflight_ready_text:
+            raise AssertionError("workflow validation human output should explain current preflight readiness")
+        if "Guidance: A newer field-capture preflight report is capture-ready" not in stale_preflight_ready_text:
+            raise AssertionError("workflow validation human output should explain stale preflight guidance")
 
         capture_blocked_report = json.loads(report_path.read_text())
         capture_blocked_report["markers"].pop("__VISION_NAV_TERRAIN_LOG__", None)
