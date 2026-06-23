@@ -1434,6 +1434,9 @@ Status:
 - Done: capture-ready field-preflight summaries now flag old reports that lack
   `run_field_capture.sh`, so CLI, support-bundle, workflow, and desktop handoffs
   tell operators to rerun preflight when script generation is missing.
+- Done: evidence-package workflow summaries now preserve that capture-script
+  hint in both next-step and non-passing-step records, so shared ZIP manifests
+  do not lose the rerun-preflight instruction.
 - Done: Module Setup lists downloaded autonomy-readiness JSON reports from
   `~/DroneTransfer/from-pi/replay-cases/` with pass/degraded/fail counts and
   the support-bundle, PX4 receiver, field-evidence, feature-benchmark, and

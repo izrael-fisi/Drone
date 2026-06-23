@@ -463,6 +463,7 @@ def compact_workflow_validation_step(step: dict[str, Any]) -> dict[str, Any]:
             "output_dir",
             "runtime_status_path",
             "capture_script_path",
+            "capture_script_hint",
             "preflight_report",
             "preflight_status",
             "capture_command_after_preflight",
@@ -509,6 +510,7 @@ def compact_workflow_next_step(value: Any) -> dict[str, Any] | None:
         "output_dir",
         "runtime_status_path",
         "capture_script_path",
+        "capture_script_hint",
         "capture_command_after_bundle",
     ):
         item = value.get(key)

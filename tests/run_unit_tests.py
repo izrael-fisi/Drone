@@ -4913,6 +4913,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                         "output_dir": str(root / "field-captures/good_texture"),
                         "runtime_status_path": str(root / "field-captures/good_texture/runtime_status.json"),
                         "capture_script_path": str(root / "replay-cases/run_field_capture.sh"),
+                        "capture_script_hint": "Rerun field capture preflight to generate run_field_capture.sh for this capture-ready condition.",
                         "capture_command_after_bundle": f"VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS={root / 'field-captures' / 'good_texture'} ./scripts/pi/read_runtime_status.sh",
                     },
                     "checks": [
@@ -4934,6 +4935,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                                         "current_preflight_status": "degraded",
                                         "current_ready_for_registration": False,
                                         "capture_script_path": str(root / "replay-cases/run_field_capture.sh"),
+                                        "capture_script_hint": "Rerun field capture preflight to generate run_field_capture.sh for this capture-ready condition.",
                                         "guidance": "A newer field-capture preflight report is capture-ready.",
                                     },
                                     {
@@ -6628,6 +6630,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 str(root / "replay-cases/run_field_capture.sh"),
                 "autonomy evidence package workflow validation capture script path",
             )
+            if "run_field_capture.sh" not in workflow_validation_summary["next_required_step"].get(
+                "capture_script_hint",
+                "",
+            ):
+                raise AssertionError("autonomy evidence package workflow validation should preserve capture script hints")
             required_step_check = next(
                 item
                 for item in workflow_validation_summary["checks"]
@@ -6673,6 +6680,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 str(root / "replay-cases/run_field_capture.sh"),
                 "autonomy evidence package workflow validation non-passed capture script path",
             )
+            if "run_field_capture.sh" not in required_step_check["non_passed_steps"][0].get(
+                "capture_script_hint",
+                "",
+            ):
+                raise AssertionError("autonomy evidence package should preserve non-passing capture script hints")
             if "preflight report is capture-ready" not in required_step_check["non_passed_steps"][0].get("guidance", ""):
                 raise AssertionError("autonomy evidence package should preserve stale preflight guidance")
             support_workflow_summary = summarize_workflow_validation(json.loads(workflow_validation_report.read_text()))
