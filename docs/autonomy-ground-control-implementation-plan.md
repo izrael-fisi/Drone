@@ -1371,6 +1371,11 @@ Status:
   status fields, so the active root blocker remains field-log capture while
   registration, feature benchmarking, ROS replay, native rosbag2 review, and
   final audit stay auditable as downstream waits.
+- Done: the active `capture_field_terrain_log` blocker now refreshes itself
+  from the current field-preflight report, carrying bundle path, expected log,
+  output directory, runtime-status path, preflight-capture command, readiness,
+  and metadata-update guidance while preserving stale workflow text under
+  `workflow_notes` for audit context.
 - Done: CLI workflow-validation summaries now print bundle path, expected log,
   capture output, metadata update, and post-bundle capture commands, keeping
   terminal audits aligned with Module Setup guidance.

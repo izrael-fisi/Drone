@@ -81,6 +81,20 @@ function formatWorkflowStep(step: WorkflowValidationStep) {
 function workflowStepTitle(step: WorkflowValidationStep) {
   return [
     step.notes,
+    step.workflow_notes ? `Workflow notes: ${step.workflow_notes}` : undefined,
+    step.desktop_action ? `App: ${step.desktop_action}` : undefined,
+    step.command ? `Command: ${step.command}` : undefined,
+    step.bundle_path ? `Bundle: ${step.bundle_path}` : undefined,
+    step.expected_log ? `Expected log: ${step.expected_log}` : undefined,
+    step.output_dir ? `Output: ${step.output_dir}` : undefined,
+    step.runtime_status_path ? `Runtime status: ${step.runtime_status_path}` : undefined,
+    step.preflight_report ? `Preflight: ${step.preflight_report}` : undefined,
+    step.preflight_status ? `Preflight status: ${step.preflight_status}` : undefined,
+    step.ready_for_capture !== undefined ? `Ready for capture: ${step.ready_for_capture ? "yes" : "no"}` : undefined,
+    step.ready_for_registration !== undefined
+      ? `Ready for registration: ${step.ready_for_registration ? "yes" : "no"}`
+      : undefined,
+    step.metadata_update_command ? `Metadata update: ${step.metadata_update_command}` : undefined,
     step.blocked_by ? `Blocked by: ${step.blocked_by}` : undefined,
     step.required_log ? `Required log: ${step.required_log}` : undefined,
     step.required_runtime_status ? `Required runtime status: ${step.required_runtime_status}` : undefined,

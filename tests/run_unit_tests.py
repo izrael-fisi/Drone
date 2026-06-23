@@ -3849,6 +3849,42 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         ]
         if "preflight_field_capture" in non_passed_names:
             raise AssertionError("workflow validation should not keep superseded preflight in active blockers")
+        capture_detail = next(
+            item
+            for item in stale_preflight_ready_checks["required_step_results"]["details"]["non_passed_steps"]
+            if item.get("name") == "capture_field_terrain_log"
+        )
+        assert_equal(
+            capture_detail["expected_log"],
+            str(ready_preflight_capture_output / "terrain_matches.jsonl"),
+            "workflow validation active capture blocker expected log",
+        )
+        assert_equal(
+            capture_detail["runtime_status_path"],
+            str(ready_preflight_capture_output / "runtime_status.json"),
+            "workflow validation active capture blocker runtime status",
+        )
+        assert_equal(
+            capture_detail["bundle_path"],
+            str(ready_bundle_path),
+            "workflow validation active capture blocker bundle",
+        )
+        assert_equal(
+            capture_detail["preflight_capture_command"],
+            ready_preflight_then_capture_command,
+            "workflow validation active capture blocker preflight command",
+        )
+        assert_equal(
+            capture_detail["ready_for_capture"],
+            True,
+            "workflow validation active capture blocker readiness",
+        )
+        if "terrain_matches.jsonl and runtime_status.json are missing" not in capture_detail.get("notes", ""):
+            raise AssertionError("workflow validation active capture blocker should use refreshed capture notes")
+        if "Missing terrain replay log and bundle" not in capture_detail.get("workflow_notes", ""):
+            raise AssertionError("workflow validation active capture blocker should preserve original workflow notes")
+        if "capture terrain_matches.jsonl" not in capture_detail.get("guidance", ""):
+            raise AssertionError("workflow validation active capture blocker should include capture guidance")
         superseded_names = [
             item["name"]
             for item in stale_preflight_ready_checks["required_step_results"]["details"]["superseded_steps"]

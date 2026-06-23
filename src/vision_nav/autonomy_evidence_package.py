@@ -451,6 +451,18 @@ def compact_workflow_validation_step(step: dict[str, Any]) -> dict[str, Any]:
             "name",
             "status",
             "notes",
+            "workflow_notes",
+            "command",
+            "desktop_action",
+            "bundle_path",
+            "expected_log",
+            "output_dir",
+            "runtime_status_path",
+            "preflight_report",
+            "preflight_status",
+            "capture_command_after_preflight",
+            "preflight_capture_command",
+            "metadata_update_command",
             "current_selected_condition",
             "current_selected_case",
             "current_selected_log",
@@ -465,6 +477,10 @@ def compact_workflow_validation_step(step: dict[str, Any]) -> dict[str, Any]:
     }
     if isinstance(step.get("exit_code"), int):
         compact["exit_code"] = step["exit_code"]
+    if isinstance(step.get("ready_for_capture"), bool):
+        compact["ready_for_capture"] = step["ready_for_capture"]
+    if isinstance(step.get("ready_for_registration"), bool):
+        compact["ready_for_registration"] = step["ready_for_registration"]
     if isinstance(step.get("current_preflight_allows_capture"), bool):
         compact["current_preflight_allows_capture"] = step["current_preflight_allows_capture"]
     if isinstance(step.get("current_ready_for_registration"), bool):

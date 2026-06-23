@@ -505,6 +505,11 @@ def validate_required_step_results(steps: list[Any], *, markers: dict[str, Any] 
                 active_preflight_report,
                 active_preflight_report_path,
             )
+            annotate_capture_step_from_current_preflight(
+                non_passed_step,
+                active_preflight_report,
+                active_preflight_report_path,
+            )
             annotate_selected_condition_override(non_passed_step, markers)
             if is_superseded_workflow_step(non_passed_step):
                 superseded_steps.append(non_passed_step)
@@ -602,6 +607,66 @@ def annotate_current_preflight_override(
         "A newer field-capture preflight report is capture-ready; the stale "
         "preflight step is superseded for capture guidance, and the next "
         "required workflow step advances to terrain-log capture."
+    )
+
+
+def annotate_capture_step_from_current_preflight(
+    step: dict[str, Any],
+    report: dict[str, Any] | None,
+    report_path: str | None,
+) -> None:
+    if step.get("name") != "capture_field_terrain_log" or not report:
+        return
+    if report.get("ready_for_capture") is not True:
+        return
+    original_notes = str(step.get("notes") or "").strip()
+    if original_notes:
+        step["workflow_notes"] = original_notes
+    step["notes"] = "Current field capture preflight is ready; terrain_matches.jsonl and runtime_status.json are missing."
+    if report_path:
+        step["preflight_report"] = report_path
+    if isinstance(report.get("status"), str):
+        step["preflight_status"] = report["status"]
+    if isinstance(report.get("ready_for_capture"), bool):
+        step["ready_for_capture"] = report["ready_for_capture"]
+    if isinstance(report.get("ready_for_registration"), bool):
+        step["ready_for_registration"] = report["ready_for_registration"]
+    if isinstance(report.get("bundle_path"), str) and report["bundle_path"].strip():
+        step["bundle_path"] = report["bundle_path"].strip()
+    expected_log = report.get("terrain_log_path") or report.get("source_log")
+    if isinstance(expected_log, str) and expected_log.strip():
+        step["expected_log"] = expected_log.strip()
+    output_dir = report.get("capture_output_dir")
+    if isinstance(output_dir, str) and output_dir.strip():
+        output_dir_text = output_dir.strip()
+        step["output_dir"] = output_dir_text
+        step["runtime_status_path"] = str(report.get("runtime_status_path") or runtime_status_path_for_output(output_dir_text))
+    elif isinstance(report.get("runtime_status_path"), str) and report["runtime_status_path"].strip():
+        step["runtime_status_path"] = report["runtime_status_path"].strip()
+    capture_command = report.get("capture_command")
+    if isinstance(capture_command, str) and capture_command.strip():
+        capture_command_with_status = command_with_runtime_status_read(
+            capture_command.strip(),
+            runtime_status_root=str(report.get("capture_output_dir") or "").strip() or None,
+        )
+        step["capture_command_after_preflight"] = capture_command_with_status
+        preflight_capture_command = preflight_capture_command_from_report(
+            report,
+            capture_command_with_status=capture_command_with_status,
+        )
+        if preflight_capture_command:
+            step["preflight_capture_command"] = preflight_capture_command
+            step["command"] = preflight_capture_command
+            step["desktop_action"] = "Module Setup > Field Capture Preflight, then Field Log Capture"
+        else:
+            step["command"] = capture_command_with_status
+            step["desktop_action"] = "Module Setup > Field Log Capture"
+    metadata_update_command = report.get("metadata_update_command")
+    if isinstance(metadata_update_command, str) and metadata_update_command.strip():
+        step["metadata_update_command"] = metadata_update_command.strip()
+    step["guidance"] = (
+        "Current field capture preflight is ready; capture terrain_matches.jsonl "
+        "and runtime_status.json next."
     )
 
 
@@ -1148,6 +1213,30 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                 lines.append(f"- Non-passing workflow step: {step_name} [{step_status}]")
                 if step.get("notes"):
                     lines.append(f"  Notes: {step.get('notes')}")
+                if step.get("workflow_notes"):
+                    lines.append(f"  Workflow notes: {step.get('workflow_notes')}")
+                if step.get("desktop_action"):
+                    lines.append(f"  Desktop action: {step.get('desktop_action')}")
+                if step.get("command"):
+                    lines.append(f"  Command: {step.get('command')}")
+                if step.get("bundle_path"):
+                    lines.append(f"  Bundle: {step.get('bundle_path')}")
+                if step.get("expected_log"):
+                    lines.append(f"  Expected log: {step.get('expected_log')}")
+                if step.get("output_dir"):
+                    lines.append(f"  Output: {step.get('output_dir')}")
+                if step.get("runtime_status_path"):
+                    lines.append(f"  Runtime status: {step.get('runtime_status_path')}")
+                if step.get("preflight_report"):
+                    lines.append(f"  Preflight report: {step.get('preflight_report')}")
+                if step.get("preflight_status"):
+                    lines.append(f"  Preflight status: {step.get('preflight_status')}")
+                if isinstance(step.get("ready_for_capture"), bool):
+                    lines.append(f"  Ready for capture: {'yes' if step.get('ready_for_capture') else 'no'}")
+                if isinstance(step.get("ready_for_registration"), bool):
+                    lines.append(f"  Ready for registration: {'yes' if step.get('ready_for_registration') else 'no'}")
+                if step.get("metadata_update_command"):
+                    lines.append(f"  Metadata update: {step.get('metadata_update_command')}")
                 if step.get("current_selected_condition"):
                     lines.append(f"  Current condition: {step.get('current_selected_condition')}")
                 if step.get("current_selected_case"):

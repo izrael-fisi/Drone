@@ -830,6 +830,30 @@ if workflow_validation:
                     print(f"- non-passing workflow step: {step_name} [{step_status}]")
                     if step.get("notes"):
                         print(f"  notes: {step.get('notes')}")
+                    if step.get("workflow_notes"):
+                        print(f"  workflow notes: {step.get('workflow_notes')}")
+                    if step.get("desktop_action"):
+                        print(f"  app: {step.get('desktop_action')}")
+                    if step.get("command"):
+                        print(f"  command: {step.get('command')}")
+                    if step.get("bundle_path"):
+                        print(f"  bundle: {step.get('bundle_path')}")
+                    if step.get("expected_log"):
+                        print(f"  expected log: {step.get('expected_log')}")
+                    if step.get("output_dir"):
+                        print(f"  output: {step.get('output_dir')}")
+                    if step.get("runtime_status_path"):
+                        print(f"  runtime status: {step.get('runtime_status_path')}")
+                    if step.get("preflight_report"):
+                        print(f"  preflight report: {step.get('preflight_report')}")
+                    if step.get("preflight_status"):
+                        print(f"  preflight status: {step.get('preflight_status')}")
+                    if isinstance(step.get("ready_for_capture"), bool):
+                        print(f"  ready for capture: {'yes' if step.get('ready_for_capture') else 'no'}")
+                    if isinstance(step.get("ready_for_registration"), bool):
+                        print(f"  ready for registration: {'yes' if step.get('ready_for_registration') else 'no'}")
+                    if step.get("metadata_update_command"):
+                        print(f"  metadata update: {step.get('metadata_update_command')}")
                     if step.get("current_selected_condition"):
                         print(f"  current condition: {step.get('current_selected_condition')}")
                     if step.get("current_selected_case"):
