@@ -476,6 +476,11 @@ snapshot is generated or downloaded. If `runtime_status.json` exists but is
 malformed or lacks active-map, last-match, output, or log-path metadata, the
 workflow also degrades the capture step; the validated terrain log can still be
 used by replay/export follow-up steps.
+When the desktop app performs the capture, it also saves a
+`field-log-capture-*.json` audit file next to the downloaded terrain log. That
+file is a support breadcrumb: it records the exact command source, remote and
+local artifact paths, exit code, field-condition metadata readiness, preflight
+summary, and compact runtime-status summary.
 
 Before a field capture, run the condition preflight against the generated field
 collection plan:

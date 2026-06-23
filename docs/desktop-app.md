@@ -316,6 +316,11 @@ parse existing synced logs before accepting them: the JSONL must be nonempty
 and include accepted, rejected, or degraded match statuses. If the log
 is valid but `runtime_status.json` is missing, the capture evidence is reported
 as degraded until the runtime snapshot is refreshed.
+After the download succeeds, the app also writes a compact
+`field-log-capture-*.json` audit file beside the downloaded terrain log. That
+desktop-side record captures the command source, remote and local artifact
+paths, exit code, field-condition metadata readiness, preflight summary, and a
+bounded runtime-status summary for support review.
 
 The Runtime And MAVLink panel can also create a support bundle on the connected
 Raspberry Pi. Support bundles are written under

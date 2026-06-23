@@ -534,6 +534,11 @@ Status:
   bounded terrain loop and then `read_runtime_status.sh`, so app-driven field
   captures produce the same terrain-log plus runtime-status proof markers as
   the generated field collection plan.
+- Done: Module Setup Field Log Capture now writes a local
+  `field-log-capture-*.json` audit file beside the downloaded terrain log,
+  preserving command source, remote/local artifact paths, exit code,
+  field-metadata readiness, preflight summary, and compact runtime-status
+  fields for support review.
 - Done: the guided evidence workflow now records
   `__VISION_NAV_TERRAIN_CAPTURE_COMMAND__` with the runtime-status read step
   included, so raw workflow markers match the operator handoff command.

@@ -198,6 +198,18 @@ function safeReportName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "module";
 }
 
+function localParentPath(path: string) {
+  const slash = path.lastIndexOf("/");
+  const backslash = path.lastIndexOf("\\");
+  const index = Math.max(slash, backslash);
+  return index > 0 ? path.slice(0, index) : "";
+}
+
+function localJoinPath(parent: string, name: string) {
+  const separator = parent.includes("\\") && !parent.includes("/") ? "\\" : "/";
+  return parent.endsWith("/") || parent.endsWith("\\") ? `${parent}${name}` : `${parent}${separator}${name}`;
+}
+
 function supportBundleDiagnosticsSnapshot(bundle: SupportBundleFile, details: SupportBundleDetails) {
   return {
     name: bundle.name,
@@ -554,6 +566,44 @@ function stringField(value: unknown) {
 
 function numberField(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function compactRuntimeStatus(status: Record<string, unknown> | null) {
+  const activeMap = asRecord(status?.active_map);
+  const output = asRecord(status?.output);
+  const lastMatch = asRecord(status?.last_match);
+  const estimator = asRecord(status?.estimator);
+  const externalPosition = asRecord(status?.external_position);
+  return {
+    active_map: {
+      bundle_id: stringField(activeMap?.bundle_id),
+      map_id: stringField(activeMap?.map_id),
+      tile_index_path: stringField(activeMap?.tile_index_path),
+    },
+    output: {
+      log_path: stringField(output?.log_path),
+      runtime_status_path: stringField(output?.runtime_status_path),
+      frame_dir: stringField(output?.frame_dir),
+    },
+    last_match: {
+      status: stringField(lastMatch?.status),
+      tile_id: stringField(lastMatch?.tile_id),
+      confidence: numberField(lastMatch?.confidence),
+      inliers: numberField(lastMatch?.inliers),
+      reprojection_error_px: numberField(lastMatch?.reprojection_error_px),
+    },
+    estimator: {
+      health: stringField(estimator?.health),
+      mode: stringField(estimator?.mode),
+    },
+    external_position: {
+      status: stringField(externalPosition?.status),
+      message_type: stringField(externalPosition?.message_type),
+      warnings: Array.isArray(externalPosition?.last_warnings)
+        ? externalPosition.last_warnings.filter((item): item is string => typeof item === "string")
+        : [],
+    },
+  };
 }
 
 function compactUtcNow() {
@@ -4423,6 +4473,9 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const remoteStatus = parseRuntimeStatusPath(output);
       const parsedStatus = parseRuntimeStatusJson(output);
       let downloadText = "";
+      let localLogPath: string | null = null;
+      let localRuntimeStatusPath: string | null = null;
+      let localCaptureReportPath: string | null = null;
       if (parsedStatus) {
         setRuntimeStatus(parsedStatus);
         setRuntimeStatusRemotePath(remoteStatus ?? null);
@@ -4440,6 +4493,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
           remoteLog,
           ROSBAG_VALIDATION_DOWNLOAD_DIR,
         );
+        localLogPath = downloadedLog.local_path;
         downloadText += `\n\n$ download terrain match log\nSaved to ${downloadedLog.local_path}\n[${downloadedLog.bytes_received} bytes]`;
       }
       if (remoteStatus) {
@@ -4457,7 +4511,60 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         );
         setRuntimeStatusRemotePath(remoteStatus);
         setRuntimeStatusLocalPath(downloadedStatus.local_path);
+        localRuntimeStatusPath = downloadedStatus.local_path;
         downloadText += `\n\n$ download runtime status\nSaved to ${downloadedStatus.local_path}\n[${downloadedStatus.bytes_received} bytes]`;
+      }
+      const localReportParent = localParentPath(localLogPath ?? localRuntimeStatusPath ?? "");
+      if (localReportParent) {
+        const condition = firstFieldCondition(fieldCase.conditions);
+        const reportName = `field-log-capture-${safeReportName(condition || fieldCase.caseName || form.name || "capture")}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+        localCaptureReportPath = localJoinPath(localReportParent, reportName);
+        const captureReport = {
+          schema_version: "vision_nav_desktop_field_log_capture_v1",
+          generated_at_utc: compactUtcNow(),
+          status: result.exit_code === 0 && remoteLog && remoteStatus ? "passed" : "failed",
+          host: form.host,
+          device_name: form.name,
+          command_source: commandSource,
+          command: captureCommand,
+          exit_code: result.exit_code,
+          field_case: {
+            case_name: fieldCase.caseName,
+            expected: fieldCase.expected,
+            condition,
+            conditions: fieldCase.conditions,
+            capture_output_dir: fieldCase.captureOutputDir,
+            site_name: fieldCase.siteName,
+            metadata_ready: fieldMetadataReady,
+            metadata_issues: fieldMetadataIssues,
+          },
+          preflight: fieldCapturePreflightReport
+            ? {
+                status: fieldCapturePreflightReport.status,
+                condition: fieldCapturePreflightReport.condition,
+                ready_for_capture: fieldCapturePreflightReport.ready_for_capture,
+                ready_for_registration: fieldCapturePreflightReport.ready_for_registration,
+                bundle_path: fieldCapturePreflightReport.bundle_path,
+                capture_output_dir: fieldCapturePreflightReport.capture_output_dir,
+                source_log: fieldCapturePreflightReport.source_log,
+                runtime_status_path: fieldCapturePreflightReport.runtime_status_path,
+                capture_script_path: fieldCapturePreflightReport.capture_script_path,
+              }
+            : null,
+          artifacts: {
+            remote_terrain_log: remoteLog ?? null,
+            remote_runtime_status: remoteStatus ?? null,
+            local_terrain_log: localLogPath,
+            local_runtime_status: localRuntimeStatusPath,
+          },
+          runtime_status: compactRuntimeStatus(parsedStatus),
+        };
+        try {
+          await writeTextFile(localCaptureReportPath, JSON.stringify(captureReport, null, 2) + "\n");
+          downloadText += `\n\n$ save field capture audit\nSaved to ${localCaptureReportPath}`;
+        } catch (auditErr) {
+          downloadText += `\n\n$ save field capture audit\nWarning: ${auditErr}`;
+        }
       }
       setResult("field-log-capture", {
         status: result.exit_code === 0 && remoteLog && remoteStatus ? "passed" : "failed",
