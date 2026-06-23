@@ -425,16 +425,31 @@ def command_with_runtime_status_root(command, output_dir):
     return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
 
 
+def command_with_field_log_capture_report(command, report_path):
+    if not isinstance(command, str) or not command.strip():
+        return command
+    if "run_terrain_nav_loop.sh" not in command or "VISION_NAV_FIELD_LOG_CAPTURE_REPORT" in command:
+        return command
+    if not isinstance(report_path, str) or not report_path.strip():
+        return command
+    report_env = f"VISION_NAV_FIELD_LOG_CAPTURE_REPORT={shell_env_value(report_path.strip())}"
+    return command.replace("./scripts/pi/run_terrain_nav_loop.sh", f"{report_env} ./scripts/pi/run_terrain_nav_loop.sh", 1)
+
+
 def field_log_capture_report_path(item):
     if not isinstance(item, dict):
         return ""
     existing = item.get("field_log_capture_report")
     if isinstance(existing, str) and existing.strip():
         return existing.strip()
-    output_dir = item.get("output_dir")
+    output_dir = item.get("output_dir") or item.get("field_capture_output_dir") or item.get("capture_output_dir")
     if isinstance(output_dir, str) and output_dir.strip():
         return f"{output_dir.strip().rstrip('/')}/field_log_capture_report.json"
-    runtime_status = item.get("runtime_status_path") or item.get("required_runtime_status")
+    runtime_status = (
+        item.get("runtime_status_path")
+        or item.get("required_runtime_status")
+        or item.get("field_runtime_status_path")
+    )
     if isinstance(runtime_status, str) and runtime_status.strip().endswith("/runtime_status.json"):
         return f"{runtime_status.strip()[:-len('/runtime_status.json')]}/field_log_capture_report.json"
     return ""
@@ -498,6 +513,12 @@ def enriched_metadata_update_command(command, next_field_condition):
         if metadata_update_command_is_detailed(replacement):
             return replacement
     return command
+
+
+def field_capture_command_for_display(command, item):
+    if not isinstance(item, dict):
+        return command
+    return command_with_field_log_capture_report(command, field_log_capture_report_path(item))
 
 
 def check_details(report, name):
@@ -761,7 +782,7 @@ if workflow_validation:
             if next_step.get("desktop_action"):
                 print(f"  app: {next_step.get('desktop_action')}")
             if next_step.get("command"):
-                print(f"  command: {next_step.get('command')}")
+                print(f"  command: {field_capture_command_for_display(next_step.get('command'), next_step)}")
             if next_step.get("bundle_path"):
                 print(f"  bundle: {next_step.get('bundle_path')}")
             if next_step.get("expected_log"):
@@ -860,7 +881,7 @@ if workflow_validation:
                     if step.get("desktop_action"):
                         print(f"  app: {step.get('desktop_action')}")
                     if step.get("command"):
-                        print(f"  command: {step.get('command')}")
+                        print(f"  command: {field_capture_command_for_display(step.get('command'), step)}")
                     if step.get("bundle_path"):
                         print(f"  bundle: {step.get('bundle_path')}")
                     if step.get("expected_log"):
@@ -1041,13 +1062,14 @@ if bench_inputs or support_bundle_command or bench_actions:
                 print(f"     waits on: {blocked_by}")
             command = action.get("command")
             if command:
-                print(f"     command: {command}")
+                print(f"     command: {field_capture_command_for_display(command, action)}")
             for label, key in (
                 ("field", "field_condition"),
                 ("bundle", "field_bundle"),
                 ("expected log", "field_source_log"),
                 ("output", "field_capture_output_dir"),
                 ("runtime status", "field_runtime_status_path"),
+                ("field log capture report", "field_log_capture_report"),
                 ("metadata update", "field_metadata_update_command"),
             ):
                 value = action.get(key)
@@ -1085,12 +1107,15 @@ if field_conditions or next_field_condition:
         capture_output_dir = next_field_condition.get("capture_output_dir")
         runtime_status_path = next_field_condition.get("runtime_status_path")
         source_log = next_field_condition.get("source_log")
+        field_log_report = field_log_capture_report_path(next_field_condition)
         if capture_output_dir:
             print(f"  capture output: {capture_output_dir}")
         if source_log:
             print(f"  terrain log: {source_log}")
         if runtime_status_path:
             print(f"  runtime status: {runtime_status_path}")
+        if field_log_report:
+            print(f"  field log capture report: {field_log_report}")
         print_multiline_command(
             "  preflight command:",
             next_field_condition.get("preflight_command"),
@@ -1098,12 +1123,12 @@ if field_conditions or next_field_condition:
         )
         print_multiline_command(
             "  preflight + capture command:",
-            next_field_condition.get("preflight_capture_command"),
+            field_capture_command_for_display(next_field_condition.get("preflight_capture_command"), next_field_condition),
             FIELD_COLLECTION_COMMAND_APP_ACTIONS["preflight_capture"],
         )
         print_multiline_command(
             "  capture command:",
-            next_field_condition.get("capture_command"),
+            field_capture_command_for_display(next_field_condition.get("capture_command"), next_field_condition),
             FIELD_COLLECTION_COMMAND_APP_ACTIONS["capture"],
         )
         print_multiline_command(
@@ -1248,6 +1273,7 @@ if isinstance(field_preflight, dict):
                         item.get("command"),
                         item.get("capture_output_dir") or field_preflight.get("capture_output_dir"),
                     )
+                    command = field_capture_command_for_display(command, item)
                     print(f"    command: {command}")
 
 px4_prereqs = diagnostics.get("px4_sitl_prereqs") if isinstance(diagnostics, dict) else None
@@ -1422,6 +1448,7 @@ if next_actions:
             ("expected log", "field_source_log"),
             ("output", "field_capture_output_dir"),
             ("runtime status", "field_runtime_status_path"),
+            ("field log capture report", "field_log_capture_report"),
             ("metadata update", "field_metadata_update_command"),
             ):
                 value = action.get(key)

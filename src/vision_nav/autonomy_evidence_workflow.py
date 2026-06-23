@@ -668,17 +668,25 @@ def annotate_capture_step_from_current_preflight(
     output_dir = report.get("capture_output_dir")
     if isinstance(output_dir, str) and output_dir.strip():
         output_dir_text = output_dir.strip()
-        step["output_dir"] = output_dir_text
-        step["runtime_status_path"] = str(report.get("runtime_status_path") or runtime_status_path_for_output(output_dir_text))
-        step["field_log_capture_report"] = str(
+        field_log_capture_report = str(
             report.get("field_log_capture_report") or field_log_capture_report_path_for_output(output_dir_text)
         )
+        step["output_dir"] = output_dir_text
+        step["runtime_status_path"] = str(report.get("runtime_status_path") or runtime_status_path_for_output(output_dir_text))
+        step["field_log_capture_report"] = field_log_capture_report
     elif isinstance(report.get("runtime_status_path"), str) and report["runtime_status_path"].strip():
         step["runtime_status_path"] = report["runtime_status_path"].strip()
+        field_log_capture_report = str(report.get("field_log_capture_report") or "").strip()
+    else:
+        field_log_capture_report = str(report.get("field_log_capture_report") or "").strip()
     capture_command = report.get("capture_command")
     if isinstance(capture_command, str) and capture_command.strip():
-        capture_command_with_status = command_with_runtime_status_read(
+        capture_command_with_report = command_with_field_log_capture_report(
             capture_command.strip(),
+            field_log_capture_report,
+        )
+        capture_command_with_status = command_with_runtime_status_read(
+            capture_command_with_report,
             runtime_status_root=str(report.get("capture_output_dir") or "").strip() or None,
         )
         step["capture_command_after_preflight"] = capture_command_with_status
@@ -863,14 +871,14 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
     if expected_log:
         summary["expected_log"] = expected_log
     if output_dir:
+        field_log_capture_report = field_log_capture_report or field_log_capture_report_path_for_output(output_dir)
         summary["output_dir"] = output_dir
         summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)
-        summary["field_log_capture_report"] = (
-            field_log_capture_report or field_log_capture_report_path_for_output(output_dir)
-        )
+        summary["field_log_capture_report"] = field_log_capture_report
     elif field_log_capture_report:
         summary["field_log_capture_report"] = field_log_capture_report
     if capture_command:
+        capture_command = command_with_field_log_capture_report(capture_command, field_log_capture_report)
         summary["capture_command_after_preflight"] = command_with_runtime_status_read(
             capture_command,
             runtime_status_root=output_dir,
@@ -918,19 +926,27 @@ def apply_current_preflight_report_guidance(summary: dict[str, Any], markers: di
     output_dir = report.get("capture_output_dir")
     if isinstance(output_dir, str) and output_dir.strip():
         output_dir_text = output_dir.strip()
+        field_log_capture_report = str(
+            report.get("field_log_capture_report") or field_log_capture_report_path_for_output(output_dir_text)
+        )
         summary["output_dir"] = output_dir_text
         summary["runtime_status_path"] = str(
             report.get("runtime_status_path") or runtime_status_path_for_output(output_dir_text)
         )
-        summary["field_log_capture_report"] = str(
-            report.get("field_log_capture_report") or field_log_capture_report_path_for_output(output_dir_text)
-        )
+        summary["field_log_capture_report"] = field_log_capture_report
     elif isinstance(report.get("runtime_status_path"), str) and report["runtime_status_path"].strip():
         summary["runtime_status_path"] = report["runtime_status_path"].strip()
+        field_log_capture_report = str(report.get("field_log_capture_report") or "").strip()
+    else:
+        field_log_capture_report = str(report.get("field_log_capture_report") or "").strip()
     capture_command = report.get("capture_command")
     if isinstance(capture_command, str) and capture_command.strip():
-        capture_command_with_status = command_with_runtime_status_read(
+        capture_command_with_report = command_with_field_log_capture_report(
             capture_command,
+            field_log_capture_report,
+        )
+        capture_command_with_status = command_with_runtime_status_read(
+            capture_command_with_report,
             runtime_status_root=str(report.get("capture_output_dir") or "").strip() or None,
         )
         preflight_capture_command = preflight_capture_command_from_report(
@@ -986,19 +1002,21 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
     field_log_capture_report = marker_string(markers, FIELD_LOG_CAPTURE_REPORT_MARKER)
     metadata_update_command = marker_string(markers, FIELD_METADATA_UPDATE_COMMAND_MARKER)
     if capture_command:
-        summary["command"] = capture_command
+        summary["command"] = command_with_field_log_capture_report(capture_command, field_log_capture_report)
     if capture_script_path:
         summary["capture_script_path"] = capture_script_path
     if preflight_capture_command:
-        summary["preflight_capture_command"] = preflight_capture_command
+        summary["preflight_capture_command"] = command_with_field_log_capture_report(
+            preflight_capture_command,
+            field_log_capture_report,
+        )
     if expected_log:
         summary["expected_log"] = expected_log
     if output_dir:
+        field_log_capture_report = field_log_capture_report or field_log_capture_report_path_for_output(output_dir)
         summary["output_dir"] = output_dir
         summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)
-        summary["field_log_capture_report"] = (
-            field_log_capture_report or field_log_capture_report_path_for_output(output_dir)
-        )
+        summary["field_log_capture_report"] = field_log_capture_report
     elif field_log_capture_report:
         summary["field_log_capture_report"] = field_log_capture_report
     if bundle_path:
@@ -1009,12 +1027,16 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
         summary["desktop_action"] = "Mission Planner > Build Bundle, Upload Bundle, then Module Setup > Field Log Capture"
         summary["command"] = bundle_validation_command(bundle_path)
         if capture_command:
+            capture_command = command_with_field_log_capture_report(capture_command, field_log_capture_report)
             summary["capture_command_after_bundle"] = command_with_runtime_status_read(
                 capture_command,
                 runtime_status_root=output_dir,
             )
         if preflight_capture_command:
-            summary["preflight_capture_command_after_bundle"] = preflight_capture_command
+            summary["preflight_capture_command_after_bundle"] = command_with_field_log_capture_report(
+                preflight_capture_command,
+                field_log_capture_report,
+            )
         existing_notes = str(summary.get("notes") or "").strip()
         guidance = "Terrain bundle is missing; build/upload the selected mission bundle and validate it before field-log capture."
         summary["notes"] = f"{existing_notes} {guidance}".strip() if existing_notes else guidance
@@ -1140,6 +1162,14 @@ def command_with_runtime_status_read(command: str, runtime_status_root: str | No
             return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
         return command
     return f"{command} && {read_command}"
+
+
+def command_with_field_log_capture_report(command: str, report_path: str | None) -> str:
+    if not report_path or "run_terrain_nav_loop.sh" not in command or "VISION_NAV_FIELD_LOG_CAPTURE_REPORT" in command:
+        return command
+    report_env = f"VISION_NAV_FIELD_LOG_CAPTURE_REPORT={shell_env_value(report_path)}"
+    target = "./scripts/pi/run_terrain_nav_loop.sh"
+    return command.replace(target, f"{report_env} {target}", 1)
 
 
 def shell_env_value(value: Any) -> str:

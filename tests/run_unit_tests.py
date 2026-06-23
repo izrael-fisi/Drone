@@ -4008,7 +4008,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             preflight_blocked_validation["next_required_step"]["capture_command_after_preflight"],
-            f"{capture_command} && VISION_NAV_RUNTIME_STATUS_ROOTS={capture_output_dir} ./scripts/pi/read_runtime_status.sh",
+            f"VISION_NAV_BUNDLE={missing_bundle_path} "
+            f"VISION_NAV_OUTPUT_DIR={capture_output_dir} "
+            f"VISION_NAV_COUNT=30 VISION_NAV_FIELD_LOG_CAPTURE_REPORT={workflow_field_log_capture_report} "
+            "./scripts/pi/run_terrain_nav_loop.sh "
+            f"&& VISION_NAV_RUNTIME_STATUS_ROOTS={capture_output_dir} ./scripts/pi/read_runtime_status.sh",
             "workflow validation preserves capture command after preflight",
         )
         assert_equal(
@@ -4338,7 +4342,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         )
         assert_equal(
             capture_blocked_validation["next_required_step"]["capture_command_after_bundle"],
-            f"{capture_command} && VISION_NAV_RUNTIME_STATUS_ROOTS={capture_output_dir} ./scripts/pi/read_runtime_status.sh",
+            f"VISION_NAV_BUNDLE={missing_bundle_path} "
+            f"VISION_NAV_OUTPUT_DIR={capture_output_dir} "
+            f"VISION_NAV_COUNT=30 VISION_NAV_FIELD_LOG_CAPTURE_REPORT={workflow_field_log_capture_report} "
+            "./scripts/pi/run_terrain_nav_loop.sh "
+            f"&& VISION_NAV_RUNTIME_STATUS_ROOTS={capture_output_dir} ./scripts/pi/read_runtime_status.sh",
             "workflow validation preserves capture command after missing-bundle fix",
         )
         assert_equal(

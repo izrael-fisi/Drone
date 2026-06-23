@@ -805,6 +805,14 @@ def command_with_runtime_status_read(command: str, runtime_status_root: str | No
     return f"{command} && {read_command}"
 
 
+def command_with_field_log_capture_report(command: str, report_path: str | None) -> str:
+    if not report_path or "run_terrain_nav_loop.sh" not in command or "VISION_NAV_FIELD_LOG_CAPTURE_REPORT" in command:
+        return command
+    report_env = f"VISION_NAV_FIELD_LOG_CAPTURE_REPORT={shell_env_value(report_path)}"
+    target = "./scripts/pi/run_terrain_nav_loop.sh"
+    return command.replace(target, f"{report_env} {target}", 1)
+
+
 def build_evidence_manifest(
     status: str,
     checks: list[dict[str, Any]],
@@ -1492,6 +1500,10 @@ def enrich_action_with_field_capture(
         return
     preflight_capture_command = condition.get("preflight_capture_command")
     if isinstance(preflight_capture_command, str) and preflight_capture_command.strip():
+        preflight_capture_command = command_with_field_log_capture_report(
+            preflight_capture_command,
+            str(condition.get("field_log_capture_report") or "").strip() or None,
+        )
         action["command"] = preflight_capture_command
         action["preflight_capture_command"] = preflight_capture_command
         action["desktop_action"] = "Module Setup > Field Capture Preflight, then Field Log Capture"
@@ -1504,6 +1516,10 @@ def enrich_action_with_field_capture(
     else:
         capture_command = condition.get("capture_command")
         if isinstance(capture_command, str) and capture_command.strip():
+            capture_command = command_with_field_log_capture_report(
+                capture_command,
+                str(condition.get("field_log_capture_report") or "").strip() or None,
+            )
             if append_runtime_status_read:
                 action["command"] = command_with_runtime_status_read(
                     capture_command,
@@ -1519,6 +1535,7 @@ def enrich_action_with_field_capture(
         "field_capture_output_dir": "capture_output_dir",
         "field_source_log": "source_log",
         "field_runtime_status_path": "runtime_status_path",
+        "field_log_capture_report": "field_log_capture_report",
         "field_bundle": "bundle",
         "field_metadata_update_command": "metadata_update_command",
         "field_register_command": "register_command",
@@ -1541,6 +1558,8 @@ def enrich_action_with_field_capture(
         detail_lines.append(f"Output: {condition['capture_output_dir']}.")
     if condition.get("runtime_status_path"):
         detail_lines.append(f"Runtime status: {condition['runtime_status_path']}.")
+    if condition.get("field_log_capture_report"):
+        detail_lines.append(f"Field log capture report: {condition['field_log_capture_report']}.")
     if detail_lines:
         action["notes"] = " ".join([str(action.get("notes") or ""), *detail_lines]).strip()
 
@@ -1559,6 +1578,7 @@ def enrich_action_with_field_preflight(action: dict[str, Any], condition: dict[s
         ("field_capture_output_dir", "capture_output_dir"),
         ("field_source_log", "source_log"),
         ("field_runtime_status_path", "runtime_status_path"),
+        ("field_log_capture_report", "field_log_capture_report"),
         ("field_metadata_update_command", "metadata_update_command"),
     ):
         value = condition.get(source_key)
@@ -2097,6 +2117,11 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
             continue
         command = action.get("command")
         if action.get("id") == "capture_field_terrain_log" and isinstance(command, str):
+            command = command_with_field_log_capture_report(
+                command,
+                str(action.get("field_log_capture_report") or report.get("field_log_capture_report") or "").strip()
+                or None,
+            )
             command = command_with_runtime_status_read(
                 command,
                 runtime_status_root=str(
@@ -2128,6 +2153,7 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
             "capture_output_dir": action.get("capture_output_dir") or report.get("capture_output_dir"),
             "source_log": action.get("source_log"),
             "runtime_status_path": action.get("runtime_status_path"),
+            "field_log_capture_report": action.get("field_log_capture_report") or report.get("field_log_capture_report"),
             "capture_script_path": action.get("capture_script_path"),
             "notes": action.get("notes"),
             "bundle_diagnostic": action_bundle_diagnostic,
@@ -2425,6 +2451,7 @@ def compact_field_collection_condition(item: dict[str, Any]) -> dict[str, Any]:
         "source_log",
         "capture_output_dir",
         "runtime_status_path",
+        "field_log_capture_report",
         "bundle",
         "preflight_command",
         "preflight_capture_command",
@@ -2448,16 +2475,30 @@ def condition_with_metadata_update_command(
             plan_path=plan_path,
             condition=str(condition_name),
         )
+    capture_output_dir = str(updated.get("capture_output_dir") or "").strip()
+    if capture_output_dir and not updated.get("field_log_capture_report"):
+        updated["field_log_capture_report"] = f"{capture_output_dir.rstrip('/')}/field_log_capture_report.json"
     if updated.get("capture_command"):
+        updated["capture_command"] = command_with_field_log_capture_report(
+            str(updated["capture_command"]),
+            str(updated.get("field_log_capture_report") or "").strip() or None,
+        )
         updated["capture_command"] = command_with_runtime_status_read(
             str(updated["capture_command"]),
-            runtime_status_root=str(updated.get("capture_output_dir") or "").strip() or None,
+            runtime_status_root=capture_output_dir or None,
         )
     preflight_command = str(updated.get("preflight_command") or "").strip()
     capture_command = str(updated.get("capture_command") or "").strip()
     preflight_capture_command = str(updated.get("preflight_capture_command") or "").strip()
+    if preflight_capture_command:
+        preflight_capture_command = command_with_field_log_capture_report(
+            preflight_capture_command,
+            str(updated.get("field_log_capture_report") or "").strip() or None,
+        )
+        updated["preflight_capture_command"] = preflight_capture_command
     if preflight_command and capture_command and (
         not preflight_capture_command
+        or "VISION_NAV_FIELD_LOG_CAPTURE_REPORT" not in preflight_capture_command
         or ("read_runtime_status.sh" in capture_command and "read_runtime_status.sh" not in preflight_capture_command)
     ):
         updated["preflight_capture_command"] = f"{preflight_command} && {capture_command}"
