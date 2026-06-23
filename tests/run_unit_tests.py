@@ -2835,7 +2835,7 @@ RC8_OPTION,90
             started_at_utc="2026-06-21T00:05:00+00:00",
         )
         write_runtime_status(field_capture_log.parent / "runtime_status.json", field_capture_status)
-        field_log_capture_report = root / "field_log_capture_report.json"
+        field_log_capture_report = field_capture_log.parent / "field_log_capture_report.json"
         create_field_log_capture_report(
             log_path=field_capture_log,
             runtime_status_path=field_capture_log.parent / "runtime_status.json",
@@ -3472,6 +3472,21 @@ RC8_OPTION,90
             len(auto_logs_manifest["logs"]["runtime_statuses"]),
             2,
             "support auto-ingests runtime statuses beside field collection logs",
+        )
+        assert_equal(
+            auto_logs_manifest["field_log_capture_reports"]["status"],
+            "passed",
+            "support auto-ingests field capture audit reports beside field collection logs",
+        )
+        assert_equal(
+            auto_logs_manifest["field_log_capture_reports"]["report_count"],
+            1,
+            "support auto field capture audit report count",
+        )
+        assert_equal(
+            auto_logs_manifest["field_log_capture_reports"]["auto_added_field_collection_capture_report_count"],
+            1,
+            "support auto-only field capture audit report count",
         )
         readiness = evaluate_bench_readiness_file(zip_path)
         assert_equal(readiness["status"], "degraded", "bench readiness degraded on px4 param warning")

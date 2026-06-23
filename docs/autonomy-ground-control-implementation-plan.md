@@ -813,6 +813,10 @@ Status:
   field collection plans, including sibling `runtime_status.json` snapshots, so
   per-condition field captures are included in bench evidence without requiring
   a separate `--log` argument for each condition.
+- Done: support bundles now infer Pi-side `field_log_capture_report.json`
+  audit reports from field collection plan capture-output, source-log, and
+  runtime-status paths, so terminal captures written beside terrain logs are
+  included without a separate report argument.
 - Done: support-bundle field-collection summaries now preserve capture root,
   per-condition source-log/capture-output/runtime-status paths,
   capture/metadata-update/register command presence, and pending command counts

@@ -413,6 +413,32 @@ def existing_field_collection_log_paths(paths: list[str]) -> list[str]:
     return results
 
 
+def existing_field_collection_capture_report_paths(paths: list[str]) -> list[str]:
+    results: list[str] = []
+    seen: set[str] = set()
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            continue
+        json_files = sorted(source.rglob("*.json")) if source.is_dir() else [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception:
+                continue
+            if not isinstance(report, dict) or report.get("schema_version") != "vision_nav_field_collection_plan_v1":
+                continue
+            for report_path in field_collection_capture_report_candidates(report, base_dir=report_file.parent):
+                if not report_path.is_file():
+                    continue
+                key = str(report_path.resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(str(report_path))
+    return results
+
+
 def field_collection_log_candidates(report: dict[str, Any]) -> list[str]:
     candidates: list[str] = []
     top_level_log = report.get("source_log")
@@ -428,6 +454,51 @@ def field_collection_log_candidates(report: dict[str, Any]) -> list[str]:
     return candidates
 
 
+def field_collection_capture_report_candidates(report: dict[str, Any], *, base_dir: Path) -> list[Path]:
+    candidates: list[Path] = []
+
+    def add_direct(raw_value: Any) -> None:
+        if isinstance(raw_value, str) and raw_value.strip():
+            candidates.append(resolve_field_collection_log_path(raw_value, base_dir=base_dir))
+
+    def add_from_dir(raw_value: Any) -> None:
+        if isinstance(raw_value, str) and raw_value.strip():
+            path = resolve_field_collection_log_path(raw_value, base_dir=base_dir)
+            candidates.append(path / "field_log_capture_report.json")
+
+    def add_from_file_parent(raw_value: Any) -> None:
+        if isinstance(raw_value, str) and raw_value.strip():
+            path = resolve_field_collection_log_path(raw_value, base_dir=base_dir)
+            candidates.append(path.parent / "field_log_capture_report.json")
+
+    for key in ("field_log_capture_report_path", "capture_report_path"):
+        add_direct(report.get(key))
+    add_from_dir(report.get("capture_output_dir"))
+    add_from_file_parent(report.get("source_log"))
+    add_from_file_parent(report.get("manifest_log_path"))
+    add_from_file_parent(report.get("runtime_status_path"))
+
+    capture_root = report.get("capture_root")
+    add_from_dir(capture_root)
+    if isinstance(capture_root, str) and capture_root.strip():
+        root = resolve_field_collection_log_path(capture_root, base_dir=base_dir)
+        if root.is_dir():
+            candidates.extend(sorted(root.glob("*/field_log_capture_report.json")))
+
+    plan_items = []
+    if isinstance(report.get("next_condition"), dict):
+        plan_items.append(report["next_condition"])
+    plan_items.extend(item for item in report.get("conditions") or [] if isinstance(item, dict))
+    for item in plan_items:
+        for key in ("field_log_capture_report_path", "capture_report_path"):
+            add_direct(item.get(key))
+        add_from_dir(item.get("capture_output_dir"))
+        add_from_file_parent(item.get("source_log"))
+        add_from_file_parent(item.get("manifest_log_path"))
+        add_from_file_parent(item.get("runtime_status_path"))
+    return candidates
+
+
 def resolve_field_collection_log_path(raw_path: str, *, base_dir: Path) -> Path:
     path = Path(raw_path).expanduser()
     if path.is_absolute():
@@ -435,10 +506,10 @@ def resolve_field_collection_log_path(raw_path: str, *, base_dir: Path) -> Path:
     return base_dir / path
 
 
-def unique_existing_logs(explicit_logs: list[str], discovered_logs: list[str]) -> list[str]:
+def unique_paths(explicit_paths: list[str], discovered_paths: list[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
-    for raw in [*explicit_logs, *discovered_logs]:
+    for raw in [*explicit_paths, *discovered_paths]:
         if not isinstance(raw, str) or not raw:
             continue
         path = Path(raw).expanduser()
@@ -448,6 +519,10 @@ def unique_existing_logs(explicit_logs: list[str], discovered_logs: list[str]) -
         seen.add(key)
         result.append(str(path))
     return result
+
+
+def unique_existing_logs(explicit_logs: list[str], discovered_logs: list[str]) -> list[str]:
+    return unique_paths(explicit_logs, discovered_logs)
 
 
 def copy_extras(extras: list[str], support_dir: Path) -> dict[str, Any]:
@@ -2165,6 +2240,9 @@ def create_support_bundle(
         bundle_summary = copy_bundle_metadata(bundle, support_dir, include_map_assets=include_map_assets)
 
     field_collection_log_paths = existing_field_collection_log_paths(field_collection_plan_paths or [])
+    field_collection_capture_report_paths = existing_field_collection_capture_report_paths(
+        field_collection_plan_paths or []
+    )
     all_logs = unique_existing_logs(logs, field_collection_log_paths)
     log_summary = copy_logs(all_logs, support_dir, max_log_bytes=max_log_bytes)
     if field_collection_log_paths:
@@ -2223,9 +2301,21 @@ def create_support_bundle(
         support_dir,
     )
     field_log_capture_reports = copy_field_log_capture_reports(
-        field_log_capture_report_paths or [],
+        unique_paths(field_log_capture_report_paths or [], field_collection_capture_report_paths),
         support_dir,
     )
+    if field_collection_capture_report_paths:
+        explicit_capture_report_keys = {
+            str(Path(path).expanduser().resolve()) if Path(path).expanduser().exists() else str(Path(path).expanduser())
+            for path in field_log_capture_report_paths or []
+        }
+        auto_added = [
+            path
+            for path in field_collection_capture_report_paths
+            if str(Path(path).expanduser().resolve()) not in explicit_capture_report_keys
+        ]
+        field_log_capture_reports["field_collection_plan_capture_reports"] = field_collection_capture_report_paths
+        field_log_capture_reports["auto_added_field_collection_capture_report_count"] = len(auto_added)
     gnss_denied_plan_checks = copy_gnss_denied_plan_checks(
         gnss_denied_plan_check_paths or [],
         support_dir,

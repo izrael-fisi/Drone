@@ -543,6 +543,11 @@ rolls up readiness flags, failed/degraded checks, and next-action counts in
 per-condition `~/DroneTransfer/outgoing/field-captures/*/` folders, copies the
 raw audit reports under `extras/field_log_capture_reports/`, and publishes
 desktop-readable summaries under `summaries/field_log_capture_reports/`.
+When calling `vision-nav-support-bundle` directly with `--field-collection-plan`,
+the packager also infers capture audit reports from each condition's
+`capture_output_dir`, `source_log`, and `runtime_status_path`, so terminal-only
+field captures do not need a separate report argument when the audit report
+was written beside the terrain log.
 In the same desktop panel, `Validate Bundle` runs the selected field bundle
 validation command over SSH. When a preflight report has already been downloaded,
 the app uses that report's `bundle_validation_command`; otherwise it validates
