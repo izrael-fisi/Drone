@@ -566,6 +566,9 @@ pub struct FieldLogCaptureReport {
     pub remote_runtime_status: Option<String>,
     pub local_terrain_log: Option<String>,
     pub local_runtime_status: Option<String>,
+    pub metadata_update_command: Option<String>,
+    pub register_command: Option<String>,
+    pub registration_ready: Option<bool>,
     pub runtime_status: Option<serde_json::Value>,
 }
 
@@ -3454,6 +3457,7 @@ fn field_log_capture_report_from_json(value: &serde_json::Value) -> Option<Field
     let field_case = value.get("field_case");
     let preflight = value.get("preflight");
     let artifacts = value.get("artifacts");
+    let next_actions = value.get("next_actions");
     Some(FieldLogCaptureReport {
         status: json_string(value.get("status")),
         generated_at_utc: json_string(value.get("generated_at_utc")),
@@ -3492,6 +3496,13 @@ fn field_log_capture_report_from_json(value: &serde_json::Value) -> Option<Field
         local_runtime_status: json_string(
             artifacts.and_then(|value| value.get("local_runtime_status")),
         ),
+        metadata_update_command: json_string(
+            next_actions.and_then(|value| value.get("metadata_update_command")),
+        ),
+        register_command: json_string(next_actions.and_then(|value| value.get("register_command"))),
+        registration_ready: next_actions
+            .and_then(|value| value.get("registration_ready"))
+            .and_then(|value| value.as_bool()),
         runtime_status: value.get("runtime_status").cloned(),
     })
 }
@@ -8165,6 +8176,11 @@ mod tests {
                     "local_terrain_log": "/Users/izzyfisi/DroneTransfer/from-pi/terrain-match/terrain_matches.jsonl",
                     "local_runtime_status": "/Users/izzyfisi/DroneTransfer/from-pi/runtime-status/runtime_status.json"
                 },
+                "next_actions": {
+                    "metadata_update_command": "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh",
+                    "register_command": "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/register_field_replay_case.sh",
+                    "registration_ready": false
+                },
                 "runtime_status": {
                     "active_map": {"bundle_id": "mission-bundle"},
                     "last_match": {"status": "accepted", "confidence": 0.82}
@@ -8200,6 +8216,15 @@ mod tests {
             reports[0].report.remote_runtime_status.as_deref(),
             Some("/home/user/DroneTransfer/outgoing/field-captures/site-good/runtime_status.json")
         );
+        assert_eq!(
+            reports[0].report.metadata_update_command.as_deref(),
+            Some("VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh")
+        );
+        assert_eq!(
+            reports[0].report.register_command.as_deref(),
+            Some("VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/register_field_replay_case.sh")
+        );
+        assert_eq!(reports[0].report.registration_ready, Some(false));
         assert!(reports[0].report.runtime_status.is_some());
     }
 

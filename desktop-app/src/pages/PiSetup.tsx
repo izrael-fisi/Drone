@@ -3946,6 +3946,9 @@ function FieldLogCaptureReportList({
                       <span className={file.report.preflight_ready_for_capture ? "badge-green" : "badge-yellow"}>
                         preflight {file.report.preflight_ready_for_capture ? "capture ready" : formatReadinessLabel(file.report.preflight_status)}
                       </span>
+                      <span className={file.report.registration_ready ? "badge-green" : "badge-yellow"}>
+                        register {file.report.registration_ready ? "ready" : "waiting"}
+                      </span>
                       <span className="font-mono text-[10px] text-slate-500">
                         exit {file.report.exit_code ?? "n/a"}
                       </span>
@@ -3975,6 +3978,24 @@ function FieldLogCaptureReportList({
                       <FileText size={11} />
                       Load
                     </button>
+                    {file.report.metadata_update_command && (
+                      <button
+                        onClick={() => navigator.clipboard.writeText(file.report.metadata_update_command ?? "")}
+                        className="btn-secondary text-xs py-1 px-2"
+                        title="Copy metadata update command"
+                      >
+                        <FileText size={11} />
+                      </button>
+                    )}
+                    {file.report.register_command && (
+                      <button
+                        onClick={() => navigator.clipboard.writeText(file.report.register_command ?? "")}
+                        className="btn-secondary text-xs py-1 px-2"
+                        title="Copy field registration command"
+                      >
+                        <ShieldCheck size={11} />
+                      </button>
+                    )}
                     {file.report.command && (
                       <button
                         onClick={() => navigator.clipboard.writeText(file.report.command ?? "")}
@@ -4705,6 +4726,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       let localLogPath: string | null = null;
       let localRuntimeStatusPath: string | null = null;
       let localCaptureReportPath: string | null = null;
+      let capturedFieldCase = fieldCase;
       if (parsedStatus) {
         setRuntimeStatus(parsedStatus);
         setRuntimeStatusRemotePath(remoteStatus ?? null);
@@ -4745,6 +4767,12 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       }
       if (remoteLog || remoteStatus) {
         const captureOutputDir = fieldCapturePreflightReport?.capture_output_dir || fieldCase.captureOutputDir;
+        capturedFieldCase = {
+          ...fieldCase,
+          fieldLog: remoteLog ?? fieldCase.fieldLog,
+          runtimeStatusPath: remoteStatus ?? fieldCase.runtimeStatusPath,
+          captureOutputDir: captureOutputDir || fieldCase.captureOutputDir,
+        };
         setFieldCase((value) => ({
           ...value,
           fieldLog: remoteLog ?? value.fieldLog,
@@ -4753,9 +4781,18 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         }));
         downloadText += "\n\n$ update field evidence form\nLoaded captured remote log/status paths for registration.";
       }
+      const capturedCondition = firstFieldCondition(capturedFieldCase.conditions);
+      const nextMetadataUpdateCommand = capturedCondition
+        ? fieldMetadataUpdateCommand(remoteProject, remoteBundle, capturedFieldCase)
+        : null;
+      const nextRegisterCommand =
+        capturedFieldCase.caseName.trim() && capturedCondition
+          ? fieldEvidenceCommand(remoteProject, remoteBundle, capturedFieldCase)
+          : null;
+      const nextRegistrationReady = Boolean(nextRegisterCommand) && fieldCaptureMetadataReady(capturedFieldCase);
       const localReportParent = localParentPath(localLogPath ?? localRuntimeStatusPath ?? "");
       if (localReportParent) {
-        const condition = firstFieldCondition(fieldCase.conditions);
+        const condition = firstFieldCondition(capturedFieldCase.conditions);
         const reportName = `field-log-capture-${safeReportName(condition || fieldCase.caseName || form.name || "capture")}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
         localCaptureReportPath = localJoinPath(localReportParent, reportName);
         const captureReport = {
@@ -4768,14 +4805,16 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
           command: captureCommand,
           exit_code: result.exit_code,
           field_case: {
-            case_name: fieldCase.caseName,
-            expected: fieldCase.expected,
+            case_name: capturedFieldCase.caseName,
+            expected: capturedFieldCase.expected,
             condition,
-            conditions: fieldCase.conditions,
-            capture_output_dir: fieldCase.captureOutputDir,
-            site_name: fieldCase.siteName,
-            metadata_ready: fieldMetadataReady,
-            metadata_issues: fieldMetadataIssues,
+            conditions: capturedFieldCase.conditions,
+            field_log: capturedFieldCase.fieldLog,
+            capture_output_dir: capturedFieldCase.captureOutputDir,
+            runtime_status_path: capturedFieldCase.runtimeStatusPath,
+            site_name: capturedFieldCase.siteName,
+            metadata_ready: fieldCaptureMetadataReady(capturedFieldCase),
+            metadata_issues: fieldCaptureMetadataIssues(capturedFieldCase),
           },
           preflight: fieldCapturePreflightReport
             ? {
@@ -4795,6 +4834,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
             remote_runtime_status: remoteStatus ?? null,
             local_terrain_log: localLogPath,
             local_runtime_status: localRuntimeStatusPath,
+          },
+          next_actions: {
+            metadata_update_command: nextMetadataUpdateCommand,
+            register_command: nextRegisterCommand,
+            registration_ready: nextRegistrationReady,
           },
           runtime_status: compactRuntimeStatus(parsedStatus),
         };

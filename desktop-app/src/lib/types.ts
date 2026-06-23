@@ -1275,6 +1275,9 @@ export interface FieldLogCaptureReportFile {
     remote_runtime_status?: string;
     local_terrain_log?: string;
     local_runtime_status?: string;
+    metadata_update_command?: string;
+    register_command?: string;
+    registration_ready?: boolean;
     runtime_status?: unknown;
   };
 }

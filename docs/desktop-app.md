@@ -320,10 +320,13 @@ After the download succeeds, the app also writes a compact
 `field-log-capture-*.json` audit file beside the downloaded terrain log. That
 desktop-side record captures the command source, remote and local artifact
 paths, exit code, field-condition metadata readiness, preflight summary, and a
-bounded runtime-status summary for support review.
+bounded runtime-status summary for support review. New capture audits also
+include the exact metadata-update and field-registration commands generated from
+the captured remote log paths, plus a registration-readiness flag.
 The Field Log Captures list in Module Setup shows those audit files with
-metadata/preflight/capture status, copyable capture commands and paths, and the
-latest entries are included when the operator saves a module setup report.
+metadata/preflight/capture status, copyable capture, metadata, registration, and
+path commands, and the latest entries are included when the operator saves a
+module setup report.
 After a successful app-driven capture, Module Setup also loads the captured
 remote terrain log and runtime-status paths into the Field Evidence Case form
 for registration. Downloaded Field Log Capture audit cards include a `Load`

@@ -480,7 +480,8 @@ When the desktop app performs the capture, it also saves a
 `field-log-capture-*.json` audit file next to the downloaded terrain log. That
 file is a support breadcrumb: it records the exact command source, remote and
 local artifact paths, exit code, field-condition metadata readiness, preflight
-summary, and compact runtime-status summary.
+summary, compact runtime-status summary, and follow-up metadata-update and
+field-registration commands.
 Module Setup lists those downloaded audit files under Field Log Captures and
 copies the latest entries into saved setup reports, so support review can trace
 which capture command produced each synced terrain log.

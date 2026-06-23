@@ -543,6 +543,9 @@ Status:
   preserving command source, remote/local artifact paths, exit code,
   field-metadata readiness, preflight summary, and compact runtime-status
   fields for support review.
+- Done: Field Log Capture audit files now include next-action metadata update
+  and registration commands, plus registration readiness, so support can recover
+  the exact follow-up proof commands from the downloaded capture audit.
 - Done: Module Setup now lists downloaded `field-log-capture-*.json` audit
   files, shows metadata/preflight/capture status, copyable commands and paths,
   and includes the latest capture audits in saved setup reports.
