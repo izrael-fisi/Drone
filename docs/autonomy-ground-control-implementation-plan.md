@@ -1484,6 +1484,10 @@ Status:
   fields. CLI status, local audit summaries, support bundles, evidence packages,
   and desktop workflow cards can now show that the current proof gap is one
   active terrain-log capture blocker plus dependent follow-up waits.
+- Done: workflow-validation human output, goal-status output, support bundles,
+  and evidence packages now preserve the Pi-side
+  `field_log_capture_report.json` path for active and non-passing field-capture
+  steps, keeping support handoffs tied to the capture audit artifact.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

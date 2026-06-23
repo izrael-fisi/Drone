@@ -1276,6 +1276,8 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                     lines.append(f"  Output: {step.get('output_dir')}")
                 if step.get("runtime_status_path"):
                     lines.append(f"  Runtime status: {step.get('runtime_status_path')}")
+                if step.get("field_log_capture_report"):
+                    lines.append(f"  Field log capture report: {step.get('field_log_capture_report')}")
                 if step.get("capture_script_path"):
                     lines.append(f"  Capture script: {step.get('capture_script_path')}")
                 if step.get("capture_script_hint"):
@@ -1320,6 +1322,8 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                     lines.append(f"  Required log: {step.get('required_log')}")
                 if step.get("required_runtime_status"):
                     lines.append(f"  Required runtime status: {step.get('required_runtime_status')}")
+                if step.get("field_log_capture_report"):
+                    lines.append(f"  Field log capture report: {step.get('field_log_capture_report')}")
                 if step.get("notes"):
                     lines.append(f"  Notes: {step.get('notes')}")
                 if step.get("guidance"):
@@ -1375,6 +1379,7 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
         ("Expected log", next_step.get("expected_log")),
         ("Output", next_step.get("output_dir")),
         ("Runtime status", next_step.get("runtime_status_path")),
+        ("Field log capture report", next_step.get("field_log_capture_report")),
         ("Capture script", next_step.get("capture_script_path")),
         ("Capture script hint", next_step.get("capture_script_hint")),
         ("Preflight + capture", next_step.get("preflight_capture_command")),

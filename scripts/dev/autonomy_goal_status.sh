@@ -755,6 +755,8 @@ if workflow_validation:
                 print(f"  output: {next_step.get('output_dir')}")
             if next_step.get("runtime_status_path"):
                 print(f"  runtime status: {next_step.get('runtime_status_path')}")
+            if next_step.get("field_log_capture_report"):
+                print(f"  field log capture report: {next_step.get('field_log_capture_report')}")
             if next_step.get("preflight_report"):
                 print(f"  preflight report: {next_step.get('preflight_report')}")
             if next_step.get("preflight_status"):
@@ -851,6 +853,8 @@ if workflow_validation:
                         print(f"  output: {step.get('output_dir')}")
                     if step.get("runtime_status_path"):
                         print(f"  runtime status: {step.get('runtime_status_path')}")
+                    if step.get("field_log_capture_report"):
+                        print(f"  field log capture report: {step.get('field_log_capture_report')}")
                     if step.get("capture_script_path"):
                         print(f"  capture script: {step.get('capture_script_path')}")
                     if step.get("capture_script_hint"):
@@ -894,6 +898,8 @@ if workflow_validation:
                         print(f"  required log: {step.get('required_log')}")
                     if step.get("required_runtime_status"):
                         print(f"  required runtime status: {step.get('required_runtime_status')}")
+                    if step.get("field_log_capture_report"):
+                        print(f"  field log capture report: {step.get('field_log_capture_report')}")
                     if step.get("notes"):
                         print(f"  notes: {step.get('notes')}")
                     if step.get("guidance"):

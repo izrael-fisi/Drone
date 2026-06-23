@@ -1977,6 +1977,7 @@ def compact_workflow_validation_step(step: dict[str, Any]) -> dict[str, Any]:
             "expected_log",
             "output_dir",
             "runtime_status_path",
+            "field_log_capture_report",
             "capture_script_path",
             "capture_script_hint",
             "preflight_report",
