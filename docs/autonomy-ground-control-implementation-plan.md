@@ -382,6 +382,11 @@ Status:
   `check_gnss_denied_plan.sh` before `validate_terrain_bundle.sh`, so operator
   handoffs diagnose mission-prep metadata directly instead of only revalidating
   bundle structure.
+- Done: `check_gnss_denied_plan.sh` now writes the stable
+  `gnss_denied_plan_check.json` diagnostic artifact, emits
+  `__VISION_NAV_GNSS_DENIED_PLAN_CHECK__`, and support bundles copy/summarize
+  that report without letting it replace the required bundled Mission Planner
+  GNSS-denied readiness metadata.
 - In progress: Module Setup chains Wi-Fi SSH identity, repo sync/install,
   runtime verification, camera preview/health, time sync, MAVLink endpoint
   validation, optional Micro XRCE-DDS Agent readiness, calibration image

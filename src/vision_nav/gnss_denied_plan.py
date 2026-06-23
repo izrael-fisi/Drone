@@ -21,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--bundle", help="Terrain mission bundle containing mission/mission_plan.json or mission/qgc.plan.")
     source.add_argument("--plan", help="Mission Planner JSON or QGroundControl .plan file.")
+    parser.add_argument("--output", help="Optional JSON report path to write before exiting.")
     parser.add_argument("--json", action="store_true", help="Emit JSON only.")
     return parser.parse_args()
 
@@ -154,10 +155,16 @@ def print_human(report: dict[str, Any]) -> None:
 def main() -> None:
     args = parse_args()
     report = evaluate_gnss_denied_plan(bundle_path=args.bundle, plan_path=args.plan)
+    if args.output:
+        output_path = Path(args.output).expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
         print_human(report)
+        if args.output:
+            print(f"__VISION_NAV_GNSS_DENIED_PLAN_CHECK__={Path(args.output).expanduser()}")
     if report.get("status") != "passed":
         raise SystemExit(1)
 

@@ -175,6 +175,9 @@ export interface SupportBundleFile {
     replay_gate_status?: "passed" | "failed" | "degraded" | string;
     replay_case_count?: number;
     gnss_denied_plan_status?: "passed" | "failed" | "degraded" | string;
+    gnss_denied_plan_check_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    gnss_denied_plan_check_report_count?: number;
+    gnss_denied_plan_check_missing_count?: number;
     px4_sitl_evidence_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
     px4_sitl_sample_count?: number;
     px4_sitl_prereq_status?: "passed" | "failed" | "degraded" | "not_checked" | "not_provided" | string;

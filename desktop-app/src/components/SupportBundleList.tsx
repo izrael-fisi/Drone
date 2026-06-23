@@ -1597,6 +1597,12 @@ export function SupportBundleList({
                     gnss prep {formatLabel(bundle.summary.gnss_denied_plan_status)}
                   </span>
                 )}
+                {bundle.summary.gnss_denied_plan_check_status && bundle.summary.gnss_denied_plan_check_status !== "not_provided" && (
+                  <span className={statusClass(bundle.summary.gnss_denied_plan_check_status)}>
+                    {statusIcon(bundle.summary.gnss_denied_plan_check_status)}
+                    gnss check {formatLabel(bundle.summary.gnss_denied_plan_check_status)}
+                  </span>
+                )}
                 {bundle.summary.px4_sitl_evidence_status && bundle.summary.px4_sitl_evidence_status !== "not_provided" && (
                   <span className={statusClass(bundle.summary.px4_sitl_evidence_status)}>
                     {statusIcon(bundle.summary.px4_sitl_evidence_status)}
@@ -1710,6 +1716,8 @@ export function SupportBundleList({
                   <span>elevation {bundle.summary.vertical_sanity_ready ? "ready" : formatLabel(bundle.summary.elevation_status)}</span>
                   <span>replay {formatLabel(bundle.summary.replay_gate_status)}</span>
                   <span>gnss prep {formatLabel(bundle.summary.gnss_denied_plan_status)}</span>
+                  <span>gnss check {formatLabel(bundle.summary.gnss_denied_plan_check_status)}</span>
+                  <span>gnss missing {bundle.summary.gnss_denied_plan_check_missing_count ?? 0}</span>
                   <span>px4 {formatLabel(bundle.summary.px4_sitl_evidence_status)}</span>
                   <span>px4 prereqs {formatLabel(bundle.summary.px4_sitl_prereq_status)}</span>
                   <span>px4 samples {bundle.summary.px4_sitl_sample_count ?? 0}</span>

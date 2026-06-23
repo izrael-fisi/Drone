@@ -35,6 +35,9 @@ pub struct SupportBundleSummary {
     pub replay_gate_status: Option<String>,
     pub replay_case_count: Option<u64>,
     pub gnss_denied_plan_status: Option<String>,
+    pub gnss_denied_plan_check_status: Option<String>,
+    pub gnss_denied_plan_check_report_count: Option<u64>,
+    pub gnss_denied_plan_check_missing_count: Option<u64>,
     pub px4_sitl_evidence_status: Option<String>,
     pub px4_sitl_sample_count: Option<u64>,
     pub px4_sitl_prereq_status: Option<String>,
@@ -5138,6 +5141,15 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
             .pointer("/replay_gates/case_count")
             .and_then(|value| value.as_u64()),
         gnss_denied_plan_status: gnss_denied_plan_summary_status(manifest),
+        gnss_denied_plan_check_status: json_string(
+            manifest.pointer("/gnss_denied_plan_checks/status"),
+        ),
+        gnss_denied_plan_check_report_count: manifest
+            .pointer("/gnss_denied_plan_checks/report_count")
+            .and_then(|value| value.as_u64()),
+        gnss_denied_plan_check_missing_count: manifest
+            .pointer("/gnss_denied_plan_checks/missing_check_count")
+            .and_then(|value| value.as_u64()),
         px4_sitl_evidence_status: json_string(manifest.pointer("/px4_sitl_evidence/status")),
         px4_sitl_sample_count: manifest
             .pointer("/px4_sitl_evidence/listener/sample_count")
@@ -5510,6 +5522,11 @@ mod tests {
                 "status": "passed",
                 "case_count": 3
             },
+            "gnss_denied_plan_checks": {
+                "status": "degraded",
+                "report_count": 1,
+                "missing_check_count": 2
+            },
             "px4_sitl_evidence": {
                 "status": "passed",
                 "listener": {
@@ -5635,6 +5652,12 @@ mod tests {
         assert_eq!(summary.replay_gate_status.as_deref(), Some("passed"));
         assert_eq!(summary.replay_case_count, Some(3));
         assert_eq!(summary.gnss_denied_plan_status.as_deref(), Some("passed"));
+        assert_eq!(
+            summary.gnss_denied_plan_check_status.as_deref(),
+            Some("degraded")
+        );
+        assert_eq!(summary.gnss_denied_plan_check_report_count, Some(1));
+        assert_eq!(summary.gnss_denied_plan_check_missing_count, Some(2));
         assert_eq!(summary.px4_sitl_evidence_status.as_deref(), Some("passed"));
         assert_eq!(summary.px4_sitl_sample_count, Some(2));
         assert_eq!(summary.px4_sitl_prereq_status.as_deref(), Some("failed"));

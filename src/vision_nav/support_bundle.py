@@ -82,6 +82,12 @@ def parse_args() -> argparse.Namespace:
         help="Field capture preflight JSON report. Can be repeated.",
     )
     parser.add_argument(
+        "--gnss-denied-plan-check",
+        action="append",
+        default=[],
+        help="GNSS-denied mission-prep check JSON report. Can be repeated.",
+    )
+    parser.add_argument(
         "--threshold-tuning-report",
         action="append",
         default=[],
@@ -1453,6 +1459,81 @@ def copy_field_capture_preflights(paths: list[str], support_dir: Path) -> dict[s
     }
 
 
+def summarize_gnss_denied_plan_check(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
+    check = report.get("check") if isinstance(report.get("check"), dict) else {}
+    mission_plan = report.get("mission_plan") if isinstance(report.get("mission_plan"), dict) else {}
+    return {
+        "path": str(report_path),
+        "status": report.get("status"),
+        "source_path": report.get("source_path"),
+        "mission_plan_path": mission_plan.get("path"),
+        "mission_plan_status": mission_plan.get("status"),
+        "message": check.get("message"),
+        "missing_checks": list(report.get("missing_checks") or []),
+        "failed_checks": list(report.get("failed_checks") or []),
+        "field_ready": report.get("field_ready") if isinstance(report.get("field_ready"), dict) else {},
+    }
+
+
+def copy_gnss_denied_plan_checks(paths: list[str], support_dir: Path) -> dict[str, Any]:
+    if not paths:
+        return {"status": "not_provided", "report_count": 0}
+
+    summary_dir = support_dir / "summaries" / "gnss_denied_plan_checks"
+    raw_dir = support_dir / "extras" / "gnss_denied_plan_checks"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    copied: list[dict[str, Any]] = []
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    issues: list[dict[str, str]] = []
+    for raw_path in paths:
+        source = Path(raw_path).expanduser()
+        if not source.exists():
+            missing.append(str(source))
+            issues.append({"severity": "error", "message": f"GNSS-denied plan check report is missing: {source}"})
+            continue
+        if source.is_dir():
+            copied.append(copy_tree(source, raw_dir / safe_relpath(source)))
+            json_files = sorted(source.rglob("*.json"))
+        else:
+            copied.append(copy_file(source, raw_dir / source.name))
+            json_files = [source]
+        for report_file in json_files:
+            try:
+                report = json.loads(report_file.read_text(errors="replace"))
+            except Exception as exc:
+                issues.append({"severity": "warning", "message": f"Could not parse GNSS-denied plan check {report_file}: {exc}"})
+                continue
+            if not isinstance(report, dict) or report.get("schema_version") != "vision_nav_gnss_denied_plan_check_v1":
+                continue
+            report_summary = summarize_gnss_denied_plan_check(report, report_path=report_file)
+            reports.append(report_summary)
+            output_name = f"{sanitize_filename(str(report_summary.get('status') or report_file.stem))}-{len(reports):02d}.json"
+            (summary_dir / output_name).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+
+    statuses = {str(report.get("status") or "").lower() for report in reports}
+    if missing or "failed" in statuses:
+        status = "failed"
+    elif not reports:
+        status = "degraded" if issues else "not_provided"
+    elif statuses.intersection({"degraded", "warming_up"}):
+        status = "degraded"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "report_count": len(reports),
+        "reports": reports,
+        "missing_check_count": sum(len(report.get("missing_checks") or []) for report in reports),
+        "failed_check_count": sum(len(report.get("failed_checks") or []) for report in reports),
+        "copied": copied,
+        "missing": missing,
+        "issues": issues,
+    }
+
+
 def summarize_threshold_tuning_report(report: dict[str, Any], *, report_path: Path) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     margins = {}
@@ -1934,6 +2015,7 @@ def create_support_bundle(
     field_evidence_report_paths: list[str] | None = None,
     field_collection_plan_paths: list[str] | None = None,
     field_capture_preflight_paths: list[str] | None = None,
+    gnss_denied_plan_check_paths: list[str] | None = None,
     threshold_tuning_report_paths: list[str] | None = None,
     rosbag_export_validation_paths: list[str] | None = None,
     rosbag2_cli_review_paths: list[str] | None = None,
@@ -2025,6 +2107,10 @@ def create_support_bundle(
         field_capture_preflight_paths or [],
         support_dir,
     )
+    gnss_denied_plan_checks = copy_gnss_denied_plan_checks(
+        gnss_denied_plan_check_paths or [],
+        support_dir,
+    )
     threshold_tuning = copy_threshold_tuning_reports(
         threshold_tuning_report_paths or [],
         support_dir,
@@ -2058,6 +2144,7 @@ def create_support_bundle(
         "field_evidence": field_evidence,
         "field_collection_plans": field_collection_plans,
         "field_capture_preflights": field_capture_preflights,
+        "gnss_denied_plan_checks": gnss_denied_plan_checks,
         "threshold_tuning": threshold_tuning,
         "rosbag_export_validations": rosbag_export_validations,
         "rosbag2_cli_reviews": rosbag2_cli_reviews,
@@ -2130,6 +2217,12 @@ def print_human(result: dict[str, Any]) -> None:
             "Field capture preflights: "
             f"{field_capture_preflights.get('status')} ({field_capture_preflights.get('report_count')} report(s))"
         )
+    gnss_denied_plan_checks = manifest.get("gnss_denied_plan_checks") or {}
+    if gnss_denied_plan_checks.get("status") not in {None, "not_provided"}:
+        print(
+            "GNSS-denied plan checks: "
+            f"{gnss_denied_plan_checks.get('status')} ({gnss_denied_plan_checks.get('report_count')} report(s))"
+        )
     threshold_tuning = manifest.get("threshold_tuning") or {}
     if threshold_tuning.get("status") not in {None, "not_provided"}:
         print(f"Threshold tuning: {threshold_tuning.get('status')} ({threshold_tuning.get('report_count')} report(s))")
@@ -2172,6 +2265,7 @@ def main() -> None:
         field_evidence_report_paths=args.field_evidence_report,
         field_collection_plan_paths=args.field_collection_plan,
         field_capture_preflight_paths=args.field_capture_preflight,
+        gnss_denied_plan_check_paths=args.gnss_denied_plan_check,
         threshold_tuning_report_paths=args.threshold_tuning_report,
         rosbag_export_validation_paths=args.rosbag_export_validation,
         rosbag2_cli_review_paths=args.rosbag2_cli_review,

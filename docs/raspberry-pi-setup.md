@@ -1047,6 +1047,10 @@ Use `VISION_NAV_MISSION_PLAN=/path/to/mission_plan.json` to inspect a copied
 Mission Planner JSON or QGroundControl `.plan` file directly. The checker is
 read-only: it reports missing or failed satellite-source, map reset, home reset,
 heading, and estimator-readiness fields, but it does not mark the plan ready.
+It also writes
+`~/DroneTransfer/outgoing/replay-cases/gnss_denied_plan_check.json` and emits
+`__VISION_NAV_GNSS_DENIED_PLAN_CHECK__=...`; `create_support_bundle.sh`
+auto-includes that diagnostic report when present.
 
 The gate checks terrain bundle health, Mission Planner GNSS-denied prep from
 the bundled mission JSON, runtime logs, replay gates, PX4 receiver evidence, and

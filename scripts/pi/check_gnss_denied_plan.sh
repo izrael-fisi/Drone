@@ -6,6 +6,7 @@ venv_python="${VISION_NAV_PYTHON:-$HOME/drone_vision_nav_venv/bin/python}"
 python_bin="$venv_python"
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
 plan="${VISION_NAV_MISSION_PLAN:-}"
+output="${VISION_NAV_GNSS_DENIED_PLAN_CHECK:-$HOME/DroneTransfer/outgoing/replay-cases/gnss_denied_plan_check.json}"
 
 if [[ ! -x "$python_bin" ]]; then
   python_bin="$(command -v python3 || true)"
@@ -21,5 +22,8 @@ if [[ -n "$plan" ]]; then
 else
   args+=(--bundle "$bundle")
 fi
+
+mkdir -p "$(dirname "$output")"
+args+=(--output "$output")
 
 PYTHONPATH="$repo_root/src" "$python_bin" "${args[@]}"

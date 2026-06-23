@@ -10,6 +10,7 @@ feature_method_benchmark="${VISION_NAV_FEATURE_METHOD_BENCHMARK:-$HOME/DroneTran
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json}"
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.json}"
 field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-$HOME/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json}"
+gnss_denied_plan_check="${VISION_NAV_GNSS_DENIED_PLAN_CHECK:-$HOME/DroneTransfer/outgoing/replay-cases/gnss_denied_plan_check.json}"
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
 rosbag_export_validation="${VISION_NAV_ROSBAG_EXPORT_VALIDATION:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag-jsonl-validation.json}"
 rosbag2_cli_review="${VISION_NAV_ROSBAG2_CLI_REVIEW:-$HOME/DroneTransfer/outgoing/terrain-match/rosbag2-cli-review.json}"
@@ -185,6 +186,10 @@ fi
 
 if [[ -n "$field_capture_preflight" && -e "$field_capture_preflight" ]]; then
   args+=(--field-capture-preflight "$field_capture_preflight")
+fi
+
+if [[ -n "$gnss_denied_plan_check" && -e "$gnss_denied_plan_check" ]]; then
+  args+=(--gnss-denied-plan-check "$gnss_denied_plan_check")
 fi
 
 if [[ -n "$threshold_tuning_report" && -e "$threshold_tuning_report" ]]; then

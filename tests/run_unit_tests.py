@@ -2279,6 +2279,8 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
         root = Path(tmp)
         bundle = create_minimal_terrain_bundle(root, include_elevation=True)
         write_ready_gnss_denied_mission_plan(bundle)
+        gnss_denied_plan_check = root / "gnss_denied_plan_check.json"
+        gnss_denied_plan_check.write_text(json.dumps(evaluate_gnss_denied_plan(bundle_path=bundle)))
         flat_elevation = np.zeros((60, 100), dtype=np.float32)
         write_scalar_float_tiff(bundle / "elevation" / "dem.tif", flat_elevation)
         write_scalar_float_tiff(bundle / "elevation" / "dsm.tif", flat_elevation)
@@ -2887,6 +2889,7 @@ RC8_OPTION,90
             field_evidence_report_paths=[str(field_evidence_report)],
             field_collection_plan_paths=[str(field_collection_plan)],
             field_capture_preflight_paths=[str(field_capture_preflight)],
+            gnss_denied_plan_check_paths=[str(gnss_denied_plan_check)],
             threshold_tuning_report_paths=[str(threshold_tuning_report)],
             rosbag_export_validation_paths=[str(rosbag_export_validation)],
             rosbag2_cli_review_paths=[str(rosbag2_cli_review)],
@@ -2929,6 +2932,7 @@ RC8_OPTION,90
             "summaries/field_evidence/field_manifest-01.json",
             "summaries/field_collection_plans/field_manifest-01.json",
             "summaries/field_capture_preflights/good_texture-01.json",
+            "summaries/gnss_denied_plan_checks/passed-01.json",
             "summaries/threshold_tuning/field_manifest-01.json",
             "summaries/rosbag_export_validations/vision_nav_rosbag_jsonl_v1-01.json",
             "summaries/rosbag2_cli_reviews/rosbag2-native-01.json",
@@ -2950,6 +2954,7 @@ RC8_OPTION,90
             "extras/feature_method_benchmarks/feature-method-bench/unit-method-benchmark.json",
             "extras/field_evidence/field_evidence_report.json",
             "extras/field_capture_preflights/field_capture_preflight.json",
+            "extras/gnss_denied_plan_checks/gnss_denied_plan_check.json",
             "extras/threshold_tuning/threshold_tuning_report.json",
             "extras/rosbag_export_validations/rosbag-jsonl-validation.json",
             "extras/rosbag2_cli_reviews/rosbag2-cli-review.json",
@@ -2959,6 +2964,8 @@ RC8_OPTION,90
         manifest = json.loads(Path(result["manifest_path"]).read_text())
         assert_equal(manifest["bundle"]["mission_plan"]["status"], "loaded", "support mission plan loaded")
         assert_equal(manifest["bundle"]["mission_plan"]["gnss_denied"]["status"], "ready", "support gnss denied status")
+        assert_equal(manifest["gnss_denied_plan_checks"]["status"], "passed", "support gnss plan check status")
+        assert_equal(manifest["gnss_denied_plan_checks"]["report_count"], 1, "support gnss plan check count")
         assert_equal(manifest["logs"]["summaries"][0]["accepted_rate"], 1.0, "support log accepted rate")
         assert_equal(
             manifest["logs"]["auto_added_field_collection_log_count"],
