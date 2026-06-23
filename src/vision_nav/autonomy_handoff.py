@@ -93,6 +93,11 @@ def render_handoff_markdown(report: dict[str, Any], *, report_path: str | Path |
         lines.extend(["", "## PX4 Capture Prerequisites", ""])
         lines.extend(px4_prereq_diagnostic_lines(px4_prereqs))
 
+    field_preflight = field_capture_preflight_diagnostic(report)
+    if field_preflight is not None:
+        lines.extend(["", "## Field Capture Preflight", ""])
+        lines.extend(field_capture_preflight_diagnostic_lines(field_preflight))
+
     field_plan = load_field_collection_plan(report, report_path=report_path)
     if field_plan is not None:
         lines.extend(["", "## Field Collection Plan", ""])
@@ -440,6 +445,77 @@ def px4_prereq_diagnostic_lines(px4_prereqs: dict[str, Any]) -> list[str]:
             label = format_cell(item.get("label") or item.get("condition") or "command")
             command = str(item.get("command") or "")
             lines.extend([f"- {label}", f"  ```bash", f"  {command}", "  ```"])
+    return lines
+
+
+def field_capture_preflight_diagnostic(report: dict[str, Any]) -> dict[str, Any] | None:
+    diagnostics = report.get("diagnostics") if isinstance(report.get("diagnostics"), dict) else {}
+    field_preflight = diagnostics.get("field_capture_preflight")
+    if not isinstance(field_preflight, dict) or field_preflight.get("status") == "not_provided":
+        return None
+    return field_preflight
+
+
+def field_capture_preflight_diagnostic_lines(field_preflight: dict[str, Any]) -> list[str]:
+    lines = [
+        f"- Status: {format_cell(field_preflight.get('status'))}",
+        f"- Report: {format_cell(field_preflight.get('path'))}",
+        f"- Condition: {format_cell(field_preflight.get('condition'))}",
+        f"- Ready for capture: {format_cell(field_preflight.get('ready_for_capture'))}",
+        f"- Ready for registration: {format_cell(field_preflight.get('ready_for_registration'))}",
+        f"- Bundle: {format_cell(field_preflight.get('bundle_path'))}",
+        f"- Capture output: {format_cell(field_preflight.get('capture_output_dir'))}",
+        f"- Runtime status: {format_cell(field_preflight.get('runtime_status_path'))}",
+    ]
+    if field_preflight.get("capture_script_path"):
+        lines.append(f"- Capture script: {format_cell(field_preflight.get('capture_script_path'))}")
+    if field_preflight.get("capture_script_hint"):
+        lines.append(f"- Capture script hint: {format_cell(field_preflight.get('capture_script_hint'))}")
+
+    checks = [
+        item
+        for item in [
+            *dict_items(field_preflight.get("failed_checks")),
+            *dict_items(field_preflight.get("degraded_checks")),
+        ]
+        if item.get("status") != "passed"
+    ]
+    if checks:
+        lines.extend(
+            [
+                "",
+                *table(
+                    ["Check", "Status", "Message"],
+                    [
+                        [
+                            item.get("name"),
+                            item.get("status"),
+                            item.get("message"),
+                        ]
+                        for item in checks
+                    ],
+                ),
+            ]
+        )
+
+    actions = dict_items(field_preflight.get("next_actions"))
+    if actions:
+        lines.extend(["", "Preflight next actions:", ""])
+        for action in actions:
+            title = format_cell(action.get("title") or action.get("id") or "action")
+            status = format_cell(action.get("status"))
+            lines.append(f"- [ ] {title} ({status})")
+            if action.get("desktop_action"):
+                lines.append(f"  - App: {format_cell(action.get('desktop_action'))}")
+            if action.get("command"):
+                lines.extend(["  - Command:", "    ```bash", f"    {action.get('command')}", "    ```"])
+            if action.get("capture_script_path"):
+                lines.append(f"  - Capture script: {format_cell(action.get('capture_script_path'))}")
+            if action.get("capture_script_hint"):
+                lines.append(f"  - Capture script hint: {format_cell(action.get('capture_script_hint'))}")
+            waits_on = action.get("waits_on")
+            if isinstance(waits_on, list) and waits_on:
+                lines.append(f"  - Waits on: {join_values(waits_on)}")
     return lines
 
 

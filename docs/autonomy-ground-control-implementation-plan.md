@@ -1437,6 +1437,9 @@ Status:
 - Done: evidence-package workflow summaries now preserve that capture-script
   hint in both next-step and non-passing-step records, so shared ZIP manifests
   do not lose the rerun-preflight instruction.
+- Done: autonomy Markdown handoffs now include a Field Capture Preflight section
+  with readiness, failed/degraded checks, next actions, and capture-script
+  guidance so operators do not need to open raw JSON for preflight context.
 - Done: Module Setup lists downloaded autonomy-readiness JSON reports from
   `~/DroneTransfer/from-pi/replay-cases/` with pass/degraded/fail counts and
   the support-bundle, PX4 receiver, field-evidence, feature-benchmark, and

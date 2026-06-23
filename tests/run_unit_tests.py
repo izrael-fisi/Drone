@@ -6489,6 +6489,29 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
             raise AssertionError("autonomy handoff missing PX4 prereq diagnostics")
         if "px4_autopilot_dir" not in handoff:
             raise AssertionError("autonomy handoff missing PX4 prereq failed check")
+        diagnostic_handoff = render_handoff_markdown(missing_proof_ready)
+        if "## Field Capture Preflight" not in diagnostic_handoff:
+            raise AssertionError("autonomy handoff missing field preflight diagnostics")
+        if "Mission bundle is missing." not in diagnostic_handoff:
+            raise AssertionError("autonomy handoff missing field preflight failed check")
+        if "Preflight next actions:" not in diagnostic_handoff:
+            raise AssertionError("autonomy handoff missing field preflight next actions")
+        scriptless_handoff_report = json.loads(json.dumps(missing_proof_ready))
+        scriptless_field_preflight = scriptless_handoff_report["diagnostics"]["field_capture_preflight"]
+        scriptless_field_preflight["status"] = "degraded"
+        scriptless_field_preflight["ready_for_capture"] = True
+        scriptless_field_preflight["failed_checks"] = []
+        scriptless_field_preflight["capture_script_path"] = None
+        scriptless_field_preflight["capture_script_hint"] = (
+            "Rerun field capture preflight to generate run_field_capture.sh for this capture-ready condition."
+        )
+        for action in scriptless_field_preflight.get("next_actions", []):
+            if action.get("id") == "capture_field_terrain_log":
+                action["status"] = "ready"
+                action["capture_script_hint"] = scriptless_field_preflight["capture_script_hint"]
+        scriptless_handoff = render_handoff_markdown(scriptless_handoff_report)
+        if "Capture script hint: Rerun field capture preflight" not in scriptless_handoff:
+            raise AssertionError("autonomy handoff should preserve field preflight capture-script hints")
         if "## Field Collection Plan" not in handoff:
             raise AssertionError("autonomy handoff field collection plan")
         if "## Plan Source Snapshot" not in handoff:
