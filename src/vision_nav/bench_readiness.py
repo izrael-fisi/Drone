@@ -30,10 +30,13 @@ BENCH_NEXT_ACTIONS = {
         "notes": "The support bundle must include passing terrain bundle health before bench readiness can pass.",
     },
     "gnss_denied_plan": {
-        "title": "Complete GNSS-denied mission prep before rebuilding the bundle.",
-        "desktop_action": "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
+        "title": "Complete GNSS-denied mission prep and validate the bundle.",
+        "desktop_action": "Mission Planner > GNSS-Denied Prep, Build or Validate Bundle, then Bench Report",
         "command": GNSS_DENIED_BUNDLE_COMMAND,
-        "notes": "Rebuild the bundle after satellite source, map reset, home reset, heading, and estimator checks are ready.",
+        "notes": (
+            "Run the GNSS-denied checks and validate an already built bundle; rebuild or upload only if mission-prep "
+            "changes need to be repackaged."
+        ),
     },
     "runtime_logs": {
         "title": "Capture a terrain runtime log.",
@@ -594,7 +597,10 @@ def action_targets_gnss_denied_plan(action: dict[str, Any]) -> bool:
     return (
         action.get("check") == "gnss_denied_plan"
         or action.get("bench_subcheck") == "gnss_denied_plan"
+        or action.get("id") == "prepare_gnss_denied_bundle"
+        # Legacy saved-report action label from before validate-first wording.
         or action.get("desktop_action") == "Mission Planner > GNSS-Denied Prep, Build Bundle, Upload Bundle"
+        or action.get("desktop_action") == "Mission Planner > GNSS-Denied Prep, Build or Validate Bundle"
     )
 
 

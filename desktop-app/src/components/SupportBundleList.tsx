@@ -208,10 +208,10 @@ const BENCH_FOLLOW_UPS: Record<string, { title: string; desktopAction: string; c
     notes: "The support bundle must include passing terrain bundle health before bench readiness can pass.",
   },
   gnss_denied_plan: {
-    title: "Complete GNSS-denied mission prep",
-    desktopAction: "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
+    title: "Complete GNSS-denied mission prep and validate the bundle",
+    desktopAction: "Mission Planner > GNSS-Denied Prep, Build or Validate Bundle, then Bench Report",
     command: "./scripts/pi/check_gnss_denied_plan.sh && ./scripts/pi/validate_terrain_bundle.sh",
-    notes: "Rebuild the bundle after satellite source, map reset, home reset, heading, and estimator checks are ready.",
+    notes: "Validate an already built bundle; rebuild or upload only if mission-prep changes need to be repackaged.",
   },
   runtime_logs: {
     title: "Capture a terrain runtime log",

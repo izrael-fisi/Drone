@@ -110,10 +110,14 @@ STRICT_SUPPORT_BUNDLE_INPUTS = [
 ]
 STRICT_SUPPORT_BUNDLE_ACTIONS = [
     {
-        "label": "Prepare the GNSS-denied mission bundle.",
-        "desktop_action": "Mission Planner > GNSS-Denied Prep, Build Bundle, Upload Bundle",
+        "id": "prepare_gnss_denied_bundle",
+        "label": "Prepare and validate the GNSS-denied mission bundle.",
+        "desktop_action": "Mission Planner > GNSS-Denied Prep, Build or Validate Bundle",
         "command": GNSS_DENIED_BUNDLE_COMMAND,
-        "notes": "The support bundle must include terrain bundle health plus GNSS-denied mission metadata.",
+        "notes": (
+            "The support bundle must include terrain bundle health plus GNSS-denied mission metadata. "
+            "Validate an already built bundle; rebuild or upload only after mission-prep changes."
+        ),
     },
     {
         "label": "Run field capture preflight.",
@@ -1358,10 +1362,14 @@ def next_actions_for_bench_subchecks(
             "notes": "The support bundle must include passing terrain bundle health before bench readiness can pass.",
         },
         "gnss_denied_plan": {
-            "title": "Complete GNSS-denied mission prep before rebuilding the bundle.",
-            "desktop_action": "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
+            "title": "Complete GNSS-denied mission prep and validate the bundle.",
+            "desktop_action": "Mission Planner > GNSS-Denied Prep, Build or Validate Bundle, then Bench Report",
             "command": GNSS_DENIED_BUNDLE_COMMAND,
-            "notes": "The support bundle must include a Mission Planner export with satellite source disabled, map reset, home reset, heading, and estimator readiness all marked complete.",
+            "notes": (
+                "The support bundle must include a Mission Planner export with satellite source disabled, map reset, "
+                "home reset, heading, and estimator readiness all marked complete. Validate an existing bundle; "
+                "rebuild or upload only if mission prep changed the bundle contents."
+            ),
         },
         "runtime_logs": {
             "title": "Run the terrain runtime before creating the bench report.",
@@ -1591,7 +1599,7 @@ def strict_support_bundle_actions(field_next_condition: dict[str, Any] | None = 
             )
         elif action.get("desktop_action") == "Module Setup > Field Capture Preflight":
             enrich_action_with_field_preflight(action, field_next_condition)
-        elif action.get("desktop_action") == "Mission Planner > GNSS-Denied Prep, Build Bundle, Upload Bundle":
+        elif action.get("id") == "prepare_gnss_denied_bundle":
             enrich_action_with_field_bundle(action, field_next_condition)
     return actions
 

@@ -6181,7 +6181,7 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
         assert_equal(len(gnss_actions), 1, "autonomy readiness gnss denied plan next action")
         assert_equal(
             gnss_actions[0]["desktop_action"],
-            "Mission Planner > GNSS-Denied Prep, then Build/Upload Bundle and Bench Report",
+            "Mission Planner > GNSS-Denied Prep, Build or Validate Bundle, then Bench Report",
             "autonomy readiness gnss denied desktop action",
         )
         if "check_gnss_denied_plan.sh" not in gnss_actions[0].get("command", ""):

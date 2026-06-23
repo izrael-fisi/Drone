@@ -370,8 +370,9 @@ Status:
   readiness so stale or incomplete mission prep fails the bench report.
 - Done: final autonomy-readiness reports expand failed `gnss_denied_plan`
   bench subchecks into a Mission Planner-specific next action, so operators know
-  to complete GNSS-denied prep, rebuild/upload the bundle, and recreate the
-  bench report.
+  to complete GNSS-denied prep, validate an existing bundle or rebuild/upload
+  only when mission-prep changes need repackaging, and recreate the bench
+  report.
 - Done: `vision-nav-check-gnss-denied-plan` and
   `scripts/pi/check_gnss_denied_plan.sh` provide a read-only preflight for the
   selected mission bundle or copied mission plan, reporting missing or failed
