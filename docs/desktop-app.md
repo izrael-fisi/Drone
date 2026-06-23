@@ -460,6 +460,10 @@ from the newest downloaded plan, so the operator can move from `Create Plan` to
 metadata entry without scrolling through the plan list. Loading a condition only
 prepares the form; proof is created after the field case is captured and
 registered.
+The same Field Evidence Case panel has a `Validate Bundle` action. It runs the
+current field bundle validation command over SSH, preferring the
+`bundle_validation_command` from the latest downloaded preflight report when one
+exists, and saved setup reports record the exact command shown to the operator.
 When the all-in-one Evidence Workflow runs without an explicit field case, it
 also auto-loads the plan's next pending condition, captures into that
 condition-specific output folder, and uses the matching terrain log path for

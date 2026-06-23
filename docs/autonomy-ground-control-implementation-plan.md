@@ -523,6 +523,10 @@ Status:
   runs `scripts/pi/preflight_field_capture.sh` over SSH for the selected or next
   field condition, downloads `field_capture_preflight.json`, and keeps the JSON
   available for support bundles and local readiness re-audits.
+- Done: Module Setup now exposes a direct Validate Bundle action in the Field
+  Evidence Case panel, using the latest preflight-reported
+  `bundle_validation_command` when available and preserving that command in saved
+  setup reports.
 - Done: Module Setup now parses the downloaded field-capture preflight report
   into a compact operator summary with capture and registration readiness,
   failed or degraded checks, active bundle/log/runtime-status paths, and

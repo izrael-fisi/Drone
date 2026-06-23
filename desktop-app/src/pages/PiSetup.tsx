@@ -789,6 +789,18 @@ function fieldCapturePreflightCommand(remoteProject: string, fieldCase: FieldCas
   return `cd ${shellQuote(remoteProject)} && ${env}./scripts/pi/preflight_field_capture.sh`;
 }
 
+function fieldBundleValidationCommand(
+  remoteProject: string,
+  remoteBundle: string,
+  preflightReport?: FieldCapturePreflightReport | null,
+) {
+  const reportedCommand = preflightReport?.bundle_validation_command?.trim();
+  const command =
+    reportedCommand ||
+    `VISION_NAV_BUNDLE=${shellQuote(preflightReport?.bundle_path ?? remoteBundle)} ./scripts/pi/validate_terrain_bundle.sh`;
+  return command.startsWith("cd ") ? command : `cd ${shellQuote(remoteProject)} && ${command}`;
+}
+
 function fieldMetadataUpdateCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {
   const condition = firstFieldCondition(fieldCase.conditions);
   const captureMetadata = JSON.stringify(fieldCaptureMetadata(remoteBundle, fieldCase));
@@ -4815,6 +4827,40 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const runFieldBundleValidation = async () => {
+    const resolvedAuth = auth();
+    if (!resolvedAuth || !form.host) {
+      setError("Connect to the module over SSH before validating the terrain bundle.");
+      return;
+    }
+    const validationCommand = fieldBundleValidationCommand(remoteProject, remoteBundle, fieldCapturePreflightReport);
+    setRunningStep("field-bundle-validation");
+    setError(null);
+    setResult("field-bundle-validation", {
+      status: "running",
+      output: `$ validate field bundle\n${validationCommand}\n`,
+    });
+    try {
+      const result = await cmd.sshRunCommand(
+        form.host,
+        form.port,
+        form.username,
+        resolvedAuth,
+        validationCommand,
+      );
+      const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+      setResult("field-bundle-validation", {
+        status: result.exit_code === 0 ? "passed" : "failed",
+        output: `$ validate field bundle\n${validationCommand}\n\n${output || "(no output)"}\n[exit ${result.exit_code}]`,
+        exitCode: result.exit_code,
+      });
+    } catch (err) {
+      setResult("field-bundle-validation", { status: "failed", output: `$ validate field bundle\nERROR: ${err}` });
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const runAutonomyReadiness = async () => {
     const resolvedAuth = auth();
     if (!resolvedAuth || !form.host) {
@@ -6459,6 +6505,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         metadata_ready: fieldMetadataReady,
         metadata_issues: fieldMetadataIssues,
       },
+      field_bundle_validation_command: fieldPreflightBundleValidationCommand,
       mission_planner_handoff: activeHandoff,
       local: {
         repo_path: repoPath,
@@ -6649,6 +6696,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const fieldPreflightCanRunCapture =
     fieldCapturePreflightReport?.ready_for_capture === true &&
     fieldPreflightCaptureCommandSource !== "direct field log capture";
+  const fieldPreflightBundleValidationCommand = fieldBundleValidationCommand(
+    remoteProject,
+    remoteBundle,
+    fieldCapturePreflightReport,
+  );
 
   return (
     <div className={cn(embedded ? "space-y-5" : "p-6 space-y-6 animate-fade-in")}>
@@ -7116,6 +7168,15 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                   >
                     {runningStep === "field-collection-plan" ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />}
                     Create Plan
+                  </button>
+                  <button
+                    onClick={runFieldBundleValidation}
+                    disabled={!connectionReady || !!runningStep}
+                    className="btn-secondary text-xs py-1 px-3"
+                    title={fieldPreflightBundleValidationCommand}
+                  >
+                    {runningStep === "field-bundle-validation" ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />}
+                    Validate Bundle
                   </button>
                   <button
                     onClick={runFieldCapturePreflight}

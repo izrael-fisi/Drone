@@ -524,6 +524,10 @@ field evidence. When the default preflight report exists,
 publishes the parseable report under `summaries/field_capture_preflights/`, and
 rolls up readiness flags, failed/degraded checks, and next-action counts in
 `support_manifest.json`.
+In the same desktop panel, `Validate Bundle` runs the selected field bundle
+validation command over SSH. When a preflight report has already been downloaded,
+the app uses that report's `bundle_validation_command`; otherwise it validates
+the current runtime bundle path.
 The Field Evidence Case form keeps a local desktop draft with a visible
 saved-at timestamp and Reset Draft action, and saved setup reports include the
 draft's metadata-readiness status so support can see whether registration was
