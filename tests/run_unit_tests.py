@@ -4106,6 +4106,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             "workflow validation should prefer refreshed runtime status path",
         )
         assert_equal(
+            stale_preflight_ready_validation["next_required_step"]["field_log_capture_report"],
+            str(ready_preflight_capture_output / "field_log_capture_report.json"),
+            "workflow validation should derive refreshed field log capture report path",
+        )
+        assert_equal(
             stale_preflight_ready_validation["next_required_step"]["capture_script_path"],
             str(ready_preflight_capture_script),
             "workflow validation should prefer refreshed capture script path",
@@ -4131,6 +4136,11 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             capture_detail["runtime_status_path"],
             str(ready_preflight_capture_output / "runtime_status.json"),
             "workflow validation active capture blocker runtime status",
+        )
+        assert_equal(
+            capture_detail["field_log_capture_report"],
+            str(ready_preflight_capture_output / "field_log_capture_report.json"),
+            "workflow validation active capture blocker field log capture report",
         )
         assert_equal(
             capture_detail["bundle_path"],
@@ -4233,7 +4243,7 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CONDITION__"] = "good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_FIELD_SELECTED_CASE__"] = "dronecompute-test-area-good_texture"
         capture_blocked_report["markers"]["__VISION_NAV_EXPECTED_TERRAIN_LOG__"] = str(capture_output_dir / "terrain_matches.jsonl")
-        capture_blocked_report["markers"]["__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__"] = str(workflow_field_log_capture_report)
+        capture_blocked_report["markers"].pop("__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__", None)
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE__"] = str(missing_bundle_path)
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_BUNDLE_STATUS__"] = "missing"
         capture_blocked_report["markers"]["__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__"] = str(capture_output_dir)

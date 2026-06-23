@@ -991,6 +991,7 @@ grep -q "bundle: /tmp/mission_bundle" "$scanned_goal_status_output"
 grep -q "expected log: /tmp/field-captures/good_texture/terrain_matches.jsonl" "$scanned_goal_status_output"
 grep -q "output: /tmp/field-captures/good_texture" "$scanned_goal_status_output"
 grep -q "runtime status: /tmp/field-captures/good_texture/runtime_status.json" "$scanned_goal_status_output"
+grep -q "field log capture report: /tmp/field-captures/good_texture/field_log_capture_report.json" "$scanned_goal_status_output"
 grep -q "after bundle: VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && VISION_NAV_RUNTIME_STATUS_ROOTS=/tmp/field-captures/good_texture ./scripts/pi/read_runtime_status.sh" "$scanned_goal_status_output"
 grep -q "notes: The guided workflow creates or loads the field collection plan, captures the next pending condition" "$scanned_goal_status_output"
 python3 - "$scanned_goal_status_output" <<'PY'

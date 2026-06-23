@@ -425,6 +425,21 @@ def command_with_runtime_status_root(command, output_dir):
     return command.replace("./scripts/pi/read_runtime_status.sh", read_command)
 
 
+def field_log_capture_report_path(item):
+    if not isinstance(item, dict):
+        return ""
+    existing = item.get("field_log_capture_report")
+    if isinstance(existing, str) and existing.strip():
+        return existing.strip()
+    output_dir = item.get("output_dir")
+    if isinstance(output_dir, str) and output_dir.strip():
+        return f"{output_dir.strip().rstrip('/')}/field_log_capture_report.json"
+    runtime_status = item.get("runtime_status_path") or item.get("required_runtime_status")
+    if isinstance(runtime_status, str) and runtime_status.strip().endswith("/runtime_status.json"):
+        return f"{runtime_status.strip()[:-len('/runtime_status.json')]}/field_log_capture_report.json"
+    return ""
+
+
 def order_field_conditions(values):
     values = unique_ordered(values)
     known = [condition for condition in REQUIRED_FIELD_CONDITIONS if condition in values]
@@ -755,8 +770,9 @@ if workflow_validation:
                 print(f"  output: {next_step.get('output_dir')}")
             if next_step.get("runtime_status_path"):
                 print(f"  runtime status: {next_step.get('runtime_status_path')}")
-            if next_step.get("field_log_capture_report"):
-                print(f"  field log capture report: {next_step.get('field_log_capture_report')}")
+            field_log_report = field_log_capture_report_path(next_step)
+            if field_log_report:
+                print(f"  field log capture report: {field_log_report}")
             if next_step.get("preflight_report"):
                 print(f"  preflight report: {next_step.get('preflight_report')}")
             if next_step.get("preflight_status"):
@@ -853,8 +869,9 @@ if workflow_validation:
                         print(f"  output: {step.get('output_dir')}")
                     if step.get("runtime_status_path"):
                         print(f"  runtime status: {step.get('runtime_status_path')}")
-                    if step.get("field_log_capture_report"):
-                        print(f"  field log capture report: {step.get('field_log_capture_report')}")
+                    field_log_report = field_log_capture_report_path(step)
+                    if field_log_report:
+                        print(f"  field log capture report: {field_log_report}")
                     if step.get("capture_script_path"):
                         print(f"  capture script: {step.get('capture_script_path')}")
                     if step.get("capture_script_hint"):
@@ -898,8 +915,9 @@ if workflow_validation:
                         print(f"  required log: {step.get('required_log')}")
                     if step.get("required_runtime_status"):
                         print(f"  required runtime status: {step.get('required_runtime_status')}")
-                    if step.get("field_log_capture_report"):
-                        print(f"  field log capture report: {step.get('field_log_capture_report')}")
+                    field_log_report = field_log_capture_report_path(step)
+                    if field_log_report:
+                        print(f"  field log capture report: {field_log_report}")
                     if step.get("notes"):
                         print(f"  notes: {step.get('notes')}")
                     if step.get("guidance"):

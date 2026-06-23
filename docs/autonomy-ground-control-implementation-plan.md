@@ -1488,6 +1488,10 @@ Status:
   and evidence packages now preserve the Pi-side
   `field_log_capture_report.json` path for active and non-passing field-capture
   steps, keeping support handoffs tied to the capture audit artifact.
+- Done: workflow validation and goal-status output now derive
+  `field_log_capture_report.json` from the capture output directory when older
+  workflow artifacts lack the explicit marker, so stale runbooks still point to
+  the expected audit artifact.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

@@ -591,10 +591,16 @@ def annotate_terrain_log_dependency(step: dict[str, Any], markers: dict[str, Any
     if isinstance(markers, dict):
         expected_log = marker_string(markers, EXPECTED_TERRAIN_LOG_MARKER)
         output_dir = marker_string(markers, TERRAIN_CAPTURE_OUTPUT_DIR_MARKER)
+        field_log_capture_report = marker_string(markers, FIELD_LOG_CAPTURE_REPORT_MARKER)
         if expected_log:
             step["required_log"] = expected_log
         if output_dir:
             step["required_runtime_status"] = runtime_status_path_for_output(output_dir)
+            step["field_log_capture_report"] = (
+                field_log_capture_report or field_log_capture_report_path_for_output(output_dir)
+            )
+        elif field_log_capture_report:
+            step["field_log_capture_report"] = field_log_capture_report
     step["guidance"] = (
         "This workflow step waits for a parseable terrain log and runtime_status.json; "
         "capture those artifacts before rerunning this step."
@@ -664,6 +670,9 @@ def annotate_capture_step_from_current_preflight(
         output_dir_text = output_dir.strip()
         step["output_dir"] = output_dir_text
         step["runtime_status_path"] = str(report.get("runtime_status_path") or runtime_status_path_for_output(output_dir_text))
+        step["field_log_capture_report"] = str(
+            report.get("field_log_capture_report") or field_log_capture_report_path_for_output(output_dir_text)
+        )
     elif isinstance(report.get("runtime_status_path"), str) and report["runtime_status_path"].strip():
         step["runtime_status_path"] = report["runtime_status_path"].strip()
     capture_command = report.get("capture_command")
@@ -853,11 +862,14 @@ def apply_preflight_marker_guidance(summary: dict[str, Any], markers: dict[str, 
         summary["bundle_path"] = bundle_path
     if expected_log:
         summary["expected_log"] = expected_log
-    if field_log_capture_report:
-        summary["field_log_capture_report"] = field_log_capture_report
     if output_dir:
         summary["output_dir"] = output_dir
         summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)
+        summary["field_log_capture_report"] = (
+            field_log_capture_report or field_log_capture_report_path_for_output(output_dir)
+        )
+    elif field_log_capture_report:
+        summary["field_log_capture_report"] = field_log_capture_report
     if capture_command:
         summary["capture_command_after_preflight"] = command_with_runtime_status_read(
             capture_command,
@@ -905,8 +917,14 @@ def apply_current_preflight_report_guidance(summary: dict[str, Any], markers: di
         summary["expected_log"] = expected_log.strip()
     output_dir = report.get("capture_output_dir")
     if isinstance(output_dir, str) and output_dir.strip():
-        summary["output_dir"] = output_dir.strip()
-        summary["runtime_status_path"] = str(report.get("runtime_status_path") or runtime_status_path_for_output(output_dir))
+        output_dir_text = output_dir.strip()
+        summary["output_dir"] = output_dir_text
+        summary["runtime_status_path"] = str(
+            report.get("runtime_status_path") or runtime_status_path_for_output(output_dir_text)
+        )
+        summary["field_log_capture_report"] = str(
+            report.get("field_log_capture_report") or field_log_capture_report_path_for_output(output_dir_text)
+        )
     elif isinstance(report.get("runtime_status_path"), str) and report["runtime_status_path"].strip():
         summary["runtime_status_path"] = report["runtime_status_path"].strip()
     capture_command = report.get("capture_command")
@@ -975,11 +993,14 @@ def apply_capture_marker_guidance(summary: dict[str, Any], markers: dict[str, An
         summary["preflight_capture_command"] = preflight_capture_command
     if expected_log:
         summary["expected_log"] = expected_log
-    if field_log_capture_report:
-        summary["field_log_capture_report"] = field_log_capture_report
     if output_dir:
         summary["output_dir"] = output_dir
         summary["runtime_status_path"] = runtime_status_path_for_output(output_dir)
+        summary["field_log_capture_report"] = (
+            field_log_capture_report or field_log_capture_report_path_for_output(output_dir)
+        )
+    elif field_log_capture_report:
+        summary["field_log_capture_report"] = field_log_capture_report
     if bundle_path:
         summary["bundle_path"] = bundle_path
     if metadata_update_command:
@@ -1131,6 +1152,10 @@ def shell_env_value(value: Any) -> str:
 
 def runtime_status_path_for_output(output_dir: str) -> str:
     return f"{output_dir.rstrip('/')}/runtime_status.json"
+
+
+def field_log_capture_report_path_for_output(output_dir: str) -> str:
+    return f"{output_dir.rstrip('/')}/field_log_capture_report.json"
 
 
 def marker_presence(
