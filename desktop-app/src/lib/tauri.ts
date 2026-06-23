@@ -12,6 +12,7 @@ import type {
   FieldCollectionPlanFile,
   FieldEvidenceReportFile,
   FieldEvidenceTemplateFile,
+  FieldLogCaptureReportFile,
   FeatureMethodBenchmarkReportFile,
   ImportElevationAssetsRequest,
   ImportElevationAssetsResult,
@@ -147,6 +148,8 @@ export const cmd = {
     invoke<Px4ReceiverReportFile[]>("list_px4_receiver_reports", { dir }),
   listRosbagExportValidationReports: (dir: string) =>
     invoke<RosbagExportValidationReportFile[]>("list_rosbag_export_validation_reports", { dir }),
+  listFieldLogCaptureReports: (dir: string) =>
+    invoke<FieldLogCaptureReportFile[]>("list_field_log_capture_reports", { dir }),
   listThresholdTuningReports: (dir: string) =>
     invoke<ThresholdTuningReportFile[]>("list_threshold_tuning_reports", { dir }),
   listSupportBundles: (dir: string) => invoke<SupportBundleFile[]>("list_support_bundles", { dir }),

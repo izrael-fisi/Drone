@@ -1248,6 +1248,37 @@ export interface RosbagExportValidationReportFile {
   };
 }
 
+export interface FieldLogCaptureReportFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_unix_ms?: number;
+  report: {
+    status?: "passed" | "failed" | "degraded" | string;
+    generated_at_utc?: string;
+    host?: string;
+    device_name?: string;
+    command_source?: string;
+    command?: string;
+    exit_code?: number;
+    case_name?: string;
+    expected?: "good_map" | "degraded" | "wrong_map" | string;
+    condition?: string;
+    conditions?: string;
+    capture_output_dir?: string;
+    metadata_ready?: boolean;
+    metadata_issues: string[];
+    preflight_status?: "passed" | "failed" | "degraded" | string;
+    preflight_ready_for_capture?: boolean;
+    preflight_ready_for_registration?: boolean;
+    remote_terrain_log?: string;
+    remote_runtime_status?: string;
+    local_terrain_log?: string;
+    local_runtime_status?: string;
+    runtime_status?: unknown;
+  };
+}
+
 export interface BuildDroneBundleRequest {
   region_dir: string;
   output_dir: string;

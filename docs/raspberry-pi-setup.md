@@ -481,6 +481,9 @@ When the desktop app performs the capture, it also saves a
 file is a support breadcrumb: it records the exact command source, remote and
 local artifact paths, exit code, field-condition metadata readiness, preflight
 summary, and compact runtime-status summary.
+Module Setup lists those downloaded audit files under Field Log Captures and
+copies the latest entries into saved setup reports, so support review can trace
+which capture command produced each synced terrain log.
 
 Before a field capture, run the condition preflight against the generated field
 collection plan:

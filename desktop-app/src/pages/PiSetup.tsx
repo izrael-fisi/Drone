@@ -51,6 +51,7 @@ import type {
   FieldCollectionPlanFile,
   FieldEvidenceReportFile,
   FieldEvidenceTemplateFile,
+  FieldLogCaptureReportFile,
   FeatureMethodBenchmarkReportFile,
   LocalNetworkHint,
   PiDiscoveryCandidate,
@@ -3856,6 +3857,140 @@ function RosbagExportValidationReportList({
   );
 }
 
+function FieldLogCaptureReportList({
+  reports,
+  downloadDir,
+  onRefresh,
+}: {
+  reports: FieldLogCaptureReportFile[];
+  downloadDir: string;
+  onRefresh: () => void;
+}) {
+  const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reveal = async (path: string) => {
+    setBusyPath(path);
+    setActionError(null);
+    try {
+      await cmd.revealSupportBundle(path);
+    } catch (err) {
+      setActionError(String(err));
+    } finally {
+      setBusyPath(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="text-xs font-medium text-slate-300 flex items-center gap-2">
+            <Terminal size={13} className="text-cyan-400" /> Field Log Captures
+          </h4>
+          <p className="text-[10px] text-slate-500 font-mono truncate">{downloadDir}</p>
+        </div>
+        <button onClick={onRefresh} className="btn-secondary text-xs py-1 px-2">
+          <RefreshCw size={11} />
+          Refresh
+        </button>
+      </div>
+      {actionError && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
+      {reports.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-slate-500">
+          No downloaded field log capture audit yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {reports.slice(0, 3).map((file) => {
+            const runtimeStatus = asRecord(file.report.runtime_status);
+            const lastMatch = asRecord(runtimeStatus?.last_match);
+            const matchStatus = stringField(lastMatch?.status);
+            const matchConfidence = numberField(lastMatch?.confidence);
+            return (
+              <div key={file.path} className="rounded-lg border border-border bg-bg-card px-3 py-2 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className={readinessBadgeClass(file.report.status)}>
+                        {readinessIcon(file.report.status)}
+                        {formatReadinessLabel(file.report.status)}
+                      </span>
+                      <span className={file.report.metadata_ready ? "badge-green" : "badge-yellow"}>
+                        metadata {file.report.metadata_ready ? "ready" : "incomplete"}
+                      </span>
+                      <span className={file.report.preflight_ready_for_capture ? "badge-green" : "badge-yellow"}>
+                        preflight {file.report.preflight_ready_for_capture ? "capture ready" : formatReadinessLabel(file.report.preflight_status)}
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-500">
+                        exit {file.report.exit_code ?? "n/a"}
+                      </span>
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
+                      {file.name} / {formatReportSize(file.size_bytes)} / {formatReportTime(file.modified_unix_ms)}
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
+                      {formatReadinessLabel(file.report.condition)} / {formatReadinessLabel(file.report.expected)} / {formatReadinessLabel(file.report.command_source)}
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-slate-600 truncate">
+                      log {formatReadinessLabel(file.report.local_terrain_log ?? file.report.remote_terrain_log)}
+                    </div>
+                    {matchStatus && (
+                      <div className="mt-1 font-mono text-[10px] text-slate-500 truncate">
+                        last match {formatReadinessLabel(matchStatus)}
+                        {matchConfidence !== undefined ? ` / conf ${matchConfidence.toFixed(2)}` : ""}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {file.report.command && (
+                      <button
+                        onClick={() => navigator.clipboard.writeText(file.report.command ?? "")}
+                        className="btn-secondary text-xs py-1 px-2"
+                        title="Copy capture command"
+                      >
+                        <Copy size={11} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => navigator.clipboard.writeText(file.path)}
+                      className="btn-secondary text-xs py-1 px-2"
+                      title="Copy report path"
+                    >
+                      <ClipboardCheck size={11} />
+                    </button>
+                    <button
+                      onClick={() => reveal(file.path)}
+                      disabled={busyPath === file.path}
+                      className="btn-secondary text-xs py-1 px-2"
+                      title="Show report file"
+                    >
+                      {busyPath === file.path ? <Loader2 size={11} className="animate-spin" /> : <FolderOpen size={11} />}
+                    </button>
+                  </div>
+                </div>
+                {file.report.metadata_issues.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {file.report.metadata_issues.slice(0, 5).map((issue) => (
+                      <span key={`${file.path}-${issue}`} className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+                        {formatReadinessLabel(issue)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ModuleSetupProps {
   initialDeviceId?: string;
   embedded?: boolean;
@@ -3893,6 +4028,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
   const [featureBenchmarkReports, setFeatureBenchmarkReports] = useState<FeatureMethodBenchmarkReportFile[]>([]);
   const [thresholdTuningReports, setThresholdTuningReports] = useState<ThresholdTuningReportFile[]>([]);
   const [rosbagValidationReports, setRosbagValidationReports] = useState<RosbagExportValidationReportFile[]>([]);
+  const [fieldLogCaptureReports, setFieldLogCaptureReports] = useState<FieldLogCaptureReportFile[]>([]);
   const [runtimeStatus, setRuntimeStatus] = useState<Record<string, unknown> | null>(null);
   const [runtimeStatusRemotePath, setRuntimeStatusRemotePath] = useState<string | null>(null);
   const [runtimeStatusLocalPath, setRuntimeStatusLocalPath] = useState<string | null>(null);
@@ -4034,6 +4170,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     }
   };
 
+  const refreshFieldLogCaptureReports = async () => {
+    try {
+      setFieldLogCaptureReports(await cmd.listFieldLogCaptureReports(ROSBAG_VALIDATION_DOWNLOAD_DIR));
+    } catch {
+      setFieldLogCaptureReports([]);
+    }
+  };
+
   useEffect(() => {
     refreshSupportBundles();
     refreshAutonomyReports();
@@ -4046,6 +4190,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
     refreshFeatureBenchmarkReports();
     refreshThresholdTuningReports();
     refreshRosbagValidationReports();
+    refreshFieldLogCaptureReports();
     cmd.localNetworkHints().then(setNetworkHints).catch(() => setNetworkHints([]));
   }, []);
 
@@ -4566,6 +4711,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
           downloadText += `\n\n$ save field capture audit\nWarning: ${auditErr}`;
         }
       }
+      await refreshFieldLogCaptureReports();
       setResult("field-log-capture", {
         status: result.exit_code === 0 && remoteLog && remoteStatus ? "passed" : "failed",
         output: `$ field log capture\nUsing ${commandSource}.\n${output || "(no output)"}${downloadText}\n[exit ${result.exit_code}]`,
@@ -6289,6 +6435,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         feature_benchmark_download_dir: FEATURE_BENCH_DOWNLOAD_DIR,
         px4_receiver_download_dir: PX4_RECEIVER_DOWNLOAD_DIR,
         rosbag_validation_download_dir: ROSBAG_VALIDATION_DOWNLOAD_DIR,
+        field_log_capture_report_download_dir: ROSBAG_VALIDATION_DOWNLOAD_DIR,
         runtime_status_download_dir: RUNTIME_STATUS_DOWNLOAD_DIR,
       },
       runtime_status: runtimeStatus
@@ -6432,6 +6579,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       downloaded_feature_benchmark_reports: featureBenchmarkReports.slice(0, 5),
       downloaded_threshold_tuning_reports: thresholdTuningReports.slice(0, 5),
       downloaded_rosbag_validation_reports: rosbagValidationReports.slice(0, 5),
+      downloaded_field_log_capture_reports: fieldLogCaptureReports.slice(0, 5),
     };
     const defaultPath = `drone-module-setup-${safeReportName(form.host || form.name)}-${new Date().toISOString().slice(0, 10)}.json`;
     const path = await saveDialog({
@@ -7709,6 +7857,11 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
               reports={thresholdTuningReports}
               downloadDir={AUTONOMY_REPORT_DOWNLOAD_DIR}
               onRefresh={refreshThresholdTuningReports}
+            />
+            <FieldLogCaptureReportList
+              reports={fieldLogCaptureReports}
+              downloadDir={ROSBAG_VALIDATION_DOWNLOAD_DIR}
+              onRefresh={refreshFieldLogCaptureReports}
             />
             <RosbagExportValidationReportList
               reports={rosbagValidationReports}

@@ -544,6 +544,41 @@ pub struct RosbagExportValidationReportFile {
 }
 
 #[derive(Serialize)]
+pub struct FieldLogCaptureReport {
+    pub status: Option<String>,
+    pub generated_at_utc: Option<String>,
+    pub host: Option<String>,
+    pub device_name: Option<String>,
+    pub command_source: Option<String>,
+    pub command: Option<String>,
+    pub exit_code: Option<i64>,
+    pub case_name: Option<String>,
+    pub expected: Option<String>,
+    pub condition: Option<String>,
+    pub conditions: Option<String>,
+    pub capture_output_dir: Option<String>,
+    pub metadata_ready: Option<bool>,
+    pub metadata_issues: Vec<String>,
+    pub preflight_status: Option<String>,
+    pub preflight_ready_for_capture: Option<bool>,
+    pub preflight_ready_for_registration: Option<bool>,
+    pub remote_terrain_log: Option<String>,
+    pub remote_runtime_status: Option<String>,
+    pub local_terrain_log: Option<String>,
+    pub local_runtime_status: Option<String>,
+    pub runtime_status: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+pub struct FieldLogCaptureReportFile {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_unix_ms: Option<u128>,
+    pub report: FieldLogCaptureReport,
+}
+
+#[derive(Serialize)]
 pub struct ThresholdTuningReportFile {
     pub name: String,
     pub path: String,
@@ -2347,6 +2382,63 @@ pub fn list_rosbag_export_validation_reports(
     Ok(files)
 }
 
+#[tauri::command]
+pub fn list_field_log_capture_reports(
+    dir: String,
+) -> Result<Vec<FieldLogCaptureReportFile>, String> {
+    let path = expand_local_path(&dir).map_err(|e| e.to_string())?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(&path)
+        .with_context(|| format!("Cannot read {}", path.display()))
+        .map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let text = match std::fs::read_to_string(&p) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let Some(report) = field_log_capture_report_from_json(&value) else {
+            continue;
+        };
+        let modified_unix_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis());
+        files.push(FieldLogCaptureReportFile {
+            name: p
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("field-log-capture.json")
+                .to_string(),
+            path: p.to_string_lossy().into_owned(),
+            size_bytes: metadata.len(),
+            modified_unix_ms,
+            report,
+        });
+    }
+    files.sort_by(|a, b| {
+        b.modified_unix_ms
+            .cmp(&a.modified_unix_ms)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(files)
+}
+
 fn read_json_entry(
     archive: &mut ZipArchive<File>,
     name: &str,
@@ -3351,6 +3443,57 @@ fn rosbag_export_validation_report_from_json(
         topics,
         issues,
     }
+}
+
+fn field_log_capture_report_from_json(value: &serde_json::Value) -> Option<FieldLogCaptureReport> {
+    if value.get("schema_version").and_then(|value| value.as_str())
+        != Some("vision_nav_desktop_field_log_capture_v1")
+    {
+        return None;
+    }
+    let field_case = value.get("field_case");
+    let preflight = value.get("preflight");
+    let artifacts = value.get("artifacts");
+    Some(FieldLogCaptureReport {
+        status: json_string(value.get("status")),
+        generated_at_utc: json_string(value.get("generated_at_utc")),
+        host: json_string(value.get("host")),
+        device_name: json_string(value.get("device_name")),
+        command_source: json_string(value.get("command_source")),
+        command: json_string(value.get("command")),
+        exit_code: value.get("exit_code").and_then(|value| value.as_i64()),
+        case_name: json_string(field_case.and_then(|value| value.get("case_name"))),
+        expected: json_string(field_case.and_then(|value| value.get("expected"))),
+        condition: json_string(field_case.and_then(|value| value.get("condition"))),
+        conditions: json_string(field_case.and_then(|value| value.get("conditions"))),
+        capture_output_dir: json_string(
+            field_case.and_then(|value| value.get("capture_output_dir")),
+        ),
+        metadata_ready: field_case
+            .and_then(|value| value.get("metadata_ready"))
+            .and_then(|value| value.as_bool()),
+        metadata_issues: json_string_array(
+            field_case.and_then(|value| value.get("metadata_issues")),
+        ),
+        preflight_status: json_string(preflight.and_then(|value| value.get("status"))),
+        preflight_ready_for_capture: preflight
+            .and_then(|value| value.get("ready_for_capture"))
+            .and_then(|value| value.as_bool()),
+        preflight_ready_for_registration: preflight
+            .and_then(|value| value.get("ready_for_registration"))
+            .and_then(|value| value.as_bool()),
+        remote_terrain_log: json_string(
+            artifacts.and_then(|value| value.get("remote_terrain_log")),
+        ),
+        remote_runtime_status: json_string(
+            artifacts.and_then(|value| value.get("remote_runtime_status")),
+        ),
+        local_terrain_log: json_string(artifacts.and_then(|value| value.get("local_terrain_log"))),
+        local_runtime_status: json_string(
+            artifacts.and_then(|value| value.get("local_runtime_status")),
+        ),
+        runtime_status: value.get("runtime_status").cloned(),
+    })
 }
 
 fn rosbag2_cli_review_report_from_json(
@@ -5422,8 +5565,8 @@ mod tests {
         delete_support_bundle, expand_local_path, extract_support_bundle_artifact,
         list_autonomy_evidence_workflow_reports, list_autonomy_readiness_reports,
         list_feature_method_benchmark_reports, list_field_collection_plans,
-        list_field_evidence_reports, list_field_evidence_templates, list_px4_prereq_reports,
-        list_px4_receiver_reports, list_rosbag_export_validation_reports,
+        list_field_evidence_reports, list_field_evidence_templates, list_field_log_capture_reports,
+        list_px4_prereq_reports, list_px4_receiver_reports, list_rosbag_export_validation_reports,
         list_threshold_tuning_reports, read_support_bundle_details,
         run_local_autonomy_readiness_audit_inner, run_local_px4_sitl_prereq_setup_inner,
         run_local_px4_sitl_receiver_capture_inner, run_local_rosbag2_cli_review_inner,
@@ -7981,6 +8124,83 @@ mod tests {
         assert_eq!(reports[0].report.message_count, Some(4));
         assert_eq!(reports[0].report.topic_count, Some(3));
         assert_eq!(reports[0].report.topics.len(), 3);
+    }
+
+    #[test]
+    fn lists_field_log_capture_reports_from_json_dir() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("drone-field-log-capture-reports-{stamp}"));
+        std::fs::create_dir_all(&dir).expect("create field capture dir");
+        std::fs::write(
+            dir.join("field-log-capture-good-texture.json"),
+            serde_json::json!({
+                "schema_version": "vision_nav_desktop_field_log_capture_v1",
+                "generated_at_utc": "2026-06-23T02:00:00Z",
+                "status": "passed",
+                "host": "dronecompute.local",
+                "device_name": "dronecompute",
+                "command_source": "preflight capture script",
+                "command": "bash /home/user/DroneTransfer/outgoing/replay-cases/run_field_capture.sh",
+                "exit_code": 0,
+                "field_case": {
+                    "case_name": "site-good",
+                    "expected": "good_map",
+                    "condition": "good_texture",
+                    "conditions": "good_texture",
+                    "capture_output_dir": "/home/user/DroneTransfer/outgoing/field-captures/site-good",
+                    "metadata_ready": false,
+                    "metadata_issues": ["operator"]
+                },
+                "preflight": {
+                    "status": "degraded",
+                    "ready_for_capture": true,
+                    "ready_for_registration": false
+                },
+                "artifacts": {
+                    "remote_terrain_log": "/home/user/DroneTransfer/outgoing/field-captures/site-good/terrain_matches.jsonl",
+                    "remote_runtime_status": "/home/user/DroneTransfer/outgoing/field-captures/site-good/runtime_status.json",
+                    "local_terrain_log": "/Users/izzyfisi/DroneTransfer/from-pi/terrain-match/terrain_matches.jsonl",
+                    "local_runtime_status": "/Users/izzyfisi/DroneTransfer/from-pi/runtime-status/runtime_status.json"
+                },
+                "runtime_status": {
+                    "active_map": {"bundle_id": "mission-bundle"},
+                    "last_match": {"status": "accepted", "confidence": 0.82}
+                }
+            })
+            .to_string(),
+        )
+        .expect("write field capture report");
+        std::fs::write(
+            dir.join("rosbag-jsonl-validation.json"),
+            serde_json::json!({"schema_version": "vision_nav_rosbag_export_validation_v1"})
+                .to_string(),
+        )
+        .expect("write unrelated report");
+        let reports = list_field_log_capture_reports(dir.to_string_lossy().into_owned())
+            .expect("list reports");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].name, "field-log-capture-good-texture.json");
+        assert_eq!(reports[0].report.status.as_deref(), Some("passed"));
+        assert_eq!(
+            reports[0].report.command_source.as_deref(),
+            Some("preflight capture script")
+        );
+        assert_eq!(reports[0].report.condition.as_deref(), Some("good_texture"));
+        assert_eq!(reports[0].report.metadata_ready, Some(false));
+        assert_eq!(
+            reports[0].report.metadata_issues,
+            vec!["operator".to_string()]
+        );
+        assert_eq!(reports[0].report.preflight_ready_for_capture, Some(true));
+        assert_eq!(
+            reports[0].report.remote_runtime_status.as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/field-captures/site-good/runtime_status.json")
+        );
+        assert!(reports[0].report.runtime_status.is_some());
     }
 
     #[test]

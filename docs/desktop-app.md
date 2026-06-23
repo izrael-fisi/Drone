@@ -321,6 +321,9 @@ After the download succeeds, the app also writes a compact
 desktop-side record captures the command source, remote and local artifact
 paths, exit code, field-condition metadata readiness, preflight summary, and a
 bounded runtime-status summary for support review.
+The Field Log Captures list in Module Setup shows those audit files with
+metadata/preflight/capture status, copyable capture commands and paths, and the
+latest entries are included when the operator saves a module setup report.
 
 The Runtime And MAVLink panel can also create a support bundle on the connected
 Raspberry Pi. Support bundles are written under

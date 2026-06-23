@@ -539,6 +539,9 @@ Status:
   preserving command source, remote/local artifact paths, exit code,
   field-metadata readiness, preflight summary, and compact runtime-status
   fields for support review.
+- Done: Module Setup now lists downloaded `field-log-capture-*.json` audit
+  files, shows metadata/preflight/capture status, copyable commands and paths,
+  and includes the latest capture audits in saved setup reports.
 - Done: the guided evidence workflow now records
   `__VISION_NAV_TERRAIN_CAPTURE_COMMAND__` with the runtime-status read step
   included, so raw workflow markers match the operator handoff command.
