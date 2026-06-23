@@ -71,13 +71,20 @@ def diagnose_bundle_inputs(
     map_source_candidates = find_map_source_candidates(roots, max_candidates=max_candidates)
     mission_plan_candidates = find_mission_plan_candidates(roots, max_candidates=max_candidates)
 
-    actions = recommended_actions(bundle, bundle_candidates, map_source_candidates, mission_plan_candidates)
+    missing_required_files = [item["relative_path"] for item in required_files if not item["exists"]]
+    actions = recommended_actions(
+        bundle,
+        bundle_candidates,
+        map_source_candidates,
+        mission_plan_candidates,
+        missing_required_files=missing_required_files,
+    )
     return {
         "schema_version": "vision_nav_bundle_input_diagnostic_v1",
         "bundle_path": str(bundle),
         "bundle_exists": bundle.exists(),
         "required_files": required_files,
-        "missing_required_files": [item["relative_path"] for item in required_files if not item["exists"]],
+        "missing_required_files": missing_required_files,
         "search_roots": [str(root) for root in roots],
         "bundle_candidates": bundle_candidates,
         "map_source_candidates": map_source_candidates,
@@ -635,17 +642,21 @@ def recommended_actions(
     bundle_candidates: list[dict[str, Any]],
     map_source_candidates: list[dict[str, Any]],
     mission_plan_candidates: list[dict[str, Any]],
+    *,
+    missing_required_files: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    actions: list[dict[str, Any]] = [
-        {
-            "id": "build_or_upload_selected_bundle",
-            "status": "action_required",
-            "title": "Build and upload the selected Mission Planner terrain bundle.",
-            "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
-            "command": f"VISION_NAV_BUNDLE={shell_quote(str(bundle))} ./scripts/pi/validate_terrain_bundle.sh",
-        }
-    ]
-    usable_bundle = next((item for item in bundle_candidates if not item.get("field_proof_warning")), None)
+    missing = [str(item) for item in missing_required_files or [] if str(item)]
+    actions: list[dict[str, Any]] = [selected_bundle_action(bundle, missing_required_files=missing)]
+    selected_bundle_key = normalized_path_key(bundle) if not missing else None
+    usable_bundle = next(
+        (
+            item
+            for item in bundle_candidates
+            if not item.get("field_proof_warning")
+            and (selected_bundle_key is None or normalized_path_key(Path(str(item.get("path") or ""))) != selected_bundle_key)
+        ),
+        None,
+    )
     if usable_bundle:
         actions.append(
             {
@@ -694,6 +705,32 @@ def recommended_actions(
             }
         )
     return actions
+
+
+def selected_bundle_action(bundle: Path, *, missing_required_files: list[str]) -> dict[str, Any]:
+    validation_command = f"VISION_NAV_BUNDLE={shell_quote(str(bundle))} ./scripts/pi/validate_terrain_bundle.sh"
+    if missing_required_files:
+        missing_label = ", ".join(missing_required_files[:4])
+        if len(missing_required_files) > 4:
+            missing_label = f"{missing_label}, +{len(missing_required_files) - 4} more"
+        return {
+            "id": "build_or_upload_selected_bundle",
+            "status": "action_required",
+            "title": "Build and upload the selected Mission Planner terrain bundle.",
+            "desktop_action": "Mission Planner > Build Bundle, Upload Bundle",
+            "command": validation_command,
+            "notes": f"Missing required bundle files: {missing_label}.",
+            "bundle_path": str(bundle),
+        }
+    return {
+        "id": "validate_selected_bundle",
+        "status": "action_required",
+        "title": "Validate the selected Mission Planner terrain bundle before field capture.",
+        "desktop_action": "Mission Planner > Validate Bundle",
+        "command": validation_command,
+        "notes": "The selected bundle has the required terrain files; validate it before collecting field evidence.",
+        "bundle_path": str(bundle),
+    }
 
 
 def selected_mission_plan_inputs(candidates: list[dict[str, Any]]) -> dict[str, str]:

@@ -2045,6 +2045,29 @@ def test_bundle_diagnostics_finds_bundle_and_map_source_candidates() -> None:
         )
         if "Detected mission plan inputs" not in str(saved_source_action.get("notes", "")):
             raise AssertionError("Expected saved map source diagnostic to mention detected mission plan inputs")
+        ready_report = diagnose_bundle_inputs(candidate_bundle, search_roots=[root])
+        if ready_report["missing_required_files"]:
+            raise AssertionError(f"Expected ready diagnostic to have no missing files: {ready_report['missing_required_files']}")
+        ready_first_action = ready_report["recommended_actions"][0]
+        assert_equal(
+            ready_first_action["id"],
+            "validate_selected_bundle",
+            "ready bundle diagnostic first action",
+        )
+        if "before field capture" not in ready_first_action.get("title", ""):
+            raise AssertionError("Expected ready bundle diagnostic to recommend validation before capture")
+        if ready_first_action.get("desktop_action") != "Mission Planner > Validate Bundle":
+            raise AssertionError("Expected ready bundle diagnostic to point at bundle validation")
+        if "build_or_upload_selected_bundle" in {
+            action.get("id") for action in ready_report["recommended_actions"] if isinstance(action, dict)
+        }:
+            raise AssertionError("Ready bundle diagnostic should not ask for a rebuild/upload")
+        ready_compact = compact_bundle_diagnostic(ready_report, max_items=4)
+        assert_equal(
+            ready_compact["recommended_actions"][0]["id"],
+            "validate_selected_bundle",
+            "compact ready bundle diagnostic first action",
+        )
         old_cwd = Path.cwd()
         old_home_for_raw = os.environ.get("HOME")
         try:
