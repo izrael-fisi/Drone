@@ -130,6 +130,18 @@ pub struct SupportBundleReplayReport {
 }
 
 #[derive(Serialize)]
+pub struct SupportBundleGnssDeniedPlanCheckReport {
+    pub status: Option<String>,
+    pub source_path: Option<String>,
+    pub mission_plan_path: Option<String>,
+    pub mission_plan_status: Option<String>,
+    pub message: Option<String>,
+    pub missing_checks: Vec<String>,
+    pub failed_checks: Vec<String>,
+    pub field_ready: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
 pub struct SupportBundlePx4EvidenceReport {
     pub status: Option<String>,
     pub expected_message: Option<String>,
@@ -1093,6 +1105,7 @@ pub struct SupportBundleDetails {
     pub log_timelines: Vec<SupportBundleLogTimeline>,
     pub image_previews: Vec<SupportBundleImagePreview>,
     pub replay_reports: Vec<SupportBundleReplayReport>,
+    pub gnss_denied_plan_check_reports: Vec<SupportBundleGnssDeniedPlanCheckReport>,
     pub px4_evidence_reports: Vec<SupportBundlePx4EvidenceReport>,
     pub px4_param_reports: Vec<SupportBundlePx4ParamReport>,
     pub ardupilot_param_reports: Vec<SupportBundleArduPilotParamReport>,
@@ -1420,6 +1433,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
     let mut log_timelines = Vec::new();
     let mut image_previews = Vec::new();
     let mut replay_reports = Vec::new();
+    let mut gnss_denied_plan_check_reports = Vec::new();
     let mut px4_evidence_reports = Vec::new();
     let mut px4_param_reports = Vec::new();
     let mut ardupilot_param_reports = Vec::new();
@@ -1470,6 +1484,13 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         } else if name.starts_with("summaries/replay_gates/") && name.ends_with(".gate.json") {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
                 replay_reports.push(replay_report_from_json(&value));
+            }
+        } else if name.starts_with("summaries/gnss_denied_plan_checks/") && name.ends_with(".json")
+        {
+            if let Some(value) = read_json_entry(&mut archive, &name)? {
+                if let Some(report) = gnss_denied_plan_check_report_from_json(&value) {
+                    gnss_denied_plan_check_reports.push(report);
+                }
             }
         } else if name.starts_with("summaries/px4_sitl_evidence/") && name.ends_with(".json") {
             if let Some(value) = read_json_entry(&mut archive, &name)? {
@@ -1550,6 +1571,7 @@ pub fn read_support_bundle_details(path: String) -> Result<SupportBundleDetails,
         log_timelines,
         image_previews,
         replay_reports,
+        gnss_denied_plan_check_reports,
         px4_evidence_reports,
         px4_param_reports,
         ardupilot_param_reports,
@@ -2977,6 +2999,38 @@ fn replay_report_from_json(value: &serde_json::Value) -> SupportBundleReplayRepo
             .and_then(|value| value.as_u64()),
         issues,
     }
+}
+
+fn gnss_denied_plan_check_report_from_json(
+    value: &serde_json::Value,
+) -> Option<SupportBundleGnssDeniedPlanCheckReport> {
+    if value.get("schema_version").and_then(|value| value.as_str())
+        != Some("vision_nav_gnss_denied_plan_check_v1")
+    {
+        return None;
+    }
+    Some(SupportBundleGnssDeniedPlanCheckReport {
+        status: json_string(value.get("status"))
+            .or_else(|| json_string(value.pointer("/check/status"))),
+        source_path: json_string(value.get("source_path")),
+        mission_plan_path: json_string(value.pointer("/mission_plan/path"))
+            .or_else(|| json_string(value.pointer("/check/details/mission_plan_path"))),
+        mission_plan_status: json_string(value.pointer("/mission_plan/status"))
+            .or_else(|| json_string(value.pointer("/check/details/mission_plan_status"))),
+        message: json_string(value.pointer("/check/message")),
+        missing_checks: merge_json_string_arrays(
+            value.get("missing_checks"),
+            value.pointer("/check/details/missing_checks"),
+        ),
+        failed_checks: merge_json_string_arrays(
+            value.get("failed_checks"),
+            value.pointer("/check/details/failed_checks"),
+        ),
+        field_ready: value
+            .get("field_ready")
+            .cloned()
+            .or_else(|| value.pointer("/check/details/field_ready").cloned()),
+    })
 }
 
 fn px4_evidence_report_from_json(value: &serde_json::Value) -> SupportBundlePx4EvidenceReport {
@@ -4722,6 +4776,21 @@ fn json_string_array(value: Option<&serde_json::Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn merge_json_string_arrays(
+    first: Option<&serde_json::Value>,
+    second: Option<&serde_json::Value>,
+) -> Vec<String> {
+    json_string_array(first)
+        .into_iter()
+        .chain(json_string_array(second))
+        .fold(Vec::new(), |mut merged, value| {
+            if !merged.contains(&value) {
+                merged.push(value);
+            }
+            merged
+        })
+}
+
 fn image_mime_type(name: &str) -> Option<&'static str> {
     match Path::new(name)
         .extension()
@@ -4835,6 +4904,10 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
     if lower_name.starts_with("summaries/replay_gates/") && lower_name.ends_with(".gate.json") {
         return Some("replay gate report".to_string());
     }
+    if lower_name.starts_with("summaries/gnss_denied_plan_checks/") && lower_name.ends_with(".json")
+    {
+        return Some("gnss denied plan check".to_string());
+    }
     if lower_name.starts_with("summaries/px4_sitl_evidence/") && lower_name.ends_with(".json") {
         return Some("px4 receiver report".to_string());
     }
@@ -4900,6 +4973,9 @@ fn support_artifact_kind(lower_name: &str) -> Option<String> {
         }
         if lower_name.starts_with("extras/field_capture_preflights/") {
             return Some("field capture preflight artifact".to_string());
+        }
+        if lower_name.starts_with("extras/gnss_denied_plan_checks/") {
+            return Some("gnss denied plan check artifact".to_string());
         }
         if lower_name.starts_with("extras/rosbag2_cli_reviews/") {
             return Some("rosbag2 cli artifact".to_string());
@@ -8082,6 +8158,53 @@ mod tests {
             )
             .expect("write gate");
             zip.start_file(
+                "summaries/gnss_denied_plan_checks/degraded-01.json",
+                options,
+            )
+            .expect("gnss denied plan check entry");
+            zip.write_all(
+                serde_json::json!({
+                    "schema_version": "vision_nav_gnss_denied_plan_check_v1",
+                    "status": "degraded",
+                    "source_path": "/home/user/drone-data/map_bundles/mission_bundle",
+                    "mission_plan": {
+                        "path": "/home/user/drone-data/map_bundles/mission_bundle/mission/mission_plan.json",
+                        "status": "not_provided",
+                        "mission_item_count": 3,
+                        "gnss_denied": {
+                            "status": "not_provided",
+                            "checks": []
+                        }
+                    },
+                    "field_ready": {
+                        "heading": false,
+                        "home_position": true,
+                        "map_position_reset": false
+                    },
+                    "missing_checks": ["heading", "map_position_reset"],
+                    "failed_checks": [],
+                    "check": {
+                        "name": "gnss_denied_plan",
+                        "status": "degraded",
+                        "message": "Mission plan is missing GNSS-denied prep checks.",
+                        "details": {
+                            "mission_plan_path": "/home/user/drone-data/map_bundles/mission_bundle/mission/mission_plan.json",
+                            "mission_plan_status": "not_provided",
+                            "missing_checks": ["heading", "map_position_reset"],
+                            "failed_checks": [],
+                            "field_ready": {
+                                "heading": false,
+                                "home_position": true,
+                                "map_position_reset": false
+                            }
+                        }
+                    }
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .expect("write gnss denied plan check");
+            zip.start_file(
                 "summaries/px4_sitl_evidence/receiver_evidence.json",
                 options,
             )
@@ -8559,7 +8682,7 @@ mod tests {
         }
         let details = read_support_bundle_details(path.to_string_lossy().into_owned())
             .expect("read support details");
-        assert_eq!(details.entry_count, 22);
+        assert_eq!(details.entry_count, 23);
         assert_eq!(details.logs.len(), 1);
         assert_eq!(details.logs[0].total_records, Some(4));
         assert_eq!(
@@ -8645,6 +8768,37 @@ mod tests {
             details.replay_reports[0].issues,
             vec!["low accepted rate".to_string()]
         );
+        assert_eq!(details.gnss_denied_plan_check_reports.len(), 1);
+        let gnss_check = &details.gnss_denied_plan_check_reports[0];
+        assert_eq!(gnss_check.status.as_deref(), Some("degraded"));
+        assert_eq!(
+            gnss_check.mission_plan_status.as_deref(),
+            Some("not_provided")
+        );
+        assert_eq!(
+            gnss_check.mission_plan_path.as_deref(),
+            Some("/home/user/drone-data/map_bundles/mission_bundle/mission/mission_plan.json")
+        );
+        assert_eq!(
+            gnss_check.message.as_deref(),
+            Some("Mission plan is missing GNSS-denied prep checks.")
+        );
+        assert_eq!(
+            gnss_check.missing_checks,
+            vec!["heading".to_string(), "map_position_reset".to_string()]
+        );
+        assert_eq!(
+            gnss_check
+                .field_ready
+                .as_ref()
+                .and_then(|value| value.pointer("/heading"))
+                .and_then(|value| value.as_bool()),
+            Some(false)
+        );
+        assert!(details.artifacts.iter().any(|artifact| {
+            artifact.path == "summaries/gnss_denied_plan_checks/degraded-01.json"
+                && artifact.kind == "gnss denied plan check"
+        }));
         assert_eq!(details.px4_evidence_reports.len(), 1);
         assert_eq!(
             details.px4_evidence_reports[0].status.as_deref(),

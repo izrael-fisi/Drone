@@ -320,6 +320,16 @@ export interface SupportBundleDetails {
     total_records?: number;
     issues: string[];
   }>;
+  gnss_denied_plan_check_reports: Array<{
+    status?: "passed" | "failed" | "degraded" | string;
+    source_path?: string;
+    mission_plan_path?: string;
+    mission_plan_status?: "passed" | "failed" | "degraded" | "not_provided" | string;
+    message?: string;
+    missing_checks: string[];
+    failed_checks: string[];
+    field_ready?: Record<string, unknown>;
+  }>;
   px4_evidence_reports: Array<{
     status?: "passed" | "failed" | "degraded" | string;
     expected_message?: string;

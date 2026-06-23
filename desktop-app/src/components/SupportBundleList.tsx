@@ -442,6 +442,73 @@ function SupportBundleDetailPanel({
         </div>
       )}
 
+      {details.gnss_denied_plan_check_reports.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">GNSS-denied prep check</div>
+          {details.gnss_denied_plan_check_reports.slice(0, 3).map((report, index) => {
+            const fieldReady = asRecord(report.field_ready);
+            const readinessEntries = Object.entries(fieldReady ?? {});
+            const blockingChecks = uniqueStrings([
+              ...(report.missing_checks ?? []),
+              ...(report.failed_checks ?? []),
+            ]);
+            return (
+              <div key={`${report.source_path ?? "gnss-check"}-${index}`} className="rounded border border-border/60 bg-bg-surface/40 px-2 py-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={statusClass(report.status)}>
+                    {statusIcon(report.status)}
+                    {formatLabel(report.status)}
+                  </span>
+                  <span className={statusClass(report.mission_plan_status)}>
+                    mission {formatLabel(report.mission_plan_status)}
+                  </span>
+                  {blockingChecks.length > 0 && (
+                    <span className="font-mono text-slate-500">missing {blockingChecks.length}</span>
+                  )}
+                </div>
+                <div className="font-mono text-slate-500 truncate">
+                  source {formatLabel(report.source_path)}
+                </div>
+                {report.mission_plan_path && (
+                  <div className="font-mono text-slate-500 truncate">
+                    mission plan {report.mission_plan_path}
+                  </div>
+                )}
+                {report.message && (
+                  <div className="text-[10px] text-slate-400">
+                    {report.message}
+                  </div>
+                )}
+                {blockingChecks.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {blockingChecks.slice(0, 8).map((check) => (
+                      <span key={`${report.source_path}-${check}`} className="badge-red">
+                        {formatLabel(check)}
+                      </span>
+                    ))}
+                    {blockingChecks.length > 8 && (
+                      <span className="font-mono text-slate-500">+{blockingChecks.length - 8}</span>
+                    )}
+                  </div>
+                )}
+                {readinessEntries.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {readinessEntries.map(([key, value]) => (
+                      <span
+                        key={`${report.source_path}-${key}`}
+                        className={value === true ? "badge-green" : value === false ? "badge-red" : "badge-yellow"}
+                      >
+                        {formatLabel(key)} {value === true ? "ready" : value === false ? "missing" : formatLabel(String(value))}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {showEvidenceWorkflow && (
         <div className="space-y-1">
           <div className="text-[10px] uppercase tracking-wide text-slate-500">Evidence workflow</div>

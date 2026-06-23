@@ -387,6 +387,10 @@ Status:
   `__VISION_NAV_GNSS_DENIED_PLAN_CHECK__`, and support bundles copy/summarize
   that report without letting it replace the required bundled Mission Planner
   GNSS-denied readiness metadata.
+- Done: downloaded support-bundle details now parse and render bundled
+  `summaries/gnss_denied_plan_checks/*.json` reports, including mission-plan
+  status, missing GNSS-denied prep checks, and field-ready flags for support
+  review.
 - In progress: Module Setup chains Wi-Fi SSH identity, repo sync/install,
   runtime verification, camera preview/health, time sync, MAVLink endpoint
   validation, optional Micro XRCE-DDS Agent readiness, calibration image
