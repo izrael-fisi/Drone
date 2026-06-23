@@ -394,6 +394,14 @@ function parseFieldCapturePreflightReport(output: string) {
     ?.replace("__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__=", "");
 }
 
+function parseFieldLogCaptureReport(output: string) {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__="))
+    ?.replace("__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=", "");
+}
+
 function parseFieldCapturePreflightJson(text: string): FieldCapturePreflightReport | null {
   try {
     const parsed = JSON.parse(text) as FieldCapturePreflightReport & { schema_version?: string };
@@ -544,6 +552,10 @@ function fieldLogCaptureCommand(
     captureOutputDir ? `VISION_NAV_OUTPUT_DIR=${shellQuote(captureOutputDir)}` : "",
     "VISION_NAV_COUNT=30",
     "VISION_NAV_INTERVAL_S=1.0",
+    condition ? `VISION_NAV_FIELD_CONDITION=${shellQuote(condition)}` : "",
+    fieldCase.conditions.trim() ? `VISION_NAV_FIELD_CONDITIONS=${shellQuote(fieldCase.conditions.trim())}` : "",
+    fieldCase.caseName.trim() ? `VISION_NAV_FIELD_CASE_NAME=${shellQuote(fieldCase.caseName.trim())}` : "",
+    fieldCase.expected.trim() ? `VISION_NAV_FIELD_EXPECTED=${shellQuote(fieldCase.expected.trim())}` : "",
     mavlinkEndpoint.trim() ? `VISION_NAV_MAVLINK_ENDPOINT=${shellQuote(mavlinkEndpoint.trim())}` : "",
     "VISION_NAV_MAVLINK_MESSAGE=odometry",
   ].filter(Boolean).join(" ");
@@ -4729,6 +4741,7 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
       const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
       const remoteLog = parseTerrainRuntimeLog(output);
       const remoteStatus = parseRuntimeStatusPath(output);
+      const remoteCaptureReport = parseFieldLogCaptureReport(output);
       const parsedStatus = parseRuntimeStatusJson(output);
       let downloadText = "";
       let localLogPath: string | null = null;
@@ -4772,6 +4785,21 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
         setRuntimeStatusLocalPath(downloadedStatus.local_path);
         localRuntimeStatusPath = downloadedStatus.local_path;
         downloadText += `\n\n$ download runtime status\nSaved to ${downloadedStatus.local_path}\n[${downloadedStatus.bytes_received} bytes]`;
+      }
+      if (remoteCaptureReport) {
+        setResult("field-log-capture", {
+          status: "running",
+          output: `$ field log capture\n${output}${downloadText}\n\n$ download field capture report\nDownloading ${remoteCaptureReport}...`,
+        });
+        const downloadedReport = await cmd.sshDownloadFile(
+          form.host,
+          form.port,
+          form.username,
+          resolvedAuth,
+          remoteCaptureReport,
+          ROSBAG_VALIDATION_DOWNLOAD_DIR,
+        );
+        downloadText += `\n\n$ download field capture report\nSaved to ${downloadedReport.local_path}\n[${downloadedReport.bytes_received} bytes]`;
       }
       if (remoteLog || remoteStatus) {
         const captureOutputDir = fieldCapturePreflightReport?.capture_output_dir || fieldCase.captureOutputDir;

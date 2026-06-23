@@ -21,6 +21,12 @@ mavlink_message="${VISION_NAV_MAVLINK_MESSAGE:-odometry}"
 external_position_min_rate_hz="${VISION_NAV_EXTERNAL_POSITION_MIN_RATE_HZ:-1.0}"
 external_position_max_latency_ms="${VISION_NAV_EXTERNAL_POSITION_MAX_LATENCY_MS:-500.0}"
 ros2_publish="${VISION_NAV_ROS2_PUBLISH:-0}"
+field_capture_report="${VISION_NAV_FIELD_LOG_CAPTURE_REPORT:-$out_dir/field_log_capture_report.json}"
+field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-}"
+field_case_name="${VISION_NAV_FIELD_CASE_NAME:-}"
+field_expected="${VISION_NAV_FIELD_EXPECTED:-}"
+field_condition="${VISION_NAV_FIELD_CONDITION:-}"
+field_conditions="${VISION_NAV_FIELD_CONDITIONS:-$field_condition}"
 
 if [[ ! -x "$venv_python" ]]; then
   echo "Missing Python venv: $venv_python" >&2
@@ -66,6 +72,7 @@ if [[ "$ros2_publish" == "1" || "$ros2_publish" == "true" ]]; then
   )
 fi
 
+set +e
 PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.run_terrain_loop \
   --bundle "$bundle" \
   --output-dir "$out_dir" \
@@ -79,13 +86,53 @@ PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.run_terrain_loop \
   "${calibration_args[@]}" \
   "${mavlink_args[@]}" \
   "${ros2_args[@]}"
+capture_status=$?
+set -e
+
+report_args=(
+  --log "$out_dir/terrain_matches.jsonl"
+  --runtime-status "$out_dir/runtime_status.json"
+  --output "$field_capture_report"
+  --bundle "$bundle"
+  --capture-output-dir "$out_dir"
+  --command-source "pi terrain nav loop wrapper"
+  --command "./scripts/pi/run_terrain_nav_loop.sh"
+  --exit-code "$capture_status"
+)
+if [[ -n "$field_capture_preflight" ]]; then
+  report_args+=(--preflight "$field_capture_preflight")
+fi
+if [[ -n "$field_case_name" ]]; then
+  report_args+=(--case-name "$field_case_name")
+fi
+if [[ -n "$field_expected" ]]; then
+  report_args+=(--expected "$field_expected")
+fi
+if [[ -n "$field_condition" ]]; then
+  report_args+=(--condition "$field_condition")
+fi
+if [[ -n "$field_conditions" ]]; then
+  report_args+=(--conditions "$field_conditions")
+fi
+
+set +e
+PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.field_log_capture_report "${report_args[@]}"
+report_status=$?
+set -e
 
 cat <<EOF
 
 Terrain runtime outputs:
   log:            $out_dir/terrain_matches.jsonl
   runtime status: $out_dir/runtime_status.json
+  capture report: $field_capture_report
 
 __VISION_NAV_TERRAIN_LOG__=$out_dir/terrain_matches.jsonl
 __VISION_NAV_RUNTIME_STATUS__=$out_dir/runtime_status.json
+__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=$field_capture_report
 EOF
+
+if [[ "$capture_status" -ne 0 ]]; then
+  exit "$capture_status"
+fi
+exit "$report_status"

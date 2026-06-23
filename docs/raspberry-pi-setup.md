@@ -476,6 +476,12 @@ snapshot is generated or downloaded. If `runtime_status.json` exists but is
 malformed or lacks active-map, last-match, output, or log-path metadata, the
 workflow also degrades the capture step; the validated terrain log can still be
 used by replay/export follow-up steps.
+The Pi wrapper also writes `field_log_capture_report.json` beside the terrain
+log and emits `__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=...`. That report uses
+the same capture-audit schema as the desktop app, so terminal runs of the
+generated `run_field_capture.sh` script still leave a support breadcrumb with
+the remote terrain log, runtime status, condition, case, expected behavior,
+record count, and latest runtime snapshot.
 When the desktop app performs the capture, it also saves a
 `field-log-capture-*.json` audit file next to the downloaded terrain log. That
 file is a support breadcrumb: it records the exact command source, remote and
@@ -520,10 +526,12 @@ prerequisite checks they are waiting on. When the report is capture-ready,
 Module Setup's Field Log Capture action prefers the generated
 `run_field_capture.sh` script or preflight-plus-capture command from that
 report, and the preflight summary exposes copy/run controls for the exact
-capture command. Bundle-prep actions also carry the
-compact bundle diagnostic so terminal output, Module Setup, and support-bundle
-details can show missing files, detected bundle candidates, and detected map
-sources directly beside the repair command. It does not create or register
+capture command. Module Setup downloads the Pi-side
+`field_log_capture_report.json` when present, so terminal and app-driven
+captures both appear in the Field Log Captures list. Bundle-prep actions also
+carry the compact bundle diagnostic so terminal output, Module Setup, and
+support-bundle details can show missing files, detected bundle candidates, and
+detected map sources directly beside the repair command. It does not create or register
 field evidence. When the default preflight report exists,
 `create_support_bundle.sh` copies it under `extras/field_capture_preflights/`,
 publishes the parseable report under `summaries/field_capture_preflights/`, and

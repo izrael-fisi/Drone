@@ -316,6 +316,11 @@ parse existing synced logs before accepting them: the JSONL must be nonempty
 and include accepted, rejected, or degraded match statuses. If the log
 is valid but `runtime_status.json` is missing, the capture evidence is reported
 as degraded until the runtime snapshot is refreshed.
+`run_terrain_nav_loop.sh` also writes a Pi-side `field_log_capture_report.json`
+and emits `__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=...`. Module Setup downloads
+that report when present, so terminal captures started from the generated
+`run_field_capture.sh` script show up in the same Field Log Captures list as
+app-driven captures.
 After the download succeeds, the app also writes a compact
 `field-log-capture-*.json` audit file beside the downloaded terrain log. That
 desktop-side record captures the command source, remote and local artifact

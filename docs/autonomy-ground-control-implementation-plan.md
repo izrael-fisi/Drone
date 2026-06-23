@@ -549,6 +549,11 @@ Status:
   preserving command source, remote/local artifact paths, exit code,
   field-metadata readiness, preflight summary, and compact runtime-status
   fields for support review.
+- Done: `scripts/pi/run_terrain_nav_loop.sh` now writes a Pi-side
+  `field_log_capture_report.json`, emits
+  `__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__`, and Module Setup downloads that
+  report so terminal and app-driven field captures share the same audit-list
+  surface.
 - Done: Field Log Capture audit files now include next-action metadata update
   and registration commands, plus registration readiness, so support can recover
   the exact follow-up proof commands from the downloaded capture audit.

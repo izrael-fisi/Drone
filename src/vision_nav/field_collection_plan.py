@@ -233,7 +233,15 @@ def condition_plan(
         "VISION_NAV_BUNDLE": bundle,
         "VISION_NAV_OUTPUT_DIR": capture_output_dir,
         "VISION_NAV_COUNT": "30",
+        "VISION_NAV_FIELD_CASE_NAME": case_name,
+        "VISION_NAV_FIELD_EXPECTED": expected,
+        "VISION_NAV_FIELD_CONDITION": condition,
+        "VISION_NAV_FIELD_CONDITIONS": condition,
+        "VISION_NAV_FIELD_CAPTURE_PREFLIGHT": str(collection_plan_path.with_name("field_capture_preflight.json"))
+        if collection_plan_path is not None
+        else "",
     }
+    capture_env = {key: value for key, value in capture_env.items() if value}
     metadata_update_env = metadata_update_env_for_condition(
         manifest_path=manifest_path,
         condition=condition,

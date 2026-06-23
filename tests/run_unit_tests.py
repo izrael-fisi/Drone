@@ -63,6 +63,7 @@ from vision_nav.field_capture_metadata import (
     CAPTURE_CHECKLIST_SCHEMA_VERSION,
     CAPTURE_METADATA_SCHEMA_VERSION,
 )
+from vision_nav.field_log_capture_report import create_field_log_capture_report
 from vision_nav.field_capture_metadata_update import update_field_capture_metadata
 from vision_nav.field_capture_preflight import evaluate_field_capture_preflight
 from vision_nav.field_capture_preflight import print_human as print_field_capture_preflight_human
@@ -578,6 +579,61 @@ def test_summarize_match_records() -> None:
     assert_equal(summary["external_position"]["latency_ms"]["mean"], 150.0, "summary external position latency")
     assert_equal(summary["external_position"]["reset_counter"]["max"], 1.0, "summary reset counter max")
     assert_equal(summary["external_position"]["last_reset_counter"], 1, "summary last reset counter")
+
+
+def test_field_log_capture_report_writes_desktop_compatible_audit() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        log = root / "terrain_matches.jsonl"
+        runtime_status = root / "runtime_status.json"
+        output = root / "field_log_capture_report.json"
+        log.write_text(
+            json.dumps(
+                {
+                    "sequence": 1,
+                    "result": {
+                        "status": "accepted",
+                        "confidence": 0.82,
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        runtime_status.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_runtime_status_v1",
+                    "active_map": {"bundle_id": "unit"},
+                    "output": {"log_path": str(log)},
+                    "last_match": {"status": "accepted", "confidence": 0.82},
+                    "status_counts": {"accepted": 1},
+                }
+            ),
+            encoding="utf-8",
+        )
+        report = create_field_log_capture_report(
+            log_path=log,
+            runtime_status_path=runtime_status,
+            output_path=output,
+            bundle="mission_bundle",
+            capture_output_dir=str(root),
+            condition="good_texture",
+            case_name="unit-good_texture",
+            expected="good_map",
+            conditions="good_texture",
+            command_source="unit",
+            command="./scripts/pi/run_terrain_nav_loop.sh",
+            exit_code=0,
+        )
+        assert_equal(report["schema_version"], "vision_nav_desktop_field_log_capture_v1", "field log report schema")
+        assert_equal(report["status"], "passed", "field log report status")
+        assert_equal(report["field_case"]["condition"], "good_texture", "field log report condition")
+        assert_equal(report["artifacts"]["remote_terrain_log"], str(log), "field log report terrain log")
+        assert_equal(report["summary"]["record_count"], 1, "field log report record count")
+        assert_equal(report["summary"]["status_counts"]["accepted"], 1, "field log report status count")
+        if not output.exists():
+            raise AssertionError("Expected field log capture report to be written")
 
 
 def test_quality_metrics_and_covariance() -> None:
@@ -8645,6 +8701,7 @@ def main() -> None:
         test_load_manifest_and_resolve_paths,
         test_load_camera_calibration_and_validate_size,
         test_summarize_match_records,
+        test_field_log_capture_report_writes_desktop_compatible_audit,
         test_quality_metrics_and_covariance,
         test_mavlink_endpoint_parsing_and_axis_mapping,
         test_mavlink_log_sender_uses_selected_message_type,
