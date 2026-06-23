@@ -69,9 +69,26 @@ function formatLimitedList(values: string[], limit: number) {
 }
 
 function formatWorkflowStep(step: WorkflowValidationStep) {
-  return [formatLabel(step.name), formatLabel(step.status)]
+  const base = [formatLabel(step.name), formatLabel(step.status)]
     .filter((part) => part && part !== "n/a")
     .join(": ");
+  if (step.current_preflight_allows_capture) {
+    return `${base} (current preflight capture-ready)`;
+  }
+  return base;
+}
+
+function workflowStepTitle(step: WorkflowValidationStep) {
+  return [
+    step.notes,
+    step.current_preflight_allows_capture
+      ? `Current preflight capture-ready (${formatLabel(step.current_preflight_status)})`
+      : undefined,
+    step.current_preflight_report ? `Current preflight: ${step.current_preflight_report}` : undefined,
+    step.guidance,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function countsRecord(value: unknown): Record<string, number> | undefined {
@@ -510,7 +527,7 @@ function SupportBundleDetailPanel({
                   <div
                     key={`${step.name ?? "workflow-step"}-${step.status ?? "status"}-${index}`}
                     className="flex flex-wrap items-center gap-1.5 font-mono text-slate-500"
-                    title={step.notes || undefined}
+                    title={workflowStepTitle(step) || undefined}
                   >
                     <span className={statusClass(step.status)}>
                       {statusIcon(step.status)}

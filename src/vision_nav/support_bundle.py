@@ -1681,6 +1681,13 @@ def summarize_workflow_validation(validation: dict[str, Any]) -> dict[str, Any]:
         if check.get("name") == "required_step_results":
             item["non_passed_count"] = details.get("non_passed_count")
             item["missing_steps"] = details.get("missing_steps") or []
+            non_passed_steps = [
+                compact_workflow_validation_step(step)
+                for step in (details.get("non_passed_steps") or check.get("non_passed_steps") or [])
+                if isinstance(step, dict)
+            ]
+            if non_passed_steps:
+                item["non_passed_steps"] = non_passed_steps
         elif check.get("name") == "workflow_provenance":
             item["repo_commit"] = details.get("repo_commit")
             item["repo_dirty"] = details.get("repo_dirty")
@@ -1702,6 +1709,28 @@ def summarize_workflow_validation(validation: dict[str, Any]) -> dict[str, Any]:
         "next_required_step": validation.get("next_required_step"),
         "checks": checks,
     }
+
+
+def compact_workflow_validation_step(step: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        key: str(step.get(key))
+        for key in (
+            "name",
+            "status",
+            "notes",
+            "current_preflight_report",
+            "current_preflight_status",
+            "guidance",
+        )
+        if step.get(key) is not None
+    }
+    if isinstance(step.get("exit_code"), int):
+        compact["exit_code"] = step["exit_code"]
+    if isinstance(step.get("current_preflight_allows_capture"), bool):
+        compact["current_preflight_allows_capture"] = step["current_preflight_allows_capture"]
+    if isinstance(step.get("current_ready_for_registration"), bool):
+        compact["current_ready_for_registration"] = step["current_ready_for_registration"]
+    return compact
 
 
 def copy_autonomy_evidence_workflow(

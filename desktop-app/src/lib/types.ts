@@ -863,6 +863,18 @@ export interface AutonomyEvidenceWorkflowValidationNextStep {
   capture_command_after_bundle?: string;
 }
 
+export interface AutonomyEvidenceWorkflowValidationStepResult {
+  name?: string;
+  status?: "passed" | "failed" | "degraded" | "skipped" | string;
+  exit_code?: number;
+  notes?: string;
+  current_preflight_allows_capture?: boolean;
+  current_preflight_report?: string;
+  current_preflight_status?: "passed" | "failed" | "degraded" | "skipped" | string;
+  current_ready_for_registration?: boolean;
+  guidance?: string;
+}
+
 export interface AutonomyEvidenceWorkflowReportFile {
   name: string;
   path: string;
@@ -905,12 +917,7 @@ export interface AutonomyEvidenceWorkflowReportFile {
       present_markers: string[];
       missing_steps: string[];
       non_passed_count?: number;
-      non_passed_steps: Array<{
-        name?: string;
-        status?: "passed" | "failed" | "degraded" | "skipped" | string;
-        exit_code?: number;
-        notes?: string;
-      }>;
+      non_passed_steps: AutonomyEvidenceWorkflowValidationStepResult[];
     }>;
     log_archive?: string;
   };

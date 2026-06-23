@@ -1352,6 +1352,10 @@ Status:
 - Done: Tauri parsers, evidence-package summaries, Module Setup workflow cards,
   and support-bundle detail views now preserve and expose those bundle-aware
   next-step fields, including the post-bundle field-capture command.
+- Done: evidence packages, support-bundle summaries, Tauri parsing, and desktop
+  workflow cards now preserve stale-preflight proof rows that are superseded by
+  a current capture-ready preflight report, including current report path,
+  readiness, status, and operator guidance.
 - Done: CLI workflow-validation summaries now print bundle path, expected log,
   capture output, metadata update, and post-bundle capture commands, keeping
   terminal audits aligned with Module Setup guidance.

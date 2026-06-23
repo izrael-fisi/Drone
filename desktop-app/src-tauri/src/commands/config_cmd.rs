@@ -837,6 +837,11 @@ pub struct AutonomyEvidenceWorkflowValidationStepResult {
     pub status: Option<String>,
     pub exit_code: Option<i64>,
     pub notes: Option<String>,
+    pub current_preflight_allows_capture: Option<bool>,
+    pub current_preflight_report: Option<String>,
+    pub current_preflight_status: Option<String>,
+    pub current_ready_for_registration: Option<bool>,
+    pub guidance: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -3890,6 +3895,15 @@ fn workflow_validation_summary_from_json(
                                         .get("exit_code")
                                         .and_then(|value| value.as_i64()),
                                     notes: json_string(item.get("notes")),
+                                    current_preflight_allows_capture: item
+                                        .get("current_preflight_allows_capture")
+                                        .and_then(|value| value.as_bool()),
+                                    current_preflight_report: json_string(item.get("current_preflight_report")),
+                                    current_preflight_status: json_string(item.get("current_preflight_status")),
+                                    current_ready_for_registration: item
+                                        .get("current_ready_for_registration")
+                                        .and_then(|value| value.as_bool()),
+                                    guidance: json_string(item.get("guidance")),
                                 })
                                 .collect::<Vec<_>>()
                         })
@@ -6039,7 +6053,12 @@ mod tests {
                                         "name": "register_field_replay_case",
                                         "status": "skipped",
                                         "exit_code": 0,
-                                        "notes": "Waiting for field replay capture."
+                                        "notes": "Waiting for field replay capture.",
+                                        "current_preflight_allows_capture": true,
+                                        "current_preflight_report": "/home/user/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json",
+                                        "current_preflight_status": "degraded",
+                                        "current_ready_for_registration": false,
+                                        "guidance": "A newer field-capture preflight report is capture-ready."
                                     },
                                     {
                                         "name": "run_autonomy_readiness_audit",
@@ -6318,6 +6337,26 @@ mod tests {
                 .status
                 .as_deref(),
             Some("skipped")
+        );
+        assert_eq!(
+            package_validation.checks[1].non_passed_steps[0].current_preflight_allows_capture,
+            Some(true)
+        );
+        assert_eq!(
+            package_validation.checks[1].non_passed_steps[0]
+                .current_preflight_status
+                .as_deref(),
+            Some("degraded")
+        );
+        assert_eq!(
+            package_validation.checks[1].non_passed_steps[0].current_ready_for_registration,
+            Some(false)
+        );
+        assert_eq!(
+            package_validation.checks[1].non_passed_steps[0]
+                .guidance
+                .as_deref(),
+            Some("A newer field-capture preflight report is capture-ready.")
         );
         assert_eq!(
             package_validation.checks[2].missing_markers,
@@ -6628,7 +6667,12 @@ mod tests {
                                     "name": "register_field_replay_case",
                                     "status": "skipped",
                                     "exit_code": 0,
-                                    "notes": "Set field case variables."
+                                    "notes": "Set field case variables.",
+                                    "current_preflight_allows_capture": true,
+                                    "current_preflight_report": "/home/user/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json",
+                                    "current_preflight_status": "degraded",
+                                    "current_ready_for_registration": false,
+                                    "guidance": "A newer field-capture preflight report is capture-ready."
                                 },
                                 {
                                     "name": "run_autonomy_readiness_audit",
@@ -6798,6 +6842,30 @@ mod tests {
             Some("skipped")
         );
         assert_eq!(validation.checks[1].non_passed_steps[0].exit_code, Some(0));
+        assert_eq!(
+            validation.checks[1].non_passed_steps[0].current_preflight_allows_capture,
+            Some(true)
+        );
+        assert_eq!(
+            validation.checks[1].non_passed_steps[0]
+                .current_preflight_report
+                .as_deref(),
+            Some("/home/user/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json")
+        );
+        assert_eq!(
+            validation.checks[1].non_passed_steps[0]
+                .current_preflight_status
+                .as_deref(),
+            Some("degraded")
+        );
+        assert_eq!(
+            validation.checks[1].non_passed_steps[0].current_ready_for_registration,
+            Some(false)
+        );
+        assert_eq!(
+            validation.checks[1].non_passed_steps[0].guidance.as_deref(),
+            Some("A newer field-capture preflight report is capture-ready.")
+        );
         assert_eq!(
             validation.checks[2].name.as_deref(),
             Some("final_proof_markers")
@@ -7952,7 +8020,12 @@ mod tests {
                                 {
                                     "name": "register_field_replay_case",
                                     "status": "skipped",
-                                    "exit_code": 0
+                                    "exit_code": 0,
+                                    "current_preflight_allows_capture": true,
+                                    "current_preflight_report": "/home/user/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json",
+                                    "current_preflight_status": "degraded",
+                                    "current_ready_for_registration": false,
+                                    "guidance": "A newer field-capture preflight report is capture-ready."
                                 }
                             ]
                         }
@@ -8439,6 +8512,22 @@ mod tests {
                 .name
                 .as_deref(),
             Some("register_field_replay_case")
+        );
+        assert_eq!(
+            workflow_validation.checks[1].non_passed_steps[0].current_preflight_allows_capture,
+            Some(true)
+        );
+        assert_eq!(
+            workflow_validation.checks[1].non_passed_steps[0]
+                .current_preflight_status
+                .as_deref(),
+            Some("degraded")
+        );
+        assert_eq!(
+            workflow_validation.checks[1].non_passed_steps[0]
+                .guidance
+                .as_deref(),
+            Some("A newer field-capture preflight report is capture-ready.")
         );
         assert!(details.artifacts.iter().any(|artifact| {
             artifact.path == "summaries/autonomy_evidence_workflow/workflow_validation.summary.json"

@@ -97,7 +97,7 @@ from vision_nav.replay_case_schema import REPLAY_CASE_MANIFEST_SCHEMA, evaluate_
 from vision_nav.replay_dataset_audit import audit_replay_dataset_coverage
 from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
-from vision_nav.support_bundle import create_support_bundle, load_replay_cases, print_human
+from vision_nav.support_bundle import create_support_bundle, load_replay_cases, print_human, summarize_workflow_validation
 from vision_nav.threshold_tuning import evaluate_threshold_tuning
 from vision_nav.terrain_estimator import TerrainEstimator
 from vision_nav.terrain_bundle import load_terrain_bundle
@@ -4499,6 +4499,11 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                                         "status": "skipped",
                                         "exit_code": 0,
                                         "notes": "No field case variables supplied.",
+                                        "current_preflight_allows_capture": True,
+                                        "current_preflight_report": str(root / "field_capture_preflight.json"),
+                                        "current_preflight_status": "degraded",
+                                        "current_ready_for_registration": False,
+                                        "guidance": "A newer field-capture preflight report is capture-ready.",
                                     },
                                     {
                                         "name": "run_autonomy_readiness_audit",
@@ -6184,6 +6189,41 @@ def test_autonomy_readiness_requires_external_proof_artifacts() -> None:
                 0,
                 "autonomy evidence package workflow validation non-passed exit code",
             )
+            assert_equal(
+                required_step_check["non_passed_steps"][0]["current_preflight_allows_capture"],
+                True,
+                "autonomy evidence package workflow validation stale preflight capture-ready marker",
+            )
+            assert_equal(
+                required_step_check["non_passed_steps"][0]["current_preflight_status"],
+                "degraded",
+                "autonomy evidence package workflow validation stale preflight status",
+            )
+            assert_equal(
+                required_step_check["non_passed_steps"][0]["current_ready_for_registration"],
+                False,
+                "autonomy evidence package workflow validation stale preflight registration readiness",
+            )
+            if "preflight report is capture-ready" not in required_step_check["non_passed_steps"][0].get("guidance", ""):
+                raise AssertionError("autonomy evidence package should preserve stale preflight guidance")
+            support_workflow_summary = summarize_workflow_validation(json.loads(workflow_validation_report.read_text()))
+            support_required_step_check = next(
+                item
+                for item in support_workflow_summary["checks"]
+                if item.get("name") == "required_step_results"
+            )
+            assert_equal(
+                support_required_step_check["non_passed_steps"][0]["current_preflight_allows_capture"],
+                True,
+                "support workflow summary stale preflight capture-ready marker",
+            )
+            assert_equal(
+                support_required_step_check["non_passed_steps"][0]["current_preflight_report"],
+                str(root / "field_capture_preflight.json"),
+                "support workflow summary stale preflight report path",
+            )
+            if "preflight report is capture-ready" not in support_required_step_check["non_passed_steps"][0].get("guidance", ""):
+                raise AssertionError("support workflow summary should preserve stale preflight guidance")
             manifest = json.loads(archive.read("manifest.json"))
             assert_equal(manifest["readiness_status"], "failed", "autonomy evidence package status")
             assert_equal(

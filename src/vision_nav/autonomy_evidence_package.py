@@ -418,14 +418,31 @@ def compact_workflow_validation_check(check: dict[str, Any]) -> dict[str, Any]:
     if non_passed_steps:
         compact["non_passed_steps_truncated"] = len(non_passed_steps) > MAX_MANIFEST_RUNBOOK_ACTIONS
         compact["non_passed_steps"] = [
-            {
-                key: str(step.get(key))
-                for key in ("name", "status", "notes")
-                if step.get(key) is not None
-            }
-            | ({"exit_code": step.get("exit_code")} if isinstance(step.get("exit_code"), int) else {})
+            compact_workflow_validation_step(step)
             for step in non_passed_steps[:MAX_MANIFEST_RUNBOOK_ACTIONS]
         ]
+    return compact
+
+
+def compact_workflow_validation_step(step: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        key: str(step.get(key))
+        for key in (
+            "name",
+            "status",
+            "notes",
+            "current_preflight_report",
+            "current_preflight_status",
+            "guidance",
+        )
+        if step.get(key) is not None
+    }
+    if isinstance(step.get("exit_code"), int):
+        compact["exit_code"] = step["exit_code"]
+    if isinstance(step.get("current_preflight_allows_capture"), bool):
+        compact["current_preflight_allows_capture"] = step["current_preflight_allows_capture"]
+    if isinstance(step.get("current_ready_for_registration"), bool):
+        compact["current_ready_for_registration"] = step["current_ready_for_registration"]
     return compact
 
 
