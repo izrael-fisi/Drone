@@ -34,6 +34,7 @@ from vision_nav.autonomy_readiness import (
     REQUIRED_FIELD_CONDITIONS,
     evaluate_autonomy_readiness,
     field_collection_next_condition as readiness_field_collection_next_condition,
+    summarize_field_capture_preflight_diagnostic,
 )
 from vision_nav.bench_readiness import evaluate_bench_readiness, evaluate_bench_readiness_file
 from vision_nav.benchmark_retrieval import benchmark_retrieval
@@ -97,7 +98,13 @@ from vision_nav.replay_case_schema import REPLAY_CASE_MANIFEST_SCHEMA, evaluate_
 from vision_nav.replay_dataset_audit import audit_replay_dataset_coverage
 from vision_nav.replay_gates import evaluate_replay_records
 from vision_nav.summarize_match_log import summarize_records
-from vision_nav.support_bundle import create_support_bundle, load_replay_cases, print_human, summarize_workflow_validation
+from vision_nav.support_bundle import (
+    create_support_bundle,
+    load_replay_cases,
+    print_human,
+    summarize_field_capture_preflight,
+    summarize_workflow_validation,
+)
 from vision_nav.threshold_tuning import evaluate_threshold_tuning
 from vision_nav.terrain_estimator import TerrainEstimator
 from vision_nav.terrain_bundle import load_terrain_bundle
@@ -3073,6 +3080,39 @@ RC8_OPTION,90
             str(root / "field-captures" / "good_texture"),
             "support field preflight action capture output",
         )
+        ready_scriptless_preflight = json.loads(field_capture_preflight.read_text())
+        ready_scriptless_preflight["status"] = "degraded"
+        ready_scriptless_preflight["ready_for_capture"] = True
+        ready_scriptless_preflight["ready_for_registration"] = False
+        for action in ready_scriptless_preflight["next_actions"]:
+            if action.get("id") == "capture_field_terrain_log":
+                action["status"] = "ready"
+                action["waits_on"] = []
+        ready_scriptless_path = root / "ready_scriptless_field_capture_preflight.json"
+        ready_scriptless_path.write_text(json.dumps(ready_scriptless_preflight))
+        readiness_scriptless_summary = summarize_field_capture_preflight_diagnostic(ready_scriptless_path)
+        if "run_field_capture.sh" not in readiness_scriptless_summary.get("capture_script_hint", ""):
+            raise AssertionError("Readiness field preflight summary should explain script generation for old capture-ready reports")
+        readiness_scriptless_action = next(
+            action
+            for action in readiness_scriptless_summary["next_actions"]
+            if action.get("id") == "capture_field_terrain_log"
+        )
+        if "run_field_capture.sh" not in readiness_scriptless_action.get("capture_script_hint", ""):
+            raise AssertionError("Readiness capture action should inherit script-generation guidance")
+        support_scriptless_summary = summarize_field_capture_preflight(
+            ready_scriptless_preflight,
+            report_path=ready_scriptless_path,
+        )
+        if "run_field_capture.sh" not in support_scriptless_summary.get("capture_script_hint", ""):
+            raise AssertionError("Support field preflight summary should explain script generation for old capture-ready reports")
+        support_scriptless_action = next(
+            action
+            for action in support_scriptless_summary["next_actions"]
+            if action.get("id") == "capture_field_terrain_log"
+        )
+        if "run_field_capture.sh" not in support_scriptless_action.get("capture_script_hint", ""):
+            raise AssertionError("Support capture action should inherit script-generation guidance")
         support_preflight_action_diagnostic = manifest["field_capture_preflights"]["reports"][0]["next_actions"][0].get(
             "bundle_diagnostic"
         ) or {}
@@ -3961,6 +4001,40 @@ def test_autonomy_evidence_workflow_validation_checks_log_archive() -> None:
             raise AssertionError("workflow validation active capture blocker should preserve original workflow notes")
         if "capture terrain_matches.jsonl" not in capture_detail.get("guidance", ""):
             raise AssertionError("workflow validation active capture blocker should include capture guidance")
+        ready_scriptless_workflow_preflight = json.loads(ready_preflight_report.read_text())
+        ready_scriptless_workflow_preflight.pop("capture_script_path", None)
+        ready_scriptless_workflow_report = root / "ready_scriptless_workflow_field_capture_preflight.json"
+        ready_scriptless_workflow_report.write_text(json.dumps(ready_scriptless_workflow_preflight))
+        stale_preflight_scriptless_report = json.loads(preflight_blocked_path.read_text())
+        stale_preflight_scriptless_report["markers"]["__VISION_NAV_FIELD_CAPTURE_PREFLIGHT__"] = str(
+            ready_scriptless_workflow_report
+        )
+        stale_preflight_scriptless_report["markers"].pop("__VISION_NAV_TERRAIN_CAPTURE_SCRIPT__", None)
+        stale_preflight_scriptless_path = root / "stale_preflight_scriptless_autonomy_evidence_workflow.json"
+        stale_preflight_scriptless_path.write_text(json.dumps(stale_preflight_scriptless_report))
+        stale_preflight_scriptless_validation = validate_workflow_report(stale_preflight_scriptless_path)
+        if "capture_script_path" in stale_preflight_scriptless_validation["next_required_step"]:
+            raise AssertionError("workflow validation should not invent capture script paths for old scriptless preflight reports")
+        if "run_field_capture.sh" not in stale_preflight_scriptless_validation["next_required_step"].get(
+            "capture_script_hint",
+            "",
+        ):
+            raise AssertionError("workflow validation should tell operators to rerun preflight for script generation")
+        stale_preflight_scriptless_checks = {
+            check["name"]: check for check in stale_preflight_scriptless_validation["checks"]
+        }
+        scriptless_capture_detail = next(
+            item
+            for item in stale_preflight_scriptless_checks["required_step_results"]["details"]["non_passed_steps"]
+            if item.get("name") == "capture_field_terrain_log"
+        )
+        if "run_field_capture.sh" not in scriptless_capture_detail.get("capture_script_hint", ""):
+            raise AssertionError("workflow active capture blocker should preserve script-generation guidance")
+        stale_preflight_scriptless_output = io.StringIO()
+        with contextlib.redirect_stdout(stale_preflight_scriptless_output):
+            print_workflow_validation_human(stale_preflight_scriptless_validation)
+        if "Capture script hint: Rerun field capture preflight" not in stale_preflight_scriptless_output.getvalue():
+            raise AssertionError("workflow validation human output should include script-generation guidance")
         superseded_names = [
             item["name"]
             for item in stale_preflight_ready_checks["required_step_results"]["details"]["superseded_steps"]

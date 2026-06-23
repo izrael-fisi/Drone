@@ -989,6 +989,7 @@ function workflowNextStepTitle(nextStep: WorkflowValidationSummary["next_require
     nextStep.output_dir ? `output: ${nextStep.output_dir}` : null,
     nextStep.runtime_status_path ? `runtime status: ${nextStep.runtime_status_path}` : null,
     nextStep.capture_script_path ? `capture script: ${nextStep.capture_script_path}` : null,
+    nextStep.capture_script_hint ? `capture script hint: ${nextStep.capture_script_hint}` : null,
     nextStep.metadata_update_command,
     nextStep.notes,
   ]
@@ -1027,6 +1028,9 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
           )}
           {nextStep.capture_script_path && (
             <span className="max-w-[18rem] truncate font-mono text-emerald-100/80">script {nextStep.capture_script_path}</span>
+          )}
+          {nextStep.capture_script_hint && (
+            <span className="max-w-[18rem] truncate font-mono text-amber-100/80">script hint {nextStep.capture_script_hint}</span>
           )}
           {nextStep.command && (
             <button
@@ -1086,6 +1090,7 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
               step.output_dir ? `Output: ${step.output_dir}` : undefined,
               step.runtime_status_path ? `Runtime status: ${step.runtime_status_path}` : undefined,
               step.capture_script_path ? `Capture script: ${step.capture_script_path}` : undefined,
+              step.capture_script_hint ? `Capture script hint: ${step.capture_script_hint}` : undefined,
               step.preflight_report ? `Preflight: ${step.preflight_report}` : undefined,
               step.preflight_status ? `Preflight status: ${step.preflight_status}` : undefined,
               step.ready_for_capture !== undefined ? `Ready for capture: ${step.ready_for_capture ? "yes" : "no"}` : undefined,
@@ -6748,6 +6753,14 @@ export function ModuleSetup({ initialDeviceId, embedded = false }: ModuleSetupPr
                         {fieldCapturePreflightReport.capture_script_path ?? "n/a"}
                       </span>
                     </div>
+                    {fieldCapturePreflightReport.capture_script_hint && (
+                      <div className="min-w-0 text-amber-200/80">
+                        Capture script hint{" "}
+                        <span className="font-mono break-all">
+                          {fieldCapturePreflightReport.capture_script_hint}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                     <div className="space-y-2">

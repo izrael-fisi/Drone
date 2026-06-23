@@ -28,6 +28,9 @@ from vision_nav.summarize_match_log import summarize_log
 
 
 DEFAULT_MAX_LOG_BYTES = 50 * 1024 * 1024
+CAPTURE_SCRIPT_GENERATION_HINT = (
+    "Rerun field capture preflight to generate run_field_capture.sh for this capture-ready condition."
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -1295,6 +1298,7 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
         elif item.get("status") == "degraded":
             degraded_checks.append(item)
 
+    capture_script_hint = field_capture_script_hint(report)
     next_actions = []
     bundle_action_diagnostic = next(
         (
@@ -1329,24 +1333,25 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
                 )
             except Exception:
                 pass
-        next_actions.append(
-            {
-                "id": action.get("id"),
-                "status": action.get("status"),
-                "title": action.get("title"),
-                "desktop_action": action.get("desktop_action"),
-                "command": command,
-                "waits_on": action.get("waits_on") or [],
-                "bundle_path": action.get("bundle_path"),
-                "capture_output_dir": action.get("capture_output_dir") or report.get("capture_output_dir"),
-                "source_log": action.get("source_log"),
-                "runtime_status_path": action.get("runtime_status_path"),
-                "preflight_capture_command": action.get("preflight_capture_command"),
-                "capture_script_path": action.get("capture_script_path"),
-                "notes": action.get("notes"),
-                "bundle_diagnostic": action_bundle_diagnostic,
-            }
-        )
+        item = {
+            "id": action.get("id"),
+            "status": action.get("status"),
+            "title": action.get("title"),
+            "desktop_action": action.get("desktop_action"),
+            "command": command,
+            "waits_on": action.get("waits_on") or [],
+            "bundle_path": action.get("bundle_path"),
+            "capture_output_dir": action.get("capture_output_dir") or report.get("capture_output_dir"),
+            "source_log": action.get("source_log"),
+            "runtime_status_path": action.get("runtime_status_path"),
+            "preflight_capture_command": action.get("preflight_capture_command"),
+            "capture_script_path": action.get("capture_script_path"),
+            "notes": action.get("notes"),
+            "bundle_diagnostic": action_bundle_diagnostic,
+        }
+        if action.get("id") == "capture_field_terrain_log" and capture_script_hint:
+            item["capture_script_hint"] = capture_script_hint
+        next_actions.append(item)
 
     return {
         "path": str(report_path),
@@ -1366,6 +1371,7 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
         "runtime_status_path": report.get("runtime_status_path"),
         "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},
         "capture_script_path": report.get("capture_script_path"),
+        "capture_script_hint": capture_script_hint,
         "check_count": len(checks),
         "failed_checks": failed_checks,
         "degraded_checks": degraded_checks,
@@ -1374,6 +1380,14 @@ def summarize_field_capture_preflight(report: dict[str, Any], *, report_path: Pa
         "blocked_action_count": sum(1 for action in next_actions if action.get("status") == "blocked"),
         "next_actions": next_actions,
     }
+
+
+def field_capture_script_hint(report: dict[str, Any]) -> str | None:
+    if report.get("ready_for_capture") is not True:
+        return None
+    if isinstance(report.get("capture_script_path"), str) and report["capture_script_path"].strip():
+        return None
+    return CAPTURE_SCRIPT_GENERATION_HINT
 
 
 def copy_field_capture_preflights(paths: list[str], support_dir: Path) -> dict[str, Any]:
@@ -1770,6 +1784,7 @@ def compact_workflow_validation_step(step: dict[str, Any]) -> dict[str, Any]:
             "output_dir",
             "runtime_status_path",
             "capture_script_path",
+            "capture_script_hint",
             "preflight_report",
             "preflight_status",
             "capture_command_after_preflight",

@@ -419,6 +419,7 @@ export interface SupportBundleDetails {
     runtime_status_path?: string;
     preflight_capture_command?: string;
     capture_script_path?: string;
+    capture_script_hint?: string;
     summary?: unknown;
     checks: Array<{
       name?: string;
@@ -487,6 +488,7 @@ export interface SupportBundleDetails {
       runtime_status_path?: string;
       preflight_capture_command?: string;
       capture_script_path?: string;
+      capture_script_hint?: string;
       notes?: string;
       bundle_diagnostic?: {
         bundle_exists?: boolean;
@@ -889,6 +891,7 @@ export interface AutonomyEvidenceWorkflowValidationNextStep {
   output_dir?: string;
   runtime_status_path?: string;
   capture_script_path?: string;
+  capture_script_hint?: string;
   capture_command_after_bundle?: string;
 }
 
@@ -905,6 +908,7 @@ export interface AutonomyEvidenceWorkflowValidationStepResult {
   output_dir?: string;
   runtime_status_path?: string;
   capture_script_path?: string;
+  capture_script_hint?: string;
   preflight_report?: string;
   preflight_status?: "passed" | "failed" | "degraded" | "skipped" | string;
   ready_for_capture?: boolean;

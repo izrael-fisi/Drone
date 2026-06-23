@@ -64,6 +64,9 @@ FIELD_COLLECTION_BOOTSTRAP_COMMAND = (
 )
 GUIDED_EVIDENCE_WORKFLOW_COMMAND = "./scripts/pi/run_autonomy_evidence_workflow.sh"
 SUPPORT_BUNDLE_COMMAND = "./scripts/pi/create_support_bundle.sh"
+CAPTURE_SCRIPT_GENERATION_HINT = (
+    "Rerun field capture preflight to generate run_field_capture.sh for this capture-ready condition."
+)
 COMMAND_GROUP_DESKTOP_ACTIONS = {
     "guided_workflow": "Module Setup > Evidence Workflow",
     "prerequisite_fix": "Module Setup > PX4 Prereq Setup",
@@ -2079,6 +2082,7 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
         elif status == "degraded":
             degraded_checks.append(item)
 
+    capture_script_hint = field_capture_script_hint(report)
     next_actions = []
     bundle_action_diagnostic = next(
         (
@@ -2113,23 +2117,24 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
                 )
             except Exception:
                 pass
-        next_actions.append(
-            {
-                "id": action.get("id"),
-                "status": action.get("status"),
-                "title": action.get("title"),
-                "desktop_action": action.get("desktop_action"),
-                "command": command,
-                "waits_on": action.get("waits_on") or [],
-                "bundle_path": action.get("bundle_path"),
-                "capture_output_dir": action.get("capture_output_dir") or report.get("capture_output_dir"),
-                "source_log": action.get("source_log"),
-                "runtime_status_path": action.get("runtime_status_path"),
-                "capture_script_path": action.get("capture_script_path"),
-                "notes": action.get("notes"),
-                "bundle_diagnostic": action_bundle_diagnostic,
-            }
-        )
+        item = {
+            "id": action.get("id"),
+            "status": action.get("status"),
+            "title": action.get("title"),
+            "desktop_action": action.get("desktop_action"),
+            "command": command,
+            "waits_on": action.get("waits_on") or [],
+            "bundle_path": action.get("bundle_path"),
+            "capture_output_dir": action.get("capture_output_dir") or report.get("capture_output_dir"),
+            "source_log": action.get("source_log"),
+            "runtime_status_path": action.get("runtime_status_path"),
+            "capture_script_path": action.get("capture_script_path"),
+            "notes": action.get("notes"),
+            "bundle_diagnostic": action_bundle_diagnostic,
+        }
+        if action.get("id") == "capture_field_terrain_log" and capture_script_hint:
+            item["capture_script_hint"] = capture_script_hint
+        next_actions.append(item)
 
     return {
         "status": normalize_status(report.get("status")) or "unknown",
@@ -2148,6 +2153,7 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
         "source_log": report.get("source_log"),
         "runtime_status_path": report.get("runtime_status_path"),
         "capture_script_path": report.get("capture_script_path"),
+        "capture_script_hint": capture_script_hint,
         "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},
         "checks": checks,
         "failed_checks": failed_checks,
@@ -2157,6 +2163,14 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
         "blocked_action_count": sum(1 for action in next_actions if action.get("status") == "blocked"),
         "issues": [],
     }
+
+
+def field_capture_script_hint(report: dict[str, Any]) -> str | None:
+    if report.get("ready_for_capture") is not True:
+        return None
+    if isinstance(report.get("capture_script_path"), str) and report["capture_script_path"].strip():
+        return None
+    return CAPTURE_SCRIPT_GENERATION_HINT
 
 
 def build_diagnostics(
@@ -3120,6 +3134,8 @@ def print_human(report: dict[str, Any]) -> None:
             f"capture ready={bool(field_preflight.get('ready_for_capture'))}, "
             f"registration ready={bool(field_preflight.get('ready_for_registration'))}"
         )
+        if field_preflight.get("capture_script_hint"):
+            print(f"Field capture preflight capture-script hint: {field_preflight.get('capture_script_hint')}")
         failed_checks = [
             item
             for item in field_preflight.get("failed_checks") or []

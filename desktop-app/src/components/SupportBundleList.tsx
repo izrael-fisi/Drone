@@ -89,6 +89,7 @@ function workflowStepTitle(step: WorkflowValidationStep) {
     step.output_dir ? `Output: ${step.output_dir}` : undefined,
     step.runtime_status_path ? `Runtime status: ${step.runtime_status_path}` : undefined,
     step.capture_script_path ? `Capture script: ${step.capture_script_path}` : undefined,
+    step.capture_script_hint ? `Capture script hint: ${step.capture_script_hint}` : undefined,
     step.preflight_report ? `Preflight: ${step.preflight_report}` : undefined,
     step.preflight_status ? `Preflight status: ${step.preflight_status}` : undefined,
     step.ready_for_capture !== undefined ? `Ready for capture: ${step.ready_for_capture ? "yes" : "no"}` : undefined,
@@ -341,6 +342,7 @@ function SupportBundleDetailPanel({
   const workflowMetadataUpdateCommand = workflowNextStep?.metadata_update_command;
   const workflowCaptureAfterBundleCommand = workflowNextStep?.capture_command_after_bundle;
   const workflowCaptureScriptPath = workflowNextStep?.capture_script_path;
+  const workflowCaptureScriptHint = workflowNextStep?.capture_script_hint;
   const workflowBlockingChecks = (workflowValidation?.checks ?? []).filter((check) => check.status && check.status !== "passed");
   const workflowMissingSteps = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_steps));
   const workflowMissingMarkers = uniqueStrings(workflowBlockingChecks.flatMap((check) => check.missing_markers));
@@ -496,6 +498,9 @@ function SupportBundleDetailPanel({
                   {workflowNextStep.capture_script_path && (
                     <span className="truncate">script {workflowNextStep.capture_script_path}</span>
                   )}
+                  {workflowNextStep.capture_script_hint && (
+                    <span className="truncate text-amber-200/80">script hint {workflowNextStep.capture_script_hint}</span>
+                  )}
                   {workflowNextStep.metadata_update_command && <span className="truncate">metadata update ready</span>}
                 </div>
                 {workflowNextStep.notes && (
@@ -526,6 +531,11 @@ function SupportBundleDetailPanel({
                     <span className="shrink-0 text-amber-200/80">copy metadata update</span>
                     <span className="truncate whitespace-pre">{workflowMetadataUpdateCommand}</span>
                   </button>
+                )}
+                {workflowCaptureScriptHint && (
+                  <div className="rounded border border-amber-500/20 bg-amber-500/10 px-2 py-1 font-mono text-[10px] text-amber-100">
+                    {workflowCaptureScriptHint}
+                  </div>
                 )}
                 {workflowCaptureScriptPath && (
                   <button
@@ -1187,6 +1197,11 @@ function SupportBundleDetailPanel({
                 {report.capture_script_path && (
                   <div className="font-mono text-slate-500 truncate">
                     capture script {report.capture_script_path}
+                  </div>
+                )}
+                {report.capture_script_hint && (
+                  <div className="font-mono text-amber-200/70 truncate">
+                    capture script hint {report.capture_script_hint}
                   </div>
                 )}
                 {report.checks.filter((check) => check.status !== "passed").length > 0 && (

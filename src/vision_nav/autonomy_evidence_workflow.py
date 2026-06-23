@@ -10,6 +10,9 @@ from typing import Any
 
 
 SCHEMA_VERSION = "vision_nav_autonomy_evidence_workflow_v1"
+CAPTURE_SCRIPT_GENERATION_HINT = (
+    "Rerun field capture preflight to generate run_field_capture.sh for this capture-ready condition."
+)
 
 REQUIRED_WORKFLOW_STEPS = [
     "create_field_evidence_template",
@@ -613,6 +616,9 @@ def annotate_current_preflight_override(
         step["current_preflight_status"] = report["status"]
     if isinstance(report.get("ready_for_registration"), bool):
         step["current_ready_for_registration"] = report["ready_for_registration"]
+    capture_script_hint = field_capture_script_hint(report)
+    if capture_script_hint:
+        step["capture_script_hint"] = capture_script_hint
     step["guidance"] = (
         "A newer field-capture preflight report is capture-ready; the stale "
         "preflight step is superseded for capture guidance, and the next "
@@ -645,6 +651,10 @@ def annotate_capture_step_from_current_preflight(
         step["bundle_path"] = report["bundle_path"].strip()
     if isinstance(report.get("capture_script_path"), str) and report["capture_script_path"].strip():
         step["capture_script_path"] = report["capture_script_path"].strip()
+    else:
+        capture_script_hint = field_capture_script_hint(report)
+        if capture_script_hint:
+            step["capture_script_hint"] = capture_script_hint
     expected_log = report.get("terrain_log_path") or report.get("source_log")
     if isinstance(expected_log, str) and expected_log.strip():
         step["expected_log"] = expected_log.strip()
@@ -799,6 +809,14 @@ def current_preflight_ready_for_capture(markers: dict[str, Any] | None) -> bool:
     return report.get("ready_for_capture") is True
 
 
+def field_capture_script_hint(report: dict[str, Any]) -> str | None:
+    if report.get("ready_for_capture") is not True:
+        return None
+    if isinstance(report.get("capture_script_path"), str) and report["capture_script_path"].strip():
+        return None
+    return CAPTURE_SCRIPT_GENERATION_HINT
+
+
 def current_preflight_report(markers: dict[str, Any]) -> dict[str, Any] | None:
     preflight_report = marker_string(markers, FIELD_CAPTURE_PREFLIGHT_MARKER)
     if not preflight_report:
@@ -874,6 +892,10 @@ def apply_current_preflight_report_guidance(summary: dict[str, Any], markers: di
         summary["bundle_path"] = report["bundle_path"].strip()
     if isinstance(report.get("capture_script_path"), str) and report["capture_script_path"].strip():
         summary["capture_script_path"] = report["capture_script_path"].strip()
+    else:
+        capture_script_hint = field_capture_script_hint(report)
+        if capture_script_hint:
+            summary["capture_script_hint"] = capture_script_hint
     expected_log = report.get("terrain_log_path") or report.get("source_log")
     if isinstance(expected_log, str) and expected_log.strip():
         summary["expected_log"] = expected_log.strip()
@@ -1249,6 +1271,8 @@ def workflow_validation_detail_lines(report: dict[str, Any]) -> list[str]:
                     lines.append(f"  Runtime status: {step.get('runtime_status_path')}")
                 if step.get("capture_script_path"):
                     lines.append(f"  Capture script: {step.get('capture_script_path')}")
+                if step.get("capture_script_hint"):
+                    lines.append(f"  Capture script hint: {step.get('capture_script_hint')}")
                 if step.get("preflight_report"):
                     lines.append(f"  Preflight report: {step.get('preflight_report')}")
                 if step.get("preflight_status"):
@@ -1345,6 +1369,7 @@ def workflow_next_step_detail_lines(next_step: dict[str, Any]) -> list[str]:
         ("Output", next_step.get("output_dir")),
         ("Runtime status", next_step.get("runtime_status_path")),
         ("Capture script", next_step.get("capture_script_path")),
+        ("Capture script hint", next_step.get("capture_script_hint")),
         ("Preflight + capture", next_step.get("preflight_capture_command")),
         ("After bundle", next_step.get("capture_command_after_bundle")),
         ("Preflight + capture after bundle", next_step.get("preflight_capture_command_after_bundle")),

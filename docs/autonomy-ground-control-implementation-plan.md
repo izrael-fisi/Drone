@@ -1431,6 +1431,9 @@ Status:
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.
+- Done: capture-ready field-preflight summaries now flag old reports that lack
+  `run_field_capture.sh`, so CLI, support-bundle, workflow, and desktop handoffs
+  tell operators to rerun preflight when script generation is missing.
 - Done: Module Setup lists downloaded autonomy-readiness JSON reports from
   `~/DroneTransfer/from-pi/replay-cases/` with pass/degraded/fail counts and
   the support-bundle, PX4 receiver, field-evidence, feature-benchmark, and

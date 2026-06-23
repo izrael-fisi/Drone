@@ -15,6 +15,8 @@ const IMAGE_PREVIEW_MAX_BYTES: u64 = 1_500_000;
 const SUPPORT_ARTIFACT_MAX_BYTES: u64 = 50 * 1024 * 1024;
 const LOG_TIMELINE_SEGMENTS: usize = 24;
 const LOG_TIMELINE_MAX_BYTES: u64 = 50 * 1024 * 1024;
+const CAPTURE_SCRIPT_GENERATION_HINT: &str =
+    "Rerun field capture preflight to generate run_field_capture.sh for this capture-ready condition.";
 
 #[derive(Serialize)]
 pub struct SupportBundleSummary {
@@ -450,6 +452,7 @@ pub struct SupportBundleFieldCapturePreflightAction {
     pub runtime_status_path: Option<String>,
     pub preflight_capture_command: Option<String>,
     pub capture_script_path: Option<String>,
+    pub capture_script_hint: Option<String>,
     pub notes: Option<String>,
     pub bundle_diagnostic: Option<SupportBundleDiagnostic>,
 }
@@ -471,6 +474,7 @@ pub struct SupportBundleFieldCapturePreflightReport {
     pub runtime_status_path: Option<String>,
     pub preflight_capture_command: Option<String>,
     pub capture_script_path: Option<String>,
+    pub capture_script_hint: Option<String>,
     pub summary: Option<serde_json::Value>,
     pub checks: Vec<SupportBundleFieldCapturePreflightCheck>,
     pub next_actions: Vec<SupportBundleFieldCapturePreflightAction>,
@@ -866,6 +870,7 @@ pub struct AutonomyEvidenceWorkflowValidationStepResult {
     pub output_dir: Option<String>,
     pub runtime_status_path: Option<String>,
     pub capture_script_path: Option<String>,
+    pub capture_script_hint: Option<String>,
     pub preflight_report: Option<String>,
     pub preflight_status: Option<String>,
     pub ready_for_capture: Option<bool>,
@@ -900,6 +905,7 @@ pub struct AutonomyEvidenceWorkflowValidationNextStep {
     pub output_dir: Option<String>,
     pub runtime_status_path: Option<String>,
     pub capture_script_path: Option<String>,
+    pub capture_script_hint: Option<String>,
     pub capture_command_after_bundle: Option<String>,
 }
 
@@ -4018,6 +4024,7 @@ fn workflow_validation_step_results_from_json(
                     output_dir: json_string(item.get("output_dir")),
                     runtime_status_path: json_string(item.get("runtime_status_path")),
                     capture_script_path: json_string(item.get("capture_script_path")),
+                    capture_script_hint: json_string(item.get("capture_script_hint")),
                     preflight_report: json_string(item.get("preflight_report")),
                     preflight_status: json_string(item.get("preflight_status")),
                     ready_for_capture: item
@@ -4070,6 +4077,7 @@ fn workflow_validation_next_step_from_json(
         output_dir: json_string(value.get("output_dir")),
         runtime_status_path: json_string(value.get("runtime_status_path")),
         capture_script_path: json_string(value.get("capture_script_path")),
+        capture_script_hint: json_string(value.get("capture_script_hint")),
         capture_command_after_bundle: json_string(value.get("capture_command_after_bundle")),
     })
 }
@@ -4453,6 +4461,7 @@ fn field_capture_preflight_action_from_json(
         runtime_status_path: json_string(value.get("runtime_status_path")),
         preflight_capture_command: json_string(value.get("preflight_capture_command")),
         capture_script_path: json_string(value.get("capture_script_path")),
+        capture_script_hint: json_string(value.get("capture_script_hint")),
         notes: json_string(value.get("notes")),
         bundle_diagnostic: value
             .get("bundle_diagnostic")
@@ -4488,6 +4497,7 @@ fn field_capture_preflight_report_from_json(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let capture_script_hint = field_capture_script_hint_from_json(value);
     Some(SupportBundleFieldCapturePreflightReport {
         status: json_string(value.get("status")),
         plan_path: json_string(value.get("plan_path")),
@@ -4508,10 +4518,28 @@ fn field_capture_preflight_report_from_json(
         runtime_status_path: json_string(value.get("runtime_status_path")),
         preflight_capture_command: json_string(value.get("preflight_capture_command")),
         capture_script_path: json_string(value.get("capture_script_path")),
+        capture_script_hint,
         summary: value.get("summary").cloned(),
         checks,
         next_actions,
     })
+}
+
+fn field_capture_script_hint_from_json(value: &serde_json::Value) -> Option<String> {
+    if let Some(hint) = json_string(value.get("capture_script_hint")) {
+        return Some(hint);
+    }
+    if value
+        .get("ready_for_capture")
+        .and_then(|value| value.as_bool())
+        != Some(true)
+    {
+        return None;
+    }
+    if json_string(value.get("capture_script_path")).is_some() {
+        return None;
+    }
+    Some(CAPTURE_SCRIPT_GENERATION_HINT.to_string())
 }
 
 fn autonomy_evidence_blockers_from_value(
