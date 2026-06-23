@@ -1327,6 +1327,13 @@ function SupportBundleDetailPanel({
                 <div className="font-mono text-slate-500 truncate">
                   bundle {formatLabel(report.bundle_path)} / log {formatLabel(report.source_log)}
                 </div>
+                {(report.runtime_status_path || report.field_log_capture_report) && (
+                  <div className="font-mono text-slate-500 truncate">
+                    {report.runtime_status_path ? `runtime ${report.runtime_status_path}` : ""}
+                    {report.runtime_status_path && report.field_log_capture_report ? " / " : ""}
+                    {report.field_log_capture_report ? `report ${report.field_log_capture_report}` : ""}
+                  </div>
+                )}
                 {report.capture_script_path && (
                   <div className="font-mono text-slate-500 truncate">
                     capture script {report.capture_script_path}

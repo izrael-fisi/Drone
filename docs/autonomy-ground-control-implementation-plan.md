@@ -1514,6 +1514,10 @@ Status:
   `VISION_NAV_FIELD_LOG_CAPTURE_REPORT=...` into stale terrain-capture commands
   when a capture output directory or runtime-status path identifies the
   expected audit report, so old runbooks still generate all three proof files.
+- Done: field-capture preflight diagnostics and downloaded support-bundle
+  details now render the `field_log_capture_report.json` path beside the bundle,
+  terrain log, and `runtime_status.json` paths, so support review can verify
+  the complete capture artifact set without opening raw JSON.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

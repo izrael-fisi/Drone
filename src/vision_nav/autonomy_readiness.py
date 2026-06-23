@@ -2178,6 +2178,7 @@ def summarize_field_capture_preflight_diagnostic(path: Path | None, *, explicit:
         "capture_output_dir": report.get("capture_output_dir"),
         "source_log": report.get("source_log"),
         "runtime_status_path": report.get("runtime_status_path"),
+        "field_log_capture_report": report.get("field_log_capture_report"),
         "capture_script_path": report.get("capture_script_path"),
         "capture_script_hint": capture_script_hint,
         "summary": report.get("summary") if isinstance(report.get("summary"), dict) else {},

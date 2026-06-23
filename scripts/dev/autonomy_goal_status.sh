@@ -1179,6 +1179,7 @@ if isinstance(field_preflight, dict):
             ("capture output", "capture_output_dir"),
             ("terrain log", "source_log"),
             ("runtime status", "runtime_status_path"),
+            ("field log capture report", "field_log_capture_report"),
             ("capture script hint", "capture_script_hint"),
         ):
             value = field_preflight.get(key)
