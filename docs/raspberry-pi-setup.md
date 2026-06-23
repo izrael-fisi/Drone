@@ -481,7 +481,9 @@ log and emits `__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__=...`. That report uses
 the same capture-audit schema as the desktop app, so terminal runs of the
 generated `run_field_capture.sh` script still leave a support breadcrumb with
 the remote terrain log, runtime status, condition, case, expected behavior,
-record count, and latest runtime snapshot.
+record count, latest runtime snapshot, and the follow-up metadata-update and
+field-registration commands recovered from the active field preflight or field
+collection plan.
 When the desktop app performs the capture, it also saves a
 `field-log-capture-*.json` audit file next to the downloaded terrain log. That
 file is a support breadcrumb: it records the exact command source, remote and

@@ -612,6 +612,23 @@ def test_field_log_capture_report_writes_desktop_compatible_audit() -> None:
             ),
             encoding="utf-8",
         )
+        preflight = root / "field_capture_preflight.json"
+        metadata_update_command = "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh"
+        register_command = "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/register_field_replay_case.sh"
+        preflight.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_field_capture_preflight_v1",
+                    "status": "degraded",
+                    "condition": "good_texture",
+                    "ready_for_capture": True,
+                    "ready_for_registration": False,
+                    "metadata_update_command": metadata_update_command,
+                    "register_command": register_command,
+                }
+            ),
+            encoding="utf-8",
+        )
         report = create_field_log_capture_report(
             log_path=log,
             runtime_status_path=runtime_status,
@@ -625,6 +642,7 @@ def test_field_log_capture_report_writes_desktop_compatible_audit() -> None:
             command_source="unit",
             command="./scripts/pi/run_terrain_nav_loop.sh",
             exit_code=0,
+            preflight_path=preflight,
         )
         assert_equal(report["schema_version"], "vision_nav_desktop_field_log_capture_v1", "field log report schema")
         assert_equal(report["status"], "passed", "field log report status")
@@ -632,6 +650,13 @@ def test_field_log_capture_report_writes_desktop_compatible_audit() -> None:
         assert_equal(report["artifacts"]["remote_terrain_log"], str(log), "field log report terrain log")
         assert_equal(report["summary"]["record_count"], 1, "field log report record count")
         assert_equal(report["summary"]["status_counts"]["accepted"], 1, "field log report status count")
+        assert_equal(
+            report["next_actions"]["metadata_update_command"],
+            metadata_update_command,
+            "field log report metadata update command",
+        )
+        assert_equal(report["next_actions"]["register_command"], register_command, "field log report register command")
+        assert_equal(report["next_actions"]["registration_ready"], False, "field log report registration readiness")
         if not output.exists():
             raise AssertionError("Expected field log capture report to be written")
 
@@ -3227,6 +3252,21 @@ RC8_OPTION,90
             manifest["field_log_capture_reports"]["reports"][0]["remote_terrain_log"],
             str(field_capture_log),
             "support field log capture remote log",
+        )
+        assert_equal(
+            manifest["field_log_capture_reports"]["reports"][0]["metadata_update_command"],
+            "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh",
+            "support field log capture metadata command",
+        )
+        assert_equal(
+            manifest["field_log_capture_reports"]["reports"][0]["register_command"],
+            "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/register_field_replay_case.sh",
+            "support field log capture register command",
+        )
+        assert_equal(
+            manifest["field_log_capture_reports"]["reports"][0]["registration_ready"],
+            False,
+            "support field log capture registration readiness",
         )
         ready_scriptless_preflight = json.loads(field_capture_preflight.read_text())
         ready_scriptless_preflight["status"] = "degraded"

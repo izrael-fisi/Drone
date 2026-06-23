@@ -75,8 +75,22 @@ def create_field_log_capture_report(
     preflight = read_preflight(preflight_path)
     metadata_ready = None
     metadata_issues: list[str] = []
+    metadata_update_command = None
+    register_command = None
+    registration_ready = None
     if preflight is not None:
         metadata_ready = preflight.get("ready_for_registration") is True
+        registration_ready = metadata_ready
+        metadata_update_command = preflight_command(
+            preflight,
+            "metadata_update_command",
+            action_id="complete_capture_metadata",
+        )
+        register_command = preflight_command(
+            preflight,
+            "register_command",
+            action_id="register_field_replay_case",
+        )
         if metadata_ready is False:
             metadata_issues.append("capture metadata or registration inputs are incomplete")
 
@@ -115,9 +129,9 @@ def create_field_log_capture_report(
             "local_runtime_status": None,
         },
         "next_actions": {
-            "metadata_update_command": None,
-            "register_command": None,
-            "registration_ready": metadata_ready is True,
+            "metadata_update_command": metadata_update_command if isinstance(metadata_update_command, str) else None,
+            "register_command": register_command if isinstance(register_command, str) else None,
+            "registration_ready": registration_ready is True,
         },
         "runtime_status": compact_runtime_status(runtime_status),
         "summary": {
@@ -158,6 +172,45 @@ def read_preflight(path: str | Path | None) -> dict[str, Any] | None:
             return raw
     except Exception:
         return None
+    return None
+
+
+def preflight_command(preflight: dict[str, Any], key: str, *, action_id: str) -> str | None:
+    value = preflight.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    for action in preflight.get("next_actions") or []:
+        if not isinstance(action, dict) or action.get("id") != action_id:
+            continue
+        command = action.get("command")
+        if isinstance(command, str) and command.strip():
+            return command.strip()
+    plan_command = field_collection_plan_command(preflight, key)
+    return plan_command
+
+
+def field_collection_plan_command(preflight: dict[str, Any], key: str) -> str | None:
+    plan_path = preflight.get("plan_path")
+    condition = str(preflight.get("condition") or "").strip()
+    if not isinstance(plan_path, str) or not plan_path.strip() or not condition:
+        return None
+    try:
+        raw = json.loads(Path(plan_path).expanduser().read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(raw, dict):
+        return None
+    candidates = []
+    next_condition = raw.get("next_condition")
+    if isinstance(next_condition, dict):
+        candidates.append(next_condition)
+    candidates.extend(item for item in raw.get("conditions") or [] if isinstance(item, dict))
+    for item in candidates:
+        if item.get("condition") != condition:
+            continue
+        command = item.get(key)
+        if isinstance(command, str) and command.strip():
+            return command.strip()
     return None
 
 

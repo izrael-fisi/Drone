@@ -562,6 +562,10 @@ Status:
 - Done: Field Log Capture audit files now include next-action metadata update
   and registration commands, plus registration readiness, so support can recover
   the exact follow-up proof commands from the downloaded capture audit.
+- Done: Pi-side `field_log_capture_report.json` creation now recovers
+  metadata-update and field-registration commands from the active preflight
+  report or its field collection plan, so terminal captures have the same
+  copyable follow-up commands as app-driven captures.
 - Done: Module Setup now lists downloaded `field-log-capture-*.json` audit
   files, shows metadata/preflight/capture status, copyable commands and paths,
   and includes the latest capture audits in saved setup reports.
