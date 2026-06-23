@@ -91,6 +91,8 @@ assert plan["summary"]["registered_count"] == 0
 assert plan["pending_metadata_update_command_count"] == 8
 assert "read_runtime_status.sh" in plan["next_condition"]["capture_command"]
 assert plan["next_condition"]["runtime_status_path"].endswith("/runtime_status.json")
+assert plan["next_condition"]["field_log_capture_report"].endswith("/field_log_capture_report.json")
+assert "VISION_NAV_FIELD_LOG_CAPTURE_REPORT" in plan["next_condition"]["capture_command"]
 PY
 PYTHONPATH=src python3 -m vision_nav.replay_case_manifest \
   --manifest "$field_smoke_dir/field_manifest.template.json" \

@@ -2692,6 +2692,7 @@ RC8_OPTION,90
                             "source_log": str(root / "field-captures" / condition / "terrain_matches.jsonl"),
                             "capture_output_dir": str(root / "field-captures" / condition),
                             "runtime_status_path": str(root / "field-captures" / condition / "runtime_status.json"),
+                            "field_log_capture_report": str(root / "field-captures" / condition / "field_log_capture_report.json"),
                             "capture_command": f"VISION_NAV_OUTPUT_DIR={root / 'field-captures' / condition} ./scripts/pi/run_terrain_nav_loop.sh",
                             "metadata_update_command": f"VISION_NAV_FIELD_CONDITION={condition} ./scripts/pi/update_field_capture_metadata.sh",
                             "register_command": f"VISION_NAV_FIELD_CONDITION={condition} ./scripts/pi/register_field_replay_case.sh",
@@ -3165,6 +3166,8 @@ RC8_OPTION,90
         field_collection_condition = manifest["field_collection_plans"]["reports"][0]["conditions"][0]
         if "run_terrain_nav_loop.sh" not in field_collection_condition.get("capture_command", ""):
             raise AssertionError("Expected support field collection condition to preserve capture command text")
+        if "field_log_capture_report.json" not in str(field_collection_condition.get("field_log_capture_report", "")):
+            raise AssertionError("Expected support field collection condition to preserve capture report path")
         if "read_runtime_status.sh" not in field_collection_condition.get("capture_command", ""):
             raise AssertionError("Expected support field collection condition to normalize runtime status capture")
         if "preflight_field_capture.sh" not in field_collection_condition.get("preflight_capture_command", ""):
@@ -7578,8 +7581,15 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             "$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture/runtime_status.json",
             "field collection condition-specific runtime status",
         )
+        assert_equal(
+            good_texture["field_log_capture_report"],
+            "$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture/field_log_capture_report.json",
+            "field collection condition-specific capture report",
+        )
         if "VISION_NAV_OUTPUT_DIR" not in good_texture["capture_command"]:
             raise AssertionError("Expected generated capture command to include output directory")
+        if "VISION_NAV_FIELD_LOG_CAPTURE_REPORT=$HOME/DroneTransfer/outgoing/field-captures/Site-A-good_texture/field_log_capture_report.json" not in good_texture["capture_command"]:
+            raise AssertionError("Expected generated capture command to include explicit field capture report path")
         if "VISION_NAV_FIELD_COLLECTION_PLAN" not in good_texture["preflight_command"]:
             raise AssertionError("Expected generated preflight command to include collection plan path")
         if "VISION_NAV_FIELD_CONDITION=good_texture" not in good_texture["preflight_command"]:
@@ -7659,6 +7669,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected Markdown plan to include the preflight helper")
         if "Runtime status:" not in markdown_text:
             raise AssertionError("Expected Markdown plan to include the next runtime status path")
+        if "Field log capture report:" not in markdown_text:
+            raise AssertionError("Expected Markdown plan to include the next capture audit report path")
         if "read_runtime_status.sh" not in markdown_text:
             raise AssertionError("Expected Markdown plan capture command to collect runtime status")
         if "update_field_capture_metadata.sh" not in markdown_text:
@@ -7743,8 +7755,16 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             raise AssertionError("Expected capture script to run terrain capture")
         if "read_runtime_status.sh" not in ready_capture_script_text:
             raise AssertionError("Expected capture script to read runtime status")
+        if "# field log capture report:" not in ready_capture_script_text:
+            raise AssertionError("Expected capture script to document the field capture report path")
+        if "# metadata update:" not in ready_capture_script_text:
+            raise AssertionError("Expected capture script to document the metadata update command")
         if "preflight_field_capture.sh" in ready_capture_script_text:
             raise AssertionError("Capture script should not recursively rerun preflight")
+        if "VISION_NAV_FIELD_LOG_CAPTURE_REPORT" not in ready_capture_script_text:
+            raise AssertionError("Expected capture script command to set the explicit field capture report path")
+        if "field_log_capture_report.json" not in ready_preflight.get("field_log_capture_report", ""):
+            raise AssertionError("Expected field preflight report to expose the field capture report path")
         assert_equal(
             ready_preflight["bundle_path"],
             str(ready_bundle),
@@ -7774,6 +7794,8 @@ def test_field_collection_plan_tracks_placeholders_and_registered_logs() -> None
             str(ready_capture_script),
             "field preflight capture action carries capture script path",
         )
+        if "field_log_capture_report.json" not in ready_actions["capture_field_terrain_log"].get("field_log_capture_report", ""):
+            raise AssertionError("Expected field preflight capture action to carry capture report path")
         assert_equal(
             ready_actions["complete_capture_metadata"]["status"],
             "action_required",

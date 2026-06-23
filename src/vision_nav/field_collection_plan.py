@@ -187,6 +187,7 @@ def condition_plan(
     capture_output_dir = remote_path_join(capture_root, generated_case_name)
     planned_source_log = remote_path_join(capture_output_dir, "terrain_matches.jsonl")
     runtime_status_path = remote_path_join(capture_output_dir, "runtime_status.json")
+    field_log_capture_report = remote_path_join(capture_output_dir, "field_log_capture_report.json")
     expected = expected_behavior_for_condition(condition)
     status = "missing"
     manifest_log_path: str | None = None
@@ -237,6 +238,7 @@ def condition_plan(
         "VISION_NAV_FIELD_EXPECTED": expected,
         "VISION_NAV_FIELD_CONDITION": condition,
         "VISION_NAV_FIELD_CONDITIONS": condition,
+        "VISION_NAV_FIELD_LOG_CAPTURE_REPORT": field_log_capture_report,
         "VISION_NAV_FIELD_CAPTURE_PREFLIGHT": str(collection_plan_path.with_name("field_capture_preflight.json"))
         if collection_plan_path is not None
         else "",
@@ -272,6 +274,7 @@ def condition_plan(
         "legacy_source_log": source_log,
         "capture_output_dir": capture_output_dir,
         "runtime_status_path": runtime_status_path,
+        "field_log_capture_report": field_log_capture_report,
         "bundle": bundle,
         "capture_metadata": capture_metadata,
         "capture_checklist": capture_checklist,
@@ -460,6 +463,7 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 f"- Capture output: `{next_condition.get('capture_output_dir')}`",
                 f"- Terrain log: `{next_condition.get('source_log')}`",
                 f"- Runtime status: `{next_condition.get('runtime_status_path')}`",
+                f"- Field log capture report: `{next_condition.get('field_log_capture_report')}`",
                 "",
                 "Preflight:",
                 "",
@@ -508,6 +512,7 @@ def render_field_collection_markdown(plan: dict[str, Any]) -> str:
                 f"- Capture output: `{item.get('capture_output_dir')}`",
                 f"- Terrain log: `{item.get('source_log')}`",
                 f"- Runtime status: `{item.get('runtime_status_path')}`",
+                f"- Field log capture report: `{item.get('field_log_capture_report')}`",
                 f"- Notes: {item.get('notes') or 'n/a'}",
                 "",
                 "Preflight the capture setup:",

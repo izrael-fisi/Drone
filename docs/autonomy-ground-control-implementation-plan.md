@@ -1504,6 +1504,11 @@ Status:
   `field_log_capture_report.json` from the capture output directory when older
   workflow artifacts lack the explicit marker, so stale runbooks still point to
   the expected audit artifact.
+- Done: field collection plans, field-capture preflight reports, generated
+  capture scripts, support summaries, and desktop workflow cards now carry the
+  expected `field_log_capture_report.json` path alongside
+  `terrain_matches.jsonl` and `runtime_status.json`, keeping all three
+  field-capture proof artifacts traceable.
 - Done: Module Setup detects sibling Markdown handoffs beside downloaded
   autonomy-readiness JSON reports after app restart and exposes copy/reveal
   controls in the Autonomy Readiness Reports list.

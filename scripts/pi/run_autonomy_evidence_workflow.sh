@@ -674,6 +674,9 @@ load_field_collection_condition() {
   fi
   if [[ "$field_log_capture_report_was_explicit" == "1" ]]; then
     export VISION_NAV_FIELD_LOG_CAPTURE_REPORT="$field_log_capture_report"
+  elif [[ "$field_capture_output_dir_was_explicit" == "1" || "$field_log_was_explicit" == "1" ]]; then
+    field_log_capture_report="$field_capture_output_dir/field_log_capture_report.json"
+    export VISION_NAV_FIELD_LOG_CAPTURE_REPORT="$field_log_capture_report"
   else
     field_log_capture_report="${VISION_NAV_FIELD_LOG_CAPTURE_REPORT:-$field_capture_output_dir/field_log_capture_report.json}"
     export VISION_NAV_FIELD_LOG_CAPTURE_REPORT="$field_log_capture_report"

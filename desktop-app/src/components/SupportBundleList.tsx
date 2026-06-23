@@ -88,6 +88,7 @@ function workflowStepTitle(step: WorkflowValidationStep) {
     step.expected_log ? `Expected log: ${step.expected_log}` : undefined,
     step.output_dir ? `Output: ${step.output_dir}` : undefined,
     step.runtime_status_path ? `Runtime status: ${step.runtime_status_path}` : undefined,
+    step.field_log_capture_report ? `Field log capture report: ${step.field_log_capture_report}` : undefined,
     step.capture_script_path ? `Capture script: ${step.capture_script_path}` : undefined,
     step.capture_script_hint ? `Capture script hint: ${step.capture_script_hint}` : undefined,
     step.preflight_report ? `Preflight: ${step.preflight_report}` : undefined,
@@ -562,6 +563,9 @@ function SupportBundleDetailPanel({
                   {workflowNextStep.output_dir && <span className="truncate">output {workflowNextStep.output_dir}</span>}
                   {workflowNextStep.runtime_status_path && (
                     <span className="truncate">runtime {workflowNextStep.runtime_status_path}</span>
+                  )}
+                  {workflowNextStep.field_log_capture_report && (
+                    <span className="truncate">report {workflowNextStep.field_log_capture_report}</span>
                   )}
                   {workflowNextStep.capture_script_path && (
                     <span className="truncate">script {workflowNextStep.capture_script_path}</span>
@@ -1263,6 +1267,7 @@ function SupportBundleDetailPanel({
                         title={[
                           condition.source_log ? `log ${condition.source_log}` : "",
                           condition.runtime_status_path ? `runtime ${condition.runtime_status_path}` : "",
+                          condition.field_log_capture_report ? `report ${condition.field_log_capture_report}` : "",
                           condition.capture_output_dir ? `capture ${condition.capture_output_dir}` : "",
                         ].filter(Boolean).join(" / ") || undefined}
                       >
@@ -1272,6 +1277,7 @@ function SupportBundleDetailPanel({
                         {condition.has_metadata_update_command ? " meta" : ""}
                         {condition.has_register_command ? " reg" : ""}
                         {condition.runtime_status_path ? " status" : ""}
+                        {condition.field_log_capture_report ? " report" : ""}
                       </span>
                     ))}
                   </div>

@@ -135,6 +135,7 @@ def evaluate_field_capture_preflight(
         "capture_output_dir": selected.get("capture_output_dir") if selected else None,
         "source_log": selected.get("source_log") if selected else None,
         "runtime_status_path": selected.get("runtime_status_path") if selected else None,
+        "field_log_capture_report": selected.get("field_log_capture_report") if selected else None,
         "checks": checks,
         "summary": summarize_checks(checks),
     }
@@ -203,6 +204,7 @@ def build_next_actions(
                 waits_on=capture_waits_on,
                 source_log=str(condition.get("source_log") or ""),
                 runtime_status_path=str(condition.get("runtime_status_path") or ""),
+                field_log_capture_report=str(condition.get("field_log_capture_report") or ""),
                 capture_output_dir=str(condition.get("capture_output_dir") or ""),
                 preflight_capture_command=str(condition.get("preflight_capture_command") or ""),
                 capture_script_path=str(condition.get("capture_script_path") or ""),
@@ -239,6 +241,7 @@ def build_next_actions(
                 waits_on=registration_waits_on,
                 source_log=str(condition.get("source_log") or ""),
                 runtime_status_path=str(condition.get("runtime_status_path") or ""),
+                field_log_capture_report=str(condition.get("field_log_capture_report") or ""),
             )
         )
     return actions
@@ -313,10 +316,13 @@ def normalize_selected_condition(
     if bundle_path:
         normalized["bundle_validation_command"] = bundle_validation_command(bundle_path)
     capture_command = str(normalized.get("capture_command") or "").strip()
+    capture_output_dir = str(normalized.get("capture_output_dir") or "").strip()
+    if capture_output_dir and not normalized.get("field_log_capture_report"):
+        normalized["field_log_capture_report"] = f"{capture_output_dir.rstrip('/')}/field_log_capture_report.json"
     if capture_command:
         normalized["capture_command"] = command_with_runtime_status_read(
             capture_command,
-            runtime_status_root=str(normalized.get("capture_output_dir") or "").strip() or None,
+            runtime_status_root=capture_output_dir or None,
         )
     preflight_capture_command = str(normalized.get("preflight_capture_command") or "").strip()
     if not preflight_capture_command:
@@ -364,6 +370,9 @@ def write_capture_script(
         ("output", "capture_output_dir"),
         ("terrain log", "source_log"),
         ("runtime status", "runtime_status_path"),
+        ("field log capture report", "field_log_capture_report"),
+        ("metadata update", "metadata_update_command"),
+        ("register", "register_command"),
     ):
         value = condition.get(key)
         if value:
@@ -630,6 +639,8 @@ def print_human(report: dict[str, Any]) -> None:
         print(f"Terrain log: {report['source_log']}")
     if report.get("runtime_status_path"):
         print(f"Runtime status: {report['runtime_status_path']}")
+    if report.get("field_log_capture_report"):
+        print(f"Field log capture report: {report['field_log_capture_report']}")
     if report.get("bundle_path"):
         print(f"Bundle: {report['bundle_path']}")
     for item in report.get("checks") or []:
@@ -733,6 +744,8 @@ def print_human(report: dict[str, Any]) -> None:
         print(f"__VISION_NAV_TERRAIN_BUNDLE_STATUS__={'available' if Path(str(report['bundle_path'])).exists() else 'missing'}")
     if report.get("source_log"):
         print(f"__VISION_NAV_EXPECTED_TERRAIN_LOG__={report['source_log']}")
+    if report.get("field_log_capture_report"):
+        print(f"__VISION_NAV_FIELD_LOG_CAPTURE_REPORT__={report['field_log_capture_report']}")
     if report.get("capture_output_dir"):
         print(f"__VISION_NAV_TERRAIN_CAPTURE_OUTPUT_DIR__={report['capture_output_dir']}")
     if report.get("capture_command"):

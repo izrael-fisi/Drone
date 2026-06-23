@@ -121,6 +121,7 @@ export interface FieldCollectionPlanCondition {
   legacy_source_log?: string;
   capture_output_dir?: string;
   runtime_status_path?: string;
+  field_log_capture_report?: string;
   has_capture_command?: boolean;
   has_preflight_command?: boolean;
   has_preflight_capture_command?: boolean;
@@ -430,6 +431,7 @@ export interface SupportBundleDetails {
     capture_output_dir?: string;
     source_log?: string;
     runtime_status_path?: string;
+    field_log_capture_report?: string;
     preflight_capture_command?: string;
     capture_script_path?: string;
     capture_script_hint?: string;
@@ -499,6 +501,7 @@ export interface SupportBundleDetails {
       capture_output_dir?: string;
       source_log?: string;
       runtime_status_path?: string;
+      field_log_capture_report?: string;
       preflight_capture_command?: string;
       capture_script_path?: string;
       capture_script_hint?: string;
@@ -776,6 +779,7 @@ export interface AutonomyEvidencePackageFieldCapturePreflightDiagnostic {
   capture_output_dir?: string;
   source_log?: string;
   runtime_status_path?: string;
+  field_log_capture_report?: string;
   capture_script_path?: string;
   capture_script_hint?: string;
   ready_for_capture?: boolean;
@@ -811,6 +815,7 @@ export interface AutonomyEvidencePackageFieldCapturePreflightDiagnostic {
     capture_output_dir?: string;
     source_log?: string;
     runtime_status_path?: string;
+    field_log_capture_report?: string;
     preflight_capture_command?: string;
     capture_script_path?: string;
     capture_script_hint?: string;
@@ -996,6 +1001,7 @@ export interface AutonomyEvidenceWorkflowValidationNextStep {
   expected_log?: string;
   output_dir?: string;
   runtime_status_path?: string;
+  field_log_capture_report?: string;
   capture_script_path?: string;
   capture_script_hint?: string;
   capture_command_after_bundle?: string;
@@ -1013,6 +1019,7 @@ export interface AutonomyEvidenceWorkflowValidationStepResult {
   expected_log?: string;
   output_dir?: string;
   runtime_status_path?: string;
+  field_log_capture_report?: string;
   capture_script_path?: string;
   capture_script_hint?: string;
   preflight_report?: string;

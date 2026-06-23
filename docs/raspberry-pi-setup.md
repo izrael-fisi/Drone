@@ -512,7 +512,10 @@ instead of the plan's next pending one. The preflight writes
 capture is ready, an executable
 `~/DroneTransfer/outgoing/replay-cases/run_field_capture.sh` script containing
 the selected condition's bounded terrain capture plus runtime-status read. The
-script path is also emitted as `__VISION_NAV_TERRAIN_CAPTURE_SCRIPT__=...`.
+generated script comments list the selected condition, capture output
+directory, `terrain_matches.jsonl`, `runtime_status.json`, and
+`field_log_capture_report.json` paths before the command block. The script path
+is also emitted as `__VISION_NAV_TERRAIN_CAPTURE_SCRIPT__=...`.
 Set `VISION_NAV_FIELD_CAPTURE_SCRIPT=/path/to/run_capture.sh` to write that
 script elsewhere. The preflight prints `ready_for_capture` and
 `ready_for_registration` status, and fails only when a blocking capture

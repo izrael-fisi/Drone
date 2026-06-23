@@ -1175,6 +1175,7 @@ def summarize_field_collection_condition(
         "source_log": item.get("source_log"),
         "capture_output_dir": item.get("capture_output_dir"),
         "runtime_status_path": item.get("runtime_status_path"),
+        "field_log_capture_report": item.get("field_log_capture_report"),
         "has_preflight_command": bool(preflight_command or item.get("has_preflight_command")),
         "has_capture_command": bool(item.get("capture_command") or item.get("has_capture_command")),
         "has_preflight_capture_command": bool(

@@ -1195,6 +1195,7 @@ function workflowNextStepTitle(nextStep: WorkflowValidationSummary["next_require
     nextStep.expected_log ? `expected log: ${nextStep.expected_log}` : null,
     nextStep.output_dir ? `output: ${nextStep.output_dir}` : null,
     nextStep.runtime_status_path ? `runtime status: ${nextStep.runtime_status_path}` : null,
+    nextStep.field_log_capture_report ? `field log capture report: ${nextStep.field_log_capture_report}` : null,
     nextStep.capture_script_path ? `capture script: ${nextStep.capture_script_path}` : null,
     nextStep.capture_script_hint ? `capture script hint: ${nextStep.capture_script_hint}` : null,
     nextStep.metadata_update_command,
@@ -1296,6 +1297,7 @@ function WorkflowValidationSummaryLine({ summary }: { summary: WorkflowValidatio
               step.expected_log ? `Expected log: ${step.expected_log}` : undefined,
               step.output_dir ? `Output: ${step.output_dir}` : undefined,
               step.runtime_status_path ? `Runtime status: ${step.runtime_status_path}` : undefined,
+              step.field_log_capture_report ? `Field log capture report: ${step.field_log_capture_report}` : undefined,
               step.capture_script_path ? `Capture script: ${step.capture_script_path}` : undefined,
               step.capture_script_hint ? `Capture script hint: ${step.capture_script_hint}` : undefined,
               step.preflight_report ? `Preflight: ${step.preflight_report}` : undefined,
@@ -1482,6 +1484,7 @@ function fieldCollectionWorkflowText(
       if (condition.capture_output_dir) lines.push(`# capture output: ${condition.capture_output_dir}`);
       if (condition.source_log) lines.push(`# terrain log: ${condition.source_log}`);
       if (condition.runtime_status_path) lines.push(`# runtime status: ${condition.runtime_status_path}`);
+      if (condition.field_log_capture_report) lines.push(`# field log capture report: ${condition.field_log_capture_report}`);
       for (const [group, command] of [
         ["field_collection_preflight", condition.preflight_command],
         ["field_collection_capture", condition.capture_command],
