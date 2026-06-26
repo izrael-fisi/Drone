@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import type {
   BBox,
   BuildDroneBundleRequest,
@@ -8,6 +7,7 @@ import type {
   DownloadFileResult,
   DownloadProgress,
   DownloadTilesResult,
+  DronePositionUpdate,
   ExtractedSupportBundleArtifact,
   FieldCollectionPlanFile,
   FieldEvidenceReportFile,
@@ -33,32 +33,126 @@ import type {
   TileEstimate,
 } from "./types";
 
+const DEV_PROFILE: Profile = {
+  accent_color: "#06B6D4",
+  email: "",
+  name: "Izrael",
+  onboarding_complete: true,
+  org: "Drone Vision Nav",
+};
+
+function hasTauriRuntime() {
+  if (typeof window === "undefined") return false;
+  const tauriInternals = (
+    window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown } }
+  ).__TAURI_INTERNALS__;
+  return typeof tauriInternals?.invoke === "function";
+}
+
+function readLocalJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readLocalArray<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalJson(key: string, value: unknown) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function estimateTilesFallback(args?: Record<string, unknown>): TileEstimate {
+  const bbox = args?.bbox as BBox | undefined;
+  const zoom = Number(args?.zoom ?? 16);
+  const latSpan = bbox ? Math.max(0, bbox.lat_max - bbox.lat_min) : 0;
+  const lonSpan = bbox ? Math.max(0, bbox.lon_max - bbox.lon_min) : 0;
+  const scale = Math.max(1, 2 ** Math.max(0, zoom - 12));
+  const nx = Math.max(1, Math.ceil(lonSpan * scale * 12));
+  const ny = Math.max(1, Math.ceil(latSpan * scale * 12));
+  const tile_count = nx * ny;
+  return {
+    estimated_mb: tile_count * 0.18,
+    gsd_m_per_px: 156543.03392 / 2 ** zoom,
+    nx,
+    ny,
+    tile_count,
+    too_large: tile_count > 5000,
+  };
+}
+
+async function fallbackInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  switch (command) {
+    case "load_profile":
+      return readLocalJson("drone_dev_profile", DEV_PROFILE) as T;
+    case "save_profile":
+      writeLocalJson("drone_dev_profile", args?.profile ?? DEV_PROFILE);
+      return undefined as T;
+    case "load_devices":
+      return readLocalArray<Device>("drone_dev_devices") as T;
+    case "save_devices":
+      writeLocalJson("drone_dev_devices", args?.devices ?? []);
+      return undefined as T;
+    case "load_regions":
+      return readLocalArray<Region>("drone_dev_regions") as T;
+    case "save_regions":
+      writeLocalJson("drone_dev_regions", args?.regions ?? []);
+      return undefined as T;
+    case "estimate_tiles":
+      return estimateTilesFallback(args) as T;
+    case "local_network_hints":
+    case "discover_pi_devices":
+    case "list_support_bundles":
+      return [] as T;
+    case "receive_position_update":
+      return null as T;
+    default:
+      throw new Error(`Command ${command} requires the Tauri desktop runtime.`);
+  }
+}
+
+function invokeCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (!hasTauriRuntime()) {
+    return fallbackInvoke<T>(command, args);
+  }
+  return import("@tauri-apps/api/core").then(({ invoke }) => invoke<T>(command, args));
+}
+
 export const cmd = {
-  loadProfile: () => invoke<Profile>("load_profile"),
-  saveProfile: (profile: Profile) => invoke<void>("save_profile", { profile }),
-  loadDevices: () => invoke<Device[]>("load_devices"),
-  saveDevices: (devices: Device[]) => invoke<void>("save_devices", { devices }),
-  loadRegions: () => invoke<Region[]>("load_regions"),
-  saveRegions: (regions: Region[]) => invoke<void>("save_regions", { regions }),
+  loadProfile: () => invokeCommand<Profile>("load_profile"),
+  saveProfile: (profile: Profile) => invokeCommand<void>("save_profile", { profile }),
+  loadDevices: () => invokeCommand<Device[]>("load_devices"),
+  saveDevices: (devices: Device[]) => invokeCommand<void>("save_devices", { devices }),
+  loadRegions: () => invokeCommand<Region[]>("load_regions"),
+  saveRegions: (regions: Region[]) => invokeCommand<void>("save_regions", { regions }),
   estimateTiles: (bbox: BBox, zoom: number) =>
-    invoke<TileEstimate>("estimate_tiles", { bbox, zoom }),
+    invokeCommand<TileEstimate>("estimate_tiles", { bbox, zoom }),
   downloadTiles: (bbox: BBox, zoom: number, outputDir: string, source = "esri", apiKey?: string) =>
-    invoke<DownloadTilesResult>("download_tiles", { bbox, zoom, outputDir, source, apiKey }),
+    invokeCommand<DownloadTilesResult>("download_tiles", { bbox, zoom, outputDir, source, apiKey }),
   buildDroneBundle: (request: BuildDroneBundleRequest) =>
-    invoke<BuildDroneBundleResult>("build_drone_bundle", { request }),
+    invokeCommand<BuildDroneBundleResult>("build_drone_bundle", { request }),
   importMapFile: (request: ImportMapFileRequest) =>
-    invoke<ImportMapFileResult>("import_map_file", { request }),
+    invokeCommand<ImportMapFileResult>("import_map_file", { request }),
   importElevationAssets: (request: ImportElevationAssetsRequest) =>
-    invoke<ImportElevationAssetsResult>("import_elevation_assets", { request }),
+    invokeCommand<ImportElevationAssetsResult>("import_elevation_assets", { request }),
   discoverPiDevices: (seedHosts: string[], port = 22) =>
-    invoke<PiDiscoveryCandidate[]>("discover_pi_devices", { seedHosts, port }),
-  localNetworkHints: () => invoke<LocalNetworkHint[]>("local_network_hints"),
+    invokeCommand<PiDiscoveryCandidate[]>("discover_pi_devices", { seedHosts, port }),
+  localNetworkHints: () => invokeCommand<LocalNetworkHint[]>("local_network_hints"),
   testSshConnection: (
     host: string,
     port: number,
     username: string,
     auth: Device["auth"]
-  ) => invoke<{ ok: boolean; message: string; server_banner?: string; fingerprint?: string }>(
+  ) => invokeCommand<{ ok: boolean; message: string; server_banner?: string; fingerprint?: string }>(
     "test_ssh_connection",
     { host, port, username, auth }
   ),
@@ -68,7 +162,7 @@ export const cmd = {
     username: string,
     auth: Device["auth"],
     command: string
-  ) => invoke<CommandResult>("ssh_run_command", { host, port, username, auth, command }),
+  ) => invokeCommand<CommandResult>("ssh_run_command", { host, port, username, auth, command }),
   sshUploadFiles: (
     host: string,
     port: number,
@@ -76,7 +170,7 @@ export const cmd = {
     auth: Device["auth"],
     localPaths: string[],
     remoteDir: string
-  ) => invoke<void>("ssh_upload_files", { host, port, username, auth, localPaths, remoteDir }),
+  ) => invokeCommand<void>("ssh_upload_files", { host, port, username, auth, localPaths, remoteDir }),
   sshUploadDirectory: (
     host: string,
     port: number,
@@ -84,7 +178,7 @@ export const cmd = {
     auth: Device["auth"],
     localDir: string,
     remoteDir: string
-  ) => invoke<void>("ssh_upload_directory", { host, port, username, auth, localDir, remoteDir }),
+  ) => invokeCommand<void>("ssh_upload_directory", { host, port, username, auth, localDir, remoteDir }),
   sshUploadProject: (
     host: string,
     port: number,
@@ -92,7 +186,7 @@ export const cmd = {
     auth: Device["auth"],
     localDir: string,
     remoteDir: string
-  ) => invoke<void>("ssh_upload_project", { host, port, username, auth, localDir, remoteDir }),
+  ) => invokeCommand<void>("ssh_upload_project", { host, port, username, auth, localDir, remoteDir }),
   sshDownloadFile: (
     host: string,
     port: number,
@@ -100,7 +194,7 @@ export const cmd = {
     auth: Device["auth"],
     remotePath: string,
     localDir: string
-  ) => invoke<DownloadFileResult>("ssh_download_file", { host, port, username, auth, remotePath, localDir }),
+  ) => invokeCommand<DownloadFileResult>("ssh_download_file", { host, port, username, auth, remotePath, localDir }),
   sshCaptureCameraFrame: (
     host: string,
     port: number,
@@ -110,7 +204,7 @@ export const cmd = {
     width: number,
     height: number,
     timeoutMs: number
-  ) => invoke<{
+  ) => invokeCommand<{
     mime_type: string;
     base64_data: string;
     remote_path: string;
@@ -126,47 +220,49 @@ export const cmd = {
     height,
     timeoutMs,
   }),
-  readYamlConfig: (path: string) => invoke<Record<string, unknown>>("read_yaml_config", { path }),
+  readYamlConfig: (path: string) => invokeCommand<Record<string, unknown>>("read_yaml_config", { path }),
   writeYamlConfig: (path: string, data: Record<string, unknown>) =>
-    invoke<void>("write_yaml_config", { path, data }),
-  listYamlConfigs: (dir: string) => invoke<string[]>("list_yaml_configs", { dir }),
+    invokeCommand<void>("write_yaml_config", { path, data }),
+  listYamlConfigs: (dir: string) => invokeCommand<string[]>("list_yaml_configs", { dir }),
   listAutonomyReadinessReports: (dir: string) =>
-    invoke<AutonomyReadinessReportFile[]>("list_autonomy_readiness_reports", { dir }),
+    invokeCommand<AutonomyReadinessReportFile[]>("list_autonomy_readiness_reports", { dir }),
   listAutonomyEvidenceWorkflowReports: (dir: string) =>
-    invoke<AutonomyEvidenceWorkflowReportFile[]>("list_autonomy_evidence_workflow_reports", { dir }),
+    invokeCommand<AutonomyEvidenceWorkflowReportFile[]>("list_autonomy_evidence_workflow_reports", { dir }),
   listFieldEvidenceReports: (dir: string) =>
-    invoke<FieldEvidenceReportFile[]>("list_field_evidence_reports", { dir }),
+    invokeCommand<FieldEvidenceReportFile[]>("list_field_evidence_reports", { dir }),
   listFieldCollectionPlans: (dir: string) =>
-    invoke<FieldCollectionPlanFile[]>("list_field_collection_plans", { dir }),
+    invokeCommand<FieldCollectionPlanFile[]>("list_field_collection_plans", { dir }),
   listFieldEvidenceTemplates: (dir: string) =>
-    invoke<FieldEvidenceTemplateFile[]>("list_field_evidence_templates", { dir }),
+    invokeCommand<FieldEvidenceTemplateFile[]>("list_field_evidence_templates", { dir }),
   listFeatureMethodBenchmarkReports: (dir: string) =>
-    invoke<FeatureMethodBenchmarkReportFile[]>("list_feature_method_benchmark_reports", { dir }),
+    invokeCommand<FeatureMethodBenchmarkReportFile[]>("list_feature_method_benchmark_reports", { dir }),
   listPx4PrereqReports: (dir: string) =>
-    invoke<Px4PrereqReportFile[]>("list_px4_prereq_reports", { dir }),
+    invokeCommand<Px4PrereqReportFile[]>("list_px4_prereq_reports", { dir }),
   listPx4ReceiverReports: (dir: string) =>
-    invoke<Px4ReceiverReportFile[]>("list_px4_receiver_reports", { dir }),
+    invokeCommand<Px4ReceiverReportFile[]>("list_px4_receiver_reports", { dir }),
   listRosbagExportValidationReports: (dir: string) =>
-    invoke<RosbagExportValidationReportFile[]>("list_rosbag_export_validation_reports", { dir }),
+    invokeCommand<RosbagExportValidationReportFile[]>("list_rosbag_export_validation_reports", { dir }),
   listFieldLogCaptureReports: (dir: string) =>
-    invoke<FieldLogCaptureReportFile[]>("list_field_log_capture_reports", { dir }),
+    invokeCommand<FieldLogCaptureReportFile[]>("list_field_log_capture_reports", { dir }),
   listThresholdTuningReports: (dir: string) =>
-    invoke<ThresholdTuningReportFile[]>("list_threshold_tuning_reports", { dir }),
-  listSupportBundles: (dir: string) => invoke<SupportBundleFile[]>("list_support_bundles", { dir }),
-  revealSupportBundle: (path: string) => invoke<void>("reveal_support_bundle", { path }),
-  deleteSupportBundle: (path: string) => invoke<void>("delete_support_bundle", { path }),
+    invokeCommand<ThresholdTuningReportFile[]>("list_threshold_tuning_reports", { dir }),
+  listSupportBundles: (dir: string) => invokeCommand<SupportBundleFile[]>("list_support_bundles", { dir }),
+  revealSupportBundle: (path: string) => invokeCommand<void>("reveal_support_bundle", { path }),
+  deleteSupportBundle: (path: string) => invokeCommand<void>("delete_support_bundle", { path }),
   runLocalAutonomyReadinessAudit: (repoDir: string, downloadRoot?: string) =>
-    invoke<CommandResult>("run_local_autonomy_readiness_audit", { repoDir, downloadRoot }),
+    invokeCommand<CommandResult>("run_local_autonomy_readiness_audit", { repoDir, downloadRoot }),
   runLocalPx4SitlPrereqSetup: (repoDir: string, downloadRoot?: string) =>
-    invoke<CommandResult>("run_local_px4_sitl_prereq_setup", { repoDir, downloadRoot }),
+    invokeCommand<CommandResult>("run_local_px4_sitl_prereq_setup", { repoDir, downloadRoot }),
   runLocalPx4SitlReceiverCapture: (repoDir: string, downloadRoot?: string) =>
-    invoke<CommandResult>("run_local_px4_sitl_receiver_capture", { repoDir, downloadRoot }),
+    invokeCommand<CommandResult>("run_local_px4_sitl_receiver_capture", { repoDir, downloadRoot }),
   runLocalRosbag2CliReview: (repoDir: string, downloadRoot?: string) =>
-    invoke<CommandResult>("run_local_rosbag2_cli_review", { repoDir, downloadRoot }),
+    invokeCommand<CommandResult>("run_local_rosbag2_cli_review", { repoDir, downloadRoot }),
   readSupportBundleDetails: (path: string) =>
-    invoke<SupportBundleDetails>("read_support_bundle_details", { path }),
+    invokeCommand<SupportBundleDetails>("read_support_bundle_details", { path }),
   extractSupportBundleArtifact: (path: string, entryPath: string) =>
-    invoke<ExtractedSupportBundleArtifact>("extract_support_bundle_artifact", { path, entryPath }),
+    invokeCommand<ExtractedSupportBundleArtifact>("extract_support_bundle_artifact", { path, entryPath }),
+  receivePositionUpdate: (port: number, timeoutMs = 250) =>
+    invokeCommand<DronePositionUpdate | null>("receive_position_update", { port, timeoutMs }),
 };
 
 export type { DownloadProgress };

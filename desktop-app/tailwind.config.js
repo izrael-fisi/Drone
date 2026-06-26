@@ -5,19 +5,20 @@ export default {
     extend: {
       colors: {
         bg: {
-          base: "#080E1C",
-          surface: "#0D1526",
-          card: "#121E35",
-          elevated: "#172440",
+          base: "#05070A",
+          surface: "#0A0F16",
+          card: "#0D141D",
+          elevated: "#121B26",
+          overlay: "#172231",
         },
         border: {
-          DEFAULT: "#1E2E4A",
-          strong: "#2A3F66",
+          DEFAULT: "#203041",
+          strong: "#314458",
         },
         cyan: {
-          400: "#22D3EE",
-          500: "#06B6D4",
-          600: "#0891B2",
+          400: "#9ADAF0",
+          500: "#68C7E6",
+          600: "#49AFCF",
         },
         slate: {
           300: "#CBD5E1",

@@ -20,6 +20,7 @@ use commands::{
         ssh_capture_camera_frame, ssh_download_file, ssh_run_command, ssh_upload_directory,
         ssh_upload_files, ssh_upload_project, test_ssh_connection,
     },
+    telemetry::receive_position_update,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -73,6 +74,7 @@ pub fn run() {
             run_local_rosbag2_cli_review,
             read_support_bundle_details,
             extract_support_bundle_artifact,
+            receive_position_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Drone Vision Nav");

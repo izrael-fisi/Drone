@@ -20,6 +20,18 @@ mavlink_source_component="${VISION_NAV_MAVLINK_SOURCE_COMPONENT:-197}"
 mavlink_message="${VISION_NAV_MAVLINK_MESSAGE:-odometry}"
 external_position_min_rate_hz="${VISION_NAV_EXTERNAL_POSITION_MIN_RATE_HZ:-1.0}"
 external_position_max_latency_ms="${VISION_NAV_EXTERNAL_POSITION_MAX_LATENCY_MS:-500.0}"
+position_udp_target="${VISION_NAV_POSITION_UDP_TARGET:-}"
+gps_min_fix_type="${VISION_NAV_GPS_MIN_FIX_TYPE:-3}"
+gps_min_satellites="${VISION_NAV_GPS_MIN_SATELLITES:-6}"
+gps_max_eph_m="${VISION_NAV_GPS_MAX_EPH_M:-3.0}"
+gps_max_h_acc_m="${VISION_NAV_GPS_MAX_H_ACC_M:-3.0}"
+runtime_profile="${VISION_NAV_RUNTIME_PROFILE:-pi5_full}"
+camera_profile="${VISION_NAV_CAMERA_PROFILE:-rgb_global_shutter}"
+module_weight_g="${VISION_NAV_MODULE_WEIGHT_G:-}"
+estimated_bom_usd="${VISION_NAV_ESTIMATED_BOM_USD:-}"
+camera_cost_usd="${VISION_NAV_CAMERA_COST_USD:-}"
+sensor_compliance_notes="${VISION_NAV_SENSOR_COMPLIANCE_NOTES:-}"
+mount_vibration_notes="${VISION_NAV_MOUNT_VIBRATION_NOTES:-}"
 field_capture_report="${VISION_NAV_FIELD_LOG_CAPTURE_REPORT:-$out_dir/field_log_capture_report.json}"
 field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-}"
 field_case_name="${VISION_NAV_FIELD_CASE_NAME:-}"
@@ -60,6 +72,37 @@ if [[ -n "$mavlink_endpoint" ]]; then
   )
 fi
 
+position_args=()
+if [[ -n "$position_udp_target" ]]; then
+  position_args=(
+    --position-udp-target "$position_udp_target"
+    --gps-min-fix-type "$gps_min_fix_type"
+    --gps-min-satellites "$gps_min_satellites"
+    --gps-max-eph-m "$gps_max_eph_m"
+    --gps-max-h-acc-m "$gps_max_h_acc_m"
+  )
+fi
+
+profile_args=(
+  --runtime-profile "$runtime_profile"
+  --camera-profile "$camera_profile"
+)
+if [[ -n "$module_weight_g" ]]; then
+  profile_args+=(--module-weight-g "$module_weight_g")
+fi
+if [[ -n "$estimated_bom_usd" ]]; then
+  profile_args+=(--estimated-bom-usd "$estimated_bom_usd")
+fi
+if [[ -n "$camera_cost_usd" ]]; then
+  profile_args+=(--camera-cost-usd "$camera_cost_usd")
+fi
+if [[ -n "$sensor_compliance_notes" ]]; then
+  profile_args+=(--sensor-compliance-notes "$sensor_compliance_notes")
+fi
+if [[ -n "$mount_vibration_notes" ]]; then
+  profile_args+=(--mount-vibration-notes "$mount_vibration_notes")
+fi
+
 set +e
 PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.run_terrain_loop \
   --bundle "$bundle" \
@@ -72,7 +115,9 @@ PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.run_terrain_loop \
   --max-candidates "$max_candidates" \
   --search-radius-m "$search_radius_m" \
   "${calibration_args[@]}" \
-  "${mavlink_args[@]}"
+  "${mavlink_args[@]}" \
+  "${position_args[@]}" \
+  "${profile_args[@]}"
 capture_status=$?
 set -e
 

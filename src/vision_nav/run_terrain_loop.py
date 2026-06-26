@@ -9,6 +9,8 @@ from pathlib import Path
 from vision_nav.capture_frame import capture_frame
 from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
 from vision_nav.mavlink_bridge import MavlinkVisionBridge
+from vision_nav.position_telemetry import FixCadenceTracker, GpsHealthConfig, UdpPositionBroadcaster, build_position_update
+from vision_nav.product_profiles import camera_profile, hardware_profile, parse_float_or_none, runtime_profile
 from vision_nav.runtime_status import runtime_status_snapshot, write_runtime_status
 from vision_nav.terrain_bundle import load_terrain_bundle
 from vision_nav.terrain_estimator import TerrainEstimator
@@ -47,6 +49,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--external-position-min-rate-hz", type=float, default=1.0)
     parser.add_argument("--external-position-max-latency-ms", type=float, default=500.0)
     parser.add_argument("--external-position-max-horizontal-var-m2", type=float, default=400.0)
+    parser.add_argument(
+        "--position-udp-target",
+        help="Optional ground-station UDP target for live aircraft position packets, e.g. 255.255.255.255:17660.",
+    )
+    parser.add_argument("--gps-min-fix-type", type=int, default=3)
+    parser.add_argument("--gps-min-satellites", type=int, default=6)
+    parser.add_argument("--gps-max-eph-m", type=float, default=3.0)
+    parser.add_argument("--gps-max-h-acc-m", type=float, default=3.0)
+    parser.add_argument("--runtime-profile", default="pi5_full", choices=["pi5_full", "pi5_low_memory", "desktop_high_compute"])
+    parser.add_argument(
+        "--camera-profile",
+        default="rgb_global_shutter",
+        choices=["rgb_global_shutter", "rgb_rolling_shutter", "thermal_low_res", "eo_generic"],
+    )
+    parser.add_argument("--module-weight-g")
+    parser.add_argument("--estimated-bom-usd")
+    parser.add_argument("--camera-cost-usd")
+    parser.add_argument("--sensor-compliance-notes", default="")
+    parser.add_argument("--mount-vibration-notes", default="")
     return parser.parse_args()
 
 
@@ -74,6 +95,25 @@ def main() -> None:
     estimator = TerrainEstimator()
     mavlink_bridge = None
     external_position_health = None
+    position_broadcaster = UdpPositionBroadcaster(args.position_udp_target) if args.position_udp_target else None
+    fix_tracker = FixCadenceTracker()
+    runtime = runtime_profile(args.runtime_profile)
+    camera = camera_profile(args.camera_profile)
+    hardware = hardware_profile(
+        runtime=runtime,
+        camera=camera,
+        module_weight_g=parse_float_or_none(args.module_weight_g),
+        estimated_bom_usd=parse_float_or_none(args.estimated_bom_usd),
+        camera_cost_usd=parse_float_or_none(args.camera_cost_usd),
+        sensor_compliance_notes=args.sensor_compliance_notes,
+        mount_vibration_notes=args.mount_vibration_notes,
+    )
+    gps_config = GpsHealthConfig(
+        min_fix_type=args.gps_min_fix_type,
+        min_satellites=args.gps_min_satellites,
+        max_eph_m=args.gps_max_eph_m,
+        max_h_acc_m=args.gps_max_h_acc_m,
+    )
     if args.mavlink_endpoint:
         mavlink_bridge = MavlinkVisionBridge(
             args.mavlink_endpoint,
@@ -178,8 +218,29 @@ def main() -> None:
                     "telemetry": telemetry_samples,
                     "mavlink": mavlink_result,
                     "external_position_health": external_position_health_snapshot,
+                    "camera_health": {
+                        "status": "ready" if camera["id"] == "rgb_global_shutter" else "metadata_only",
+                        "message": camera.get("notes"),
+                    },
+                    "runtime_profile": runtime,
+                    "camera_profile": camera,
+                    "hardware_profile": hardware,
                     "result": result,
                 }
+                position_update = build_position_update(
+                    sequence=sequence,
+                    timestamp_utc=stamp,
+                    result=result,
+                    telemetry_samples=telemetry_samples,
+                    gps_config=gps_config,
+                    fix_tracker=fix_tracker,
+                )
+                record["position_update"] = position_update
+                if position_broadcaster is not None:
+                    try:
+                        position_broadcaster.send(position_update)
+                    except OSError as exc:
+                        record["position_broadcast_error"] = str(exc)
                 result_status = str(result.get("status") or "unknown")
                 status_counts[result_status] = status_counts.get(result_status, 0) + 1
                 log_file.write(json.dumps(record, sort_keys=True) + "\n")
@@ -194,6 +255,9 @@ def main() -> None:
                         record=record,
                         status_counts=status_counts,
                         started_at_utc=started_at_utc,
+                        runtime_profile=runtime,
+                        camera_profile=camera,
+                        hardware_profile=hardware,
                     ),
                 )
                 print(status_line(sequence, result, capture_duration_s, match_duration_s))
@@ -206,6 +270,8 @@ def main() -> None:
     finally:
         if mavlink_bridge:
             mavlink_bridge.close()
+        if position_broadcaster:
+            position_broadcaster.close()
 
 
 if __name__ == "__main__":

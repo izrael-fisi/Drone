@@ -64,7 +64,7 @@ import type {
   UploadProgress,
 } from "../lib/types";
 
-const DEFAULT_LOCAL_REPO = "/Users/izzyfisi/Documents/DRONE";
+const DEFAULT_LOCAL_REPO = "";
 const HOST_SUGGESTIONS = ["dronecompute.local", "raspberrypi.local", "192.168.1.158"];
 const SUPPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/support-bundles";
 const AUTONOMY_REPORT_DOWNLOAD_DIR = "~/DroneTransfer/from-pi/replay-cases";

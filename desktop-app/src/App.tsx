@@ -3,16 +3,21 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { cmd } from "./lib/tauri";
 import { useAppStore } from "./lib/store";
-import { Onboarding } from "./pages/Onboarding";
 import { Dashboard } from "./pages/Dashboard";
-import { Maps } from "./pages/Maps";
-import { VisionPipelinePage } from "./pages/VisionPipeline";
 import { Devices } from "./pages/Devices";
+import { FlightReview } from "./pages/FlightReview";
+import { Maps } from "./pages/Maps";
+import { MissionBundleBuilder } from "./pages/MissionBundleBuilder";
 import { MissionPlanner } from "./pages/MissionPlanner";
+import { Onboarding } from "./pages/Onboarding";
+import { ModuleSetup } from "./pages/PiSetup";
 import { Settings } from "./pages/Settings";
+import { SystemStatus } from "./pages/SystemStatus";
+import { TerrainPlanning } from "./pages/TerrainPlanning";
+import { VisionPipelinePage } from "./pages/VisionPipeline";
 
 export default function App() {
-  const { setProfile, setDevices, setRegions, profile } = useAppStore();
+  const { setProfile, setDevices, setRegions } = useAppStore();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,7 +29,7 @@ export default function App() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [setProfile, setDevices]);
+  }, [setProfile, setDevices, setRegions]);
 
   if (loading) {
     return (
@@ -37,39 +42,37 @@ export default function App() {
     );
   }
 
-  const onboarded = profile?.onboarding_complete === true;
-
   return (
     <BrowserRouter>
       <Routes>
-        <Route
-          path="/onboarding"
-          element={onboarded ? <Navigate to="/dashboard" replace /> : <Onboarding />}
-        />
-        <Route
-          path="/"
-          element={
-            onboarded ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <Navigate to="/onboarding" replace />
-            )
-          }
-        />
-        <Route
-          element={
-            onboarded ? <Layout /> : <Navigate to="/onboarding" replace />
-          }
-        >
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/onboarding" element={<Onboarding />} />
+        <Route element={<Layout />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/navigation-panel" element={<Dashboard />} />
           <Route path="/maps" element={<Maps />} />
-          <Route path="/vision-pipeline" element={<VisionPipelinePage />} />
-          <Route path="/models" element={<Navigate to="/vision-pipeline" replace />} />
-          <Route path="/devices" element={<Devices />} />
           <Route path="/mission-planner" element={<MissionPlanner />} />
+          <Route path="/mission-bundle-builder" element={<MissionBundleBuilder />} />
+          <Route path="/bundle-builder" element={<MissionBundleBuilder />} />
+          <Route path="/bundle" element={<MissionBundleBuilder />} />
+          <Route path="/mission-bundle" element={<MissionBundleBuilder />} />
+          <Route path="/terrain" element={<TerrainPlanning />} />
+          <Route path="/terrain-planning" element={<TerrainPlanning />} />
           <Route path="/upload" element={<Navigate to="/mission-planner" replace />} />
+          <Route path="/devices" element={<Devices />} />
+          <Route path="/vehicle-manager" element={<Devices />} />
+          <Route path="/pi-setup" element={<ModuleSetup />} />
+          <Route path="/module-setup" element={<ModuleSetup />} />
+          <Route path="/vision-pipeline" element={<VisionPipelinePage />} />
+          <Route path="/camera-vision" element={<VisionPipelinePage />} />
+          <Route path="/models" element={<Navigate to="/camera-vision" replace />} />
+          <Route path="/system-status" element={<SystemStatus />} />
+          <Route path="/diagnostics" element={<Navigate to="/system-status" replace />} />
+          <Route path="/flight-review" element={<FlightReview />} />
+          <Route path="/history" element={<Navigate to="/flight-review" replace />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   );

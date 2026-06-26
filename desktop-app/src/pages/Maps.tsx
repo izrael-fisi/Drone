@@ -484,6 +484,7 @@ export function Maps() {
         elevation_dem_path: elevation_assets?.dem,
         elevation_dsm_path: elevation_assets?.dsm,
         elevation_asset_count: Number(Boolean(elevation_assets?.dem)) + Number(Boolean(elevation_assets?.dsm)),
+        lifecycle_state: "local",
       };
       addRegion(region);
       await cmd.saveRegions([...regions, region]);
@@ -608,6 +609,7 @@ export function Maps() {
         georef_confidence: result.georef_confidence,
         georef_crs: result.georef_crs,
         location_label: locationLabel,
+        lifecycle_state: "local",
       };
       addRegion(region);
       await cmd.saveRegions([...regions, region]);
@@ -667,6 +669,7 @@ export function Maps() {
         georef_crs: result.georef_crs,
         file_size_mb: estimate?.estimated_mb,
         location_label: locationLabel,
+        lifecycle_state: "local",
       };
       addRegion(region);
       const next = [...regions, region];
@@ -682,9 +685,13 @@ export function Maps() {
   };
 
   return (
-    <div className="flex h-full animate-fade-in">
+    <div className="ops-screen-bg flex h-full animate-fade-in gap-3 overflow-hidden p-3">
       {/* Map */}
-      <div className="flex-1 relative">
+      <div className="glass-panel panel-3d-center relative flex-1 overflow-hidden border border-border">
+        <div className="glass-panel absolute left-4 top-4 z-[650] px-3 py-2">
+          <div className="font-label-caps text-label-caps text-slate-300">MAP LIBRARY</div>
+          <div className="font-data-mono text-[10px] text-slate-500">draw // download // import // georef</div>
+        </div>
         <MapContainer center={[37.775, -122.418]} zoom={14} minZoom={3} className="w-full h-full" zoomControl>
           {(source === "esri" || missingKey) && (
             <TileLayer url={ESRI_SATELLITE} attribution="© Esri" maxZoom={20} maxNativeZoom={19} />
@@ -710,17 +717,17 @@ export function Maps() {
 
         {/* Floating hint */}
         {!bbox && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-bg-surface/90 border border-border rounded-full px-4 py-2 text-xs text-slate-400 backdrop-blur-sm pointer-events-none">
+          <div className="glass-panel pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 font-data-mono text-xs text-slate-400">
             {currentMode.hint}
           </div>
         )}
       </div>
 
       {/* Side panel */}
-      <div className="w-80 bg-bg-surface border-l border-border flex flex-col overflow-y-auto">
-        <div className="px-5 py-4 border-b border-border">
-          <h2 className="section-title">Region Download</h2>
-          <p className="text-slate-400 text-xs mt-1">
+      <div className="glass-panel panel-3d-right flex w-80 flex-col overflow-y-auto">
+        <div className="border-b border-border bg-bg-card px-5 py-4">
+          <h2 className="font-label-caps text-label-caps text-slate-300">REGION DOWNLOAD</h2>
+          <p className="mt-1 font-data-mono text-[10px] text-slate-500">
             Define a flight area, then download the satellite mosaic.
           </p>
         </div>
@@ -747,10 +754,10 @@ export function Maps() {
                     key={key}
                     onClick={() => handleSourceChange(key)}
                     className={cn(
-                      "w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-xs transition-colors text-left",
+                      "flex w-full items-center justify-between border px-3 py-2.5 text-left text-xs transition-colors",
                       source === key
-                        ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300"
-                        : "bg-bg-card border-border text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                        ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-300"
+                        : "border-border bg-bg-card text-slate-400 hover:border-slate-600 hover:text-slate-300"
                     )}
                   >
                     <div>
@@ -759,7 +766,7 @@ export function Maps() {
                     </div>
                     <span
                       className={cn(
-                        "ml-2 shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium",
+                        "ml-2 shrink-0 px-1.5 py-0.5 text-[10px] font-medium",
                         cfg.free
                           ? "bg-emerald-500/15 text-emerald-400"
                           : "bg-amber-500/15 text-amber-400"
@@ -772,8 +779,8 @@ export function Maps() {
               )}
             </div>
             {missingKey && (
-              <div className="mt-2 text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-2">
-                ⚠ No API key — add yours in Settings → Imagery Sources. Preview using ESRI.
+              <div className="mt-2 border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[10px] text-amber-400">
+                No API key - add yours in Settings / Imagery Sources. Preview using ESRI.
               </div>
             )}
           </div>
@@ -787,7 +794,7 @@ export function Maps() {
                   key={mode}
                   onClick={() => handleModeChange(mode)}
                   className={cn(
-                    "py-2 rounded-lg border text-xs font-medium transition-colors",
+                    "border py-2 text-xs font-medium transition-colors",
                     drawMode === mode
                       ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-300"
                       : "bg-bg-card border-border text-slate-400 hover:text-slate-300 hover:border-slate-600"
@@ -829,7 +836,7 @@ export function Maps() {
 
           {/* BBox / selection info */}
           {bbox ? (
-            <div className="bg-bg-card border border-border rounded-lg p-3 space-y-2">
+            <div className="space-y-2 border border-border bg-bg-card p-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-slate-300">Selected Region</span>
                 <button onClick={clearSelection} className="text-slate-500 hover:text-slate-300">
@@ -840,7 +847,7 @@ export function Maps() {
                 <div>Lat {bbox.lat_min.toFixed(5)} → {bbox.lat_max.toFixed(5)}</div>
                 <div>Lon {bbox.lon_min.toFixed(5)} → {bbox.lon_max.toFixed(5)}</div>
               </div>
-              <div className="bg-bg-elevated rounded px-2 py-1.5 text-center">
+              <div className="bg-bg-elevated px-2 py-1.5 text-center">
                 <span className="text-lg font-bold text-cyan-400 font-mono">
                   {bboxAreaKm2(bbox).toFixed(2)}
                 </span>
@@ -849,8 +856,8 @@ export function Maps() {
               {estimate && (
                 <div className="border-t border-border pt-2 space-y-1">
                   {estimate.too_large && (
-                    <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-2.5 py-2 text-red-400 text-[10px]">
-                      ⚠ Region too large ({estimate.tile_count.toLocaleString()}+ tiles). Draw a smaller area — keep it under ~18 km × 18 km.
+                    <div className="border border-red-500/20 bg-red-500/10 px-2.5 py-2 text-[10px] text-red-400">
+                      Region too large ({estimate.tile_count.toLocaleString()}+ tiles). Draw a smaller area - keep it under ~18 km x 18 km.
                     </div>
                   )}
                   <div className="flex justify-between text-xs">
@@ -871,7 +878,7 @@ export function Maps() {
               )}
             </div>
           ) : (
-            <div className="bg-bg-card border border-dashed border-border rounded-lg p-4 text-center">
+            <div className="border border-dashed border-border bg-bg-card p-4 text-center">
               <Layers size={20} className="text-slate-600 mx-auto mb-2" />
               <p className="text-xs text-slate-500">{currentMode.hint}</p>
             </div>
@@ -914,9 +921,9 @@ export function Maps() {
                 <span>Downloading tiles…</span>
                 <span>{progress.current} / {progress.total}</span>
               </div>
-              <div className="h-2 bg-bg-elevated rounded-full overflow-hidden">
+              <div className="h-2 overflow-hidden bg-bg-elevated">
                 <div
-                  className="h-full bg-cyan-500 rounded-full transition-all duration-200"
+                  className="h-full bg-cyan-500 transition-all duration-200"
                   style={{ width: `${progress.percent}%` }}
                 />
               </div>
@@ -924,18 +931,18 @@ export function Maps() {
           )}
 
           {done && (
-            <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 text-emerald-400 text-sm">
+            <div className="flex items-center gap-2 border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
               <CheckCircle2 size={15} />
               {doneMessage}
             </div>
           )}
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-red-400 text-xs">
+            <div className="border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
               {error}
             </div>
           )}
 
-          <div className="text-[10px] text-slate-500 flex items-start gap-1.5 bg-bg-card rounded-lg p-2.5 border border-border">
+          <div className="flex items-start gap-1.5 border border-border bg-bg-card p-2.5 text-[10px] text-slate-500">
             <Info size={11} className="mt-0.5 shrink-0 text-cyan-500" />
             {source === "esri"
               ? "ESRI World Imagery — free, no key required. Tiles cached locally."
@@ -944,7 +951,7 @@ export function Maps() {
               : "Bing Maps Aerial — zoom up to 20. Add your API key in Settings."}
           </div>
 
-          <div className="bg-bg-card border border-border rounded-lg p-3 space-y-3">
+          <div className="space-y-3 border border-border bg-bg-card p-3">
             <div className="flex items-center gap-2">
               <FileImage size={14} className="text-cyan-400" />
               <span className="text-xs font-medium text-slate-300">Upload Your Own Map</span>
@@ -1020,7 +1027,7 @@ export function Maps() {
             </button>
           </div>
 
-          <div className="bg-bg-card border border-border rounded-lg p-3 space-y-3">
+          <div className="space-y-3 border border-border bg-bg-card p-3">
             <div className="flex items-center gap-2">
               <Mountain size={14} className="text-cyan-400" />
               <span className="text-xs font-medium text-slate-300">Attach Elevation Assets</span>
@@ -1064,7 +1071,7 @@ export function Maps() {
               </div>
             </div>
             {elevationRegion && (
-              <div className="bg-bg-elevated rounded-lg px-2.5 py-2 text-[10px] text-slate-400 space-y-1">
+              <div className="space-y-1 bg-bg-elevated px-2.5 py-2 text-[10px] text-slate-400">
                 <div className="flex justify-between gap-2">
                   <span>Attached assets</span>
                   <span className="text-slate-200">{elevationRegion.elevation_asset_count ?? 0}</span>

@@ -4,6 +4,27 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
+vision_nav_python="${VISION_NAV_PYTHON:-}"
+if [[ -z "$vision_nav_python" ]]; then
+  for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" - <<'PY' >/dev/null 2>&1; then
+import cv2
+import numpy
+import pydantic
+import yaml
+PY
+      vision_nav_python="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$vision_nav_python" ]]; then
+  echo "No Python interpreter with project dependencies found." >&2
+  echo "Install the package with dependencies, then rerun with VISION_NAV_PYTHON=/path/to/python if needed." >&2
+  exit 1
+fi
+
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/vision-nav-local-preflight.XXXXXX")"
 cleanup() {
   local exit_code=$?
@@ -19,10 +40,10 @@ echo "[1/7] Checking shell script syntax"
 find scripts -type f -name '*.sh' -exec bash -n {} \;
 
 echo "[2/7] Compiling Python"
-python3 -m compileall src tests >/dev/null
+"$vision_nav_python" -m compileall src tests >/dev/null
 
 echo "[3/7] Running unit tests"
-PYTHONPATH=src python3 tests/run_unit_tests.py
+PYTHONPATH=src "$vision_nav_python" tests/run_unit_tests.py
 
 echo "[4/7] Evaluating synthetic replay cases"
 synthetic_replay_output="$tmp_dir/synthetic_replay_cases.txt"
@@ -31,7 +52,7 @@ tail -n 8 "$synthetic_replay_output"
 
 echo "[5/7] Auditing replay coverage template"
 coverage_output="$tmp_dir/replay_coverage_template.txt"
-PYTHONPATH=src python3 -m vision_nav.replay_dataset_audit \
+PYTHONPATH=src "$vision_nav_python" -m vision_nav.replay_dataset_audit \
   --manifest data/replay_cases/manifest.example.json \
   --skip-log-exists >"$coverage_output"
 tail -n 10 "$coverage_output"
@@ -39,17 +60,17 @@ tail -n 10 "$coverage_output"
 echo "[6/7] Checking field evidence scaffold"
 field_dir="$tmp_dir/field-case"
 mkdir -p "$field_dir/logs"
-PYTHONPATH=src python3 -m vision_nav.field_evidence_template \
+PYTHONPATH=src "$vision_nav_python" -m vision_nav.field_evidence_template \
   --output "$field_dir/field_manifest.template.json" \
   --site-name preflight \
   --bundle preflight-bundle >"$field_dir/template.txt"
-VISION_NAV_PYTHON=python3 \
+VISION_NAV_PYTHON="$vision_nav_python" \
 VISION_NAV_FIELD_TEMPLATE="$field_dir/pi_field_manifest.template.json" \
 VISION_NAV_FIELD_MANIFEST="$field_dir/pi_field_manifest.json" \
 VISION_NAV_FIELD_SITE_NAME=preflight-pi-wrapper \
 VISION_NAV_FIELD_BUNDLE=preflight-bundle \
 ./scripts/pi/create_field_evidence_template.sh >"$field_dir/pi_template.txt"
-VISION_NAV_PYTHON=python3 \
+VISION_NAV_PYTHON="$vision_nav_python" \
 VISION_NAV_FIELD_MANIFEST="$field_dir/pi_field_manifest.json" \
 VISION_NAV_FIELD_COLLECTION_PLAN="$field_dir/field_collection_plan.json" \
 VISION_NAV_FIELD_COLLECTION_PLAN_MD="$field_dir/field_collection_plan.md" \
@@ -59,7 +80,7 @@ VISION_NAV_FIELD_BUNDLE=preflight-bundle \
 test -f "$field_dir/pi_field_manifest.json"
 test -f "$field_dir/field_collection_plan.json"
 grep -q "__VISION_NAV_FIELD_COLLECTION_PLAN__=" "$field_dir/collection_plan.txt"
-python3 - "$field_dir/field_collection_plan.json" <<'PY'
+"$vision_nav_python" - "$field_dir/field_collection_plan.json" <<'PY'
 from __future__ import annotations
 
 import json

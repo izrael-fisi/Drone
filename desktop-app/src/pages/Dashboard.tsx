@@ -1,261 +1,340 @@
-import { Map, Cpu, Server, Upload, ArrowRight, CheckCircle2, Clock, XCircle, Pencil, Trash2, Check, MapPin } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
+import {
+  Activity,
+  Archive,
+  ArrowRight,
+  Camera,
+  CheckCircle2,
+  Circle,
+  Map as MapIcon,
+  Navigation,
+  Radio,
+  Route,
+  Server,
+  ShieldCheck,
+  Upload,
+} from "lucide-react";
+import { CircleMarker, MapContainer, Polygon, TileLayer } from "react-leaflet";
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
 import { useAppStore } from "../lib/store";
 import { cmd } from "../lib/tauri";
-import { formatDate, cn } from "../lib/utils";
+import type { DronePositionUpdate, Region } from "../lib/types";
+import { cn, formatDate } from "../lib/utils";
+
+type OperatorStep = {
+  label: string;
+  detail: string;
+  to: string;
+  Icon: LucideIcon;
+  done: boolean;
+};
+
+function regionCenter(region?: Region): [number, number] {
+  if (!region) return [37.775, -122.418];
+  return [(region.lat_min + region.lat_max) / 2, (region.lon_min + region.lon_max) / 2];
+}
+
+function regionPolygon(region?: Region): [number, number][] {
+  if (!region) return [];
+  return [
+    [region.lat_min, region.lon_min],
+    [region.lat_min, region.lon_max],
+    [region.lat_max, region.lon_max],
+    [region.lat_max, region.lon_min],
+  ];
+}
+
+function positionLatLon(position: DronePositionUpdate | null): [number, number] | null {
+  const lat = position?.lat_lon?.lat;
+  const lon = position?.lat_lon?.lon;
+  return typeof lat === "number" && Number.isFinite(lat) && typeof lon === "number" && Number.isFinite(lon)
+    ? [lat, lon]
+    : null;
+}
+
+function positionLabel(position: DronePositionUpdate | null) {
+  if (!position) return "No packet";
+  if (position.source_state === "gps_primary") return "GPS primary";
+  if (position.source_state === "vision_correction") return "Vision fix";
+  if (position.source_state === "dead_reckoning_between_fixes") return "Dead reckoning";
+  if (position.source_state === "gps_degraded") return "GPS degraded";
+  if (position.source_state === "no_position") return "No position";
+  if (position.source === "gps") return "GPS primary";
+  if (position.source === "vision") return "Vision fallback";
+  return String(position.source_state ?? position.source ?? "Unknown").replace(/_/g, " ");
+}
+
+function positionTone(position: DronePositionUpdate | null) {
+  if (!position) return "offline";
+  if (position.source_state === "gps_primary" || position.source === "gps") return "ready";
+  if (position.source_state === "vision_correction" || position.source === "vision") return "active";
+  if (position.source_state === "dead_reckoning_between_fixes" || position.source_state === "gps_degraded") return "warning";
+  return "critical";
+}
+
+function toneClass(tone: string) {
+  if (tone === "ready") return "text-status-ready";
+  if (tone === "active") return "text-status-active";
+  if (tone === "warning") return "text-status-warning";
+  if (tone === "critical") return "text-status-critical";
+  return "text-slate-500";
+}
+
+function ledClass(tone: string) {
+  if (tone === "ready") return "ops-led-ready";
+  if (tone === "active") return "ops-led-active";
+  if (tone === "warning") return "ops-led-warning";
+  if (tone === "critical") return "ops-led-critical";
+  return "ops-led-offline";
+}
 
 export function Dashboard() {
-  const { profile, devices, regions, activeDeviceId, updateRegion, removeRegion } = useAppStore();
+  const { profile, devices, regions, activeDeviceId } = useAppStore();
   const navigate = useNavigate();
-  const activeDevice = devices.find((d) => d.id === activeDeviceId);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
+  const activeDevice = devices.find((device) => device.id === activeDeviceId);
+  const readyMaps = regions.filter((region) => region.last_downloaded);
+  const activeMap =
+    regions.find((region) => region.lifecycle_state === "active") ??
+    regions.find((region) => region.active_bundle_path) ??
+    readyMaps[0] ??
+    regions[0];
+  const [position, setPosition] = useState<DronePositionUpdate | null>(null);
+  const [telemetryMessage, setTelemetryMessage] = useState("listening");
+  const positionPort = Number(localStorage.getItem("vision_nav_position_udp_port") || 17660);
+  const currentPosition = positionLatLon(position);
+  const mapCenter = currentPosition ?? regionCenter(activeMap);
+  const mapPolygon = regionPolygon(activeMap);
+  const positionState = positionTone(position);
 
-  const startEditName = (id: string, current: string) => {
-    setEditingId(id);
-    setEditingName(current);
-  };
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const commitEditName = async (id: string) => {
-    const trimmed = editingName.trim();
-    if (!trimmed) { setEditingId(null); return; }
-    const r = regions.find((x) => x.id === id);
-    if (!r) { setEditingId(null); return; }
-    const updated = { ...r, name: trimmed };
-    updateRegion(updated);
-    const next = regions.map((x) => (x.id === id ? updated : x));
-    await cmd.saveRegions(next);
-    setEditingId(null);
-  };
+    async function poll() {
+      try {
+        const packet = await cmd.receivePositionUpdate(positionPort, 300);
+        if (cancelled) return;
+        if (packet) {
+          setPosition(packet);
+          setTelemetryMessage(`packet ${packet.sequence ?? "n/a"}`);
+        } else {
+          setTelemetryMessage("waiting");
+        }
+      } catch (error) {
+        if (!cancelled) setTelemetryMessage(`unavailable: ${String(error)}`);
+      } finally {
+        if (!cancelled) timer = setTimeout(poll, 1600);
+      }
+    }
 
-  const deleteRegion = async (id: string) => {
-    removeRegion(id);
-    const next = regions.filter((x) => x.id !== id);
-    await cmd.saveRegions(next);
-  };
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [positionPort]);
 
-  const QUICK_ACTIONS = [
-    { label: "Download Region", desc: "Select & fetch satellite tiles", icon: Map, to: "/maps", color: "cyan" },
-    { label: "Vision Pipeline", desc: "Configure matching defaults", icon: Cpu, to: "/vision-pipeline", color: "violet" },
-    { label: "Manage Devices", desc: "Pi5 and local targets", icon: Server, to: "/devices", color: "emerald" },
-    { label: "Mission Planner", desc: "Plan flight area, path, and bundle", icon: Upload, to: "/mission-planner", color: "amber" },
-  ] as const;
+  const readiness = useMemo(() => {
+    const hasMap = readyMaps.length > 0;
+    const hasDrone = Boolean(activeDevice);
+    const hasBundle = Boolean(activeMap?.active_bundle_path || activeMap?.lifecycle_state === "active");
+    return [
+      { label: "Map", detail: hasMap ? activeMap?.name ?? `${readyMaps.length} ready` : "Choose area", to: "/maps", Icon: MapIcon, done: hasMap },
+      { label: "Mission", detail: hasMap ? "Plan route" : "Needs map", to: "/mission-planner", Icon: Route, done: hasMap },
+      { label: "Drone", detail: activeDevice?.name ?? "Select vehicle", to: "/devices", Icon: Server, done: hasDrone },
+      { label: "Bundle", detail: hasBundle ? "Active" : "Build/upload", to: "/mission-bundle-builder", Icon: Upload, done: hasBundle },
+      { label: "Fly", detail: hasDrone && hasMap ? "Monitor" : "Not ready", to: "/system-status", Icon: Radio, done: hasDrone && hasMap },
+      { label: "Review", detail: "Evidence", to: "/flight-review", Icon: Archive, done: false },
+    ] satisfies OperatorStep[];
+  }, [activeDevice, activeMap, readyMaps.length]);
 
-  const COLOR_MAP = {
-    cyan: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
-    violet: "text-violet-400 bg-violet-500/10 border-violet-500/20",
-    emerald: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-    amber: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-  };
+  const nextStep = readiness.find((step) => !step.done && step.label !== "Review") ?? readiness.find((step) => step.label === "Fly") ?? readiness[0];
 
   return (
-    <div className="p-6 space-y-6 animate-fade-in">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-semibold text-slate-100">
-          Good to see you, {profile?.name?.split(" ")[0] ?? "pilot"}
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">
-          {profile?.org ? `${profile.org} · ` : ""}Drone GNSS-Denied Vision Navigation
-        </p>
-      </div>
-
-      {/* Status bar */}
-      <div className="flex items-center gap-4 bg-bg-card border border-border rounded-xl px-5 py-3">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-slate-400">Active device:</span>
-          {activeDevice ? (
-            <span className="badge-cyan">{activeDevice.name}</span>
-          ) : (
-            <span className="text-slate-500 text-xs">None selected</span>
+    <div className="ops-screen-bg relative h-full min-h-[calc(100vh-96px)] overflow-hidden animate-fade-in">
+      <div className="absolute inset-0">
+        <MapContainer center={mapCenter} zoom={activeMap ? 14 : 11} className="mission-map h-full w-full" scrollWheelZoom attributionControl={false}>
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={19}
+          />
+          {mapPolygon.length > 0 && (
+            <Polygon
+              positions={mapPolygon}
+              pathOptions={{ color: "#68C7E6", fillColor: "#68C7E6", fillOpacity: 0.08, weight: 2 }}
+            />
           )}
-        </div>
-        <div className="w-px h-4 bg-border" />
-        <div className="flex items-center gap-2 text-sm text-slate-400">
-          <span>{regions.length} region{regions.length !== 1 ? "s" : ""}</span>
-        </div>
-        <div className="w-px h-4 bg-border" />
-        <div className="flex items-center gap-2 text-sm text-slate-400">
-          <span>{devices.length} device{devices.length !== 1 ? "s" : ""}</span>
-        </div>
-        <div className="ml-auto">
-          <button onClick={() => navigate("/devices")} className="btn-ghost text-xs py-1 px-2">
-            Manage <ArrowRight size={12} />
-          </button>
-        </div>
+          {currentPosition && (
+            <CircleMarker
+              center={currentPosition}
+              radius={9}
+              pathOptions={{
+                color: positionState === "ready" ? "#7CCB8A" : positionState === "active" ? "#68C7E6" : "#D6A84C",
+                fillColor: positionState === "ready" ? "#2E8F49" : positionState === "active" ? "#0B7FA6" : "#9B6B16",
+                fillOpacity: 0.95,
+                weight: 3,
+              }}
+            />
+          )}
+        </MapContainer>
       </div>
 
-      {/* Readiness checklist */}
-      {(() => {
-        const hasDevice = devices.length > 0;
-        const hasActive = !!activeDeviceId;
-        const hasRegion = regions.some((r) => r.last_downloaded);
-        const checks = [
-          { label: "Device configured", ok: hasDevice && hasActive, hint: !hasDevice ? "Add a device" : "Set active device", to: "/devices" },
-          { label: "Region downloaded", ok: hasRegion, hint: "Download satellite tiles", to: "/maps" },
-          { label: "Ready to plan mission", ok: hasActive && hasRegion, hint: "Device + region needed", to: "/mission-planner" },
-        ];
-        return (
-          <div className="grid grid-cols-3 gap-3">
-            {checks.map(({ label, ok, hint, to }) => (
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-bg-base/55 via-transparent to-bg-base/65" />
+
+      <section className="pointer-events-auto absolute left-3 top-3 z-[520] w-[330px] border border-border bg-bg-card/95 p-4">
+        <div className="font-data-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
+          {profile?.org || "Drone Vision"}
+        </div>
+        <h1 className="mt-1 font-data-mono text-xl font-bold text-slate-100">Operations Map</h1>
+        <p className="mt-2 text-xs leading-relaxed text-slate-400">
+          Plan from the map, connect the runtime module, then monitor GPS, vision, and dead-reckoning position from one surface.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => navigate(nextStep.to)}
+          className="mt-4 flex h-9 w-full items-center justify-center gap-2 border border-cyan-500/50 bg-cyan-500/10 px-3 font-data-mono text-xs font-bold uppercase tracking-[0.1em] text-cyan-200 hover:bg-cyan-500/20"
+        >
+          Continue: {nextStep.label}
+          <ArrowRight size={14} />
+        </button>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {readiness.slice(0, 4).map((step) => {
+            const Icon = step.Icon;
+            return (
               <button
-                key={label}
-                onClick={() => navigate(to)}
-                className={cn(
-                  "card text-left transition-all hover:border-border-strong",
-                  ok ? "border-emerald-500/20" : "border-border"
-                )}
+                key={step.label}
+                type="button"
+                onClick={() => navigate(step.to)}
+                className="border border-border bg-bg-base/80 p-3 text-left hover:border-cyan-500/40"
               >
-                <div className="flex items-center gap-2 mb-1">
-                  {ok
-                    ? <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
-                    : <XCircle size={13} className="text-slate-600 shrink-0" />}
-                  <span className={cn("text-xs font-medium", ok ? "text-emerald-400" : "text-slate-400")}>
-                    {label}
-                  </span>
+                <div className="flex items-center justify-between">
+                  <Icon size={15} className={step.done ? "text-status-ready" : "text-slate-500"} />
+                  {step.done ? <CheckCircle2 size={13} className="text-status-ready" /> : <Circle size={12} className="text-slate-600" />}
                 </div>
-                {!ok && <p className="text-[11px] text-slate-600 pl-[21px]">{hint} →</p>}
+                <div className="mt-2 text-xs font-semibold text-slate-200">{step.label}</div>
+                <div className="mt-0.5 truncate font-data-mono text-[10px] text-slate-500">{step.detail}</div>
               </button>
-            ))}
-          </div>
-        );
-      })()}
-
-      {/* Quick actions */}
-      <div>
-        <h2 className="section-title mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {QUICK_ACTIONS.map(({ label, desc, icon: Icon, to, color }) => (
-            <button
-              key={to}
-              onClick={() => navigate(to)}
-              className="card text-left hover:border-border-strong transition-all group flex items-start gap-4"
-            >
-              <div className={`w-10 h-10 rounded-lg border flex items-center justify-center shrink-0 ${COLOR_MAP[color]}`}>
-                <Icon size={18} />
-              </div>
-              <div>
-                <div className="font-medium text-slate-200 text-sm group-hover:text-white transition-colors">{label}</div>
-                <div className="text-xs text-slate-500 mt-0.5">{desc}</div>
-              </div>
-              <ArrowRight size={14} className="text-slate-600 group-hover:text-slate-400 ml-auto mt-1 transition-colors" />
-            </button>
-          ))}
+            );
+          })}
         </div>
-      </div>
+      </section>
 
-      {/* Recent regions */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="section-title">Saved Regions</h2>
-          <button onClick={() => navigate("/maps")} className="btn-ghost text-xs py-1 px-2">
-            + New region
-          </button>
-        </div>
+      <section className="pointer-events-auto absolute right-3 top-3 z-[520] w-[316px] space-y-3 border border-border bg-bg-card/95 p-3">
+        <StatusRow
+          icon={<Activity size={14} />}
+          label="Connection"
+          value={activeDevice?.name ?? "No device selected"}
+          detail={activeDevice?.host ?? "Planning mode"}
+          tone={activeDevice ? "ready" : "warning"}
+        />
+        <StatusRow
+          icon={<Navigation size={14} />}
+          label="Position Source"
+          value={positionLabel(position)}
+          detail={currentPosition ? `${currentPosition[0].toFixed(6)}, ${currentPosition[1].toFixed(6)}` : `UDP ${positionPort} ${telemetryMessage}`}
+          tone={positionState}
+        />
+        <StatusRow
+          icon={<MapIcon size={14} />}
+          label="Active Map"
+          value={activeMap?.name ?? "No map selected"}
+          detail={activeMap?.last_downloaded ? formatDate(activeMap.last_downloaded) : "download/import map"}
+          tone={readyMaps.length ? "active" : "warning"}
+        />
+        <StatusRow
+          icon={<ShieldCheck size={14} />}
+          label="GNSS-Denied"
+          value={activeMap?.active_bundle_path ? "Bundle active" : "Bundle not active"}
+          detail={activeMap?.gsd_m_per_px != null ? `${activeMap.gsd_m_per_px.toFixed(2)} m/px source` : "build terrain bundle"}
+          tone={activeMap?.active_bundle_path ? "ready" : "warning"}
+        />
+      </section>
 
-        {regions.length === 0 ? (
-          <div className="card text-center py-10">
-            <Map size={32} className="text-slate-600 mx-auto mb-3" />
-            <p className="text-slate-400 text-sm">No regions yet</p>
-            <p className="text-slate-500 text-xs mt-1">Draw a bounding box on the map to get started</p>
-            <button onClick={() => navigate("/maps")} className="btn-primary mt-4 mx-auto">
-              Open Map <ArrowRight size={14} />
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {regions.map((r) => (
-              <div key={r.id} className="card group py-3 px-4 space-y-2">
-                {/* Row 1: icon + name (editable) + date + actions */}
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
-                    <Map size={14} className="text-cyan-400" />
-                  </div>
-
-                  {editingId === r.id ? (
-                    <input
-                      autoFocus
-                      className="input-field flex-1 text-sm py-0.5 h-7"
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitEditName(r.id);
-                        if (e.key === "Escape") setEditingId(null);
-                      }}
-                      onBlur={() => commitEditName(r.id)}
-                    />
-                  ) : (
-                    <span className="flex-1 text-sm font-medium text-slate-200 truncate">{r.name}</span>
-                  )}
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    {editingId === r.id ? (
-                      <button onClick={() => commitEditName(r.id)} className="btn-ghost py-1 px-1.5">
-                        <Check size={12} className="text-emerald-400" />
-                      </button>
-                    ) : (
-                      <button onClick={() => startEditName(r.id, r.name)} className="btn-ghost py-1 px-1.5 opacity-0 group-hover:opacity-100 hover:!opacity-100">
-                        <Pencil size={11} />
-                      </button>
-                    )}
-                    <button onClick={() => navigate("/mission-planner")} className="btn-ghost py-1 px-1.5 text-xs">
-                      <Upload size={12} />
-                    </button>
-                    <button onClick={() => deleteRegion(r.id)} className="btn-ghost py-1 px-1.5 text-red-400/60 hover:text-red-400">
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Row 2: metadata chips */}
-                <div className="flex items-center gap-3 pl-11 flex-wrap">
-                  {r.location_label && (
-                    <span className="flex items-center gap-1 text-[11px] text-slate-400">
-                      <MapPin size={10} className="text-cyan-500 shrink-0" />
-                      {r.location_label}
-                    </span>
-                  )}
-                  {!r.location_label && (
-                    <span className="text-[11px] text-slate-500 font-mono">
-                      {r.lat_min.toFixed(3)}, {r.lon_min.toFixed(3)}
-                    </span>
-                  )}
-                  {r.gsd_m_per_px != null && (
-                    <span className="text-[11px] text-slate-500">
-                      <span className="text-slate-400 font-medium">{r.gsd_m_per_px.toFixed(2)} m/px</span>
-                      {" "}resolution
-                    </span>
-                  )}
-                  {r.file_size_mb != null && (
-                    <span className="text-[11px] text-slate-500">
-                      ~<span className="text-slate-400 font-medium">{r.file_size_mb.toFixed(0)} MB</span>
-                    </span>
-                  )}
-                  {r.zoom && (
-                    <span className="text-[10px] bg-bg-elevated border border-border rounded px-1.5 py-0.5 text-slate-500 font-mono">
-                      Z{r.zoom}
-                    </span>
-                  )}
-                  <div className="ml-auto">
-                    {r.last_downloaded ? (
-                      <div className="flex items-center gap-1.5 badge-green">
-                        <CheckCircle2 size={10} />
-                        {formatDate(r.last_downloaded)}
-                      </div>
-                    ) : (
-                      <div className="badge-yellow">
-                        <Clock size={10} />
-                        Pending
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <section className="pointer-events-auto absolute bottom-3 left-3 right-3 z-[520] grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
+        <ActionPanel
+          title="Plan"
+          Icon={Route}
+          detail="Choose a map source and draw takeoff, waypoints, landing, fence, rally, and vision checkpoints."
+          action="Open mission planner"
+          onClick={() => navigate("/mission-planner")}
+        />
+        <ActionPanel
+          title="Calibrate"
+          Icon={Camera}
+          detail="Configure camera/vision defaults and prepare calibration data before flight capture."
+          action="Open camera settings"
+          onClick={() => navigate("/camera-vision")}
+        />
+        <ActionPanel
+          title="Monitor"
+          Icon={Radio}
+          detail="Watch MAVLink, GPS health, vision cadence, dead-reckoning state, and runtime diagnostics."
+          action="Open live status"
+          onClick={() => navigate("/system-status")}
+        />
+      </section>
     </div>
+  );
+}
+
+function StatusRow({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  detail: string;
+  tone: string;
+}) {
+  return (
+    <div className="border border-border bg-bg-base/80 p-3">
+      <div className="flex items-center gap-2">
+        <span className={cn("ops-led", ledClass(tone))} />
+        <span className={cn("text-slate-500", toneClass(tone))}>{icon}</span>
+        <span className="font-data-mono text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+      </div>
+      <div className={cn("mt-2 truncate font-data-mono text-sm font-semibold", toneClass(tone))}>{value}</div>
+      <div className="mt-0.5 truncate font-data-mono text-[10px] text-slate-500">{detail}</div>
+    </div>
+  );
+}
+
+function ActionPanel({
+  title,
+  detail,
+  action,
+  Icon,
+  onClick,
+}: {
+  title: string;
+  detail: string;
+  action: string;
+  Icon: LucideIcon;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group border border-border bg-bg-card/95 p-4 text-left hover:border-cyan-500/40"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+          <Icon size={16} className="text-status-active" />
+          {title}
+        </div>
+        <ArrowRight size={14} className="text-slate-600 group-hover:text-status-active" />
+      </div>
+      <p className="mt-2 min-h-10 text-xs leading-relaxed text-slate-500">{detail}</p>
+      <div className="mt-3 font-data-mono text-[10px] font-bold uppercase tracking-[0.1em] text-status-active">{action}</div>
+    </button>
   );
 }

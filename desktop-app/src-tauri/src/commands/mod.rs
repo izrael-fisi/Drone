@@ -4,3 +4,4 @@ pub mod drone;
 pub mod profile;
 pub mod satellite;
 pub mod ssh;
+pub mod telemetry;

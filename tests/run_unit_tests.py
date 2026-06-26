@@ -88,11 +88,14 @@ from vision_nav.mavlink_bridge import (
 from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sitl_evidence
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.px4_params import check_px4_external_vision_params, evaluate_px4_param_file, params_from_text
+from vision_nav.flight_evidence import summarize_flight_evidence_records
+from vision_nav.position_telemetry import FixCadenceTracker, GpsHealthConfig, build_position_update, parse_udp_target
+from vision_nav.product_profiles import camera_profile, hardware_profile, runtime_profile
 from vision_nav.ros2_bridge import DIAG_ERROR, DIAG_OK, diagnostic_status_from_health, odometry_dict_from_match_result
 from vision_nav.ros2_bridge import export_rosbag_jsonl, export_rosbag_mcap, export_rosbag2, ros_records_from_log
 from vision_nav.rosbag2_cli_review import review_rosbag2_cli
 from vision_nav.rosbag_export_check import validate_rosbag_export
-from vision_nav.runtime_status import runtime_status_snapshot, write_runtime_status
+from vision_nav.runtime_status import bridge_status_snapshot, runtime_status_snapshot, write_runtime_status
 from vision_nav.replay_case_manifest import evaluate_replay_case_manifest
 from vision_nav.replay_case_registry import register_replay_case
 from vision_nav.replay_case_schema import REPLAY_CASE_MANIFEST_SCHEMA, evaluate_replay_case_schema
@@ -1229,6 +1232,78 @@ def test_external_position_stream_health() -> None:
         raise AssertionError("Expected external position health to warn on high velocity covariance")
 
 
+def test_position_telemetry_prefers_gps_and_falls_back_to_vision() -> None:
+    assert_equal(parse_udp_target("255.255.255.255:17660"), ("255.255.255.255", 17660), "position udp target")
+    fix_tracker = FixCadenceTracker()
+    result = {
+        "status": "accepted",
+        "tile_id": "tile_01",
+        "lat_lon": {"lat": 37.7, "lon": -122.4},
+        "local_enu_m": {"x": 10.0, "y": 20.0, "z": None},
+        "confidence": 0.82,
+        "covariance": {"x_m2": 2.0, "y_m2": 2.0, "z_m2": None, "yaw_rad2": None},
+        "inliers": 45,
+    }
+    healthy_gps = {
+        "message_type": "GPS_RAW_INT",
+        "timestamp_us": 1,
+        "gps_lat": 38.0,
+        "gps_lon": -123.0,
+        "gps_alt_m": 12.0,
+        "gps_fix_type": 3,
+        "gps_satellites_visible": 10,
+        "gps_h_acc_m": 1.2,
+        "gps_v_acc_m": 2.0,
+    }
+    gps_packet = build_position_update(
+        sequence=1,
+        timestamp_utc="2026-01-01T00:00:00Z",
+        result=result,
+        telemetry_samples=[healthy_gps],
+        fix_tracker=fix_tracker,
+    )
+    assert_equal(gps_packet["schema_version"], "vision_nav_position_update_v2", "position packet schema")
+    assert_equal(gps_packet["source"], "gps", "healthy gps is primary")
+    assert_equal(gps_packet["source_state"], "gps_primary", "healthy gps source state")
+    assert_equal(gps_packet["lat_lon"], {"lat": 38.0, "lon": -123.0}, "gps position selected")
+
+    weak_gps = {**healthy_gps, "gps_fix_type": 2, "gps_satellites_visible": 3, "gps_h_acc_m": 25.0}
+    vision_packet = build_position_update(
+        sequence=2,
+        timestamp_utc="2026-01-01T00:00:01Z",
+        result=result,
+        telemetry_samples=[weak_gps],
+        gps_config=GpsHealthConfig(max_h_acc_m=3.0),
+        fix_tracker=fix_tracker,
+    )
+    assert_equal(vision_packet["source"], "vision", "weak gps falls back to vision")
+    assert_equal(vision_packet["source_state"], "vision_correction", "weak gps vision correction source state")
+    assert_equal(vision_packet["gps_health"]["healthy"], False, "weak gps health")
+    assert_equal(vision_packet["lat_lon"], {"lat": 37.7, "lon": -122.4}, "vision position selected")
+    assert_equal(vision_packet["last_vision_fix_utc"], "2026-01-01T00:00:01Z", "vision fix timestamp")
+
+    no_vision_packet = build_position_update(
+        sequence=3,
+        timestamp_utc="2026-01-01T00:00:02Z",
+        result={"status": "rejected", "lat_lon": {"lat": None, "lon": None}},
+        telemetry_samples=[weak_gps],
+        fix_tracker=fix_tracker,
+    )
+    assert_equal(no_vision_packet["source"], "gps_degraded", "degraded gps exposed when vision missing")
+    assert_equal(no_vision_packet["source_state"], "gps_degraded", "degraded gps source state")
+
+    dead_reckoning_packet = build_position_update(
+        sequence=4,
+        timestamp_utc="2026-01-01T00:00:04Z",
+        result={"status": "rejected", "lat_lon": {"lat": None, "lon": None}},
+        telemetry_samples=[],
+        fix_tracker=fix_tracker,
+    )
+    assert_equal(dead_reckoning_packet["source_state"], "dead_reckoning_between_fixes", "dead reckoning source state")
+    assert_equal(dead_reckoning_packet["dead_reckoning_active"], True, "dead reckoning flag")
+    assert_equal(dead_reckoning_packet["last_vision_fix_utc"], "2026-01-01T00:00:01Z", "dead reckoning last vision fix")
+
+
 def test_ros2_odometry_and_diagnostics_adapters() -> None:
     odometry, reason = odometry_dict_from_match_result(
         {
@@ -2355,6 +2430,13 @@ def test_runtime_status_snapshot_reports_active_map_and_last_match() -> None:
             "telemetry": [{"message_type": "ATTITUDE", "timestamp_us": 123}],
             "external_position_health": {"status": "healthy", "message_type": "odometry"},
             "mavlink": {"sent": True, "message": "ODOMETRY"},
+            "camera_health": {"status": "ready"},
+            "position_update": {
+                "source_state": "vision_correction",
+                "gps_health": {"healthy": False, "reason": "missing"},
+                "vision_health": {"available": True, "status": "accepted"},
+                "fix_cadence": {"last_vision_fix_utc": "2026-06-21T00:00:00Z"},
+            },
             "result": {
                 "status": "accepted",
                 "tile_id": "tile_000000",
@@ -2376,12 +2458,19 @@ def test_runtime_status_snapshot_reports_active_map_and_last_match() -> None:
             record=record,
             status_counts={"accepted": 2, "rejected": 1},
             started_at_utc="2026-06-21T00:00:00+00:00",
+            runtime_profile=runtime_profile("pi5_full"),
+            camera_profile=camera_profile("rgb_global_shutter"),
+            hardware_profile=hardware_profile(),
         )
         status_path = output_dir / "runtime_status.json"
         write_runtime_status(status_path, status)
         saved = json.loads(status_path.read_text())
-        assert_equal(saved["schema_version"], "vision_nav_runtime_status_v1", "runtime status schema")
+        assert_equal(saved["schema_version"], "vision_nav_runtime_status_v2", "runtime status schema")
         assert_equal(saved["active_map"]["bundle_id"], "health-test", "runtime status bundle id")
+        assert_equal(saved["active_bundle"]["state"], "active", "runtime active bundle state")
+        assert_equal(saved["runtime_state"]["loop"], "terrain_nav", "runtime status loop")
+        assert_equal(saved["source_state"], "vision_correction", "runtime status source state")
+        assert_equal(saved["readiness_gates"]["bundle_activated"], True, "runtime status active bundle gate")
         assert_equal(saved["active_map"]["has_tile_index"], True, "runtime status tile index")
         assert_equal(saved["output"]["log_path"], str(log_path), "runtime status log path")
         assert_equal(saved["last_match"]["status"], "accepted", "runtime status last match")
@@ -2389,6 +2478,87 @@ def test_runtime_status_snapshot_reports_active_map_and_last_match() -> None:
         assert_equal(saved["estimator"]["health"], "tracking", "runtime status estimator health")
         assert_equal(saved["external_position"]["status"], "healthy", "runtime status external position")
         assert_equal(saved["status_counts"], {"accepted": 2, "rejected": 1}, "runtime status counts")
+
+
+def test_status_bridge_snapshot_without_bundle_and_profiles() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        runtime = runtime_profile("pi5_low_memory")
+        camera = camera_profile("rgb_global_shutter")
+        hardware = hardware_profile(runtime=runtime, camera=camera, module_weight_g=18.5, estimated_bom_usd=155.0)
+        record = {
+            "timestamp_utc": "2026-06-21T00:00:00Z",
+            "telemetry": [{"message_type": "HEARTBEAT", "timestamp_us": 10}],
+            "camera_health": {"status": "ready"},
+            "mavlink": {"connected": True},
+            "position_update": {
+                "source_state": "gps_degraded",
+                "gps_health": {"healthy": False, "reason": "fix_type_low"},
+                "vision_health": {"available": False, "status": "not_running"},
+                "fix_cadence": {},
+            },
+        }
+        status = bridge_status_snapshot(
+            output_dir=root,
+            sequence=1,
+            record=record,
+            status_counts={"gps_degraded": 1},
+            started_at_utc="2026-06-21T00:00:00+00:00",
+            active_bundle_path=str(root / "missing_bundle"),
+            runtime_profile=runtime,
+            camera_profile=camera,
+            hardware_profile=hardware,
+        )
+        assert_equal(status["schema_version"], "vision_nav_runtime_status_v2", "bridge status schema")
+        assert_equal(status["runtime_state"]["loop"], "status_bridge", "bridge status loop")
+        assert_equal(status["active_bundle"]["state"], "configured", "bridge active bundle configured")
+        assert_equal(status["mavlink_health"]["connected"], True, "bridge mavlink status")
+        assert_equal(status["hardware_profile"]["runtime_profile"], "pi5_low_memory", "bridge hardware profile")
+        assert_equal(status["camera_health"]["status"], "ready", "bridge camera health")
+
+
+def test_product_profiles_and_flight_evidence_summary() -> None:
+    runtime = runtime_profile("pi5_low_memory")
+    camera = camera_profile("rgb_global_shutter")
+    hardware = hardware_profile(runtime=runtime, camera=camera, module_weight_g=20.0, camera_cost_usd=55.0)
+    assert_equal(runtime["max_tile_candidates"], 24, "low memory candidate budget")
+    assert_equal(camera["status"], "operational", "rgb global shutter operational")
+    assert_equal(hardware["compute_target"], "raspberry_pi_low_memory", "hardware compute target")
+    records = [
+        {
+            "timestamp_utc": "2026-06-21T00:00:00Z",
+            "telemetry": [{"gps_lat": 40.0, "gps_lon": -75.0}],
+            "result": {
+                "status": "accepted",
+                "lat_lon": {"lat": 40.0, "lon": -75.0},
+                "local_enu_m": {"x": 0.0, "y": 0.0, "z": 10.0},
+            },
+            "position_update": {
+                "source_state": "vision_correction",
+                "lat_lon": {"lat": 40.0, "lon": -75.0},
+                "local_enu_m": {"x": 0.0, "y": 0.0, "z": 10.0},
+                "altitude_m": 10.0,
+            },
+        },
+        {
+            "timestamp_utc": "2026-06-21T00:00:05Z",
+            "result": {"status": "rejected", "lat_lon": {"lat": None, "lon": None}},
+            "position_update": {
+                "source_state": "dead_reckoning_between_fixes",
+                "lat_lon": {"lat": 40.0001, "lon": -75.0},
+                "local_enu_m": {"x": 0.0, "y": 11.0, "z": 10.0},
+                "altitude_m": 10.0,
+            },
+        },
+    ]
+    summary = summarize_flight_evidence_records(records)
+    assert_equal(summary["accepted_vision_fix_count"], 1, "flight evidence accepted vision fixes")
+    assert_equal(summary["source_transition_timeline"][0]["source_state"], "vision_correction", "flight evidence first source")
+    assert_equal(summary["source_transition_timeline"][1]["source_state"], "dead_reckoning_between_fixes", "flight evidence source transition")
+    if summary["dead_reckoning_duration_s"] <= 0:
+        raise AssertionError("Expected dead reckoning duration to be positive")
+    if summary["total_distance_m"] is None or summary["total_distance_m"] <= 0:
+        raise AssertionError("Expected flight evidence distance to be positive")
 
 
 def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
@@ -2412,9 +2582,28 @@ def test_support_bundle_collects_manifest_health_logs_and_summary() -> None:
                         "inliers": 20,
                         "reprojection_error_px": 1.5,
                         "scale_confidence": 0.7,
+                        "lat_lon": {"lat": 40.0, "lon": -75.0},
+                        "local_enu_m": {"x": 1.0, "y": 2.0, "z": None},
                         "covariance": {"x_m2": 4.0, "y_m2": 4.0, "z_m2": None, "yaw_rad2": None},
                     },
                     "external_position_health": {"status": "healthy", "message_type": "odometry"},
+                    "telemetry": [
+                        {
+                            "message_type": "GPS_RAW_INT",
+                            "gps_lat": 40.0001,
+                            "gps_lon": -75.0001,
+                            "gps_fix_type": 3,
+                        }
+                    ],
+                    "position_update": {
+                        "schema_version": "vision_nav_position_update_v2",
+                        "timestamp_utc": "2026-06-21T00:00:00Z",
+                        "source": "vision",
+                        "source_state": "vision_correction",
+                        "status": "accepted",
+                        "lat_lon": {"lat": 40.0, "lon": -75.0},
+                        "local_enu_m": {"x": 1.0, "y": 2.0, "z": None},
+                    },
                 }
             )
             + "\n"
@@ -3105,6 +3294,16 @@ RC8_OPTION,90
         assert_equal(manifest["gnss_denied_plan_checks"]["report_count"], 1, "support gnss plan check count")
         assert_equal(manifest["logs"]["summaries"][0]["accepted_rate"], 1.0, "support log accepted rate")
         assert_equal(
+            manifest["flight_evidence"]["accepted_vision_fix_count"],
+            1,
+            "support flight evidence accepted vision fixes",
+        )
+        assert_equal(
+            manifest["flight_evidence"]["gps_vs_vision_sample_count"],
+            1,
+            "support flight evidence gps vs vision samples",
+        )
+        assert_equal(
             manifest["logs"]["auto_added_field_collection_log_count"],
             1,
             "support auto-added field collection log count",
@@ -3327,7 +3526,7 @@ RC8_OPTION,90
             raise AssertionError("Support field preflight failed check should refresh current bundle search roots")
         assert_equal(
             manifest["logs"]["runtime_statuses"][0]["schema_version"],
-            "vision_nav_runtime_status_v1",
+            "vision_nav_runtime_status_v2",
             "support runtime status schema",
         )
         assert_equal(
@@ -8857,6 +9056,7 @@ def main() -> None:
         test_px4_param_checker_flags_external_vision_readiness,
         test_external_position_payloads,
         test_external_position_stream_health,
+        test_position_telemetry_prefers_gps_and_falls_back_to_vision,
         test_camera_health_report_on_synthetic_image,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
@@ -8867,6 +9067,8 @@ def main() -> None:
         test_gdal_metadata_degrades_gracefully_when_unavailable,
         test_terrain_profile_reports_agl_and_gsd_warnings,
         test_runtime_status_snapshot_reports_active_map_and_last_match,
+        test_status_bridge_snapshot_without_bundle_and_profiles,
+        test_product_profiles_and_flight_evidence_summary,
         test_support_bundle_collects_manifest_health_logs_and_summary,
         test_gnss_denied_plan_checker_reports_ready_and_missing_cases,
         test_replay_gates_pass_good_map_and_fail_wrong_map_acceptance,

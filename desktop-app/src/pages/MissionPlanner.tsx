@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { readFile, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { Link, useNavigate } from "react-router-dom";
-import { CircleMarker, ImageOverlay, MapContainer, Polygon, Polyline, useMap, useMapEvents } from "react-leaflet";
+import { CircleMarker, ImageOverlay, MapContainer, Polygon, Polyline, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import {
   AlertTriangle,
@@ -11,24 +11,26 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  ChevronRight,
   ClipboardCheck,
+  Crosshair,
   Cpu,
   Download,
   FileInput,
   Flag,
   FolderOpen,
-  HardDrive,
   Layers3,
   Loader2,
   Map as MapIcon,
   Navigation,
   Play,
   PlaneTakeoff,
+  PanelBottom,
   RadioTower,
   Route,
   ScanSearch,
-  Server,
   ShieldCheck,
+  Terminal,
   Trash2,
   Upload as UploadIcon,
 } from "lucide-react";
@@ -36,11 +38,18 @@ import { cmd } from "../lib/tauri";
 import { useAppStore } from "../lib/store";
 import { loadPipelineConfig } from "../lib/pipelineConfig";
 import type { PipelineConfig } from "../lib/pipelineConfig";
+import {
+  DEFAULT_TERRAIN_CONSTRAINTS,
+  loadTerrainConstraints,
+  saveTerrainConstraints,
+} from "../lib/terrainPlanning";
+import type { TerrainPlanningConstraints } from "../lib/terrainPlanning";
 import { cn, generateId } from "../lib/utils";
 import { SupportBundleList } from "../components/SupportBundleList";
 import type {
   BuildDroneBundleResult,
   Device,
+  DronePositionUpdate,
   Region,
   SupportBundleFile,
   UploadProgress,
@@ -86,12 +95,6 @@ type GnssDeniedReadinessExport = GnssDeniedReadiness & {
     label: string;
     status: "passed" | "failed";
   }>;
-};
-type TerrainPlanningConstraints = {
-  min_agl_m: number;
-  max_terrain_relief_m: number;
-  min_agl_to_gsd_ratio: number;
-  max_route_segment_m: number;
 };
 type RouteSegmentEndpoint = Waypoint & {
   mission_item_id?: string;
@@ -177,7 +180,7 @@ type ImportedMissionPlanPayload = Partial<Omit<MissionPlanPayload, "gnss_denied"
   gnss_denied?: GnssDeniedReadiness;
 };
 
-const DEFAULT_LOCAL_REPO = "/Users/izzyfisi/Documents/DRONE";
+const DEFAULT_LOCAL_REPO = "";
 const PLAN_VERSION = "0.3.0";
 const MISSION_PLANNER_STATE_KEY = "drone_mission_planner_state_v1";
 const DEFAULT_MISSION_DEFAULTS: MissionDefaults = {
@@ -191,12 +194,6 @@ const DEFAULT_GNSS_DENIED_READINESS: GnssDeniedReadiness = {
   home_position: null,
   estimator_health: "unchecked",
   updated_at: null,
-};
-const DEFAULT_TERRAIN_CONSTRAINTS: TerrainPlanningConstraints = {
-  min_agl_m: 20,
-  max_terrain_relief_m: 40,
-  min_agl_to_gsd_ratio: 40,
-  max_route_segment_m: 500,
 };
 const LAYER_META: Record<PlanLayer, { label: string; hint: string; icon: typeof Route }> = {
   mission: { label: "Mission", hint: "Takeoff, waypoints, and landing", icon: Route },
@@ -371,7 +368,7 @@ function TerrainProfilePreview({ profile }: { profile?: BundleTerrainProfile }) 
   const minAgl = profile?.estimated_agl_m?.min;
 
   return (
-    <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
+    <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
       <div className="flex items-center justify-between gap-2 text-[11px]">
         <span className="text-emerald-300/60">Terrain profile preview</span>
         <span className="font-mono text-emerald-300/80">
@@ -398,8 +395,8 @@ function TerrainProfilePreview({ profile }: { profile?: BundleTerrainProfile }) 
         />
       </svg>
       <div className="flex justify-between text-[10px] text-emerald-300/60">
-        <span><span className="inline-block h-2 w-2 rounded-[2px] bg-amber-300/90 mr-1" />Terrain</span>
-        <span><span className="inline-block h-2 w-2 rounded-[2px] bg-cyan-300/90 mr-1" />Flight</span>
+        <span><span className="inline-block h-2 w-2 rounded-none bg-amber-300/90 mr-1" />Terrain</span>
+        <span><span className="inline-block h-2 w-2 rounded-none bg-cyan-300/90 mr-1" />Flight</span>
         <span>{typeof relief === "number" ? `relief ${relief.toFixed(1)} m` : `${Math.round(Math.max(...allY) - Math.min(...allY))} m span`}</span>
       </div>
     </div>
@@ -957,13 +954,113 @@ function FitSelectedRegion({
   return null;
 }
 
-function ClickLayer({ onAddPoint }: { onAddPoint: (waypoint: Waypoint) => void }) {
+function MapInteractionLayer({
+  onAddPoint,
+  onCursorMove,
+}: {
+  onAddPoint: (waypoint: Waypoint) => void;
+  onCursorMove: (waypoint: Waypoint) => void;
+}) {
   useMapEvents({
     click(event) {
       onAddPoint({ lat: event.latlng.lat, lon: event.latlng.lng });
     },
+    mousemove(event) {
+      onCursorMove({ lat: event.latlng.lat, lon: event.latlng.lng });
+    },
   });
   return null;
+}
+
+function MapReadoutControl({
+  bounds,
+  center,
+  cursor,
+  region,
+}: {
+  bounds?: MissionBounds;
+  center: [number, number];
+  cursor: Waypoint | null;
+  region?: Region;
+}) {
+  const map = useMap();
+  const recenter = () => {
+    if (bounds) map.fitBounds(bounds, { padding: [18, 18], animate: true });
+    else map.setView(center, 13, { animate: true });
+  };
+
+  return (
+    <div className="ops-map-overlay absolute left-3 top-[190px] z-[500] w-64 p-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 font-mono text-xs font-medium text-slate-200">
+          <Crosshair size={13} className="text-cyan-400" />
+          Map Controls
+        </div>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            recenter();
+          }}
+          className="rounded-none border border-border bg-bg-card px-2 py-1 font-mono text-[11px] text-slate-300 hover:border-cyan-500/40 hover:text-cyan-300"
+        >
+          Recenter
+        </button>
+      </div>
+      <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 text-[11px]">
+        <span className="text-slate-500">Cursor</span>
+        <span className="truncate font-mono text-slate-300">
+          {cursor ? `${cursor.lat.toFixed(7)}, ${cursor.lon.toFixed(7)}` : "move over map"}
+        </span>
+        <span className="text-slate-500">Region</span>
+        <span className="truncate text-slate-300">{region?.name ?? "none selected"}</span>
+      </div>
+    </div>
+  );
+}
+
+function positionLatLon(position: DronePositionUpdate | null): [number, number] | null {
+  const lat = position?.lat_lon?.lat;
+  const lon = position?.lat_lon?.lon;
+  return typeof lat === "number" && Number.isFinite(lat) && typeof lon === "number" && Number.isFinite(lon)
+    ? [lat, lon]
+    : null;
+}
+
+function positionSourceLabel(position: DronePositionUpdate | null) {
+  if (!position) return "Waiting";
+  if (position.source_state === "gps_primary") return "GPS primary";
+  if (position.source_state === "vision_correction") return "Vision fix";
+  if (position.source_state === "dead_reckoning_between_fixes") return "Dead reckoning";
+  if (position.source_state === "gps_degraded") return "GPS weak";
+  if (position.source_state === "no_position") return "No position";
+  if (position.source === "gps") return "GPS";
+  if (position.source === "vision") return "Vision";
+  if (position.source === "gps_degraded") return "GPS weak";
+  return position.source || "Unknown";
+}
+
+function positionStatusClass(position: DronePositionUpdate | null) {
+  if (!position) return "text-slate-500";
+  if (position.source_state === "gps_primary" || (position.source === "gps" && position.status === "accepted")) return "text-emerald-400";
+  if (position.source_state === "vision_correction" || (position.source === "vision" && position.status === "accepted")) return "text-cyan-400";
+  if (position.source_state === "dead_reckoning_between_fixes" || position.source_state === "gps_degraded") return "text-amber-300";
+  if (position.status === "degraded") return "text-amber-300";
+  return "text-slate-400";
+}
+
+function positionLedClass(position: DronePositionUpdate | null) {
+  if (position?.source_state === "gps_primary" || position?.source === "gps") return "ops-led-ready";
+  if (position?.source_state === "vision_correction" || position?.source === "vision") return "ops-led-active";
+  if (position?.source_state === "dead_reckoning_between_fixes" || position?.source_state === "gps_degraded" || position?.status === "degraded") return "ops-led-warning";
+  return "ops-led-offline";
+}
+
+function positionColor(position: DronePositionUpdate | null, fill = false) {
+  if (position?.source_state === "gps_primary" || position?.source === "gps") return fill ? "#16A34A" : "#22C55E";
+  if (position?.source_state === "vision_correction" || position?.source === "vision") return fill ? "#0284C7" : "#38BDF8";
+  return fill ? "#D97706" : "#F59E0B";
 }
 
 function MissionMap({
@@ -974,6 +1071,7 @@ function MissionMap({
   fencePoints,
   rallyPoints,
   visionCheckpoints,
+  livePosition,
   onAddPoint,
 }: {
   region?: Region;
@@ -983,24 +1081,31 @@ function MissionMap({
   fencePoints: PlanPoint[];
   rallyPoints: PlanPoint[];
   visionCheckpoints: PlanPoint[];
+  livePosition: DronePositionUpdate | null;
   onAddPoint: (waypoint: Waypoint) => void;
 }) {
   const bounds = missionBounds(region);
   const center = missionCenter(region);
   const missionPath = missionItems.map((item) => ({ lat: item.lat, lon: item.lon }));
+  const [cursorPoint, setCursorPoint] = useState<Waypoint | null>(null);
 
   return (
     <MapContainer
       center={center}
       zoom={region ? 16 : 13}
       bounds={bounds}
-      className="w-full h-full"
+      className="mission-map h-full w-full"
       scrollWheelZoom
       attributionControl={false}
     >
       <FitSelectedRegion regionId={region?.id} bounds={bounds} center={center} />
+      <TileLayer
+        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        maxZoom={19}
+      />
       {mosaicUrl && bounds && <ImageOverlay key={mosaicUrl} url={mosaicUrl} bounds={bounds} opacity={1} />}
-      <ClickLayer onAddPoint={onAddPoint} />
+      <MapInteractionLayer onAddPoint={onAddPoint} onCursorMove={setCursorPoint} />
+      <MapReadoutControl bounds={bounds} center={center} cursor={cursorPoint} region={region} />
       {missionPath.length > 1 && (
         <Polyline
           positions={missionPath.map((waypoint) => [waypoint.lat, waypoint.lon])}
@@ -1056,14 +1161,34 @@ function MissionMap({
           pathOptions={{ color: "#A78BFA", fillColor: "#7C3AED", fillOpacity: activeLayer === "vision" ? 0.95 : 0.55, weight: 2 }}
         />
       ))}
+      {positionLatLon(livePosition) && (
+        <CircleMarker
+          center={positionLatLon(livePosition)!}
+          radius={9}
+          pathOptions={{
+            color: positionColor(livePosition),
+            fillColor: positionColor(livePosition, true),
+            fillOpacity: 0.95,
+            weight: 3,
+          }}
+        />
+      )}
     </MapContainer>
   );
 }
 
 export function MissionPlanner() {
-  const { devices, regions, activeDeviceId, setActiveDevice } = useAppStore();
+  const { devices, regions, activeDeviceId } = useAppStore();
   const navigate = useNavigate();
-  const activeDevice = devices.find((d) => d.id === activeDeviceId);
+  const selectedDevice = devices.find((d) => d.id === activeDeviceId);
+  const activeDevice = selectedDevice ?? ({
+    id: "planning-mode",
+    name: "Planning Mode",
+    kind: "local",
+    host: "no runtime selected",
+    autopilot: "px4",
+  } satisfies Device);
+  const hasSelectedDevice = Boolean(selectedDevice);
   const pipelineConfig = useMemo(() => loadPipelineConfig(), []);
   const downloadedRegions = regions.filter((r) => r.last_downloaded);
   const persistedPlannerState = useMemo(() => loadMissionPlannerState(), []);
@@ -1089,7 +1214,7 @@ export function MissionPlanner() {
   const [rallyPoints, setRallyPoints] = useState<PlanPoint[]>([]);
   const [visionCheckpoints, setVisionCheckpoints] = useState<PlanPoint[]>([]);
   const [gnssDeniedReadiness, setGnssDeniedReadiness] = useState<GnssDeniedReadiness>(DEFAULT_GNSS_DENIED_READINESS);
-  const [terrainConstraints, setTerrainConstraints] = useState<TerrainPlanningConstraints>(DEFAULT_TERRAIN_CONSTRAINTS);
+  const [terrainConstraints, setTerrainConstraints] = useState<TerrainPlanningConstraints>(() => loadTerrainConstraints());
   const [planMessage, setPlanMessage] = useState("");
   const [mosaicState, setMosaicState] = useState<{
     url: string | null;
@@ -1115,6 +1240,9 @@ export function MissionPlanner() {
   const [planFileSavedAt, setPlanFileSavedAt] = useState<string | null>(() => persistedPlannerState.planFileSavedAt ?? null);
   const [planFileSource, setPlanFileSource] = useState<PlanFileSource | null>(() => persistedPlannerState.planFileSource ?? null);
   const [pendingPlanFile, setPendingPlanFile] = useState<{ path: string; source: PlanFileSource; savedAt: string } | null>(null);
+  const [positionTelemetryPort, setPositionTelemetryPort] = useState(() => Number(localStorage.getItem("vision_nav_position_udp_port") || 17660));
+  const [livePosition, setLivePosition] = useState<DronePositionUpdate | null>(null);
+  const [positionTelemetryError, setPositionTelemetryError] = useState<string | null>(null);
 
   const refreshSupportBundles = async () => {
     setSupportBundles(await cmd.listSupportBundles(SUPPORT_DOWNLOAD_DIR));
@@ -1282,6 +1410,12 @@ export function MissionPlanner() {
   const missionPlanState = missionPlanStateCopy(missionPlanStateStatus, activeDevice);
   const planFileDirty = !!planFilePath && planFileFingerprint !== qgcPlanJson;
   const planFileState = planFileStateCopy(planFilePath, planFileDirty, planFileSavedAt, planFileSource);
+  const latestPosition = positionLatLon(livePosition);
+  const commandOutputTail = commandOutput
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(-1)[0] || "No runtime command output yet";
 
   useEffect(() => {
     if (!pendingPlanFile) return;
@@ -1313,6 +1447,40 @@ export function MissionPlanner() {
     planFileSavedAt,
     planFileSource,
   ]);
+
+  useEffect(() => {
+    localStorage.setItem("vision_nav_position_udp_port", String(positionTelemetryPort));
+  }, [positionTelemetryPort]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      if (!Number.isFinite(positionTelemetryPort) || positionTelemetryPort < 1 || positionTelemetryPort > 65535) {
+        setPositionTelemetryError("Invalid UDP port");
+        return;
+      }
+      try {
+        const packet = await cmd.receivePositionUpdate(positionTelemetryPort, 750);
+        if (cancelled) return;
+        if (packet) {
+          setLivePosition(packet);
+          setPositionTelemetryError(null);
+        }
+      } catch (err) {
+        if (!cancelled) setPositionTelemetryError(String(err));
+      } finally {
+        if (!cancelled) timer = setTimeout(poll, 250);
+      }
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [positionTelemetryPort]);
 
   const pickRepo = async () => {
     const dir = await open({ directory: true, multiple: false, title: "Select Drone repo folder" });
@@ -1372,10 +1540,14 @@ export function MissionPlanner() {
   };
 
   const updateTerrainConstraint = (key: keyof TerrainPlanningConstraints, value: number) => {
-    setTerrainConstraints((current) => ({
-      ...current,
-      [key]: Number.isFinite(value) && value >= 0 ? value : current[key],
-    }));
+    setTerrainConstraints((current) => {
+      const next = {
+        ...current,
+        [key]: Number.isFinite(value) && value >= 0 ? value : current[key],
+      };
+      saveTerrainConstraints(next);
+      return next;
+    });
     setBundleResult(null);
   };
 
@@ -1485,7 +1657,9 @@ export function MissionPlanner() {
       if (imported.rally_points) setRallyPoints(imported.rally_points);
       if (imported.vision?.checkpoints) setVisionCheckpoints(imported.vision.checkpoints);
       setGnssDeniedReadiness(imported.gnss_denied ?? DEFAULT_GNSS_DENIED_READINESS);
-      setTerrainConstraints(imported.terrain_planning?.constraints ?? DEFAULT_TERRAIN_CONSTRAINTS);
+      const importedTerrainConstraints = imported.terrain_planning?.constraints ?? DEFAULT_TERRAIN_CONSTRAINTS;
+      setTerrainConstraints(importedTerrainConstraints);
+      saveTerrainConstraints(importedTerrainConstraints);
       setBundleResult(null);
       setPendingPlanFile({ path, source: "imported", savedAt: new Date().toISOString() });
       setPlanMessage(`Imported mission plan from ${path}`);
@@ -1684,38 +1858,127 @@ export function MissionPlanner() {
   const mavlinkEnv = enableMavlink && activeDevice?.mavlink_endpoint
     ? `VISION_NAV_MAVLINK_ENDPOINT=${shellQuote(activeDevice.mavlink_endpoint)} `
     : "";
-
-  if (!activeDevice) {
-    return (
-      <div className="p-6 flex flex-col items-center justify-center h-full animate-fade-in">
-        <Server size={40} className="text-slate-600 mb-4" />
-        <h2 className="section-title mb-2">No Device Selected</h2>
-        <p className="text-slate-400 text-sm text-center mb-6">
-          Select a runtime module before planning and deploying a mission.
-        </p>
-        <div className="flex gap-3">
-          {devices.map((d) => (
-            <button key={d.id} onClick={() => setActiveDevice(d.id)} className="btn-secondary">
-              {d.kind === "pi5" ? <Server size={14} /> : <HardDrive size={14} />}
-              {d.name}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const positionTelemetryEnv = Number.isFinite(positionTelemetryPort) && positionTelemetryPort >= 1 && positionTelemetryPort <= 65535
+    ? `VISION_NAV_POSITION_UDP_TARGET=${shellQuote(`255.255.255.255:${positionTelemetryPort}`)} `
+    : "";
 
   return (
-    <div className="p-6 space-y-6 animate-fade-in">
-      <div>
+    <>
+    <div className="ops-screen-bg relative h-full min-h-[calc(100vh-96px)] overflow-hidden animate-fade-in">
+      <div className="sr-only">
         <h1 className="section-title">Mission Planner</h1>
         <p className="text-slate-400 text-sm mt-1">
           Choose the flight area, sketch the drone path, build the vision bundle, and validate the runtime module.
         </p>
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)] gap-6">
-        <div className="card p-0 overflow-hidden h-[520px] relative">
+      <aside className="hidden glass-panel panel-3d-left absolute left-3 top-3 bottom-3 z-[640] w-[216px] flex-col justify-between py-3">
+        <div>
+          <div className="mb-3 flex flex-col gap-2 border-b border-border px-3 pb-3">
+            <div className="text-[10px] text-secondary font-data-mono tracking-widest flex items-center gap-1">
+              <Crosshair size={12} className="text-status-active" /> ACTIVE ASSET
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center border border-border bg-bg-surface shadow-depth-inset">
+                <Navigation className="text-status-active" size={21} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="truncate font-data-mono text-[13px] font-bold text-slate-100">{activeDevice.name}</h2>
+                <div className="font-data-mono text-[10px] text-status-active flex items-center gap-1 mt-0.5">
+                  <span className={cn("w-1.5 h-1.5 rounded-full", hasSelectedDevice ? "bg-status-active animate-pulse" : "bg-status-warning")} />
+                  {hasSelectedDevice ? activeDevice.host || "local profile" : "offline planning"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <nav className="flex flex-col gap-1 px-1.5">
+            {([
+              ["mission", "Plan Editor", Route],
+              ["fence", "GeoFence", Flag],
+              ["vision", "Vision Map", ScanSearch],
+              ["rally", "Rally Points", Layers3],
+            ] as Array<[PlanLayer, string, typeof Route]>).map(([layer, label, Icon]) => (
+              <button
+                key={layer}
+                onClick={() => setActiveLayer(layer)}
+                className={cn(
+                  "flex items-center border-l-2 px-3 py-2.5 font-data-mono text-[11px] transition-colors",
+                  activeLayer === layer
+                    ? "border-status-active bg-bg-elevated text-status-active"
+                    : "border-transparent text-on-surface-variant hover:bg-bg-surface hover:text-white",
+                )}
+              >
+                <Icon size={14} className="mr-2.5" /> {label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        <div className="px-3 flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5 border border-border bg-bg-surface p-3 font-data-mono text-[10px] text-secondary">
+            <div className="flex justify-between"><span>LINK QLT:</span><span className="text-status-ready">{livePosition ? "98%" : "LISTEN"}</span></div>
+            <div className="flex justify-between"><span>POS SRC:</span><span className={positionStatusClass(livePosition)}>{positionSourceLabel(livePosition)}</span></div>
+            <div className="flex justify-between"><span>GPS FIX:</span><span className={livePosition?.source_state === "gps_primary" || livePosition?.source === "gps" ? "text-status-ready" : "text-status-warning"}>{livePosition?.gps_health?.fix_type ?? "n/a"}</span></div>
+            <div className="flex justify-between"><span>MAP:</span><span className={selectedRegion ? "text-status-ready" : "text-status-warning"}>{selectedRegion?.lifecycle_state?.toUpperCase() ?? (selectedRegion ? "READY" : "SELECT")}</span></div>
+          </div>
+        </div>
+      </aside>
+
+      <div className="pointer-events-auto absolute left-3 right-[332px] top-3 z-[650] grid grid-cols-4 gap-2">
+        <div className="ops-tile glass-panel">
+          <div className="flex items-center gap-2 ops-label">
+            <span className={cn("ops-led", hasSelectedDevice ? "ops-led-ready" : "ops-led-warning")} />
+            <PanelBottom size={13} className="text-cyan-400" />
+            Operations
+          </div>
+          <div className="ops-value mt-1 truncate">{activeDevice.name}</div>
+          <div className="truncate font-mono text-[11px] text-slate-500">
+            {hasSelectedDevice ? activeDevice.host || "local device profile" : "select Drone to upload/run"}
+          </div>
+        </div>
+        <div className="ops-tile glass-panel">
+          <div className="flex items-center gap-2 ops-label">
+            <span className={cn(
+              "ops-led",
+              positionLedClass(livePosition),
+            )} />
+            <Navigation size={13} className={positionStatusClass(livePosition)} />
+            Position
+          </div>
+          <div className={cn("ops-value mt-1", positionStatusClass(livePosition))}>
+            {positionSourceLabel(livePosition)}
+          </div>
+          <div className="truncate font-mono text-[11px] text-slate-500">
+            {latestPosition
+              ? `${latestPosition[0].toFixed(6)}, ${latestPosition[1].toFixed(6)}`
+              : positionTelemetryError || `UDP ${positionTelemetryPort}`}
+          </div>
+        </div>
+        <div className="ops-tile glass-panel">
+          <div className="flex items-center gap-2 ops-label">
+            <span className={cn("ops-led", missionPlanStateStatus === "uploaded" || missionPlanStateStatus === "bundle_ready" ? "ops-led-ready" : missionPlanStateStatus === "invalid" || missionPlanStateStatus === "stale_bundle" ? "ops-led-critical" : "ops-led-warning")} />
+            <UploadIcon size={13} className="text-cyan-400" />
+            Bundle
+          </div>
+          <div className="ops-value mt-1">{missionPlanState.label}</div>
+          <div className="truncate text-[11px] text-slate-500">{missionPlanState.detail}</div>
+        </div>
+        <div className="ops-tile glass-panel">
+          <div className="flex items-center gap-2 ops-label">
+            <span className={cn("ops-led", cmdRunning ? "ops-led-warning" : commandOutput ? "ops-led-active" : "ops-led-offline")} />
+            <Terminal size={13} className={cmdRunning ? "text-amber-300" : "text-cyan-400"} />
+            Diagnostics
+          </div>
+          <div className="ops-value mt-1">
+            {cmdRunning ? "Command running" : commandOutput ? "Latest output" : "Idle"}
+          </div>
+          <div className="truncate font-mono text-[11px] text-slate-500">{commandOutputTail}</div>
+        </div>
+      </div>
+
+      <div className="absolute left-3 right-[332px] top-3 bottom-3 z-[100]">
+        <div className="glass-panel panel-3d-center absolute inset-0 overflow-hidden border border-border">
           <MissionMap
             region={selectedRegion}
             mosaicUrl={mosaicState.url}
@@ -1724,11 +1987,40 @@ export function MissionPlanner() {
             fencePoints={fencePoints}
             rallyPoints={rallyPoints}
             visionCheckpoints={visionCheckpoints}
+            livePosition={livePosition}
             onAddPoint={addPlanPoint}
           />
+          <div className="ops-map-overlay absolute left-3 top-[104px] z-[500] min-w-56 px-3 py-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 font-mono text-sm text-slate-200">
+                <span className={cn(
+                  "ops-led",
+                  positionLedClass(livePosition),
+                )} />
+                <Navigation size={14} className={positionStatusClass(livePosition)} />
+                Live Position
+              </div>
+              <span className={cn("text-[11px] font-mono", positionStatusClass(livePosition))}>
+                {positionSourceLabel(livePosition)}
+              </span>
+            </div>
+            <div className="mt-1 text-[11px] text-slate-500 font-mono">
+              {positionLatLon(livePosition)
+                ? `${positionLatLon(livePosition)![0].toFixed(7)}, ${positionLatLon(livePosition)![1].toFixed(7)}`
+                : "waiting for UDP position"}
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+              <span>UDP {positionTelemetryPort}</span>
+              <span>{livePosition?.confidence != null ? `conf ${Number(livePosition.confidence).toFixed(2)}` : positionTelemetryError ? "listener warning" : "listening"}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+              <span>vision age</span>
+              <span>{livePosition?.seconds_since_vision_fix != null ? `${livePosition.seconds_since_vision_fix.toFixed(1)}s` : "n/a"}</span>
+            </div>
+          </div>
           {(mosaicState.loading || mosaicState.error) && (
             <div className={cn(
-              "absolute left-4 bottom-4 max-w-[70%] rounded-lg border px-3 py-2 text-xs shadow-lg",
+              "absolute left-3 bottom-[300px] max-w-[52%] border px-3 py-2 text-xs shadow-none",
               mosaicState.error
                 ? "bg-red-950/90 border-red-500/30 text-red-200"
                 : "bg-bg-surface/90 border-border text-slate-300",
@@ -1740,19 +2032,115 @@ export function MissionPlanner() {
               )}
             </div>
           )}
+          <div className="pointer-events-auto absolute bottom-3 left-3 z-[520] w-[330px] border border-border bg-bg-surface/90 p-3 shadow-lg backdrop-blur-sm">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-[0.1em] text-slate-200">
+                <MapIcon size={14} className="text-cyan-400" />
+                Map Source
+              </div>
+              <Link to="/maps" className="text-[11px] text-cyan-300 hover:text-cyan-200">
+                Maps
+              </Link>
+            </div>
+            {downloadedRegions.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => navigate("/maps")}
+                className="w-full border border-dashed border-border bg-bg-base px-3 py-4 text-center text-xs text-slate-500 hover:border-cyan-500/40 hover:text-slate-300"
+              >
+                Add or download a map first
+              </button>
+            ) : (
+              <div className="max-h-44 space-y-1 overflow-y-auto">
+                {downloadedRegions.slice(0, 5).map((region) => (
+                  <button
+                    key={region.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRegionId(region.id);
+                      setBundleResult(null);
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-3 border px-2.5 py-2 text-left transition-colors",
+                      selectedRegionId === region.id
+                        ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-200"
+                        : "border-border bg-bg-base/80 text-slate-300 hover:border-cyan-500/30",
+                    )}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-medium">{region.name}</span>
+                      <span className="block truncate font-mono text-[10px] text-slate-500">
+                        {region.gsd_m_per_px != null ? `${region.gsd_m_per_px.toFixed(2)} m/px` : region.source}
+                      </span>
+                    </span>
+                    {selectedRegionId === region.id ? (
+                      <CheckCircle2 size={13} className="shrink-0 text-cyan-300" />
+                    ) : (
+                      <ChevronRight size={12} className="shrink-0 text-slate-600" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="pointer-events-auto absolute bottom-3 left-[356px] right-3 z-[520] grid grid-cols-4 gap-2">
+            <div className="border border-border bg-bg-surface/90 px-3 py-2 backdrop-blur-sm">
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">Runtime</div>
+              <div className="truncate text-xs text-slate-200">{activeDevice.name}</div>
+            </div>
+            <div className="border border-border bg-bg-surface/90 px-3 py-2 backdrop-blur-sm">
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">Position</div>
+              <div className={cn("truncate text-xs", positionStatusClass(livePosition))}>{positionSourceLabel(livePosition)}</div>
+            </div>
+            <div className="border border-border bg-bg-surface/90 px-3 py-2 backdrop-blur-sm">
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">Mission</div>
+              <div className="truncate text-xs text-slate-200">{missionItems.length} items</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/camera-vision")}
+              className="border border-border bg-bg-surface/90 px-3 py-2 text-left backdrop-blur-sm hover:border-cyan-500/40"
+            >
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">Vision</div>
+              <div className="truncate text-xs text-cyan-300">{pipelineConfig.featureMethod.toUpperCase()}</div>
+            </button>
+          </div>
+
           {!selectedRegion && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="rounded-lg border border-border bg-bg-surface/90 px-4 py-3 text-center shadow-lg">
+              <div className="rounded-none border border-border bg-bg-surface/90 px-4 py-3 text-center shadow-lg">
                 <MapIcon size={18} className="text-cyan-400 mx-auto mb-2" />
                 <div className="text-sm font-medium text-slate-200">Select a map source</div>
-                <div className="text-xs text-slate-500 mt-1">The saved mosaic loads only after you choose one below.</div>
+                <div className="text-xs text-slate-500 mt-1">Choose one from the Map Source panel.</div>
               </div>
             </div>
           )}
         </div>
-        <div className="card space-y-4">
-          <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
-            <Layers3 size={14} className="text-cyan-400" /> Plan Editor
+      </div>
+
+      <div className="hidden glass-panel absolute left-3 right-[332px] bottom-3 z-[620] h-[120px] flex-col overflow-hidden border border-border">
+        <div className="flex items-center justify-between border-b border-border bg-bg-surface px-4 py-1.5">
+          <div className="flex items-center gap-2">
+            <span className={cn("h-3 w-1.5", cmdRunning ? "bg-status-warning" : "bg-status-active")} />
+            <span className="font-data-mono text-[10px] text-status-active font-bold tracking-widest">MAVLINK CONSOLE // SYS_LOG</span>
+          </div>
+          <div className="flex items-center gap-4 font-data-mono text-[10px] text-secondary">
+            <span>MAVLink {enableMavlink ? "armed" : "off"}</span>
+            <span>UDP {positionTelemetryPort}</span>
+            <span>{missionPlanState.label}</span>
+          </div>
+        </div>
+        <pre className="flex flex-1 flex-col gap-1 overflow-y-auto whitespace-pre-wrap bg-bg-base p-3 font-data-mono text-[10px] text-slate-300">
+          {commandOutput
+            ? (cmdRunning ? `${commandOutput}...` : commandOutput)
+            : `$ diagnostics\nAsset=${activeDevice.name}\nMap=${selectedRegion?.name ?? "none selected"}\nPosition=${positionSourceLabel(livePosition)}\nBundle=${missionPlanState.label}`}
+        </pre>
+      </div>
+
+      <div className="glass-panel panel-3d-right absolute right-3 top-3 bottom-3 z-[620] w-[312px] space-y-4 overflow-y-auto border border-border p-3">
+          <h3 className="flex items-center gap-2 border-b border-border pb-3 font-data-mono text-[13px] font-bold tracking-wide text-slate-100">
+            <Layers3 size={14} className="text-status-active" /> MISSION STATE
           </h3>
 
           <div className="grid grid-cols-4 gap-1">
@@ -1764,7 +2152,7 @@ export function MissionPlanner() {
                   key={layer}
                   onClick={() => setActiveLayer(layer)}
                   className={cn(
-                    "rounded-lg border px-2 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors",
+                    "rounded-none border px-2 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors",
                     activeLayer === layer ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-300" : "border-border text-slate-400",
                   )}
                   title={meta.hint}
@@ -1775,7 +2163,7 @@ export function MissionPlanner() {
             })}
           </div>
 
-          <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-3">
+          <div className="rounded-none border border-border bg-bg-surface p-3 space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <button onClick={importMissionPlan} className="btn-secondary justify-center text-xs py-1.5">
                 <FileInput size={13} /> Import
@@ -1859,7 +2247,7 @@ export function MissionPlanner() {
                       if (e.key === "Enter" || e.key === " ") setSelectedMissionItemId(item.id);
                     }}
                     className={cn(
-                      "w-full rounded-lg border px-2 py-2 text-left transition-colors cursor-pointer",
+                      "w-full rounded-none border px-2 py-2 text-left transition-colors cursor-pointer",
                       selectedMissionItemId === item.id ? "border-cyan-500/40 bg-cyan-500/5" : "border-border hover:border-border-strong",
                     )}
                   >
@@ -1907,7 +2295,7 @@ export function MissionPlanner() {
               </div>
 
               {selectedMissionItem && (
-                <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-3">
+                <div className="rounded-none border border-border bg-bg-surface p-3 space-y-3">
                   <div className="text-xs font-medium text-slate-300">Selected item</div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -1933,7 +2321,7 @@ export function MissionPlanner() {
           )}
 
           {activeLayer !== "mission" && (
-            <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-3">
+            <div className="rounded-none border border-border bg-bg-surface p-3 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium text-slate-200">{LAYER_META[activeLayer].label}</div>
@@ -1956,7 +2344,7 @@ export function MissionPlanner() {
             </div>
           )}
 
-          <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-2">
+          <div className="rounded-none border border-border bg-bg-surface p-3 space-y-2">
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div>
                 <span className="block text-slate-500">Items</span>
@@ -1983,7 +2371,7 @@ export function MissionPlanner() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-2">
+          <div className="rounded-none border border-border bg-bg-surface p-3 space-y-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs font-medium text-slate-300">Mission state</span>
               <span className={missionPlanStateClass(missionPlanStateStatus)}>
@@ -1996,7 +2384,7 @@ export function MissionPlanner() {
               </span>
             </div>
             <p className="text-[11px] text-slate-500">{missionPlanState.detail}</p>
-            <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-bg-card px-2 py-1.5">
+            <div className="flex items-center justify-between gap-3 rounded-none border border-border/70 bg-bg-card px-2 py-1.5">
               <span className="text-[11px] text-slate-500">Plan file</span>
               <span className={planFileDirty ? "badge-yellow" : planFilePath ? "badge-green" : "badge-yellow"}>
                 {planFileDirty || !planFilePath ? <AlertTriangle size={11} /> : <CheckCircle2 size={11} />}
@@ -2021,8 +2409,8 @@ export function MissionPlanner() {
         </div>
       </div>
 
-      <div className="grid grid-cols-[1.1fr_0.9fr] gap-6">
-        <div className="space-y-4">
+      <div className="hidden pointer-events-auto absolute bottom-3 left-3 right-[332px] z-[640] h-[188px] grid-cols-2 gap-3 overflow-hidden">
+        <div className="ops-panel overflow-y-auto p-3 space-y-3">
           <div className="card space-y-3">
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
               <MapIcon size={14} className="text-cyan-400" /> Flight Area / Map Source
@@ -2039,7 +2427,7 @@ export function MissionPlanner() {
                       setBundleResult(null);
                     }}
                     className={cn(
-                      "w-full text-left rounded-lg border p-3 transition-colors",
+                      "w-full text-left rounded-none border p-3 transition-colors",
                       selectedRegionId === region.id
                         ? "border-cyan-500/40 bg-cyan-500/5"
                         : "border-border hover:border-border-strong",
@@ -2113,7 +2501,7 @@ export function MissionPlanner() {
                 </span>
               ))}
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+            <div className="flex items-center justify-between rounded-none border border-border px-3 py-2">
               <div>
                 <div className="text-sm text-slate-200">Satellite source disabled</div>
                 <div className="text-[11px] text-slate-500">
@@ -2123,24 +2511,24 @@ export function MissionPlanner() {
               <button
                 onClick={() => updateGnssDeniedReadiness({ satellite_source_disabled: !gnssDeniedReadiness.satellite_source_disabled })}
                 className={cn(
-                  "w-11 h-6 rounded-full border transition-colors relative",
+                  "w-11 h-6 rounded-none border transition-colors relative",
                   gnssDeniedReadiness.satellite_source_disabled ? "bg-cyan-500/20 border-cyan-500/50" : "bg-bg-elevated border-border",
                 )}
               >
                 <span
                   className={cn(
-                    "absolute top-0.5 h-5 w-5 rounded-full bg-slate-300 transition-transform",
+                    "absolute top-0.5 h-5 w-5 rounded-none bg-slate-300 transition-transform",
                     gnssDeniedReadiness.satellite_source_disabled ? "translate-x-5" : "translate-x-0.5",
                   )}
                 />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="rounded-lg border border-border bg-bg-card px-2 py-1.5">
+              <div className="rounded-none border border-border bg-bg-card px-2 py-1.5">
                 <span className="block text-slate-500">Map reset</span>
                 <span className="font-mono text-slate-300">{planPointLabel(gnssDeniedReadiness.map_position_reset)}</span>
               </div>
-              <div className="rounded-lg border border-border bg-bg-card px-2 py-1.5">
+              <div className="rounded-none border border-border bg-bg-card px-2 py-1.5">
                 <span className="block text-slate-500">Home reset</span>
                 <span className="font-mono text-slate-300">{planPointLabel(gnssDeniedReadiness.home_position)}</span>
               </div>
@@ -2190,7 +2578,7 @@ export function MissionPlanner() {
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
               <ScanSearch size={14} className="text-cyan-400" /> Terrain Planning
             </h3>
-            <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-bg-surface px-3 py-2">
+            <div className="flex items-start justify-between gap-3 rounded-none border border-border bg-bg-surface px-3 py-2">
               <div className="min-w-0">
                 <div className="text-sm text-slate-200">Offline map cache</div>
                 <div className="text-[11px] text-slate-500 font-mono truncate">
@@ -2245,15 +2633,15 @@ export function MissionPlanner() {
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2 text-[11px]">
-              <div className="rounded-lg border border-border bg-bg-surface px-2 py-1.5">
+              <div className="rounded-none border border-border bg-bg-surface px-2 py-1.5">
                 <span className="block text-slate-500">Distance</span>
                 <span className="text-slate-200 font-medium">{(terrainPlanningMetadata.route_segmentation.mission_distance_m / 1000).toFixed(2)} km</span>
               </div>
-              <div className="rounded-lg border border-border bg-bg-surface px-2 py-1.5">
+              <div className="rounded-none border border-border bg-bg-surface px-2 py-1.5">
                 <span className="block text-slate-500">Segments</span>
                 <span className="text-slate-200 font-medium">{terrainPlanningMetadata.route_segmentation.estimated_segment_count || "n/a"}</span>
               </div>
-              <div className="rounded-lg border border-border bg-bg-surface px-2 py-1.5">
+              <div className="rounded-none border border-border bg-bg-surface px-2 py-1.5">
                 <span className="block text-slate-500">Profile</span>
                 <span className="text-slate-200 font-medium">{terrainProfileLabel(bundleResult?.geospatial_health?.terrain_profile)}</span>
               </div>
@@ -2268,7 +2656,7 @@ export function MissionPlanner() {
                   </span>
                 </div>
                 {terrainPlanningMetadata.route_segmentation.segments.slice(0, 4).map((segment) => (
-                  <div key={segment.id} className="flex items-center justify-between gap-2 rounded-md border border-border/70 bg-bg-card px-2 py-1 text-[11px]">
+                  <div key={segment.id} className="flex items-center justify-between gap-2 rounded-none border border-border/70 bg-bg-card px-2 py-1 text-[11px]">
                     <span className="font-mono text-slate-400">S{segment.sequence}</span>
                     <span className="truncate text-slate-500">
                       {segment.start.interpolated ? "split" : `item ${(segment.start.mission_item_index ?? 0) + 1}`}
@@ -2287,7 +2675,7 @@ export function MissionPlanner() {
             )}
             <div className="space-y-1">
               {terrainChecks.map((check) => (
-                <div key={check.label} className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-bg-card px-2 py-1.5 text-[11px]">
+                <div key={check.label} className="flex items-center justify-between gap-3 rounded-none border border-border/70 bg-bg-card px-2 py-1.5 text-[11px]">
                   <span className="text-slate-500">{check.label}</span>
                   <span className="text-slate-300 font-mono">{check.value}</span>
                   <span className={terrainConstraintClass(check.status)}>
@@ -2363,8 +2751,8 @@ export function MissionPlanner() {
                       <span className="truncate font-mono">{file}</span>
                       <span>{pct.toFixed(0)}%</span>
                     </div>
-                    <div className="h-1.5 bg-bg-elevated rounded-full overflow-hidden">
-                      <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    <div className="h-1.5 bg-bg-elevated rounded-none overflow-hidden">
+                      <div className="h-full bg-cyan-500 rounded-none transition-all" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 ))}
@@ -2373,31 +2761,45 @@ export function MissionPlanner() {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="ops-panel overflow-y-auto p-3 space-y-3">
           <div className="card space-y-3">
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
               <RadioTower size={14} className="text-cyan-400" /> Runtime And MAVLink
             </h3>
-            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+            <div className="flex items-center justify-between rounded-none border border-border px-3 py-2">
               <div>
                 <div className="text-sm text-slate-200">Send MAVLink vision messages</div>
                 <div className="text-[11px] text-slate-500 font-mono">{activeDevice.mavlink_endpoint || "No endpoint configured"}</div>
-                <div className="text-[11px] text-slate-500">Optional barometer telemetry is read from MAVLink when available.</div>
+                <div className="text-[11px] text-slate-500">Position stream reports GPS primary, vision correction, dead reckoning, weak GPS, or no position.</div>
               </div>
               <button
                 onClick={() => setEnableMavlink((v) => !v)}
                 className={cn(
-                  "w-11 h-6 rounded-full border transition-colors relative",
+                  "w-11 h-6 rounded-none border transition-colors relative",
                   enableMavlink ? "bg-cyan-500/20 border-cyan-500/50" : "bg-bg-elevated border-border",
                 )}
               >
                 <span
                   className={cn(
-                    "absolute top-0.5 h-5 w-5 rounded-full bg-slate-300 transition-transform",
+                    "absolute top-0.5 h-5 w-5 rounded-none bg-slate-300 transition-transform",
                     enableMavlink ? "translate-x-5" : "translate-x-0.5",
                   )}
                 />
               </button>
+            </div>
+            <div>
+              <label className="label">Ground station position UDP port</label>
+              <input
+                type="number"
+                min={1}
+                max={65535}
+                className="input-field font-mono text-xs"
+                value={positionTelemetryPort}
+                onChange={(event) => setPositionTelemetryPort(Number(event.target.value))}
+              />
+              <div className="mt-1 text-[11px] text-slate-500">
+                Pi runtime broadcasts to <span className="font-mono">255.255.255.255:{positionTelemetryPort || 17660}</span>; this app listens on the same port.
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <button
@@ -2415,7 +2817,7 @@ export function MissionPlanner() {
                 disabled={activeDevice.kind !== "pi5" || cmdRunning}
                 onClick={() => runPiCommand(
                   enableMavlink ? "run loop with mavlink" : "run loop",
-                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ${mavlinkEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ${runtimeStatusReadCommand()}`,
+                  `cd ${shellQuote(remoteProject)} && VISION_NAV_BUNDLE=${shellQuote(remoteBundleDir)} ${mavlinkEnv}${positionTelemetryEnv}VISION_NAV_COUNT=30 ./scripts/pi/run_terrain_nav_loop.sh && ${runtimeStatusReadCommand()}`,
                 )}
                 className="btn-secondary justify-center text-emerald-400 border-emerald-500/20"
               >
@@ -2434,7 +2836,7 @@ export function MissionPlanner() {
           </div>
 
           {bundleResult && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 text-emerald-400 text-sm space-y-1">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-none px-3 py-2 text-emerald-400 text-sm space-y-1">
               <div className="flex items-center gap-2">
                 <CheckCircle2 size={15} /> Bundle ready: <span className="font-mono text-xs truncate">{bundleResult.bundle_dir}</span>
               </div>
@@ -2488,7 +2890,7 @@ export function MissionPlanner() {
                 </div>
               )}
               <div className="grid grid-cols-3 gap-2 pt-1 text-[11px]">
-                <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
+                <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-emerald-300/60">Checksums</span>
                     <span className={checksumBadgeClass(bundleResult.geospatial_health?.checksums?.status)}>
@@ -2504,7 +2906,7 @@ export function MissionPlanner() {
                       : ""}
                   </div>
                 </div>
-                <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
+                <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-emerald-300/60">Source</span>
                     <span className="font-mono text-emerald-300/80 truncate">
@@ -2518,7 +2920,7 @@ export function MissionPlanner() {
                       || "map source"}
                   </div>
                 </div>
-                <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
+                <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-emerald-300/60">Terrain profile</span>
                     <span className="font-mono text-emerald-300/80 truncate">
@@ -2535,7 +2937,7 @@ export function MissionPlanner() {
               </div>
               <TerrainProfilePreview profile={bundleResult.geospatial_health?.terrain_profile} />
               {bundleResult.geospatial_health?.map_quality?.heatmap?.cells?.length ? (
-                <div className="rounded-md border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
+                <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
                   <div className="flex items-center justify-between gap-2 text-[11px]">
                     <span className="text-emerald-300/60">Map quality heatmap</span>
                     <span className="font-mono text-emerald-300/80">
@@ -2551,16 +2953,16 @@ export function MissionPlanner() {
                     {bundleResult.geospatial_health.map_quality.heatmap.cells.map((cell) => (
                       <div
                         key={cell.tile_id ?? `${cell.row}-${cell.col}`}
-                        className={cn("h-2 rounded-[2px]", qualityCellClass(cell.quality))}
+                        className={cn("h-2 rounded-none", qualityCellClass(cell.quality))}
                         title={`${cell.tile_id ?? "tile"}: ${formatHealthLabel(cell.quality)} ${Math.round(cell.feature_density_per_mpx ?? 0)} features/Mpx`}
                       />
                     ))}
                   </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-emerald-300/60">
-                    <span><span className="inline-block h-2 w-2 rounded-[2px] bg-red-400/80 mr-1" />Low</span>
-                    <span><span className="inline-block h-2 w-2 rounded-[2px] bg-amber-300/80 mr-1" />Fair</span>
-                    <span><span className="inline-block h-2 w-2 rounded-[2px] bg-cyan-300/80 mr-1" />Good</span>
-                    <span><span className="inline-block h-2 w-2 rounded-[2px] bg-emerald-300/80 mr-1" />Dense</span>
+                    <span><span className="inline-block h-2 w-2 rounded-none bg-red-400/80 mr-1" />Low</span>
+                    <span><span className="inline-block h-2 w-2 rounded-none bg-amber-300/80 mr-1" />Fair</span>
+                    <span><span className="inline-block h-2 w-2 rounded-none bg-cyan-300/80 mr-1" />Good</span>
+                    <span><span className="inline-block h-2 w-2 rounded-none bg-emerald-300/80 mr-1" />Dense</span>
                     {bundleResult.geospatial_health.map_quality.heatmap.omitted_tile_count
                       ? <span>{bundleResult.geospatial_health.map_quality.heatmap.omitted_tile_count} hidden</span>
                       : null}
@@ -2603,19 +3005,33 @@ export function MissionPlanner() {
           )}
 
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-red-400 text-xs whitespace-pre-wrap">
+            <div className="rounded-none border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 whitespace-pre-wrap">
               {error}
             </div>
           )}
 
-          {commandOutput && (
-            <pre className="bg-bg-base border border-border rounded-lg px-3 py-2.5 text-[11px] font-mono text-slate-300 whitespace-pre-wrap max-h-72 overflow-y-auto leading-relaxed">
-              {cmdRunning ? commandOutput + "..." : commandOutput}
+          <div className="ops-panel p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 ops-label">
+                <span className={cn("ops-led", cmdRunning ? "ops-led-warning" : commandOutput ? "ops-led-active" : "ops-led-offline")} />
+                <Terminal size={13} className={cmdRunning ? "text-amber-300" : "text-cyan-400"} />
+                Bottom Diagnostics
+              </div>
+              <div className="flex items-center gap-3 font-mono text-[10px] text-slate-500">
+                <span>MAVLink {enableMavlink ? "armed" : "off"}</span>
+                <span>UDP {positionTelemetryPort}</span>
+                <span>{activeDevice.kind === "pi5" ? "Pi runtime" : "Local runtime"}</span>
+              </div>
+            </div>
+            <pre className="ops-console max-h-56 overflow-y-auto">
+              {commandOutput
+                ? (cmdRunning ? `${commandOutput}...` : commandOutput)
+                : "$ diagnostics\nNo runtime command output yet.\nRun validation, a 30-frame capture, or create a support bundle to populate this console."}
             </pre>
-          )}
+          </div>
           <SupportBundleList bundles={supportBundles} downloadDir={SUPPORT_DOWNLOAD_DIR} onChanged={refreshSupportBundles} />
         </div>
-      </div>
     </div>
+    </>
   );
 }

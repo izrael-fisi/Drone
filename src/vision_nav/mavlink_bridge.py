@@ -43,6 +43,16 @@ class MavlinkTelemetrySample:
     local_north_m: float | None = None
     local_east_m: float | None = None
     local_down_m: float | None = None
+    gps_lat: float | None = None
+    gps_lon: float | None = None
+    gps_alt_m: float | None = None
+    gps_fix_type: int | None = None
+    gps_satellites_visible: int | None = None
+    gps_eph_m: float | None = None
+    gps_epv_m: float | None = None
+    gps_h_acc_m: float | None = None
+    gps_v_acc_m: float | None = None
+    global_alt_m: float | None = None
     pressure_altitude_m: float | None = None
     relative_altitude_m: float | None = None
     pressure_hpa: float | None = None
@@ -57,6 +67,16 @@ class MavlinkTelemetrySample:
             "local_north_m": self.local_north_m,
             "local_east_m": self.local_east_m,
             "local_down_m": self.local_down_m,
+            "gps_lat": self.gps_lat,
+            "gps_lon": self.gps_lon,
+            "gps_alt_m": self.gps_alt_m,
+            "gps_fix_type": self.gps_fix_type,
+            "gps_satellites_visible": self.gps_satellites_visible,
+            "gps_eph_m": self.gps_eph_m,
+            "gps_epv_m": self.gps_epv_m,
+            "gps_h_acc_m": self.gps_h_acc_m,
+            "gps_v_acc_m": self.gps_v_acc_m,
+            "global_alt_m": self.global_alt_m,
             "pressure_altitude_m": self.pressure_altitude_m,
             "relative_altitude_m": self.relative_altitude_m,
             "pressure_hpa": self.pressure_hpa,
@@ -158,7 +178,7 @@ class MavlinkVisionBridge:
         if self._conn is None:
             return None
         message = self._conn.recv_match(
-            type=["ATTITUDE", "LOCAL_POSITION_NED", "ALTITUDE", "SCALED_PRESSURE"],
+            type=["ATTITUDE", "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT", "GPS_RAW_INT", "ALTITUDE", "SCALED_PRESSURE"],
             blocking=timeout_s > 0.0,
             timeout=timeout_s,
         )
@@ -181,6 +201,29 @@ class MavlinkVisionBridge:
                 local_north_m=_as_optional_float(getattr(message, "x", None)),
                 local_east_m=_as_optional_float(getattr(message, "y", None)),
                 local_down_m=_as_optional_float(getattr(message, "z", None)),
+            )
+        if message_type == "GLOBAL_POSITION_INT":
+            return MavlinkTelemetrySample(
+                message_type=message_type,
+                timestamp_us=timestamp_us,
+                gps_lat=_scaled_int(getattr(message, "lat", None), 1e7),
+                gps_lon=_scaled_int(getattr(message, "lon", None), 1e7),
+                global_alt_m=_scaled_int(getattr(message, "alt", None), 1000.0),
+                relative_altitude_m=_scaled_int(getattr(message, "relative_alt", None), 1000.0),
+            )
+        if message_type == "GPS_RAW_INT":
+            return MavlinkTelemetrySample(
+                message_type=message_type,
+                timestamp_us=timestamp_us,
+                gps_lat=_scaled_int(getattr(message, "lat", None), 1e7),
+                gps_lon=_scaled_int(getattr(message, "lon", None), 1e7),
+                gps_alt_m=_scaled_int(getattr(message, "alt", None), 1000.0),
+                gps_fix_type=_as_optional_int(getattr(message, "fix_type", None)),
+                gps_satellites_visible=_as_optional_int(getattr(message, "satellites_visible", None)),
+                gps_eph_m=_scaled_int(getattr(message, "eph", None), 100.0),
+                gps_epv_m=_scaled_int(getattr(message, "epv", None), 100.0),
+                gps_h_acc_m=_scaled_int(getattr(message, "h_acc", None), 1000.0),
+                gps_v_acc_m=_scaled_int(getattr(message, "v_acc", None), 1000.0),
             )
         if message_type == "ALTITUDE":
             return MavlinkTelemetrySample(
@@ -283,6 +326,24 @@ def _as_optional_float(value: Any) -> float | None:
         return output if math.isfinite(output) else None
     except (TypeError, ValueError):
         return None
+
+
+def _as_optional_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _scaled_int(value: Any, scale: float) -> float | None:
+    number = _as_optional_float(value)
+    if number is None:
+        return None
+    if abs(number) >= 2147483647:
+        return None
+    return number / scale
 
 
 def _load_mavutil(*, require_odometry: bool = False) -> Any:

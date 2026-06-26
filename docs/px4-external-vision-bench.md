@@ -99,6 +99,7 @@ cd ~/Drone
 VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
 VISION_NAV_MAVLINK_ENDPOINT=/dev/ttyACM0 \
 VISION_NAV_MAVLINK_MESSAGE=odometry \
+VISION_NAV_POSITION_UDP_TARGET=255.255.255.255:17660 \
 VISION_NAV_COUNT=30 \
 ./scripts/pi/run_terrain_nav_loop.sh
 ```
@@ -108,6 +109,8 @@ Pass criteria:
 - accepted measurements are sent only when estimator confidence passes gates
 - rejected/failed measurements are logged but not sent as trusted updates
 - runtime log includes external-position health
+- Mission Planner receives live position packets and labels GPS or vision as
+  the active position source
 - QGroundControl/PX4 shows no unexpected arming, mode, or motor behavior
 
 ## Evidence To Save

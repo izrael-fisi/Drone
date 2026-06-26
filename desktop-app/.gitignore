@@ -2,6 +2,9 @@ node_modules/
 .npm-cache/
 dist/
 dist-ssr/
+export/
+stitch-export/*.zip
+stitch-export/drone-vision-desktop-stitch-import/
 *.local
 .env
 .env.*

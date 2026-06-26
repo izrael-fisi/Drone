@@ -15,6 +15,16 @@ export type DeviceKind = "pi5" | "local";
 export type AuthMethod = "password" | "key";
 export type VisionPipeline = "classical" | "neural";
 export type FeatureMethod = "orb" | "akaze" | "sift";
+export type RuntimeProfileId = "pi5_full" | "pi5_low_memory" | "desktop_high_compute";
+export type CameraProfileId = "rgb_global_shutter" | "rgb_rolling_shutter" | "thermal_low_res" | "eo_generic";
+export type MapLifecycleState = "local" | "built" | "uploaded" | "active" | "stale" | "failed";
+export type PositionSourceState =
+  | "gps_primary"
+  | "vision_correction"
+  | "dead_reckoning_between_fixes"
+  | "gps_degraded"
+  | "no_position"
+  | string;
 
 export interface Device {
   id: string;
@@ -30,6 +40,15 @@ export interface Device {
   autopilot?: "px4" | "ardupilot";
   vision_pipeline?: VisionPipeline;
   feature_method?: FeatureMethod;
+  runtime_profile?: RuntimeProfileId;
+  camera_profile?: CameraProfileId;
+  hardware_profile?: {
+    module_weight_g?: number | null;
+    estimated_bom_usd?: number | null;
+    camera_cost_usd?: number | null;
+    sensor_compliance_notes?: string;
+    mount_vibration_notes?: string;
+  };
 }
 
 export interface Region {
@@ -53,6 +72,15 @@ export interface Region {
   elevation_dem_path?: string;
   elevation_dsm_path?: string;
   elevation_asset_count?: number;
+  lifecycle_state?: MapLifecycleState;
+  active_bundle_path?: string;
+  active_bundle_state?: "configured" | "active" | "missing" | "failed" | string;
+  map_age_or_season_notes?: string;
+  feature_count?: number;
+  weak_feature_regions?: string[];
+  estimated_pi_runtime_cost?: "low" | "moderate" | "high" | string;
+  runtime_profile?: RuntimeProfileId;
+  camera_profile?: CameraProfileId;
 }
 
 export interface ModelSet {
@@ -100,6 +128,51 @@ export interface UploadProgress {
   bytes_sent: number;
   total_bytes: number;
   percent: number;
+}
+
+export interface DronePositionUpdate {
+  schema_version: "vision_nav_position_update_v1" | "vision_nav_position_update_v2";
+  timestamp_utc?: string;
+  sequence?: number;
+  status?: "accepted" | "degraded" | "unavailable" | string;
+  source?: "gps" | "vision" | "gps_degraded" | "none" | string;
+  source_state?: PositionSourceState;
+  source_transition_reason?: string;
+  source_priority?: string;
+  lat_lon?: { lat?: number | null; lon?: number | null };
+  altitude_m?: number | null;
+  local_enu_m?: { x?: number | null; y?: number | null; z?: number | null };
+  confidence?: number | null;
+  covariance?: Record<string, number | null>;
+  last_vision_fix_utc?: string | null;
+  seconds_since_vision_fix?: number | null;
+  meters_since_vision_fix?: number | null;
+  vision_fix_interval_m?: number | null;
+  dead_reckoning_active?: boolean;
+  fix_cadence?: {
+    last_vision_fix_utc?: string | null;
+    last_vision_fix_sequence?: number | null;
+    seconds_since_vision_fix?: number | null;
+    meters_since_vision_fix?: number | null;
+    vision_fix_interval_m?: number | null;
+  };
+  gps_health?: {
+    healthy?: boolean;
+    reason?: string;
+    fix_type?: number | null;
+    satellites_visible?: number | null;
+    eph_m?: number | null;
+    h_acc_m?: number | null;
+    confidence?: number | null;
+  };
+  vision_health?: {
+    available?: boolean;
+    status?: string;
+    confidence?: number | null;
+    tile_id?: string | null;
+    inliers?: number | null;
+    reprojection_error_px?: number | null;
+  };
 }
 
 export interface DownloadFileResult {
@@ -232,6 +305,14 @@ export interface SupportBundleFile {
     bench_readiness_status?: "passed" | "failed" | "degraded" | string;
     bench_readiness_failed_count?: number;
     bench_readiness_degraded_count?: number;
+    flight_evidence_total_distance_m?: number;
+    flight_evidence_max_altitude_m?: number;
+    flight_evidence_duration_s?: number;
+    accepted_vision_fix_count?: number;
+    rejected_vision_fix_count?: number;
+    gps_vs_vision_median_distance_m?: number;
+    dead_reckoning_duration_s?: number;
+    source_transition_count?: number;
   };
 }
 
@@ -1337,6 +1418,9 @@ export interface BuildDroneBundleRequest {
   max_features: number;
   mission_plan_json?: string;
   qgc_plan_json?: string;
+  runtime_profile?: RuntimeProfileId;
+  camera_profile?: CameraProfileId;
+  hardware_profile?: Record<string, unknown>;
 }
 
 export interface BuildDroneBundleResult {

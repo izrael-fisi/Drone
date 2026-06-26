@@ -3,6 +3,18 @@
 The desktop app in `desktop-app/` is the ground-control / mission-planner
 surface for the project. It is a Tauri + React app.
 
+## UI Direction
+
+The Stitch panes are design references, not authoritative implementation
+constraints. The active desktop app now prioritizes fully usable native React
+pages wired to the real Tauri/Python data pipeline.
+
+Pane-style routes remain as aliases so operator terminology still works:
+Navigation Panel maps to the dashboard, Vehicle Manager maps to Devices,
+Camera & Vision maps to Vision Pipeline, Mission Bundle Builder maps to the
+Mission Planner bundle workflow, System Status maps to Diagnostics, and Flight
+Review maps to support-bundle review.
+
 The app is not a ROS 2 or simulator control surface. Its active purpose is to
 prepare maps and missions, configure the vision pipeline, connect to the
 Raspberry Pi, run hardware checks, and review support bundles from real bench
@@ -10,18 +22,40 @@ or field runs.
 
 ## Active Pages
 
-- Dashboard: quick entry points.
-- Maps: select, draw, import, or upload map sources.
-- Vision Pipeline: the only editable feature/matcher configuration page.
-- Devices / Module Setup: connect to Raspberry Pi over local Wi-Fi/SSH and run
-  hardware checks.
-- Mission Planner: plan mission, geofence, rally, and vision-map checkpoints.
-- Settings: app-level preferences.
+- `/dashboard` and `/navigation-panel`: operator home, readiness, quick actions,
+  saved regions.
+- `/maps`: draw/download map areas, import folders, import uploaded imagery and
+  GeoTIFFs, attach DEM/DSM assets.
+- `/mission-planner`: map-backed mission planning, live position marker,
+  GNSS-denied readiness, terrain constraints, bundle build/upload/validation,
+  runtime commands, and support bundles.
+- `/mission-bundle-builder`: alias into the Mission Planner bundle workflow.
+- `/devices` and `/vehicle-manager`: device profiles, Raspberry Pi SSH,
+  runtime module setup, camera checks, MAVLink checks, bench/field workflows.
+- `/pi-setup` and `/module-setup`: deep Raspberry Pi setup workflow.
+- `/camera-vision` and `/vision-pipeline`: editable vision feature/matcher
+  defaults used by mission bundle builds.
+- `/system-status`: diagnostics, readiness summary, and live GPS/vision position
+  telemetry listener.
+- `/flight-review`: downloaded support bundle and field/bench evidence review.
+- `/settings`: app-level paths, keys, and preferences.
+
+## Operations UI Direction
+
+The desktop app uses Vozilla-style ground-control patterns as inspiration:
+page-aware title context, global command search, active-device status, recording
+readiness, map cursor readout, recentering, live position source, and visible
+diagnostics.
+
+The detailed comparison is in `docs/vozilla-ui-gap-analysis.md`. It lists the
+Vozilla features that this app does not yet have, including flight-log review,
+camera calibration UI, vehicle transform setup, map lifecycle states, lockdown
+mode, and a full MAVLink/system diagnostics drawer.
 
 ## Module Setup
 
-The Devices page contains the customer-facing module setup flow for a Raspberry
-Pi runtime computer on the same Wi-Fi network as the desktop app.
+The Devices and Module Setup pages contain the customer-facing setup flow for a
+Raspberry Pi runtime computer on the same Wi-Fi network as the desktop app.
 
 The hardware-first setup flow is:
 
@@ -41,6 +75,9 @@ step status, output snippets, camera preview paths, support-bundle summaries,
 and hardware bench evidence.
 
 ## Vision Pipeline
+
+The Camera & Vision / Vision Pipeline page is the editable feature/matcher
+configuration surface.
 
 The default mode is `classical`.
 
@@ -64,8 +101,8 @@ The Vision Pipeline page stores:
 - minimum matches
 - optional neural weight paths
 
-Devices and Mission Planner may summarize these settings, but they do not edit
-them.
+Other pages may summarize these settings, but they should not create duplicate
+editable pipeline controls outside the Camera & Vision page.
 
 ## Maps
 
@@ -79,8 +116,7 @@ Supported uploads include PNG, JPEG/JPG, TIFF/GeoTIFF, BMP, WebP, and GIF.
 GeoTIFF uploads can derive georeference metadata when the CRS and tags are
 supported. Non-georeferenced images need manual origin and GSD values.
 
-Optional DEM/DSM GeoTIFFs can be attached to a saved map source and carried
-into the mission bundle for terrain-profile checks.
+These map records feed the Mission Planner and bundle build pipeline.
 
 ## Mission Planner
 
@@ -93,9 +129,9 @@ It has four operator layers:
 - Rally: optional emergency rally points.
 - Vision Map: localization checkpoints for map-matching coverage review.
 
-Mission Planner opens without auto-selecting a saved map source, so large local
-mosaics do not block the first tab render. A saved `satellite.png` mosaic loads
-only after the user selects a map source.
+The active Mission Planner route renders the native planning workspace.
+`/mission-bundle-builder` is an alias for the same workflow because bundle
+building depends on the selected mission, map, device, and vision settings.
 
 Mission Planner exports:
 
@@ -108,11 +144,14 @@ Mission Planner exports:
 - selected Vision Pipeline defaults
 
 The bundle action builds the selected map source, terrain tile index,
-STAC-style manifest, bundle health report, runtime config, and checksums.
+STAC-style manifest, bundle health report, runtime config, and checksums. When
+the active device is a Raspberry Pi profile, the app can upload and validate the
+bundle over SSH.
 
 ## Hardware Bench App Flow
 
-For the Holybro X500 V2 prop-off milestone:
+The Holybro X500 V2 prop-off workflow is supported through Devices / Module
+Setup, Mission Planner, and Flight Review:
 
 1. Select/import the map source.
 2. Set Vision Pipeline defaults.
@@ -124,6 +163,28 @@ For the Holybro X500 V2 prop-off milestone:
 8. Run Field Log Capture with props removed.
 9. Run Bench Report.
 10. Review/download the support bundle.
+
+## Live Drone Position
+
+The runtime code can emit `vision_nav_position_update_v1` UDP packets from the
+Raspberry Pi. System Status listens for those packets, and Mission Planner can
+display the current GPS/vision position source on the map.
+
+The runtime source priority is:
+
+1. Healthy MAVLink GPS: fix type at least 3, enough satellites, and acceptable
+   reported horizontal accuracy.
+2. Terrain vision position from the selected mission bundle when GPS is missing,
+   weak, or likely jammed.
+3. Dead reckoning between accepted terrain-vision fixes when no current GPS or
+   vision fix is available.
+4. Degraded GPS only when no valid terrain-vision position is available.
+
+The default ground-station listener port is `17660`. Mission Planner passes
+`VISION_NAV_POSITION_UDP_TARGET=255.255.255.255:<port>` into the Pi runtime
+when launching the terrain loop from the app. The app accepts both legacy
+`vision_nav_position_update_v1` packets and the v2 packets emitted by the
+status bridge and terrain loop.
 
 ## Local Development
 

@@ -13,6 +13,14 @@ REQUIRED_FIELD_CONDITIONS = [
 ]
 
 
+OPTIONAL_FIELD_CONDITIONS = [
+    "quad_vibration",
+    "thermal_or_eo_future",
+    "long_fix_interval",
+    "map_age_or_terrain_change",
+]
+
+
 FIELD_CONDITION_EXPECTED_BEHAVIOR = {
     "good_texture": "good_map",
     "low_texture": "degraded",
@@ -22,6 +30,10 @@ FIELD_CONDITION_EXPECTED_BEHAVIOR = {
     "altitude_scale_change": "degraded",
     "repeated_patterns": "degraded",
     "wrong_map": "wrong_map",
+    "quad_vibration": "degraded",
+    "thermal_or_eo_future": "degraded",
+    "long_fix_interval": "degraded",
+    "map_age_or_terrain_change": "degraded",
 }
 
 
@@ -34,6 +46,10 @@ FIELD_CONDITION_LABELS = {
     "altitude_scale_change": "Altitude or visual-scale change",
     "repeated_patterns": "Repeated terrain or structure patterns",
     "wrong_map": "Wrong-map rejection",
+    "quad_vibration": "Quad vibration or mount blur",
+    "thermal_or_eo_future": "Thermal or EO future sensor profile",
+    "long_fix_interval": "Long interval between accepted vision fixes",
+    "map_age_or_terrain_change": "Map age or terrain change",
 }
 
 
@@ -46,6 +62,10 @@ FIELD_CONDITION_NOTES = {
     "altitude_scale_change": "Matching map with flight altitude or visual-scale variation from the nominal bundle.",
     "repeated_patterns": "Matching map with repeated structures, rows, lots, roofs, or other ambiguity-prone patterns.",
     "wrong_map": "Nonmatching map or deliberately shifted area; accepted rate should remain zero by default.",
+    "quad_vibration": "Prop-off and future prop-on capture with vibration, rolling blur, and mount rigidity notes.",
+    "thermal_or_eo_future": "Metadata-ready non-RGB capture path; v1 should mark unsupported or degraded rather than silently accepting.",
+    "long_fix_interval": "Runtime segment with intentionally sparse accepted fixes; dead-reckoning gaps and covariance growth should be visible.",
+    "map_age_or_terrain_change": "Older or changed map area with construction, vegetation, or seasonal differences.",
 }
 
 

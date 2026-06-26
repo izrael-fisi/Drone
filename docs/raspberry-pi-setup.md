@@ -164,6 +164,20 @@ VISION_NAV_PX4_PARAMS=$HOME/px4.params ./scripts/pi/check_px4_params.sh
 
 ## Runtime Capture
 
+Run the always-on status bridge first when the Pixhawk is connected but the
+active map/bundle is not ready yet:
+
+```bash
+cd ~/Drone
+VISION_NAV_MAVLINK_ENDPOINT=/dev/ttyACM0 \
+VISION_NAV_POSITION_UDP_TARGET=255.255.255.255:17660 \
+VISION_NAV_COUNT=30 \
+./scripts/pi/run_status_bridge.sh
+```
+
+This writes `runtime_status.json` and broadcasts live status packets with GPS,
+MAVLink, camera, active bundle, runtime profile, and source-state information.
+
 Run logging-only first:
 
 ```bash
@@ -186,9 +200,15 @@ Enable MAVLink output only after logging-only runtime is healthy:
 VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
 VISION_NAV_MAVLINK_ENDPOINT=/dev/ttyACM0 \
 VISION_NAV_MAVLINK_MESSAGE=odometry \
+VISION_NAV_POSITION_UDP_TARGET=255.255.255.255:17660 \
 VISION_NAV_COUNT=30 \
 ./scripts/pi/run_terrain_nav_loop.sh
 ```
+
+`VISION_NAV_POSITION_UDP_TARGET` sends the ground station a compact live
+position packet after every status bridge tick or processed terrain frame. The
+packet exposes the source state as `gps_primary`, `vision_correction`,
+`dead_reckoning_between_fixes`, `gps_degraded`, or `no_position`.
 
 ## Support Bundle
 

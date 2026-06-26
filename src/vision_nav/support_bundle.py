@@ -17,6 +17,7 @@ from vision_nav.autonomy_evidence_workflow import validate_workflow_report
 from vision_nav.bench_readiness import evaluate_bench_readiness
 from vision_nav.bundle import load_manifest
 from vision_nav.field_collection_plan import preflight_command_for_condition
+from vision_nav.flight_evidence import summarize_flight_evidence_logs
 from vision_nav.geospatial_health import write_geospatial_health_report
 from vision_nav.gnss_denied_plan import summarize_gnss_denied_plan
 from vision_nav.px4_params import evaluate_px4_param_file
@@ -356,6 +357,15 @@ def copy_logs(logs: list[str], support_dir: Path, *, max_log_bytes: int) -> dict
                     "last_match": status_summary.get("last_match") if isinstance(status_summary, dict) else None,
                     "estimator": status_summary.get("estimator") if isinstance(status_summary, dict) else None,
                     "external_position": status_summary.get("external_position") if isinstance(status_summary, dict) else None,
+                    "runtime_state": status_summary.get("runtime_state") if isinstance(status_summary, dict) else None,
+                    "active_bundle": status_summary.get("active_bundle") if isinstance(status_summary, dict) else None,
+                    "camera_health": status_summary.get("camera_health") if isinstance(status_summary, dict) else None,
+                    "mavlink_health": status_summary.get("mavlink_health") if isinstance(status_summary, dict) else None,
+                    "gps_health": status_summary.get("gps_health") if isinstance(status_summary, dict) else None,
+                    "vision_health": status_summary.get("vision_health") if isinstance(status_summary, dict) else None,
+                    "source_state": status_summary.get("source_state") if isinstance(status_summary, dict) else None,
+                    "fix_cadence": status_summary.get("fix_cadence") if isinstance(status_summary, dict) else None,
+                    "hardware_profile": status_summary.get("hardware_profile") if isinstance(status_summary, dict) else None,
                     "status_counts": status_summary.get("status_counts") if isinstance(status_summary, dict) else None,
                     "updated_at_utc": status_summary.get("updated_at_utc") if isinstance(status_summary, dict) else None,
                 }
@@ -2246,6 +2256,7 @@ def create_support_bundle(
     )
     all_logs = unique_existing_logs(logs, field_collection_log_paths)
     log_summary = copy_logs(all_logs, support_dir, max_log_bytes=max_log_bytes)
+    flight_evidence_summary = summarize_flight_evidence_logs(all_logs)
     if field_collection_log_paths:
         explicit_log_keys = {
             str(Path(log).expanduser().resolve()) if Path(log).expanduser().exists() else str(Path(log).expanduser())
@@ -2345,6 +2356,7 @@ def create_support_bundle(
         "metadata": metadata_snapshot(repo_path, mavlink_endpoint=mavlink_endpoint, autopilot_metadata=autopilot_metadata),
         "bundle": bundle_summary,
         "logs": log_summary,
+        "flight_evidence": flight_evidence_summary,
         "replay_gates": replay_gate_summary,
         "px4_sitl_evidence": px4_evidence_summary,
         "px4_sitl_prereqs": px4_prereq_summary,

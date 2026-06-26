@@ -476,24 +476,32 @@ export function Devices() {
   };
 
   return (
-    <div className="p-6 space-y-6 animate-fade-in">
-      <div className="flex items-start justify-between">
+    <div className="ops-screen-bg relative min-h-[calc(100vh-96px)] space-y-4 overflow-y-auto p-4 animate-fade-in">
+      <div
+        className="pointer-events-none absolute inset-0 z-0 opacity-[0.04]"
+        style={{
+          backgroundImage: "linear-gradient(rgba(104, 199, 230, 0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(104, 199, 230, 0.2) 1px, transparent 1px)",
+          backgroundSize: "56px 56px",
+        }}
+      />
+      <div className="relative z-10 flex items-end justify-between border-b border-border pb-3">
         <div>
-          <h1 className="section-title">Devices</h1>
-          <p className="text-slate-400 text-sm mt-1">Pi5 modules and local targets for deploying maps and models.</p>
+          <div className="font-data-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">VEHICLE MANAGER</div>
+          <h1 className="font-headline-lg text-headline-lg font-semibold tracking-tight text-slate-100">RUNTIME DEVICE CONTROL</h1>
+          <p className="font-data-mono text-data-mono text-slate-500">Pi Wi-Fi // SSH // camera health // MAVLink // prop-off bench flow</p>
         </div>
-        <button onClick={startAdd} className="btn-primary">
-          <Plus size={15} /> Add Device
+        <button onClick={startAdd} className="border border-status-active bg-status-active/10 px-4 py-2 font-label-caps text-label-caps text-status-active transition-colors hover:bg-status-active hover:text-[#05070A]">
+          <Plus size={15} /> ADD DEVICE
         </button>
       </div>
 
-      <div className="card space-y-3">
+      <div className="glass-panel relative z-10 space-y-3 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
-              <Wifi size={15} className="text-cyan-400" /> Local Wi-Fi Discovery
+            <h3 className="font-label-caps text-label-caps text-status-active flex items-center gap-2">
+              <Wifi size={15} /> LOCAL WI-FI DISCOVERY
             </h3>
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="font-data-mono text-[10px] text-white/45 mt-1">
               Finds saved hostnames, Raspberry Pi mDNS names, and local SSH neighbors.
             </p>
           </div>
@@ -503,11 +511,11 @@ export function Devices() {
           </button>
         </div>
         {discoveryError && (
-          <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          <div className="border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
             {discoveryError}
           </div>
         )}
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-lg border border-border bg-bg-card px-3 py-2">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border border-border bg-bg-card px-3 py-2">
           <div className="min-w-0 space-y-2">
             <div className="flex items-center justify-between gap-3">
               <label className="text-[11px] uppercase tracking-wide text-slate-500">Network adapter</label>

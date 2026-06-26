@@ -97,6 +97,14 @@ pub struct SupportBundleSummary {
     pub bench_readiness_status: Option<String>,
     pub bench_readiness_failed_count: Option<u64>,
     pub bench_readiness_degraded_count: Option<u64>,
+    pub flight_evidence_total_distance_m: Option<f64>,
+    pub flight_evidence_max_altitude_m: Option<f64>,
+    pub flight_evidence_duration_s: Option<f64>,
+    pub accepted_vision_fix_count: Option<u64>,
+    pub rejected_vision_fix_count: Option<u64>,
+    pub gps_vs_vision_median_distance_m: Option<f64>,
+    pub dead_reckoning_duration_s: Option<f64>,
+    pub source_transition_count: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -5629,6 +5637,31 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         bench_readiness_degraded_count: manifest
             .pointer("/bench_readiness/summary/degraded")
             .and_then(|value| value.as_u64()),
+        flight_evidence_total_distance_m: manifest
+            .pointer("/flight_evidence/total_distance_m")
+            .and_then(|value| value.as_f64()),
+        flight_evidence_max_altitude_m: manifest
+            .pointer("/flight_evidence/max_altitude_m")
+            .and_then(|value| value.as_f64()),
+        flight_evidence_duration_s: manifest
+            .pointer("/flight_evidence/flight_duration_s")
+            .and_then(|value| value.as_f64()),
+        accepted_vision_fix_count: manifest
+            .pointer("/flight_evidence/accepted_vision_fix_count")
+            .and_then(|value| value.as_u64()),
+        rejected_vision_fix_count: manifest
+            .pointer("/flight_evidence/rejected_vision_fix_count")
+            .and_then(|value| value.as_u64()),
+        gps_vs_vision_median_distance_m: manifest
+            .pointer("/flight_evidence/gps_vs_vision_median_distance_m")
+            .and_then(|value| value.as_f64()),
+        dead_reckoning_duration_s: manifest
+            .pointer("/flight_evidence/dead_reckoning_duration_s")
+            .and_then(|value| value.as_f64()),
+        source_transition_count: manifest
+            .pointer("/flight_evidence/source_transition_timeline")
+            .and_then(|value| value.as_array())
+            .map(|value| value.len() as u64),
     };
     if summary.bundle_id.is_none()
         && summary.bundle_health_status.is_none()
@@ -5650,6 +5683,9 @@ fn support_summary_from_manifest(manifest: &serde_json::Value) -> Option<Support
         && summary.rosbag2_cli_review_status.is_none()
         && summary.evidence_workflow_status.is_none()
         && summary.bench_readiness_status.is_none()
+        && summary.flight_evidence_total_distance_m.is_none()
+        && summary.accepted_vision_fix_count.is_none()
+        && summary.rejected_vision_fix_count.is_none()
     {
         return None;
     }
@@ -8300,8 +8336,8 @@ mod tests {
                 "artifacts": {
                     "remote_terrain_log": "/home/user/DroneTransfer/outgoing/field-captures/site-good/terrain_matches.jsonl",
                     "remote_runtime_status": "/home/user/DroneTransfer/outgoing/field-captures/site-good/runtime_status.json",
-                    "local_terrain_log": "/Users/izzyfisi/DroneTransfer/from-pi/terrain-match/terrain_matches.jsonl",
-                    "local_runtime_status": "/Users/izzyfisi/DroneTransfer/from-pi/runtime-status/runtime_status.json"
+                    "local_terrain_log": "/tmp/DroneTransfer/from-pi/terrain-match/terrain_matches.jsonl",
+                    "local_runtime_status": "/tmp/DroneTransfer/from-pi/runtime-status/runtime_status.json"
                 },
                 "next_actions": {
                     "metadata_update_command": "VISION_NAV_FIELD_CONDITION=good_texture ./scripts/pi/update_field_capture_metadata.sh",

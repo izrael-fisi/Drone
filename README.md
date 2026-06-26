@@ -73,6 +73,7 @@ Key docs:
 - [Holybro X500 V2 Hardware Data Inputs](docs/holybro-x500v2-hardware-data-inputs.md)
 - [Holybro X500 V2 Prop-Off Hardware Test](docs/holybro-x500v2-prop-off-hardware-test.md)
 - [PX4 External Vision Bench Guide](docs/px4-external-vision-bench.md)
+- [Windows 11 Codex Handoff](docs/windows-11-codex-handoff.md)
 - [SSH And File Transfer](docs/ssh-and-transfer.md)
 - [Desktop App](docs/desktop-app.md)
 - [Operator Handoff](docs/operator-handoff.md)
