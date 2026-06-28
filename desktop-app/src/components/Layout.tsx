@@ -38,7 +38,7 @@ import {
 import { useShellStore, type BottomDockTabId, type MapSearchTarget, type RightDockRoute } from "../lib/shellStore";
 import { useAppStore } from "../lib/store";
 import { cmd } from "../lib/tauri";
-import type { Device, LocalNetworkHint, PiDiscoveryCandidate, Profile, Region } from "../lib/types";
+import type { Device, EdgeApiQGroundControlStatus, LocalNetworkHint, PiDiscoveryCandidate, Profile, Region } from "../lib/types";
 import { cn } from "../lib/utils";
 import { deriveOperatorRuntimeModel, type OperatorRuntimeModel } from "../lib/operatorRuntimeAdapter";
 
@@ -1125,6 +1125,10 @@ function DeviceSettingsPanel({
   const [heartbeatChecking, setHeartbeatChecking] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [edgeApiState, setEdgeApiState] = useState<"unknown" | "online" | "offline">("unknown");
+  const [qgcStatus, setQgcStatus] = useState<EdgeApiQGroundControlStatus | null>(null);
+  const [qgcChecking, setQgcChecking] = useState(false);
+  const [qgcLaunching, setQgcLaunching] = useState(false);
+  const [qgcMessage, setQgcMessage] = useState<string | null>(null);
   const [newDeviceOpen, setNewDeviceOpen] = useState(false);
   const [newDeviceIp, setNewDeviceIp] = useState("");
   const [newDeviceUsername, setNewDeviceUsername] = useState("pi");
@@ -1146,6 +1150,8 @@ function DeviceSettingsPanel({
     setMavlinkEndpoint(device?.mavlink_endpoint ?? "");
     setConnectionMessage(null);
     setEdgeApiState("unknown");
+    setQgcStatus(null);
+    setQgcMessage(null);
   }, [device?.auth, device?.host, device?.id, device?.mavlink_endpoint, device?.name, device?.port, device?.remote_project_path, device?.username]);
 
   useEffect(() => {
@@ -1347,7 +1353,58 @@ function DeviceSettingsPanel({
     }
   };
 
+  const refreshQGroundControl = async () => {
+    if (!edgeApiUrl) {
+      setQgcMessage("Edge API URL required for QGroundControl status");
+      return;
+    }
+    setQgcChecking(true);
+    setQgcMessage("checking QGroundControl");
+    try {
+      const status = await cmd.edgeApiQGroundControlStatus(edgeApiUrl);
+      setQgcStatus(status);
+      setEdgeApiState(status.ok ? "online" : "offline");
+      setQgcMessage(status.message ?? (status.installed ? "QGroundControl installed" : "QGroundControl not installed"));
+    } catch (error) {
+      setQgcStatus(null);
+      setEdgeApiState("offline");
+      setQgcMessage(`QGroundControl API unavailable: ${String(error)}`);
+    } finally {
+      setQgcChecking(false);
+    }
+  };
+
+  const launchQGroundControl = async () => {
+    if (!edgeApiUrl) {
+      setQgcMessage("Edge API URL required for QGroundControl launch");
+      return;
+    }
+    if (qgcStatus && !qgcStatus.launch_available) {
+      setQgcMessage(qgcStatus.message ?? "QGroundControl cannot launch from this API session");
+      return;
+    }
+    setQgcLaunching(true);
+    setQgcMessage("launching QGroundControl");
+    try {
+      const result = await cmd.edgeApiQGroundControlLaunch(edgeApiUrl, true);
+      if (result.status) setQgcStatus(result.status);
+      setQgcMessage(result.ok && result.launched ? `QGroundControl launched${result.pid ? `: PID ${result.pid}` : ""}` : result.message ?? "QGroundControl launch did not start");
+    } catch (error) {
+      setQgcMessage(`QGroundControl launch failed: ${String(error)}`);
+    } finally {
+      setQgcLaunching(false);
+    }
+  };
+
   const discoverySummary = discoveryStatusSummary(discoveryCandidates, networkHints);
+  const qgcInstalled = Boolean(qgcStatus?.installed);
+  const qgcDisplayAvailable = Boolean(qgcStatus?.display?.available);
+  const qgcCanLaunch = Boolean(qgcStatus?.launch_available);
+  const qgcDisplayLabel = qgcStatus
+    ? qgcDisplayAvailable
+      ? qgcStatus.display?.wayland_display || qgcStatus.display?.display || "available"
+      : "no display"
+    : "not checked";
 
   return (
     <PanelStack
@@ -1521,6 +1578,33 @@ function DeviceSettingsPanel({
       <StatusRow label="Edge API" value={edgeApiState === "online" ? "online" : edgeApiState === "offline" ? "offline" : "not checked"} healthy={edgeApiState === "online"} />
       <PanelAction label={saving ? "Connecting" : "Connect"} detail={connectionMessage ?? "Save and select this companion compute"} onClick={saveConnection} disabled={saving || !ipAddress.trim()} />
       <PanelAction label={heartbeatChecking ? "Checking Heartbeat" : "Heartbeat"} detail={mavlinkEndpoint.trim() ? "Probe MAVLink through Edge API" : "Set MAVLink endpoint first"} onClick={requestHeartbeat} disabled={heartbeatChecking || !mavlinkEndpoint.trim()} />
+      <SectionLabel>Ground Control</SectionLabel>
+      <StateCard
+        label="QGroundControl"
+        value={qgcStatus ? (qgcInstalled ? (qgcStatus.running ? "Running" : "Installed") : "Not Found") : "Unknown"}
+        detail={qgcStatus?.executable_path ?? qgcStatus?.appimage_path ?? "refresh to inspect Pi"}
+        tone={qgcInstalled ? "orange" : "muted"}
+      />
+      <StatusRow label="QGC Display" value={qgcDisplayLabel} healthy={qgcDisplayAvailable} />
+      <StatusRow label="Serial owner" value={qgcStatus?.serial_users ? "in use" : "not reported"} healthy={!qgcStatus?.serial_users} />
+      <PanelAction
+        label={qgcChecking ? "Checking QGC" : "Refresh QGC"}
+        detail={qgcMessage ?? "Detect install, display session, and running process"}
+        onClick={refreshQGroundControl}
+        disabled={qgcChecking || !edgeApiUrl}
+      />
+      <PanelAction
+        label={qgcLaunching ? "Launching QGC" : "Launch QGC"}
+        detail={
+          qgcCanLaunch
+            ? "Stops telemetry bridge so QGC can use the Pixhawk link"
+            : qgcStatus
+              ? qgcStatus.message ?? "QGroundControl launch unavailable"
+              : "Refresh QGC status first"
+        }
+        onClick={launchQGroundControl}
+        disabled={qgcLaunching || !qgcCanLaunch}
+      />
       <PanelAction label="Recording On Boot" detail={connected ? "Runtime service not configured" : "Connect device to configure"} disabled />
       <PanelAction label="Storage" detail={connected ? "No storage scan attached" : "Device offline"} disabled />
       <PanelAction label="System Status" detail="Open bottom status tab" onClick={() => setBottomDockTab("system-status")} />

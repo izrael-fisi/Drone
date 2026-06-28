@@ -9,6 +9,11 @@ struct HeartbeatRequest<'a> {
     timeout_s: f64,
 }
 
+#[derive(Serialize)]
+struct QGroundControlLaunchRequest {
+    stop_status_bridge: bool,
+}
+
 fn normalized_base_url(base_url: &str) -> Result<String, String> {
     let trimmed = base_url.trim().trim_end_matches('/');
     if trimmed.is_empty() {
@@ -32,6 +37,25 @@ fn get_json(base_url: String, path: &'static str, timeout_s: u64) -> Result<Valu
     let url = format!("{}{}", normalized_base_url(&base_url)?, path);
     let response = client(timeout_s)?
         .get(url)
+        .send()
+        .map_err(|e| e.to_string())?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Edge API returned HTTP {status}"));
+    }
+    response.json::<Value>().map_err(|e| e.to_string())
+}
+
+fn post_json<T: Serialize>(
+    base_url: String,
+    path: &'static str,
+    payload: &T,
+    timeout_s: u64,
+) -> Result<Value, String> {
+    let url = format!("{}{}", normalized_base_url(&base_url)?, path);
+    let response = client(timeout_s)?
+        .post(url)
+        .json(payload)
         .send()
         .map_err(|e| e.to_string())?;
     let status = response.status();
@@ -83,6 +107,30 @@ pub async fn edge_api_mavlink_heartbeat(
             return Err(format!("Edge API returned HTTP {status}"));
         }
         response.json::<Value>().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn edge_api_qgroundcontrol_status(base_url: String) -> Result<Value, String> {
+    tokio::task::spawn_blocking(move || get_json(base_url, "/api/v1/qgroundcontrol", 5))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn edge_api_qgroundcontrol_launch(
+    base_url: String,
+    stop_status_bridge: bool,
+) -> Result<Value, String> {
+    tokio::task::spawn_blocking(move || {
+        post_json(
+            base_url,
+            "/api/v1/qgroundcontrol/launch",
+            &QGroundControlLaunchRequest { stop_status_bridge },
+            10,
+        )
     })
     .await
     .map_err(|e| e.to_string())?

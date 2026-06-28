@@ -204,6 +204,35 @@ VISION_NAV_API_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
   ./scripts/pi/start_companion_api_docker.sh
 ```
 
+## QGroundControl On The Pi
+
+Install the ARM64 QGroundControl AppImage on the companion computer when you
+want local Pixhawk setup, parameter inspection, and log access from a Pi desktop
+session:
+
+```bash
+cd ~/Drone
+./scripts/pi/install_qgroundcontrol.sh
+qgroundcontrol --appimage-help
+```
+
+The installer writes:
+
+- `/opt/qgroundcontrol/QGroundControl-aarch64.AppImage`
+- `/usr/local/bin/qgroundcontrol`
+- `/usr/local/bin/qgroundcontrol-safe`
+
+The desktop app reads `/api/v1/qgroundcontrol` from the companion Edge API to
+show whether QGroundControl is installed, whether a graphical Pi session is
+visible, and whether QGroundControl is already running. The app launch action
+uses `/api/v1/qgroundcontrol/launch`; it refuses cleanly when the API has no
+`DISPLAY` or `WAYLAND_DISPLAY`.
+
+QGroundControl and the telemetry status bridge cannot both own a direct serial
+Pixhawk endpoint at the same time. When launching QGroundControl through the app,
+the launcher requests that `drone-vision-nav-status-bridge.service` stop first
+so QGroundControl can use the Pixhawk link.
+
 ## Runtime Capture
 
 Run the always-on status bridge first when the Pixhawk is connected but the

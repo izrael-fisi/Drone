@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import time
@@ -224,6 +225,121 @@ def control_service(config: CompanionApiConfig, service_id: str, action: str) ->
     )
 
 
+def qgroundcontrol_status(config: CompanionApiConfig) -> dict[str, Any]:
+    executable_path = shutil.which("qgroundcontrol")
+    safe_wrapper_path = shutil.which("qgroundcontrol-safe")
+    appimage_candidates = [
+        Path("/opt/qgroundcontrol/QGroundControl-aarch64.AppImage"),
+        Path("/opt/qgroundcontrol/QGroundControl.AppImage"),
+        Path.home() / "Applications" / "QGroundControl-aarch64.AppImage",
+        Path.home() / "QGroundControl-aarch64.AppImage",
+    ]
+    appimage_path = next((path for path in appimage_candidates if path.exists()), None)
+    installed = bool(executable_path or appimage_path)
+    display = {
+        "available": bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
+        "display": os.environ.get("DISPLAY"),
+        "wayland_display": os.environ.get("WAYLAND_DISPLAY"),
+        "session_type": os.environ.get("XDG_SESSION_TYPE"),
+    }
+    processes = qgroundcontrol_processes()
+    serial_users = ""
+    if config.default_mavlink_endpoint and config.default_mavlink_endpoint.startswith("serial:"):
+        try:
+            serial_path = parse_mavlink_endpoint(config.default_mavlink_endpoint)[0]
+            serial_result = run_command(["fuser", "-v", serial_path], timeout_s=1.5)
+            serial_users = serial_result.get("stdout", "") or serial_result.get("stderr", "")
+        except Exception:
+            serial_users = ""
+
+    return {
+        "ok": True,
+        "installed": installed,
+        "executable_path": executable_path,
+        "safe_wrapper_path": safe_wrapper_path,
+        "appimage_path": str(appimage_path) if appimage_path else None,
+        "display": display,
+        "running": bool(processes),
+        "processes": processes,
+        "serial_endpoint": config.default_mavlink_endpoint,
+        "serial_users": serial_users,
+        "launch_available": installed and display["available"],
+        "message": (
+            "QGroundControl is ready to launch."
+            if installed and display["available"]
+            else "QGroundControl is installed, but no graphical Pi session is visible to the API."
+            if installed
+            else "QGroundControl is not installed."
+        ),
+    }
+
+
+def qgroundcontrol_processes() -> list[str]:
+    matches: list[str] = []
+    for proc in Path("/proc").glob("[0-9]*"):
+        try:
+            comm = (proc / "comm").read_text(errors="replace").strip()
+            cmdline = (proc / "cmdline").read_bytes().replace(b"\x00", b" ").decode(errors="replace").strip()
+        except OSError:
+            continue
+        argv0 = Path(cmdline.split(" ", 1)[0]).name if cmdline else ""
+        names = {comm.lower(), argv0.lower()}
+        if {"qgroundcontrol", "qgroundcontrol-safe", "qgroundcontrol-aarch64.appimage"} & names:
+            matches.append(f"{proc.name} {cmdline or comm}")
+    return matches
+
+
+def launch_qgroundcontrol(config: CompanionApiConfig, *, stop_status_bridge: bool = False) -> tuple[HTTPStatus, dict[str, Any]]:
+    status = qgroundcontrol_status(config)
+    if not status["installed"]:
+        return HTTPStatus.NOT_FOUND, {"ok": False, "launched": False, "error": "qgroundcontrol_not_installed", "status": status}
+    if not status["display"]["available"]:
+        return (
+            HTTPStatus.CONFLICT,
+            {
+                "ok": False,
+                "launched": False,
+                "error": "graphical_session_unavailable",
+                "message": "Launch QGroundControl from the Raspberry Pi desktop, or run the companion API inside a graphical session.",
+                "status": status,
+            },
+        )
+
+    service_result: dict[str, Any] | None = None
+    if stop_status_bridge:
+        service_result = run_command(
+            ["systemctl", "--user", "stop", config.service_units["status-bridge"]],
+            timeout_s=10.0,
+        )
+
+    executable = status.get("safe_wrapper_path") or status.get("executable_path") or status.get("appimage_path")
+    if not executable:
+        return HTTPStatus.NOT_FOUND, {"ok": False, "launched": False, "error": "qgroundcontrol_executable_missing", "status": status}
+
+    log_path = Path.home() / "DroneTransfer" / "outgoing" / "qgroundcontrol.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab", buffering=0) as log_file:
+        process = subprocess.Popen(
+            [str(executable)],
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    return (
+        HTTPStatus.OK,
+        {
+            "ok": True,
+            "launched": True,
+            "pid": process.pid,
+            "status": qgroundcontrol_status(config),
+            "log_path": str(log_path),
+            "status_bridge_stop": service_result,
+        },
+    )
+
+
 def latest_runtime_status(config: CompanionApiConfig, *, max_bytes: int = 262_144) -> dict[str, Any]:
     candidates: list[Path] = []
     for root in config.status_roots:
@@ -387,6 +503,9 @@ class CompanionApiHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/services":
             self.send_json({"ok": True, "services": service_snapshot(self.config)})
             return
+        if path == "/api/v1/qgroundcontrol":
+            self.send_json(qgroundcontrol_status(self.config))
+            return
         if path == "/api/v1/mavlink/heartbeat":
             endpoint = first_query_value(query, "endpoint") or self.config.default_mavlink_endpoint
             timeout_s = parse_float(first_query_value(query, "timeout_s"), default=4.0)
@@ -420,6 +539,14 @@ class CompanionApiHandler(BaseHTTPRequestHandler):
                     default_serial_baud=self.config.default_serial_baud,
                 )
             )
+            return
+        if path == "/api/v1/qgroundcontrol/launch":
+            payload = self.read_json_body()
+            status, body = launch_qgroundcontrol(
+                self.config,
+                stop_status_bridge=bool(payload.get("stop_status_bridge")),
+            )
+            self.send_json(body, status=status)
             return
         prefix = "/api/v1/services/"
         if path.startswith(prefix):

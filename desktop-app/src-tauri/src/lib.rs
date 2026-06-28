@@ -14,7 +14,10 @@ use commands::{
     },
     discovery::{discover_pi_devices, local_network_hints},
     drone::{build_drone_bundle, import_elevation_assets, import_map_file},
-    edge_api::{edge_api_device, edge_api_health, edge_api_mavlink_heartbeat, edge_api_status},
+    edge_api::{
+        edge_api_device, edge_api_health, edge_api_mavlink_heartbeat,
+        edge_api_qgroundcontrol_launch, edge_api_qgroundcontrol_status, edge_api_status,
+    },
     profile::{load_devices, load_profile, load_regions, save_devices, save_profile, save_regions},
     satellite::{download_tiles, estimate_tiles},
     ssh::{
@@ -49,6 +52,8 @@ pub fn run() {
             edge_api_device,
             edge_api_status,
             edge_api_mavlink_heartbeat,
+            edge_api_qgroundcontrol_status,
+            edge_api_qgroundcontrol_launch,
             test_ssh_connection,
             ssh_run_command,
             ssh_upload_files,

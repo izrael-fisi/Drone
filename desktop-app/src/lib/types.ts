@@ -124,6 +124,37 @@ export interface EdgeApiMavlinkHeartbeat {
   error?: string;
 }
 
+export interface EdgeApiQGroundControlStatus {
+  ok: boolean;
+  installed: boolean;
+  executable_path?: string | null;
+  appimage_path?: string | null;
+  safe_wrapper_path?: string | null;
+  display?: {
+    available: boolean;
+    display?: string | null;
+    wayland_display?: string | null;
+    session_type?: string | null;
+  };
+  running?: boolean;
+  processes?: string[];
+  serial_endpoint?: string | null;
+  serial_users?: string;
+  launch_available?: boolean;
+  message?: string;
+  error?: string;
+}
+
+export interface EdgeApiQGroundControlLaunch {
+  ok: boolean;
+  launched?: boolean;
+  pid?: number | null;
+  status?: EdgeApiQGroundControlStatus;
+  command?: Record<string, unknown>;
+  message?: string;
+  error?: string;
+}
+
 export interface Region {
   id: string;
   name: string;
