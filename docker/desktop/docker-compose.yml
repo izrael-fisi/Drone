@@ -1,0 +1,22 @@
+services:
+  desktop-web:
+    image: drone-vision-nav:desktop-web
+    build:
+      context: ../..
+      dockerfile: docker/desktop/Dockerfile
+    working_dir: /workspace/desktop-app
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      VITE_HOST: "0.0.0.0"
+      VITE_PORT: "5173"
+    ports:
+      - "5173:5173"
+      - "4173:4173"
+    volumes:
+      - ../../desktop-app:/workspace/desktop-app
+      - desktop_node_modules:/workspace/desktop-app/node_modules
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+
+volumes:
+  desktop_node_modules:

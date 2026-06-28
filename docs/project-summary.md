@@ -119,5 +119,5 @@ Raspberry Pi 5:
 - Keep NMEA optional, not central.
 - Keep optical flow hardware optional until downward-camera tests show a clear
   need.
-- Treat Theseus products/docs as product workflow inspiration, not as a direct
-  implementation target.
+- Treat external ground-control products and docs as workflow inspiration, not
+  as direct implementation targets.

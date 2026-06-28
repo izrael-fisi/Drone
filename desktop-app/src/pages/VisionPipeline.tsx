@@ -240,7 +240,7 @@ export function VisionPipelinePage() {
                 <input
                   checked={config.pipeline === "neural"}
                   onChange={(event) => update("pipeline", event.target.checked ? "neural" : "classical")}
-                  className="form-checkbox h-5 w-5 rounded-none border-status-active bg-[#080B14] text-status-active shadow-none"
+                  className="form-checkbox h-5 w-5 rounded-lg border-status-active bg-[#080B14] text-status-active shadow-none"
                   type="checkbox"
                 />
                 <span className="font-data-mono text-data-mono text-white">ENABLE SUPERPOINT + LIGHTGLUE HIGH-COMPUTE PATH</span>

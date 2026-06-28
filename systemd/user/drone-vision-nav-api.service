@@ -1,0 +1,17 @@
+[Unit]
+Description=Drone Vision Companion API
+Documentation=%h/Drone/docs/raspberry-pi-setup.md
+After=default.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Drone
+EnvironmentFile=-%h/Drone/config/pi/vision-nav.env
+ExecStart=%h/Drone/scripts/pi/run_companion_api.sh
+Restart=always
+RestartSec=3
+TimeoutStartSec=30
+
+[Install]
+WantedBy=default.target

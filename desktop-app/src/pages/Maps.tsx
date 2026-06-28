@@ -166,7 +166,7 @@ function DrawControlInner({
       featureGroupRef.current = L.featureGroup().addTo(map);
     }
     const fg = featureGroupRef.current;
-    const shapeStyle = { color: "#06B6D4", weight: 2, fillOpacity: 0.12 };
+    const shapeStyle = { color: "#FF6600", weight: 2, fillOpacity: 0.12 };
 
     handlerRef.current?.disable();
 

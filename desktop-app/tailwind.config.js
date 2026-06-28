@@ -5,20 +5,21 @@ export default {
     extend: {
       colors: {
         bg: {
-          base: "#05070A",
-          surface: "#0A0F16",
-          card: "#0D141D",
-          elevated: "#121B26",
-          overlay: "#172231",
+          base: "#0b0c0d",
+          surface: "#111214",
+          card: "#1a1b1d",
+          elevated: "#252527",
+          overlay: "#0b0c0d",
         },
         border: {
-          DEFAULT: "#203041",
-          strong: "#314458",
+          DEFAULT: "#2a2b2d",
+          strong: "rgba(255,255,255,0.15)",
         },
         cyan: {
-          400: "#9ADAF0",
-          500: "#68C7E6",
-          600: "#49AFCF",
+          300: "#ffb078",
+          400: "#ff7a1a",
+          500: "#ff6600",
+          600: "#cc5200",
         },
         slate: {
           300: "#CBD5E1",
@@ -32,10 +33,11 @@ export default {
       },
       fontFamily: {
         sans: [
-          "Inter",
+          "Satoshi",
           "system-ui",
           "-apple-system",
           "BlinkMacSystemFont",
+          "Segoe UI",
           "sans-serif",
         ],
         mono: ["JetBrains Mono", "Fira Code", "monospace"],

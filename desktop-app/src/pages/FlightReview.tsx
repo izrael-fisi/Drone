@@ -179,14 +179,14 @@ function TrackReplayPreview({ bundle }: { bundle?: SupportBundleFile }) {
           <polyline
             points="46,216 122,184 198,178 266,146 338,132 430,94 586,70"
             fill="none"
-            stroke={hasEvidence ? "#68C7E6" : "#596675"}
+            stroke={hasEvidence ? "#FF6600" : "#596675"}
             strokeWidth="3"
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeDasharray={hasEvidence ? "8 8" : "4 10"}
           />
           {[46, 194, 340, 586].map((x, index) => (
-            <circle key={x} cx={x} cy={[216, 178, 132, 70][index]} r="5" fill={hasEvidence ? "#68C7E6" : "#596675"} />
+            <circle key={x} cx={x} cy={[216, 178, 132, 70][index]} r="5" fill={hasEvidence ? "#FF6600" : "#596675"} />
           ))}
         </svg>
         <div className="absolute left-3 top-3 border border-border bg-bg-card/90 px-3 py-2 font-data-mono text-xs">

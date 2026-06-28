@@ -51,6 +51,79 @@ export interface Device {
   };
 }
 
+export interface EdgeApiHealth {
+  ok: boolean;
+  schema_version?: string;
+  service?: string;
+  timestamp_utc?: string;
+  error?: string;
+  message?: string;
+}
+
+export interface EdgeApiServiceStatus {
+  unit: string;
+  active: string;
+  enabled: string;
+  properties?: Record<string, string>;
+  errors?: string[];
+}
+
+export interface EdgeApiDeviceStatus {
+  ok: boolean;
+  schema_version?: string;
+  timestamp_utc?: string;
+  hostname?: string;
+  fqdn?: string;
+  ips?: string[];
+  user?: string;
+  home?: string;
+  repo_root?: string;
+  default_mavlink_endpoint?: string;
+  default_serial_baud?: number;
+  serial_devices?: Array<{
+    path: string;
+    resolved_path?: string | null;
+    is_symlink?: boolean;
+    mode?: string;
+    group_read_write?: boolean;
+  }>;
+  os?: Record<string, string>;
+  services?: Record<string, EdgeApiServiceStatus>;
+  error?: string;
+  message?: string;
+}
+
+export interface EdgeApiRuntimeStatus {
+  ok: boolean;
+  status_found?: boolean;
+  path?: string;
+  size_bytes?: number;
+  modified_unix_ms?: number;
+  roots?: string[];
+  status?: Record<string, unknown> | null;
+  error?: string;
+  message?: string;
+}
+
+export interface EdgeApiMavlinkHeartbeat {
+  ok: boolean;
+  connected?: boolean;
+  endpoint?: string;
+  status?: "heartbeat" | "timeout" | "error" | string;
+  message?: string;
+  target_system?: number | null;
+  target_component?: number | null;
+  duration_s?: number;
+  heartbeat?: {
+    type?: number | null;
+    autopilot?: number | null;
+    base_mode?: number | null;
+    system_status?: number | null;
+    mavlink_version?: number | null;
+  };
+  error?: string;
+}
+
 export interface Region {
   id: string;
   name: string;
@@ -81,6 +154,65 @@ export interface Region {
   estimated_pi_runtime_cost?: "low" | "moderate" | "high" | string;
   runtime_profile?: RuntimeProfileId;
   camera_profile?: CameraProfileId;
+  home_position?: {
+    lat: number;
+    lon: number;
+    alt_m?: number | null;
+  };
+  takeoff_position?: {
+    lat: number;
+    lon: number;
+    alt_m?: number | null;
+  };
+  runtime_state?: {
+    uploaded_at?: string;
+    active_on_device?: boolean;
+    last_error?: string;
+  };
+}
+
+export interface VehicleConfig {
+  id: string;
+  device_id: string;
+  mount_offset_m?: { x: number; y: number; z: number };
+  yaw_offset_deg?: number;
+  mavlink_source?: string;
+  updated_at?: string;
+}
+
+export interface CameraConfig {
+  id: string;
+  device_id?: string;
+  profile: CameraProfileId | string;
+  calibration_state: "not_started" | "capturing" | "ready" | "failed" | string;
+  intrinsics?: Record<string, number>;
+  updated_at?: string;
+}
+
+export interface FlightRecord {
+  id: string;
+  name: string;
+  source: "device" | "edge" | "local" | string;
+  started_at?: string;
+  duration_s?: number;
+  support_bundle_path?: string;
+  gps_vs_vision_median_distance_m?: number;
+  notes?: string;
+}
+
+export interface RuntimeConnectionState {
+  device_id?: string;
+  connected: boolean;
+  product_state: "running" | "stopped" | "server_error" | "disconnected" | string;
+  mavlink_source?: string;
+  message?: string;
+}
+
+export interface RecordingState {
+  active: boolean;
+  started_at?: string;
+  storage_path?: string;
+  local_only?: boolean;
 }
 
 export interface ModelSet {

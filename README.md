@@ -64,6 +64,18 @@ after the classical pipeline has been measured and its failure modes are known.
 - `docs/`: hardware-first setup, calibration, mission planning, and test plans
 - `transfer/`: local staging folder for Mac-to-Pi and Pi-to-Mac file movement
 
+Run the desktop UI without installing Node on Windows by using Docker Desktop:
+
+```powershell
+.\scripts\dev\desktop_docker.ps1 dev
+```
+
+Then open `http://localhost:5173`. Use `.\scripts\dev\desktop_docker.ps1 build`
+for a production frontend build, or `preview` to serve the built output at
+`http://localhost:4173`. The Docker runtime is for the React operator UI and
+browser fallback/Edge API workflows; the native Tauri window still requires the
+local Windows Tauri/Rust toolchain.
+
 Key docs:
 
 - [Stable Project Scaffold](docs/stable-project-scaffold.md)
@@ -99,6 +111,17 @@ cd Drone
 
 Rebooting after bootstrap makes Docker group membership and camera/system
 services fully active.
+
+Enable the companion Edge API used by the desktop app:
+
+```bash
+cd ~/Drone
+./scripts/pi/install_vision_nav_service.sh
+sudo loginctl enable-linger $USER
+systemctl --user start drone-vision-nav-api.service
+systemctl --user start drone-vision-nav-status-bridge.service
+curl http://127.0.0.1:5000/health
+```
 
 After you copy a mission map bundle to `~/drone-data/map_bundles/mission_bundle`,
 validate it, then start the logging-only bench loop:

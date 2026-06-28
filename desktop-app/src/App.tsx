@@ -3,18 +3,10 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { cmd } from "./lib/tauri";
 import { useAppStore } from "./lib/store";
+import { useShellStore, type BottomDockTabId, type RightDockRoute } from "./lib/shellStore";
 import { Dashboard } from "./pages/Dashboard";
-import { Devices } from "./pages/Devices";
-import { FlightReview } from "./pages/FlightReview";
-import { Maps } from "./pages/Maps";
-import { MissionBundleBuilder } from "./pages/MissionBundleBuilder";
-import { MissionPlanner } from "./pages/MissionPlanner";
 import { Onboarding } from "./pages/Onboarding";
-import { ModuleSetup } from "./pages/PiSetup";
 import { Settings } from "./pages/Settings";
-import { SystemStatus } from "./pages/SystemStatus";
-import { TerrainPlanning } from "./pages/TerrainPlanning";
-import { VisionPipelinePage } from "./pages/VisionPipeline";
 
 export default function App() {
   const { setProfile, setDevices, setRegions } = useAppStore();
@@ -36,7 +28,7 @@ export default function App() {
       <div className="flex h-screen items-center justify-center bg-bg-base">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
           <DroneLogo size={48} />
-          <span className="text-slate-400 text-sm">Loading…</span>
+          <span className="text-slate-400 text-sm">Loading...</span>
         </div>
       </div>
     );
@@ -45,49 +37,85 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/onboarding" element={<Onboarding />} />
         <Route element={<Layout />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/navigation-panel" element={<Dashboard />} />
-          <Route path="/maps" element={<Maps />} />
-          <Route path="/mission-planner" element={<MissionPlanner />} />
-          <Route path="/mission-bundle-builder" element={<MissionBundleBuilder />} />
-          <Route path="/bundle-builder" element={<MissionBundleBuilder />} />
-          <Route path="/bundle" element={<MissionBundleBuilder />} />
-          <Route path="/mission-bundle" element={<MissionBundleBuilder />} />
-          <Route path="/terrain" element={<TerrainPlanning />} />
-          <Route path="/terrain-planning" element={<TerrainPlanning />} />
-          <Route path="/upload" element={<Navigate to="/mission-planner" replace />} />
-          <Route path="/devices" element={<Devices />} />
-          <Route path="/vehicle-manager" element={<Devices />} />
-          <Route path="/pi-setup" element={<ModuleSetup />} />
-          <Route path="/module-setup" element={<ModuleSetup />} />
-          <Route path="/vision-pipeline" element={<VisionPipelinePage />} />
-          <Route path="/camera-vision" element={<VisionPipelinePage />} />
-          <Route path="/models" element={<Navigate to="/camera-vision" replace />} />
-          <Route path="/system-status" element={<SystemStatus />} />
-          <Route path="/diagnostics" element={<Navigate to="/system-status" replace />} />
-          <Route path="/flight-review" element={<FlightReview />} />
-          <Route path="/history" element={<Navigate to="/flight-review" replace />} />
+          <Route path="/home" element={<Dashboard />} />
+          <Route path="/dashboard" element={<OpenHomeSurface />} />
+          <Route path="/navigation-panel" element={<OpenHomeSurface />} />
+          <Route path="/flights" element={<OpenHomeSurface rightDock="flights" />} />
+          <Route path="/flight-review" element={<OpenHomeSurface rightDock="flights" />} />
+          <Route path="/history" element={<OpenHomeSurface rightDock="flights" />} />
+          <Route path="/maps" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/maps/planner" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/maps/bundles" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/maps/terrain" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/mission-planner" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/mission-bundle-builder" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/bundle-builder" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/bundle" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/mission-bundle" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/terrain" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/terrain-planning" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/upload" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/mavlink" element={<OpenHomeSurface bottomDock="diagnostics" />} />
+          <Route path="/system" element={<OpenHomeSurface rightDock="vehicle" />} />
+          <Route path="/system/module-setup" element={<OpenSettingsGroup group="device" />} />
+          <Route path="/system/vision" element={<OpenHomeSurface rightDock="camera" />} />
+          <Route path="/system/status" element={<OpenHomeSurface bottomDock="system-status" />} />
+          <Route path="/devices" element={<OpenHomeSurface rightDock="vehicle" />} />
+          <Route path="/vehicle-manager" element={<OpenHomeSurface rightDock="vehicle" />} />
+          <Route path="/pi-setup" element={<OpenSettingsGroup group="device" />} />
+          <Route path="/module-setup" element={<OpenSettingsGroup group="device" />} />
+          <Route path="/vision-pipeline" element={<OpenHomeSurface rightDock="camera" />} />
+          <Route path="/camera-vision" element={<OpenHomeSurface rightDock="camera" />} />
+          <Route path="/models" element={<OpenHomeSurface rightDock="camera" />} />
+          <Route path="/system-status" element={<OpenHomeSurface bottomDock="system-status" />} />
+          <Route path="/diagnostics" element={<OpenHomeSurface bottomDock="diagnostics" />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </BrowserRouter>
   );
 }
 
+function OpenHomeSurface({
+  rightDock,
+  bottomDock,
+}: {
+  rightDock?: RightDockRoute;
+  bottomDock?: BottomDockTabId;
+}) {
+  const { resetRightDock, pushRightDock, setBottomDockTab } = useShellStore();
+
+  useEffect(() => {
+    if (rightDock) {
+      resetRightDock();
+      if (rightDock !== "root") pushRightDock(rightDock);
+    } else {
+      resetRightDock();
+    }
+    if (bottomDock) setBottomDockTab(bottomDock);
+  }, [bottomDock, pushRightDock, resetRightDock, rightDock, setBottomDockTab]);
+
+  return <Navigate to="/home" replace />;
+}
+
+function OpenSettingsGroup({ group }: { group: string }) {
+  return <Navigate to={`/settings?group=${encodeURIComponent(group)}`} replace />;
+}
+
 export function DroneLogo({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
-      <circle cx="16" cy="16" r="15" stroke="#06B6D4" strokeWidth="1.5" />
-      <circle cx="16" cy="16" r="6" fill="#06B6D4" fillOpacity="0.15" stroke="#06B6D4" strokeWidth="1.5" />
-      <circle cx="16" cy="16" r="2.5" fill="#06B6D4" />
-      <line x1="16" y1="1" x2="16" y2="8" stroke="#06B6D4" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="16" y1="24" x2="16" y2="31" stroke="#06B6D4" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="1" y1="16" x2="8" y2="16" stroke="#06B6D4" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="24" y1="16" x2="31" y2="16" stroke="#06B6D4" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="16" cy="16" r="15" stroke="#FF6600" strokeWidth="1.5" />
+      <circle cx="16" cy="16" r="6" fill="#FF6600" fillOpacity="0.15" stroke="#FF6600" strokeWidth="1.5" />
+      <circle cx="16" cy="16" r="2.5" fill="#FF6600" />
+      <line x1="16" y1="1" x2="16" y2="8" stroke="#FF6600" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="16" y1="24" x2="16" y2="31" stroke="#FF6600" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="1" y1="16" x2="8" y2="16" stroke="#FF6600" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="24" y1="16" x2="31" y2="16" stroke="#FF6600" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

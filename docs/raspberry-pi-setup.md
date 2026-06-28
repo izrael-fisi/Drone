@@ -162,6 +162,48 @@ Export PX4 parameters from QGroundControl to `~/px4.params`, then:
 VISION_NAV_PX4_PARAMS=$HOME/px4.params ./scripts/pi/check_px4_params.sh
 ```
 
+## Companion Edge API
+
+The desktop app expects the Pi to expose a lightweight companion API on port
+`5000`. The API reports device identity, service state, latest
+`runtime_status.json`, available serial devices, and MAVLink heartbeat probes.
+
+Install and enable the user services:
+
+```bash
+cd ~/Drone
+./scripts/pi/install_vision_nav_service.sh
+sudo loginctl enable-linger $USER
+systemctl --user start drone-vision-nav-api.service
+systemctl --user start drone-vision-nav-status-bridge.service
+```
+
+Check from the Pi:
+
+```bash
+curl http://127.0.0.1:5000/health
+curl http://127.0.0.1:5000/api/v1/device
+curl -X POST http://127.0.0.1:5000/api/v1/mavlink/heartbeat \
+  -H 'Content-Type: application/json' \
+  -d '{"endpoint":"serial:/dev/ttyACM0:921600","timeout_s":4}'
+```
+
+From the desktop, use `http://<pi-ip>:5000`. Keep service control disabled
+unless the Pi is on a trusted private network:
+
+```bash
+# Optional, trusted LAN only:
+VISION_NAV_API_ALLOW_SERVICE_CONTROL=1 systemctl --user restart drone-vision-nav-api.service
+```
+
+Docker alternative:
+
+```bash
+cd ~/Drone
+VISION_NAV_API_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
+  ./scripts/pi/start_companion_api_docker.sh
+```
+
 ## Runtime Capture
 
 Run the always-on status bridge first when the Pixhawk is connected but the

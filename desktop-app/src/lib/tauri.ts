@@ -8,6 +8,10 @@ import type {
   DownloadProgress,
   DownloadTilesResult,
   DronePositionUpdate,
+  EdgeApiDeviceStatus,
+  EdgeApiHealth,
+  EdgeApiMavlinkHeartbeat,
+  EdgeApiRuntimeStatus,
   ExtractedSupportBundleArtifact,
   FieldCollectionPlanFile,
   FieldEvidenceReportFile,
@@ -34,7 +38,7 @@ import type {
 } from "./types";
 
 const DEV_PROFILE: Profile = {
-  accent_color: "#06B6D4",
+  accent_color: "#FF6600",
   email: "",
   name: "Izrael",
   onboarding_complete: true,
@@ -90,6 +94,64 @@ function estimateTilesFallback(args?: Record<string, unknown>): TileEstimate {
   };
 }
 
+function normalizeEdgeApiBaseUrl(value: unknown) {
+  const raw = String(value ?? "").trim().replace(/\/+$/, "");
+  if (!raw) throw new Error("Edge API URL is empty");
+  return raw.startsWith("http://") || raw.startsWith("https://") ? raw : `http://${raw}`;
+}
+
+async function edgeApiFetch<T>(baseUrl: unknown, path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${normalizeEdgeApiBaseUrl(baseUrl)}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!response.ok) throw new Error(`Edge API returned HTTP ${response.status}`);
+  return response.json() as Promise<T>;
+}
+
+async function discoverPiDevicesFallback(args?: Record<string, unknown>): Promise<PiDiscoveryCandidate[]> {
+  const seedHosts = Array.isArray(args?.seedHosts) ? args.seedHosts.map(String) : [];
+  const savedHosts = readLocalArray<Device>("drone_dev_devices")
+    .map((device) => device.host)
+    .filter((host): host is string => Boolean(host));
+  const hosts = Array.from(
+    new Set([
+      ...seedHosts,
+      ...savedHosts,
+      "dronecompute",
+      "dronecompute.local",
+      "raspberrypi.local",
+      "raspberrypi",
+    ].map((host) => host.trim()).filter(Boolean)),
+  );
+  const candidates = await Promise.all(
+    hosts.map(async (host) => {
+      const started = Date.now();
+      try {
+        const device = await edgeApiFetch<EdgeApiDeviceStatus>(`http://${host}:5000`, "/api/v1/device");
+        const ip = device.ips?.find((item) => item.startsWith("192.168.")) ?? device.ips?.[0];
+        const candidate: PiDiscoveryCandidate = {
+          host,
+          port: 22,
+          source: "edge_api",
+          ssh_open: true,
+          resolved_ip: ip,
+          ssh_banner: device.hostname ? `Edge API ${device.hostname}` : undefined,
+          message: `Edge API online at ${device.hostname ?? host}`,
+          last_seen_unix_ms: started,
+        };
+        return candidate;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return candidates.filter((candidate): candidate is PiDiscoveryCandidate => Boolean(candidate));
+}
+
 async function fallbackInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   switch (command) {
     case "load_profile":
@@ -109,12 +171,27 @@ async function fallbackInvoke<T>(command: string, args?: Record<string, unknown>
       return undefined as T;
     case "estimate_tiles":
       return estimateTilesFallback(args) as T;
-    case "local_network_hints":
     case "discover_pi_devices":
+      return discoverPiDevicesFallback(args) as T;
+    case "local_network_hints":
     case "list_support_bundles":
       return [] as T;
     case "receive_position_update":
       return null as T;
+    case "edge_api_health":
+      return edgeApiFetch<T>(args?.baseUrl, "/health");
+    case "edge_api_device":
+      return edgeApiFetch<T>(args?.baseUrl, "/api/v1/device");
+    case "edge_api_status":
+      return edgeApiFetch<T>(args?.baseUrl, "/api/v1/status");
+    case "edge_api_mavlink_heartbeat":
+      return edgeApiFetch<T>(args?.baseUrl, "/api/v1/mavlink/heartbeat", {
+        method: "POST",
+        body: JSON.stringify({
+          endpoint: args?.endpoint,
+          timeout_s: args?.timeoutS ?? 4,
+        }),
+      });
     default:
       throw new Error(`Command ${command} requires the Tauri desktop runtime.`);
   }
@@ -147,6 +224,14 @@ export const cmd = {
   discoverPiDevices: (seedHosts: string[], port = 22) =>
     invokeCommand<PiDiscoveryCandidate[]>("discover_pi_devices", { seedHosts, port }),
   localNetworkHints: () => invokeCommand<LocalNetworkHint[]>("local_network_hints"),
+  edgeApiHealth: (baseUrl: string) =>
+    invokeCommand<EdgeApiHealth>("edge_api_health", { baseUrl }),
+  edgeApiDevice: (baseUrl: string) =>
+    invokeCommand<EdgeApiDeviceStatus>("edge_api_device", { baseUrl }),
+  edgeApiStatus: (baseUrl: string) =>
+    invokeCommand<EdgeApiRuntimeStatus>("edge_api_status", { baseUrl }),
+  edgeApiMavlinkHeartbeat: (baseUrl: string, endpoint: string, timeoutS = 4) =>
+    invokeCommand<EdgeApiMavlinkHeartbeat>("edge_api_mavlink_heartbeat", { baseUrl, endpoint, timeoutS }),
   testSshConnection: (
     host: string,
     port: number,

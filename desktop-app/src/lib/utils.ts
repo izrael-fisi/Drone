@@ -22,7 +22,7 @@ export function formatDate(iso?: string): string {
 }
 
 export const ACCENT_COLORS = [
-  "#06B6D4",
+  "#FF6600",
   "#8B5CF6",
   "#10B981",
   "#F59E0B",
