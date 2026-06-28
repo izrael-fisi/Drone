@@ -59,6 +59,11 @@ export default function App() {
           <Route path="/terrain-planning" element={<OpenHomeSurface rightDock="maps" />} />
           <Route path="/upload" element={<OpenHomeSurface rightDock="maps" />} />
           <Route path="/mavlink" element={<OpenHomeSurface bottomDock="diagnostics" />} />
+          <Route path="/ground-control" element={<OpenHomeSurface rightDock="ground-control" />} />
+          <Route path="/gcs" element={<OpenHomeSurface rightDock="ground-control" />} />
+          <Route path="/qgroundcontrol" element={<OpenHomeSurface rightDock="ground-control" />} />
+          <Route path="/mission-planner-gcs" element={<OpenHomeSurface rightDock="ground-control" />} />
+          <Route path="/ardupilot" element={<OpenHomeSurface rightDock="ground-control" />} />
           <Route path="/system" element={<OpenHomeSurface rightDock="vehicle" />} />
           <Route path="/system/module-setup" element={<OpenSettingsGroup group="device" />} />
           <Route path="/system/vision" element={<OpenHomeSurface rightDock="camera" />} />

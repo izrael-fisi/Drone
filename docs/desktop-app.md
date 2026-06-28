@@ -60,6 +60,8 @@ Tauri still needs the Windows Rust/MSVC/WebView2 toolchain on the host.
 - `/mission-bundle-builder`: alias into the Mission Planner bundle workflow.
 - `/devices` and `/vehicle-manager`: device profiles, Raspberry Pi SSH,
   runtime module setup, camera checks, MAVLink checks, bench/field workflows.
+- `/ground-control` and `/gcs`: QGroundControl, ArduPilot Mission Planner,
+  autopilot compatibility, install/display state, and GCS serial handoff.
 - `/pi-setup` and `/module-setup`: deep Raspberry Pi setup workflow.
 - `/camera-vision` and `/vision-pipeline`: editable vision feature/matcher
   defaults used by mission bundle builds.
@@ -159,6 +161,7 @@ Mission Planner exports:
 
 - app mission JSON
 - QGroundControl-style `.plan`
+- ArduPilot Mission Planner `QGC WPL 110` `.waypoints`
 - `mission/mission_plan.json`
 - `mission/qgc.plan`
 - GNSS-denied prep metadata

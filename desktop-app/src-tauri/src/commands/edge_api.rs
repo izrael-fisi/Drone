@@ -135,3 +135,27 @@ pub async fn edge_api_qgroundcontrol_launch(
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[tauri::command]
+pub async fn edge_api_mission_planner_status(base_url: String) -> Result<Value, String> {
+    tokio::task::spawn_blocking(move || get_json(base_url, "/api/v1/mission-planner", 5))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn edge_api_mission_planner_launch(
+    base_url: String,
+    stop_status_bridge: bool,
+) -> Result<Value, String> {
+    tokio::task::spawn_blocking(move || {
+        post_json(
+            base_url,
+            "/api/v1/mission-planner/launch",
+            &QGroundControlLaunchRequest { stop_status_bridge },
+            10,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

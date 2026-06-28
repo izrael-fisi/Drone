@@ -799,6 +799,32 @@ function buildQgcPlan(plan: MissionPlanPayload) {
   };
 }
 
+function buildMissionPlannerWaypoints(plan: MissionPlanPayload) {
+  const rows = plan.mission.items.map((item, index) => {
+    const command = qgcCommandForItem(item.type);
+    const frame = 3; // MAV_FRAME_GLOBAL_RELATIVE_ALT
+    const current = index === 0 ? 1 : 0;
+    const params = [
+      Number(item.holdSec || 0).toFixed(6),
+      "0.000000",
+      "0.000000",
+      "0.000000",
+    ];
+    return [
+      index,
+      current,
+      frame,
+      command,
+      ...params,
+      item.lat.toFixed(7),
+      item.lon.toFixed(7),
+      Number(item.altitudeM || plan.mission.altitude_m).toFixed(3),
+      1,
+    ].join("\t");
+  });
+  return ["QGC WPL 110", ...rows, ""].join("\n");
+}
+
 function normalizeGnssDeniedReadiness(value: unknown): GnssDeniedReadiness {
   const source = value && typeof value === "object" ? value as Partial<GnssDeniedReadiness> : {};
   const pointOrNull = (point: unknown): PlanPoint | null => {
@@ -862,6 +888,46 @@ function normalizeTerrainPlanningMetadata(value: unknown): TerrainPlanningMetada
 }
 
 function parseImportedPlan(text: string): ImportedMissionPlanPayload {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("QGC WPL")) {
+    const missionItems = trimmed
+      .split(/\r?\n/)
+      .slice(1)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.split(/\s+/))
+      .filter((parts) => parts.length >= 12)
+      .map((parts) => {
+        const command = Number(parts[3]);
+        const lat = Number(parts[8]);
+        const lon = Number(parts[9]);
+        const altitudeM = Number(parts[10]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        return {
+          id: generateId(),
+          type: command === 22 ? "takeoff" : command === 21 ? "land" : "waypoint",
+          lat,
+          lon,
+          altitudeM: Number.isFinite(altitudeM) ? altitudeM : DEFAULT_MISSION_DEFAULTS.altitudeM,
+          speedMps: DEFAULT_MISSION_DEFAULTS.speedMps,
+          holdSec: Number(parts[4] ?? 0) || 0,
+        } satisfies MissionItem;
+      })
+      .filter((item): item is MissionItem => Boolean(item));
+
+    return {
+      mission: {
+        altitude_m: missionItems[0]?.altitudeM ?? DEFAULT_MISSION_DEFAULTS.altitudeM,
+        speed_mps: DEFAULT_MISSION_DEFAULTS.speedMps,
+        items: missionItems,
+      },
+      geofence: { polygon: [] },
+      rally_points: [],
+      gnss_denied: DEFAULT_GNSS_DENIED_READINESS,
+      terrain_planning: normalizeTerrainPlanningMetadata(undefined),
+    };
+  }
+
   const parsed = JSON.parse(text);
   if (parsed?.mission?.items && Array.isArray(parsed.mission.items)) {
     return {
@@ -1377,6 +1443,7 @@ export function MissionPlanner() {
   const qgcPlan = useMemo(() => buildQgcPlan(planPayload), [planPayload]);
   const missionPlanJson = useMemo(() => JSON.stringify(planPayload, null, 2), [planPayload]);
   const qgcPlanJson = useMemo(() => JSON.stringify(qgcPlan, null, 2), [qgcPlan]);
+  const missionPlannerWaypoints = useMemo(() => buildMissionPlannerWaypoints(planPayload), [planPayload]);
   const planFingerprint = useMemo(
     () => JSON.stringify({
       mission: planPayload,
@@ -1635,11 +1702,22 @@ export function MissionPlanner() {
     setPlanMessage(`Exported mission plan to ${path}`);
   };
 
+  const exportMissionPlannerWaypoints = async () => {
+    const path = await saveDialog({
+      title: "Export Mission Planner waypoints",
+      defaultPath: selectedRegion ? `${selectedRegion.name.replace(/\s+/g, "_")}.waypoints` : "drone_mission.waypoints",
+      filters: [{ name: "Mission Planner Waypoints", extensions: ["waypoints", "txt"] }],
+    });
+    if (!path) return;
+    await writeTextFile(path, missionPlannerWaypoints);
+    setPlanMessage(`Exported Mission Planner waypoints to ${path}`);
+  };
+
   const importMissionPlan = async () => {
     const path = await open({
       multiple: false,
       title: "Import mission plan",
-      filters: [{ name: "Mission Plan", extensions: ["plan", "json"] }],
+      filters: [{ name: "Mission Plan", extensions: ["plan", "json", "waypoints", "txt"] }],
     });
     if (!path || typeof path !== "string") return;
     try {
@@ -2164,12 +2242,15 @@ export function MissionPlanner() {
           </div>
 
           <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button onClick={importMissionPlan} className="btn-secondary justify-center text-xs py-1.5">
                 <FileInput size={13} /> Import
               </button>
               <button onClick={exportMissionPlan} className="btn-secondary justify-center text-xs py-1.5">
                 <Download size={13} /> Export .plan
+              </button>
+              <button onClick={exportMissionPlannerWaypoints} className="btn-secondary justify-center text-xs py-1.5">
+                <Download size={13} /> Export WPL
               </button>
             </div>
             {planMessage && <p className="text-[11px] text-emerald-400">{planMessage}</p>}

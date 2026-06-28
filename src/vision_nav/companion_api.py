@@ -236,21 +236,9 @@ def qgroundcontrol_status(config: CompanionApiConfig) -> dict[str, Any]:
     ]
     appimage_path = next((path for path in appimage_candidates if path.exists()), None)
     installed = bool(executable_path or appimage_path)
-    display = {
-        "available": bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
-        "display": os.environ.get("DISPLAY"),
-        "wayland_display": os.environ.get("WAYLAND_DISPLAY"),
-        "session_type": os.environ.get("XDG_SESSION_TYPE"),
-    }
+    display = graphical_display_status()
     processes = qgroundcontrol_processes()
-    serial_users = ""
-    if config.default_mavlink_endpoint and config.default_mavlink_endpoint.startswith("serial:"):
-        try:
-            serial_path = parse_mavlink_endpoint(config.default_mavlink_endpoint)[0]
-            serial_result = run_command(["fuser", "-v", serial_path], timeout_s=1.5)
-            serial_users = serial_result.get("stdout", "") or serial_result.get("stderr", "")
-        except Exception:
-            serial_users = ""
+    serial_users = serial_endpoint_users(config)
 
     return {
         "ok": True,
@@ -287,6 +275,40 @@ def qgroundcontrol_processes() -> list[str]:
         if {"qgroundcontrol", "qgroundcontrol-safe", "qgroundcontrol-aarch64.appimage"} & names:
             matches.append(f"{proc.name} {cmdline or comm}")
     return matches
+
+
+def mission_planner_processes() -> list[str]:
+    matches: list[str] = []
+    for proc in Path("/proc").glob("[0-9]*"):
+        try:
+            comm = (proc / "comm").read_text(errors="replace").strip()
+            cmdline = (proc / "cmdline").read_bytes().replace(b"\x00", b" ").decode(errors="replace").strip()
+        except OSError:
+            continue
+        lower = f"{comm} {cmdline}".lower()
+        if "missionplanner.exe" in lower or "mission planner" in lower or "missionplanner" in lower:
+            matches.append(f"{proc.name} {cmdline or comm}")
+    return matches
+
+
+def graphical_display_status() -> dict[str, Any]:
+    return {
+        "available": bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
+        "display": os.environ.get("DISPLAY"),
+        "wayland_display": os.environ.get("WAYLAND_DISPLAY"),
+        "session_type": os.environ.get("XDG_SESSION_TYPE"),
+    }
+
+
+def serial_endpoint_users(config: CompanionApiConfig) -> str:
+    if not config.default_mavlink_endpoint or not config.default_mavlink_endpoint.startswith("serial:"):
+        return ""
+    try:
+        serial_path = parse_mavlink_endpoint(config.default_mavlink_endpoint)[0]
+        serial_result = run_command(["fuser", "-v", serial_path], timeout_s=1.5)
+        return serial_result.get("stdout", "") or serial_result.get("stderr", "")
+    except Exception:
+        return ""
 
 
 def launch_qgroundcontrol(config: CompanionApiConfig, *, stop_status_bridge: bool = False) -> tuple[HTTPStatus, dict[str, Any]]:
@@ -334,6 +356,112 @@ def launch_qgroundcontrol(config: CompanionApiConfig, *, stop_status_bridge: boo
             "launched": True,
             "pid": process.pid,
             "status": qgroundcontrol_status(config),
+            "log_path": str(log_path),
+            "status_bridge_stop": service_result,
+        },
+    )
+
+
+def mission_planner_status(config: CompanionApiConfig) -> dict[str, Any]:
+    executable_path = shutil.which("missionplanner") or shutil.which("MissionPlanner")
+    mono_path = shutil.which("mono")
+    install_candidates = [
+        Path("/opt/missionplanner/MissionPlanner.exe"),
+        Path("/opt/mission-planner/MissionPlanner.exe"),
+        Path.home() / "MissionPlanner" / "MissionPlanner.exe",
+        Path.home() / "missionplanner" / "MissionPlanner.exe",
+    ]
+    install_path = next((path for path in install_candidates if path.exists()), None)
+    installed = bool(executable_path or install_path)
+    display = graphical_display_status()
+    mono_ready = bool(mono_path)
+    launch_available = bool(executable_path and display["available"]) or bool(install_path and mono_ready and display["available"])
+
+    return {
+        "ok": True,
+        "installed": installed,
+        "executable_path": executable_path,
+        "mono_path": mono_path,
+        "install_path": str(install_path) if install_path else None,
+        "display": display,
+        "running": bool(mission_planner_processes()),
+        "processes": mission_planner_processes(),
+        "serial_endpoint": config.default_mavlink_endpoint,
+        "serial_users": serial_endpoint_users(config),
+        "launch_available": launch_available,
+        "compatibility": "mono-experimental" if installed else "not-installed",
+        "message": (
+            "Mission Planner is ready to launch through Mono."
+            if launch_available and install_path
+            else "Mission Planner wrapper is ready to launch."
+            if launch_available
+            else "Mission Planner is installed, but Mono is missing."
+            if installed and not mono_ready and not executable_path
+            else "Mission Planner is installed, but no graphical Pi session is visible to the API."
+            if installed
+            else "Mission Planner is not installed. Windows Mission Planner is still supported through plan/import compatibility."
+        ),
+    }
+
+
+def launch_mission_planner(config: CompanionApiConfig, *, stop_status_bridge: bool = False) -> tuple[HTTPStatus, dict[str, Any]]:
+    status = mission_planner_status(config)
+    if not status["installed"]:
+        return HTTPStatus.NOT_FOUND, {"ok": False, "launched": False, "error": "mission_planner_not_installed", "status": status}
+    if not status["display"]["available"]:
+        return (
+            HTTPStatus.CONFLICT,
+            {
+                "ok": False,
+                "launched": False,
+                "error": "graphical_session_unavailable",
+                "message": "Launch Mission Planner from a graphical Raspberry Pi session, or use native Windows Mission Planner on the desktop.",
+                "status": status,
+            },
+        )
+
+    service_result: dict[str, Any] | None = None
+    if stop_status_bridge:
+        service_result = run_command(
+            ["systemctl", "--user", "stop", config.service_units["status-bridge"]],
+            timeout_s=10.0,
+        )
+
+    command: list[str]
+    executable = status.get("executable_path")
+    install_path = status.get("install_path")
+    mono_path = status.get("mono_path")
+    if executable:
+        command = [str(executable)]
+    elif install_path and mono_path:
+        command = [str(mono_path), str(install_path)]
+    else:
+        return HTTPStatus.CONFLICT, {
+            "ok": False,
+            "launched": False,
+            "error": "mission_planner_launch_unavailable",
+            "message": "Mission Planner requires a wrapper or Mono plus MissionPlanner.exe.",
+            "status": status,
+        }
+
+    log_path = Path.home() / "DroneTransfer" / "outgoing" / "mission-planner.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab", buffering=0) as log_file:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    return (
+        HTTPStatus.OK,
+        {
+            "ok": True,
+            "launched": True,
+            "pid": process.pid,
+            "status": mission_planner_status(config),
             "log_path": str(log_path),
             "status_bridge_stop": service_result,
         },
@@ -506,6 +634,9 @@ class CompanionApiHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/qgroundcontrol":
             self.send_json(qgroundcontrol_status(self.config))
             return
+        if path == "/api/v1/mission-planner":
+            self.send_json(mission_planner_status(self.config))
+            return
         if path == "/api/v1/mavlink/heartbeat":
             endpoint = first_query_value(query, "endpoint") or self.config.default_mavlink_endpoint
             timeout_s = parse_float(first_query_value(query, "timeout_s"), default=4.0)
@@ -543,6 +674,14 @@ class CompanionApiHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/qgroundcontrol/launch":
             payload = self.read_json_body()
             status, body = launch_qgroundcontrol(
+                self.config,
+                stop_status_bridge=bool(payload.get("stop_status_bridge")),
+            )
+            self.send_json(body, status=status)
+            return
+        if path == "/api/v1/mission-planner/launch":
+            payload = self.read_json_body()
+            status, body = launch_mission_planner(
                 self.config,
                 stop_status_bridge=bool(payload.get("stop_status_bridge")),
             )

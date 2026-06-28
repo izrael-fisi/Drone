@@ -233,6 +233,31 @@ Pixhawk endpoint at the same time. When launching QGroundControl through the app
 the launcher requests that `drone-vision-nav-status-bridge.service` stop first
 so QGroundControl can use the Pixhawk link.
 
+## ArduPilot Mission Planner Compatibility
+
+Mission Planner is the primary ArduPilot ground-control application. Native
+Windows Mission Planner remains the recommended path for full ArduPilot setup.
+For a Raspberry Pi desktop session, the repo includes an optional Mono-based
+installer:
+
+```bash
+cd ~/Drone
+./scripts/pi/install_mission_planner.sh
+missionplanner-safe
+```
+
+The installer writes:
+
+- `/opt/missionplanner/MissionPlanner.exe`
+- `/usr/local/bin/missionplanner`
+- `/usr/local/bin/missionplanner-safe`
+
+The companion Edge API exposes `/api/v1/mission-planner` and
+`/api/v1/mission-planner/launch`. The desktop app groups QGroundControl and
+Mission Planner under the left-nav **Ground Control** pane, where operators can
+select PX4 or ArduPilot compatibility, check install/display state, and launch a
+GCS after stopping the status bridge to release the serial MAVLink endpoint.
+
 ## Runtime Capture
 
 Run the always-on status bridge first when the Pixhawk is connected but the

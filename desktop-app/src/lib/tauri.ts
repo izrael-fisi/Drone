@@ -11,6 +11,8 @@ import type {
   EdgeApiDeviceStatus,
   EdgeApiHealth,
   EdgeApiMavlinkHeartbeat,
+  EdgeApiMissionPlannerLaunch,
+  EdgeApiMissionPlannerStatus,
   EdgeApiQGroundControlLaunch,
   EdgeApiQGroundControlStatus,
   EdgeApiRuntimeStatus,
@@ -203,6 +205,15 @@ async function fallbackInvoke<T>(command: string, args?: Record<string, unknown>
           stop_status_bridge: args?.stopStatusBridge ?? false,
         }),
       });
+    case "edge_api_mission_planner_status":
+      return edgeApiFetch<T>(args?.baseUrl, "/api/v1/mission-planner");
+    case "edge_api_mission_planner_launch":
+      return edgeApiFetch<T>(args?.baseUrl, "/api/v1/mission-planner/launch", {
+        method: "POST",
+        body: JSON.stringify({
+          stop_status_bridge: args?.stopStatusBridge ?? false,
+        }),
+      });
     default:
       throw new Error(`Command ${command} requires the Tauri desktop runtime.`);
   }
@@ -247,6 +258,10 @@ export const cmd = {
     invokeCommand<EdgeApiQGroundControlStatus>("edge_api_qgroundcontrol_status", { baseUrl }),
   edgeApiQGroundControlLaunch: (baseUrl: string, stopStatusBridge = false) =>
     invokeCommand<EdgeApiQGroundControlLaunch>("edge_api_qgroundcontrol_launch", { baseUrl, stopStatusBridge }),
+  edgeApiMissionPlannerStatus: (baseUrl: string) =>
+    invokeCommand<EdgeApiMissionPlannerStatus>("edge_api_mission_planner_status", { baseUrl }),
+  edgeApiMissionPlannerLaunch: (baseUrl: string, stopStatusBridge = false) =>
+    invokeCommand<EdgeApiMissionPlannerLaunch>("edge_api_mission_planner_launch", { baseUrl, stopStatusBridge }),
   testSshConnection: (
     host: string,
     port: number,

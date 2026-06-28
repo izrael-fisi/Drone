@@ -155,6 +155,38 @@ export interface EdgeApiQGroundControlLaunch {
   error?: string;
 }
 
+export interface EdgeApiMissionPlannerStatus {
+  ok: boolean;
+  installed: boolean;
+  executable_path?: string | null;
+  mono_path?: string | null;
+  install_path?: string | null;
+  display?: {
+    available: boolean;
+    display?: string | null;
+    wayland_display?: string | null;
+    session_type?: string | null;
+  };
+  running?: boolean;
+  processes?: string[];
+  serial_endpoint?: string | null;
+  serial_users?: string;
+  launch_available?: boolean;
+  compatibility?: "windows-native" | "mono-experimental" | "not-installed" | string;
+  message?: string;
+  error?: string;
+}
+
+export interface EdgeApiMissionPlannerLaunch {
+  ok: boolean;
+  launched?: boolean;
+  pid?: number | null;
+  status?: EdgeApiMissionPlannerStatus;
+  command?: Record<string, unknown>;
+  message?: string;
+  error?: string;
+}
+
 export interface Region {
   id: string;
   name: string;

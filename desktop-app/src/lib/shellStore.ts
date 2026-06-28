@@ -4,6 +4,7 @@ export type RightDockRoute =
   | "root"
   | "maps"
   | "vehicle"
+  | "ground-control"
   | "camera"
   | "calibration"
   | "flights"
