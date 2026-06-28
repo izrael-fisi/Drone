@@ -14,6 +14,7 @@ import {
   Minus,
   Pencil,
   Radio,
+  Route as RouteIcon,
   Search,
   Server,
   Settings as SettingsIcon,
@@ -25,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { CircleMarker, MapContainer, Pane, Polygon, Polyline, TileLayer, Tooltip, useMap } from "react-leaflet";
 import { Outlet, useLocation, useNavigate, type NavigateFunction } from "react-router-dom";
 import { DroneLogo } from "../App";
 import {
@@ -35,17 +37,20 @@ import {
   mergeDiscoveryHistory,
   saveDiscoveryHistory,
 } from "../lib/discovery";
+import { loadSavedMissions, missionBoundsFromParts, missionCenter, removeSavedMission, SAVED_MISSIONS_CHANGED } from "../lib/missions";
 import { useShellStore, type BottomDockTabId, type MapSearchTarget, type RightDockRoute } from "../lib/shellStore";
 import { useAppStore } from "../lib/store";
 import { cmd } from "../lib/tauri";
 import type {
   Device,
+  DronePositionUpdate,
   EdgeApiMissionPlannerStatus,
   EdgeApiQGroundControlStatus,
   LocalNetworkHint,
   PiDiscoveryCandidate,
   Profile,
   Region,
+  SavedMission,
 } from "../lib/types";
 import { cn } from "../lib/utils";
 import { deriveOperatorRuntimeModel, type OperatorRuntimeModel } from "../lib/operatorRuntimeAdapter";
@@ -53,6 +58,7 @@ import { deriveOperatorRuntimeModel, type OperatorRuntimeModel } from "../lib/op
 const DOCK_LABELS: Record<RightDockRoute, string> = {
   root: "Panel",
   maps: "Maps",
+  missions: "Missions",
   vehicle: "Device",
   "ground-control": "Ground Control",
   camera: "Camera",
@@ -628,6 +634,7 @@ function GlobalCommandPalette({
         },
       },
       { id: "panel-maps", label: "Manage Maps", detail: "Map library, active map, edge cache", group: "Panels", Icon: MapIcon, action: () => openPanel("maps") },
+      { id: "panel-missions", label: "Missions", detail: "Saved map cuts and waypoint overlays", group: "Panels", Icon: RouteIcon, action: () => openPanel("missions") },
       { id: "panel-vehicle", label: "Manage Vehicles", detail: "Vehicle config and runtime state", group: "Panels", Icon: Server, action: () => openPanel("vehicle") },
       { id: "panel-ground-control", label: "Ground Control", detail: "QGroundControl, Mission Planner, ArduPilot compatibility", group: "Panels", Icon: Radio, action: () => openPanel("ground-control") },
       { id: "panel-camera", label: "Manage Cameras", detail: "Camera config and vision pipeline", group: "Panels", Icon: Camera, action: () => openPanel("camera") },
@@ -838,6 +845,7 @@ function RightDock({
       <div className="flex h-full w-14 shrink-0 flex-col items-center bg-white/[0.035] py-2">
         <div className="flex flex-col gap-1">
           <SidebarRailButton Icon={MapIcon} label="Maps" active={open && route === "maps"} onClick={() => openRoute("maps")} />
+          <SidebarRailButton Icon={RouteIcon} label="Missions" active={open && route === "missions"} onClick={() => openRoute("missions")} />
           <SidebarRailButton Icon={Server} label="Device" active={open && route === "vehicle"} onClick={() => openRoute("vehicle")} />
           <SidebarRailButton Icon={Radio} label="Ground Control" active={open && route === "ground-control"} onClick={() => openRoute("ground-control")} />
           <SidebarRailButton Icon={Camera} label="Camera" active={open && (route === "camera" || route === "calibration")} onClick={() => openRoute("camera")} />
@@ -876,6 +884,10 @@ function RightDock({
           <div className="flex-1 overflow-y-auto p-3">
             {route === "maps" && (
               <MapsPanel model={model} regions={regions} />
+            )}
+
+            {route === "missions" && (
+              <MissionPanel />
             )}
 
             {route === "vehicle" && (
@@ -945,6 +957,257 @@ function SidebarRailButton({
     >
       <Icon size={17} />
     </button>
+  );
+}
+
+type MissionPreviewBounds = [[number, number], [number, number]];
+
+function clampCoordinate(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function missionPreviewBounds(mission: SavedMission): MissionPreviewBounds {
+  const bounds = mission.bounds ?? missionBoundsFromParts(mission.border_points, mission.waypoints);
+  if (!bounds) return [[-85, -180], [85, 180]];
+  const latSpan = Math.max(bounds.lat_max - bounds.lat_min, 0.02);
+  const lonSpan = Math.max(bounds.lon_max - bounds.lon_min, 0.02);
+  const latPad = Math.max(latSpan * 0.28, 0.01);
+  const lonPad = Math.max(lonSpan * 0.28, 0.01);
+  return [
+    [
+      clampCoordinate(bounds.lat_min - latPad, -85, 85),
+      clampCoordinate(bounds.lon_min - lonPad, -180, 180),
+    ],
+    [
+      clampCoordinate(bounds.lat_max + latPad, -85, 85),
+      clampCoordinate(bounds.lon_max + lonPad, -180, 180),
+    ],
+  ];
+}
+
+function livePositionLatLon(position: DronePositionUpdate | null): [number, number] | null {
+  const lat = position?.lat_lon?.lat;
+  const lon = position?.lat_lon?.lon;
+  return typeof lat === "number" && Number.isFinite(lat) && typeof lon === "number" && Number.isFinite(lon)
+    ? [lat, lon]
+    : null;
+}
+
+function MissionPanel() {
+  const { selectedMissionId, setSelectedMissionId, livePosition } = useShellStore();
+  const [missions, setMissions] = useState<SavedMission[]>(() => loadSavedMissions());
+  const selectedMission = missions.find((mission) => mission.id === selectedMissionId) ?? missions[0];
+
+  useEffect(() => {
+    const refreshMissions = () => setMissions(loadSavedMissions());
+    window.addEventListener(SAVED_MISSIONS_CHANGED, refreshMissions);
+    window.addEventListener("storage", refreshMissions);
+    return () => {
+      window.removeEventListener(SAVED_MISSIONS_CHANGED, refreshMissions);
+      window.removeEventListener("storage", refreshMissions);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (missions.length === 0) {
+      if (selectedMissionId) setSelectedMissionId(null);
+      return;
+    }
+    if (!selectedMissionId || !missions.some((mission) => mission.id === selectedMissionId)) {
+      setSelectedMissionId(missions[0].id);
+    }
+  }, [missions, selectedMissionId, setSelectedMissionId]);
+
+  const deleteSelectedMission = () => {
+    if (!selectedMission) return;
+    if (!window.confirm(`Delete ${selectedMission.name}?`)) return;
+    const nextMissions = removeSavedMission(selectedMission.id);
+    setMissions(nextMissions);
+    setSelectedMissionId(nextMissions[0]?.id ?? null);
+  };
+
+  return (
+    <PanelStack
+      title="Mission"
+      subtitle={selectedMission ? selectedMission.map_label ?? "Saved operator geometry" : "No mission selected"}
+      action={selectedMission && (
+        <button type="button" onClick={deleteSelectedMission} className="operator-shell-button h-8 w-8 rounded-md hover:text-red-300" title="Delete mission">
+          <Trash2 size={14} />
+        </button>
+      )}
+    >
+      <label className="block rounded-lg border border-border bg-bg-card px-3 py-2">
+        <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Mission</span>
+        <select
+          value={selectedMission?.id ?? ""}
+          onChange={(event) => setSelectedMissionId(event.target.value || null)}
+          disabled={missions.length === 0}
+          className="mt-1 h-8 w-full bg-transparent text-sm text-slate-100 outline-none disabled:text-slate-600"
+        >
+          {missions.length === 0 ? (
+            <option value="">No saved missions</option>
+          ) : (
+            missions.map((mission) => (
+              <option key={mission.id} value={mission.id}>
+                {mission.name}
+              </option>
+            ))
+          )}
+        </select>
+      </label>
+
+      <MissionPreview mission={selectedMission} livePosition={livePosition} />
+
+      {selectedMission ? (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <MissionStat label="Map Cut" value={selectedMission.border_points.length >= 3 ? "Saved" : "Open"} detail={`${selectedMission.border_points.length} border pts`} />
+            <MissionStat label="Waypoints" value={selectedMission.waypoints.length} detail="path points" />
+          </div>
+          <StatusRow label="Source map" value={selectedMission.map_label ?? "World Map"} healthy />
+          <StatusRow label="Updated" value={new Date(selectedMission.updated_at).toLocaleString()} healthy />
+        </>
+      ) : (
+        <EmptyLine text="Draw a map border or waypoint path, then use Save Mission from the map controls." />
+      )}
+    </PanelStack>
+  );
+}
+
+function MissionPreview({
+  mission,
+  livePosition,
+}: {
+  mission?: SavedMission;
+  livePosition: DronePositionUpdate | null;
+}) {
+  if (!mission) {
+    return (
+      <div className="mission-dot-grid flex h-72 items-center justify-center rounded-lg border border-border p-4">
+        <div className="rounded-lg border border-border bg-black/80 px-4 py-3 text-center text-xs text-slate-500">
+          No mission preview
+        </div>
+      </div>
+    );
+  }
+
+  const bounds = missionPreviewBounds(mission);
+  const center = missionCenter(mission);
+  const hasBorder = mission.border_points.length >= 3;
+  const aircraftPosition = livePositionLatLon(livePosition);
+
+  return (
+    <div className="mission-dot-grid rounded-lg border border-border p-2">
+      <div className="h-72 overflow-hidden rounded-lg border border-border bg-black">
+        <MapContainer
+          key={mission.id}
+          center={center}
+          zoom={Math.max(3, Math.min(18, mission.zoom))}
+          minZoom={3}
+          maxZoom={19}
+          maxBounds={bounds}
+          maxBoundsViscosity={1}
+          className="mission-map h-full w-full"
+          scrollWheelZoom
+          attributionControl={false}
+          zoomControl={false}
+        >
+          <MissionPreviewViewport mission={mission} bounds={bounds} />
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={19}
+          />
+          <Pane name={`mission-preview-labels-${mission.id}`} className="mission-map-label-pane" style={{ zIndex: 420 }}>
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={19}
+              opacity={0.92}
+            />
+          </Pane>
+          {mission.border_points.length > 0 && (
+            <>
+              {hasBorder ? (
+                <Polygon
+                  positions={mission.border_points}
+                  pathOptions={{ color: "#FF6600", fillColor: "#FF6600", fillOpacity: 0.1, dashArray: "8 8", weight: 2 }}
+                />
+              ) : (
+                <Polyline positions={mission.border_points} pathOptions={{ color: "#FF6600", dashArray: "8 8", weight: 2 }} />
+              )}
+              {mission.border_points.map((point, index) => (
+                <CircleMarker
+                  key={`mission-border-${index}-${point[0]}-${point[1]}`}
+                  center={point}
+                  radius={4}
+                  pathOptions={{ color: "#FF6600", fillColor: "#0B0C0D", fillOpacity: 0.95, weight: 2 }}
+                />
+              ))}
+            </>
+          )}
+          {mission.waypoints.length > 0 && (
+            <>
+              {mission.waypoints.length > 1 && (
+                <Polyline positions={mission.waypoints} pathOptions={{ color: "#FF6600", weight: 3, opacity: 0.9 }} />
+              )}
+              {mission.waypoints.map((point, index) => {
+                const isStart = index === 0;
+                const isLand = mission.waypoints.length > 1 && index === mission.waypoints.length - 1;
+                const color = isStart ? "#63D706" : isLand ? "#EF4444" : "#FF6600";
+                const label = isStart ? "Start" : isLand ? "Land" : `WP ${index + 1}`;
+                return (
+                  <CircleMarker
+                    key={`mission-waypoint-${index}-${point[0]}-${point[1]}`}
+                    center={point}
+                    radius={6}
+                    pathOptions={{ color, fillColor: color, fillOpacity: 0.92, weight: 3 }}
+                  >
+                    <Tooltip direction="top" offset={[0, -6]} opacity={0.95} permanent>
+                      {label}
+                    </Tooltip>
+                  </CircleMarker>
+                );
+              })}
+            </>
+          )}
+          {aircraftPosition && (
+            <CircleMarker
+              center={aircraftPosition}
+              radius={8}
+              pathOptions={{ color: "#63D706", fillColor: "#2E8F49", fillOpacity: 0.95, weight: 3 }}
+            >
+              <Tooltip direction="top" offset={[0, -8]} opacity={0.95} permanent>
+                Aircraft
+              </Tooltip>
+            </CircleMarker>
+          )}
+        </MapContainer>
+      </div>
+    </div>
+  );
+}
+
+function MissionPreviewViewport({ mission, bounds }: { mission: SavedMission; bounds: MissionPreviewBounds }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setMaxBounds(bounds);
+    map.fitBounds(bounds, {
+      padding: [18, 18],
+      maxZoom: Math.max(12, Math.min(18, mission.zoom)),
+      animate: false,
+    });
+  }, [bounds, map, mission.id, mission.zoom]);
+
+  return null;
+}
+
+function MissionStat({ label, value, detail }: { label: string; value: string | number; detail: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-bg-card p-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</div>
+      <div className="mt-1 font-mono text-sm font-semibold text-orange-300">{value}</div>
+      <div className="mt-0.5 truncate text-xs text-slate-500">{detail}</div>
+    </div>
   );
 }
 
@@ -1696,6 +1959,7 @@ function GroundControlPanel({
       <StatusRow label="QGC Display" value={qgcDisplayLabel} healthy={Boolean(qgcStatus?.display?.available)} />
       <StatusRow label="Mission Planner Display" value={missionPlannerDisplayLabel} healthy={Boolean(missionPlannerStatus?.display?.available)} />
       <StatusRow label="Serial owner" value={serialOwner ? "in use" : "not reported"} healthy={!serialOwner} />
+      <StatusRow label="Live telemetry" value="MAVLink position / PX4 + ArduPilot" healthy={Boolean(device?.mavlink_endpoint)} />
       <PanelAction
         label={checking ? "Checking GCS" : "Refresh GCS"}
         detail={message ?? "Detect QGroundControl, Mission Planner, display, and serial owner"}

@@ -574,6 +574,170 @@ def probe_mavlink_heartbeat(endpoint: str, *, timeout_s: float = 4.0, default_se
         }
 
 
+def probe_mavlink_position(
+    endpoint: str,
+    *,
+    timeout_s: float = 2.0,
+    default_serial_baud: int = 921600,
+    autopilot_hint: str | None = None,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    normalized_endpoint = normalize_mavlink_endpoint(endpoint, default_serial_baud=default_serial_baud)
+    try:
+        mavutil = _load_mavutil()
+        connection_string, baud = parse_mavlink_endpoint(normalized_endpoint)
+        kwargs: dict[str, Any] = {"source_system": 255, "source_component": 0}
+        if baud is not None:
+            kwargs["baud"] = baud
+        connection = mavutil.mavlink_connection(connection_string, **kwargs)
+        heartbeat_autopilot: int | None = None
+        try:
+            deadline = time.monotonic() + max(timeout_s, 0.1)
+            while time.monotonic() < deadline:
+                remaining = max(0.05, deadline - time.monotonic())
+                message = connection.recv_match(
+                    type=["HEARTBEAT", "GLOBAL_POSITION_INT", "GPS_RAW_INT", "GPS2_RAW"],
+                    blocking=True,
+                    timeout=min(remaining, 0.35),
+                )
+                if message is None:
+                    continue
+                message_type = message.get_type()
+                if message_type == "HEARTBEAT":
+                    heartbeat_autopilot = getattr(message, "autopilot", heartbeat_autopilot)
+                    continue
+                packet = mavlink_position_packet(
+                    message,
+                    endpoint=normalized_endpoint,
+                    autopilot_hint=autopilot_hint,
+                    heartbeat_autopilot=heartbeat_autopilot,
+                    duration_s=round(time.monotonic() - started, 3),
+                )
+                if packet is not None:
+                    return packet
+            return {
+                "ok": False,
+                "schema_version": "vision_nav_position_update_v2",
+                "timestamp_utc": utc_now(),
+                "status": "unavailable",
+                "source": "none",
+                "source_state": "no_position",
+                "endpoint": normalized_endpoint,
+                "message": f"No MAVLink position message within {timeout_s}s",
+                "duration_s": round(time.monotonic() - started, 3),
+                "autopilot": autopilot_name(heartbeat_autopilot, autopilot_hint),
+            }
+        finally:
+            connection.close()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "schema_version": "vision_nav_position_update_v2",
+            "timestamp_utc": utc_now(),
+            "status": "unavailable",
+            "source": "none",
+            "source_state": "no_position",
+            "endpoint": normalized_endpoint,
+            "message": str(exc),
+            "duration_s": round(time.monotonic() - started, 3),
+            "autopilot": autopilot_hint or "unknown",
+        }
+
+
+def mavlink_position_packet(
+    message: Any,
+    *,
+    endpoint: str,
+    autopilot_hint: str | None,
+    heartbeat_autopilot: int | None,
+    duration_s: float,
+) -> dict[str, Any] | None:
+    message_type = message.get_type()
+    lat = scaled_mavlink_int(getattr(message, "lat", None), 1e7)
+    lon = scaled_mavlink_int(getattr(message, "lon", None), 1e7)
+    if lat is None or lon is None:
+        return None
+
+    fix_type = optional_int(getattr(message, "fix_type", None))
+    satellites_visible = optional_int(getattr(message, "satellites_visible", None))
+    altitude_m = scaled_mavlink_int(getattr(message, "alt", None), 1000.0)
+    h_acc_m = scaled_mavlink_int(getattr(message, "h_acc", None), 1000.0)
+    v_acc_m = scaled_mavlink_int(getattr(message, "v_acc", None), 1000.0)
+    eph_m = scaled_mavlink_int(getattr(message, "eph", None), 100.0)
+    epv_m = scaled_mavlink_int(getattr(message, "epv", None), 100.0)
+    if message_type == "GLOBAL_POSITION_INT":
+        fix_healthy = True
+        status = "accepted"
+    else:
+        fix_healthy = fix_type is not None and fix_type >= 3
+        status = "accepted" if fix_healthy else "degraded"
+
+    return {
+        "ok": True,
+        "schema_version": "vision_nav_position_update_v2",
+        "timestamp_utc": utc_now(),
+        "status": status,
+        "source": "gps" if fix_healthy else "gps_degraded",
+        "source_state": "gps_primary" if fix_healthy else "gps_degraded",
+        "lat_lon": {"lat": lat, "lon": lon},
+        "altitude_m": altitude_m,
+        "gps_health": {
+            "healthy": fix_healthy,
+            "reason": message_type.lower(),
+            "fix_type": fix_type,
+            "satellites_visible": satellites_visible,
+            "eph_m": eph_m,
+            "h_acc_m": h_acc_m,
+            "v_acc_m": v_acc_m,
+        },
+        "mavlink": {
+            "endpoint": endpoint,
+            "message_type": message_type,
+            "autopilot": autopilot_name(heartbeat_autopilot, autopilot_hint),
+            "duration_s": duration_s,
+        },
+    }
+
+
+def autopilot_name(heartbeat_autopilot: int | None, autopilot_hint: str | None = None) -> str:
+    hint = (autopilot_hint or "").strip().lower()
+    if hint in {"ardupilot", "px4"}:
+        return hint
+    if heartbeat_autopilot is None:
+        return hint or "unknown"
+    try:
+        mavutil = _load_mavutil()
+        name = mavutil.mavlink.enums["MAV_AUTOPILOT"][int(heartbeat_autopilot)].name.lower()
+        if "ardupilotmega" in name:
+            return "ardupilot"
+        if "px4" in name:
+            return "px4"
+        return name.replace("mav_autopilot_", "")
+    except Exception:
+        return hint or str(heartbeat_autopilot)
+
+
+def optional_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def scaled_mavlink_int(value: Any, scale: float) -> float | None:
+    try:
+        if value is None:
+            return None
+        number = float(value)
+        if abs(number) >= 2147483647:
+            return None
+        return number / scale
+    except (TypeError, ValueError):
+        return None
+
+
 def device_snapshot(config: CompanionApiConfig) -> dict[str, Any]:
     return {
         "ok": True,
@@ -651,6 +815,22 @@ class CompanionApiHandler(BaseHTTPRequestHandler):
                 )
             )
             return
+        if path == "/api/v1/mavlink/position":
+            endpoint = first_query_value(query, "endpoint") or self.config.default_mavlink_endpoint
+            timeout_s = parse_float(first_query_value(query, "timeout_s"), default=2.0)
+            autopilot_hint = first_query_value(query, "autopilot")
+            if not endpoint:
+                self.send_json({"ok": False, "error": "missing_mavlink_endpoint"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(
+                probe_mavlink_position(
+                    endpoint,
+                    timeout_s=timeout_s,
+                    default_serial_baud=self.config.default_serial_baud,
+                    autopilot_hint=autopilot_hint,
+                )
+            )
+            return
         self.send_json({"ok": False, "error": "not_found", "path": path}, status=HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
@@ -668,6 +848,23 @@ class CompanionApiHandler(BaseHTTPRequestHandler):
                     endpoint,
                     timeout_s=timeout_s,
                     default_serial_baud=self.config.default_serial_baud,
+                )
+            )
+            return
+        if path == "/api/v1/mavlink/position":
+            payload = self.read_json_body()
+            endpoint = str(payload.get("endpoint") or self.config.default_mavlink_endpoint or "")
+            timeout_s = parse_float(payload.get("timeout_s"), default=2.0)
+            autopilot_hint = str(payload.get("autopilot") or "")
+            if not endpoint:
+                self.send_json({"ok": False, "error": "missing_mavlink_endpoint"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(
+                probe_mavlink_position(
+                    endpoint,
+                    timeout_s=timeout_s,
+                    default_serial_baud=self.config.default_serial_baud,
+                    autopilot_hint=autopilot_hint,
                 )
             )
             return

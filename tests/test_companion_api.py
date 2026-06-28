@@ -12,9 +12,20 @@ from vision_nav.companion_api import (
     control_service,
     latest_runtime_status,
     mission_planner_status,
+    mavlink_position_packet,
     normalize_mavlink_endpoint,
     qgroundcontrol_status,
 )
+
+
+class FakeMavlinkMessage:
+    def __init__(self, message_type: str, **values: object) -> None:
+        self._message_type = message_type
+        for key, value in values.items():
+            setattr(self, key, value)
+
+    def get_type(self) -> str:
+        return self._message_type
 
 
 class CompanionApiTests(unittest.TestCase):
@@ -73,6 +84,56 @@ class CompanionApiTests(unittest.TestCase):
         self.assertEqual(status.value, 403)
         self.assertFalse(body["ok"])
         self.assertEqual(body["error"], "service_control_disabled")
+
+    def test_mavlink_position_packet_accepts_global_position_for_px4_and_ardupilot(self) -> None:
+        message = FakeMavlinkMessage(
+            "GLOBAL_POSITION_INT",
+            lat=377749000,
+            lon=-1224194000,
+            alt=125000,
+            relative_alt=120000,
+        )
+
+        packet = mavlink_position_packet(
+            message,
+            endpoint="serial:/dev/ttyACM0:921600",
+            autopilot_hint="ardupilot",
+            heartbeat_autopilot=None,
+            duration_s=0.2,
+        )
+
+        self.assertIsNotNone(packet)
+        assert packet is not None
+        self.assertTrue(packet["ok"])
+        self.assertEqual(packet["status"], "accepted")
+        self.assertEqual(packet["source_state"], "gps_primary")
+        self.assertAlmostEqual(packet["lat_lon"]["lat"], 37.7749)
+        self.assertAlmostEqual(packet["lat_lon"]["lon"], -122.4194)
+        self.assertEqual(packet["mavlink"]["autopilot"], "ardupilot")
+
+    def test_mavlink_position_packet_marks_gps_raw_without_fix_as_degraded(self) -> None:
+        message = FakeMavlinkMessage(
+            "GPS_RAW_INT",
+            lat=251975000,
+            lon=551742000,
+            alt=33000,
+            fix_type=2,
+            satellites_visible=8,
+        )
+
+        packet = mavlink_position_packet(
+            message,
+            endpoint="udp:14550",
+            autopilot_hint="px4",
+            heartbeat_autopilot=None,
+            duration_s=0.1,
+        )
+
+        self.assertIsNotNone(packet)
+        assert packet is not None
+        self.assertEqual(packet["status"], "degraded")
+        self.assertEqual(packet["source"], "gps_degraded")
+        self.assertFalse(packet["gps_health"]["healthy"])
 
     def test_qgroundcontrol_status_detects_wrapper_and_display(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -234,6 +234,26 @@ export interface Region {
   };
 }
 
+export interface SavedMission {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+  source: "dashboard" | "mission-planner" | string;
+  map_id?: string;
+  map_label?: string;
+  center: [number, number];
+  zoom: number;
+  border_points: [number, number][];
+  waypoints: [number, number][];
+  bounds?: {
+    lat_min: number;
+    lat_max: number;
+    lon_min: number;
+    lon_max: number;
+  };
+}
+
 export interface VehicleConfig {
   id: string;
   device_id: string;
@@ -367,6 +387,20 @@ export interface DronePositionUpdate {
     tile_id?: string | null;
     inliers?: number | null;
     reprojection_error_px?: number | null;
+  };
+}
+
+export interface EdgeApiMavlinkPosition extends DronePositionUpdate {
+  ok?: boolean;
+  endpoint?: string;
+  message?: string;
+  duration_s?: number;
+  autopilot?: "px4" | "ardupilot" | "unknown" | string;
+  mavlink?: {
+    endpoint?: string;
+    message_type?: string;
+    autopilot?: "px4" | "ardupilot" | "unknown" | string;
+    duration_s?: number;
   };
 }
 

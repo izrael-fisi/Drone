@@ -1,8 +1,10 @@
 import { create } from "zustand";
+import type { DronePositionUpdate } from "./types";
 
 export type RightDockRoute =
   | "root"
   | "maps"
+  | "missions"
   | "vehicle"
   | "ground-control"
   | "camera"
@@ -30,6 +32,8 @@ interface ShellState {
   bottomDockOpen: boolean;
   bottomDockTab: BottomDockTabId;
   mapSearchTarget: MapSearchTarget | null;
+  selectedMissionId: string | null;
+  livePosition: DronePositionUpdate | null;
   setRightDockOpen: (open: boolean) => void;
   pushRightDock: (route: RightDockRoute) => void;
   popRightDock: () => void;
@@ -38,6 +42,8 @@ interface ShellState {
   setBottomDockOpen: (open: boolean) => void;
   setBottomDockTab: (tab: BottomDockTabId) => void;
   setMapSearchTarget: (target: MapSearchTarget | null) => void;
+  setSelectedMissionId: (id: string | null) => void;
+  setLivePosition: (position: DronePositionUpdate | null) => void;
 }
 
 export const useShellStore = create<ShellState>((set) => ({
@@ -47,6 +53,8 @@ export const useShellStore = create<ShellState>((set) => ({
   bottomDockOpen: false,
   bottomDockTab: "system-status",
   mapSearchTarget: null,
+  selectedMissionId: null,
+  livePosition: null,
   setRightDockOpen: (rightDockOpen) => set({ rightDockOpen }),
   pushRightDock: (route) =>
     set((state) => ({
@@ -70,4 +78,6 @@ export const useShellStore = create<ShellState>((set) => ({
   setBottomDockOpen: (bottomDockOpen) => set({ bottomDockOpen }),
   setBottomDockTab: (bottomDockTab) => set({ bottomDockTab, bottomDockOpen: true }),
   setMapSearchTarget: (mapSearchTarget) => set({ mapSearchTarget }),
+  setSelectedMissionId: (selectedMissionId) => set({ selectedMissionId }),
+  setLivePosition: (livePosition) => set({ livePosition }),
 }));

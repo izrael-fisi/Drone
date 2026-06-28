@@ -10,6 +10,13 @@ struct HeartbeatRequest<'a> {
 }
 
 #[derive(Serialize)]
+struct PositionRequest<'a> {
+    endpoint: &'a str,
+    timeout_s: f64,
+    autopilot: Option<&'a str>,
+}
+
+#[derive(Serialize)]
 struct QGroundControlLaunchRequest {
     stop_status_bridge: bool,
 }
@@ -99,6 +106,34 @@ pub async fn edge_api_mavlink_heartbeat(
             .json(&HeartbeatRequest {
                 endpoint: &endpoint,
                 timeout_s,
+            })
+            .send()
+            .map_err(|e| e.to_string())?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Edge API returned HTTP {status}"));
+        }
+        response.json::<Value>().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn edge_api_mavlink_position(
+    base_url: String,
+    endpoint: String,
+    timeout_s: f64,
+    autopilot: Option<String>,
+) -> Result<Value, String> {
+    tokio::task::spawn_blocking(move || {
+        let url = format!("{}/api/v1/mavlink/position", normalized_base_url(&base_url)?);
+        let response = client((timeout_s.ceil() as u64).saturating_add(3).max(5))?
+            .post(url)
+            .json(&PositionRequest {
+                endpoint: &endpoint,
+                timeout_s,
+                autopilot: autopilot.as_deref(),
             })
             .send()
             .map_err(|e| e.to_string())?;

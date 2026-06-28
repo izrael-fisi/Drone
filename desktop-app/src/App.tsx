@@ -50,6 +50,8 @@ export default function App() {
           <Route path="/maps/planner" element={<OpenHomeSurface rightDock="maps" />} />
           <Route path="/maps/bundles" element={<OpenHomeSurface rightDock="maps" />} />
           <Route path="/maps/terrain" element={<OpenHomeSurface rightDock="maps" />} />
+          <Route path="/missions" element={<OpenHomeSurface rightDock="missions" />} />
+          <Route path="/mission" element={<OpenHomeSurface rightDock="missions" />} />
           <Route path="/mission-planner" element={<OpenHomeSurface rightDock="maps" />} />
           <Route path="/mission-bundle-builder" element={<OpenHomeSurface rightDock="maps" />} />
           <Route path="/bundle-builder" element={<OpenHomeSurface rightDock="maps" />} />

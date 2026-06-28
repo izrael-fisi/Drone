@@ -11,6 +11,7 @@ import type {
   EdgeApiDeviceStatus,
   EdgeApiHealth,
   EdgeApiMavlinkHeartbeat,
+  EdgeApiMavlinkPosition,
   EdgeApiMissionPlannerLaunch,
   EdgeApiMissionPlannerStatus,
   EdgeApiQGroundControlLaunch,
@@ -196,6 +197,15 @@ async function fallbackInvoke<T>(command: string, args?: Record<string, unknown>
           timeout_s: args?.timeoutS ?? 4,
         }),
       });
+    case "edge_api_mavlink_position":
+      return edgeApiFetch<T>(args?.baseUrl, "/api/v1/mavlink/position", {
+        method: "POST",
+        body: JSON.stringify({
+          endpoint: args?.endpoint,
+          timeout_s: args?.timeoutS ?? 2,
+          autopilot: args?.autopilot,
+        }),
+      });
     case "edge_api_qgroundcontrol_status":
       return edgeApiFetch<T>(args?.baseUrl, "/api/v1/qgroundcontrol");
     case "edge_api_qgroundcontrol_launch":
@@ -254,6 +264,8 @@ export const cmd = {
     invokeCommand<EdgeApiRuntimeStatus>("edge_api_status", { baseUrl }),
   edgeApiMavlinkHeartbeat: (baseUrl: string, endpoint: string, timeoutS = 4) =>
     invokeCommand<EdgeApiMavlinkHeartbeat>("edge_api_mavlink_heartbeat", { baseUrl, endpoint, timeoutS }),
+  edgeApiMavlinkPosition: (baseUrl: string, endpoint: string, timeoutS = 2, autopilot?: Device["autopilot"]) =>
+    invokeCommand<EdgeApiMavlinkPosition>("edge_api_mavlink_position", { baseUrl, endpoint, timeoutS, autopilot }),
   edgeApiQGroundControlStatus: (baseUrl: string) =>
     invokeCommand<EdgeApiQGroundControlStatus>("edge_api_qgroundcontrol_status", { baseUrl }),
   edgeApiQGroundControlLaunch: (baseUrl: string, stopStatusBridge = false) =>
