@@ -1167,7 +1167,8 @@ function MissionMap({
       <FitSelectedRegion regionId={region?.id} bounds={bounds} center={center} />
       <TileLayer
         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-        maxZoom={19}
+        maxZoom={23}
+        maxNativeZoom={23}
       />
       {mosaicUrl && bounds && <ImageOverlay key={mosaicUrl} url={mosaicUrl} bounds={bounds} opacity={1} />}
       <MapInteractionLayer onAddPoint={onAddPoint} onCursorMove={setCursorPoint} />

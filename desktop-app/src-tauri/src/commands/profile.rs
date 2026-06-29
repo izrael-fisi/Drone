@@ -9,7 +9,7 @@ fn profile_path() -> PathBuf {
         .join("profile.json")
 }
 
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Profile {
     pub name: String,
     pub email: String,
@@ -20,6 +20,26 @@ pub struct Profile {
     pub mapbox_key: Option<String>,
     #[serde(default)]
     pub bing_key: Option<String>,
+    #[serde(default)]
+    pub max_map_area_km2: Option<f64>,
+    #[serde(default)]
+    pub max_map_download_size_gb: Option<f64>,
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            email: String::new(),
+            org: String::new(),
+            accent_color: "#FF6600".to_string(),
+            onboarding_complete: false,
+            mapbox_key: None,
+            bing_key: None,
+            max_map_area_km2: None,
+            max_map_download_size_gb: Some(20.0),
+        }
+    }
 }
 
 #[tauri::command]

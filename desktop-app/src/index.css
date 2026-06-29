@@ -83,6 +83,13 @@ input, textarea, [contenteditable] { user-select: text; }
   box-shadow: 0 10px 30px rgba(0,0,0,0.42);
   backdrop-filter: blur(10px);
 }
+.mission-preview-map .leaflet-tooltip {
+  max-width: 96px;
+  overflow: hidden;
+  padding: 3px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .mission-dot-grid {
   background-color: #020303;
   background-image: radial-gradient(circle, rgba(156, 163, 160, 0.66) 1.15px, transparent 1.35px);

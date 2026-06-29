@@ -89,6 +89,7 @@ Key docs:
 - [SSH And File Transfer](docs/ssh-and-transfer.md)
 - [Desktop App](docs/desktop-app.md)
 - [Operator Handoff](docs/operator-handoff.md)
+- [Cloud + GovCloud Readiness](docs/cloud/README.md)
 
 ## Quick Pi Setup
 

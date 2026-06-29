@@ -6,10 +6,180 @@ export interface Profile {
   onboarding_complete: boolean;
   mapbox_key?: string;
   bing_key?: string;
+  max_map_area_km2?: number;
+  max_map_download_size_gb?: number;
 }
 
-export type TileSource = "esri" | "mapbox" | "bing";
-export type MapSource = TileSource | "uploaded" | "folder";
+export type BuiltInMapProviderId =
+  | "openfreemap-vector"
+  | "usgs-imagery"
+  | "esri-world-imagery"
+  | "mapbox-satellite"
+  | "bing-aerial"
+  | "custom-zxy"
+  | "custom-arcgis"
+  | "custom-wmts"
+  | "pmtiles"
+  | "esri"
+  | "mapbox"
+  | "bing";
+export type MapProviderId = BuiltInMapProviderId | (string & {});
+export type TileSource = MapProviderId;
+export type MapSource = MapProviderId | "uploaded" | "folder";
+
+export interface MapProvider {
+  id: MapProviderId;
+  label: string;
+  kind: "raster" | "vector" | "custom" | "archive" | string;
+  url_template?: string | null;
+  tile_scheme: "zxy" | "arcgis" | "quadkey" | "vector" | "wmts" | "pmtiles" | string;
+  attribution: string;
+  min_zoom: number;
+  max_native_zoom: number;
+  max_zoom: number;
+  requires_api_key: boolean;
+  coverage_mode: string;
+  default_priority: number;
+  enabled: boolean;
+  notes: string;
+  average_tile_kb: number;
+}
+
+export interface MapProviderBreakdown {
+  provider_id: MapProviderId;
+  label: string;
+  tile_count: number;
+  estimated_source_mb: number;
+  estimated_disk_mb: number;
+  gsd_m_per_px: number;
+  overzoomed: boolean;
+  key_required: boolean;
+  enabled: boolean;
+}
+
+export interface MapUsageEstimate {
+  bbox: BBox;
+  zoom: number;
+  area_km2: number;
+  tile_count: number;
+  nx: number;
+  ny: number;
+  estimated_source_mb: number;
+  estimated_disk_mb: number;
+  gsd_m_per_px: number;
+  too_large: boolean;
+  over_100_km2: boolean;
+  warnings: string[];
+  provider_breakdown: MapProviderBreakdown[];
+}
+
+export interface MapUsageEstimateRequest {
+  bbox: BBox;
+  zoom: number;
+  cut_shape?: "box" | "polygon" | string;
+  polygon_points?: [number, number][];
+  provider_ids?: MapProviderId[];
+  custom_providers?: MapProvider[];
+  api_keys?: Record<string, string>;
+}
+
+export interface MapCoverageSample {
+  provider_id: MapProviderId;
+  zoom: number;
+  x: number;
+  y: number;
+  status: number;
+  classification: "available" | "missing" | "blank" | "low-detail" | "valid" | string;
+  byte_size: number;
+  quality_score: number;
+  error?: string | null;
+}
+
+export interface MapCoverageProviderZoom {
+  provider_id: MapProviderId;
+  label: string;
+  zoom: number;
+  tile_count: number;
+  sampled_count: number;
+  available_count: number;
+  valid_count: number;
+  missing_count: number;
+  blank_count: number;
+  low_detail_count: number;
+  average_tile_kb: number;
+  quality_score: number;
+  classification: "available" | "missing" | "blank" | "low-detail" | "valid" | string;
+  samples: MapCoverageSample[];
+}
+
+export interface MapCoverageSurvey {
+  id: string;
+  bbox: BBox;
+  min_zoom: number;
+  max_zoom: number;
+  sample_budget: number;
+  generated_unix_ms: number;
+  recommended_provider_order: MapProviderId[];
+  provider_results: MapCoverageProviderZoom[];
+}
+
+export interface MapCoverageSurveyRequest {
+  bbox: BBox;
+  min_zoom: number;
+  max_zoom: number;
+  cut_shape?: "box" | "polygon" | string;
+  polygon_points?: [number, number][];
+  provider_ids?: MapProviderId[];
+  sample_budget?: number;
+  custom_providers?: MapProvider[];
+  api_keys?: Record<string, string>;
+}
+
+export interface MapPatchTileRecord {
+  x: number;
+  y: number;
+  zoom: number;
+  provider_id?: MapProviderId | null;
+  classification: string;
+  byte_size: number;
+  fallback_reason?: string | null;
+}
+
+export interface MapPatchManifest {
+  schema_version: string;
+  bbox: BBox;
+  cut_shape?: "box" | "polygon" | string | null;
+  polygon_points?: [number, number][] | null;
+  zoom: number;
+  area_km2: number;
+  provider_ids: MapProviderId[];
+  survey_id?: string | null;
+  min_zoom?: number;
+  zoom_levels?: number[];
+  multi_layer_map?: boolean;
+  tile_count: number;
+  actual_mb: number;
+  provider_tile_counts: Record<string, number>;
+  failed_tiles: MapPatchTileRecord[];
+  tile_sources: MapPatchTileRecord[];
+  generated_assets: string[];
+}
+
+export interface MapDownloadRequest {
+  bbox: BBox;
+  zoom: number;
+  min_zoom?: number;
+  multi_layer_map?: boolean;
+  output_dir: string;
+  cut_shape?: "box" | "polygon" | string;
+  polygon_points?: [number, number][];
+  provider_ids?: MapProviderId[];
+  custom_providers?: MapProvider[];
+  api_keys?: Record<string, string>;
+  coverage_survey?: MapCoverageSurvey | null;
+  confirm_over_100_km2?: boolean;
+  allow_large_tile_count?: boolean;
+}
 
 export type DeviceKind = "pi5" | "local";
 export type AuthMethod = "password" | "key";
@@ -200,6 +370,9 @@ export interface Region {
   last_downloaded?: string;
   tile_count?: number;
   gsd_m_per_px?: number;
+  min_zoom?: number;
+  zoom_levels?: number[];
+  multi_layer_map?: boolean;
   georef_source?: string;
   georef_confidence?: number;
   georef_crs?: string;
@@ -232,6 +405,8 @@ export interface Region {
     active_on_device?: boolean;
     last_error?: string;
   };
+  cut_shape?: "box" | "polygon" | string;
+  polygon_points?: [number, number][];
 }
 
 export interface SavedMission {
@@ -319,6 +494,7 @@ export interface TileEstimate {
 export interface DownloadTilesResult {
   mosaic_path: string;
   metadata_path: string;
+  coverage_manifest_path?: string | null;
   width_px: number;
   height_px: number;
   gsd_m_per_px: number;
@@ -328,6 +504,8 @@ export interface DownloadTilesResult {
   georef_source: string;
   georef_confidence: number;
   georef_crs: string;
+  actual_mb?: number;
+  provider_tile_counts?: Record<string, number>;
 }
 
 export interface DownloadProgress {

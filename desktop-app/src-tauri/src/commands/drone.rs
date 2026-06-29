@@ -86,7 +86,13 @@ struct RegionMetadata {
 fn region_metadata_is_web_tile_mosaic(metadata: &RegionMetadata) -> bool {
     matches!(
         metadata.source.as_deref(),
-        Some("esri") | Some("mapbox") | Some("bing")
+        Some("esri")
+            | Some("mapbox")
+            | Some("bing")
+            | Some("usgs-imagery")
+            | Some("esri-world-imagery")
+            | Some("mapbox-satellite")
+            | Some("bing-aerial")
     )
 }
 

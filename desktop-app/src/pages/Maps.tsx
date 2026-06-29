@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState, MutableRefObject } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet-draw";
@@ -8,15 +8,23 @@ import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 import { homeDir, join } from "@tauri-apps/api/path";
 import {
   Download, FileImage, FolderOpen, Layers, Info, CheckCircle2, Loader2, X, FolderInput, Upload,
-  Mountain,
+  Mountain, Search, ShieldAlert, ClipboardCheck,
 } from "lucide-react";
 import { cmd } from "../lib/tauri";
 import { useAppStore } from "../lib/store";
-import { generateId, cn } from "../lib/utils";
-import type { BBox, DownloadProgress, Region, TileEstimate, TileSource } from "../lib/types";
+import { generateId, cn, formatMegabytes } from "../lib/utils";
+import type {
+  BBox,
+  DownloadProgress,
+  MapCoverageSurvey,
+  MapProvider,
+  MapProviderId,
+  MapUsageEstimate,
+  Region,
+} from "../lib/types";
 
-const ESRI_SATELLITE =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const ESRI_SATELLITE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const USGS_IMAGERY = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}";
 const ESRI_LABELS =
   "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
 
@@ -27,18 +35,113 @@ function bboxAreaKm2(bbox: BBox): number {
   return Math.abs(ns * ew);
 }
 
-type DrawMode = "rectangle" | "triangle" | "polygon";
+function bboxFromPoints(points: [number, number][]): BBox {
+  const lats = points.map(([lat]) => lat);
+  const lons = points.map(([, lon]) => lon);
+  return {
+    lat_min: Math.min(...lats),
+    lat_max: Math.max(...lats),
+    lon_min: Math.min(...lons),
+    lon_max: Math.max(...lons),
+  };
+}
 
-const SOURCES: Record<TileSource, { label: string; maxZoom: number; free: boolean; description: string }> = {
-  esri:   { label: "ESRI World Imagery", maxZoom: 19, free: true,  description: "No API key required. Global coverage." },
-  mapbox: { label: "Mapbox Satellite",   maxZoom: 22, free: false, description: "Up to zoom 22. Sharpest imagery." },
-  bing:   { label: "Bing Maps Aerial",   maxZoom: 20, free: false, description: "Up to zoom 20. Requires Bing API key." },
+function rectanglePoints(bounds: L.LatLngBounds): [number, number][] {
+  return [
+    [bounds.getSouth(), bounds.getWest()],
+    [bounds.getSouth(), bounds.getEast()],
+    [bounds.getNorth(), bounds.getEast()],
+    [bounds.getNorth(), bounds.getWest()],
+  ];
+}
+
+function polygonAreaKm2(points: [number, number][]): number {
+  if (points.length < 3) return 0;
+  const latCenter = points.reduce((sum, [lat]) => sum + lat, 0) / points.length;
+  const cosLat = Math.max(1e-9, Math.abs(Math.cos(latCenter * Math.PI / 180)));
+  const projected = points.map(([lat, lon]) => [lon * 111.32 * cosLat, lat * 111.32]);
+  let area = 0;
+  for (let index = 0; index < projected.length; index += 1) {
+    const [x1, y1] = projected[index];
+    const [x2, y2] = projected[(index + 1) % projected.length];
+    area += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(area / 2);
+}
+
+function orderPolygonPoints(points: [number, number][]) {
+  if (points.length < 3) return points;
+  const centerLat = points.reduce((sum, [lat]) => sum + lat, 0) / points.length;
+  const centerLon = points.reduce((sum, [, lon]) => sum + lon, 0) / points.length;
+  const cosLat = Math.max(1e-9, Math.abs(Math.cos(centerLat * Math.PI / 180)));
+  return [...points].sort((a, b) => {
+    const angleA = Math.atan2(a[0] - centerLat, (a[1] - centerLon) * cosLat);
+    const angleB = Math.atan2(b[0] - centerLat, (b[1] - centerLon) * cosLat);
+    return angleA - angleB;
+  });
+}
+
+type DrawMode = "rectangle" | "polygon";
+type CutShape = "box" | "polygon";
+
+type CutSelection = {
+  bbox: BBox;
+  cutShape: CutShape;
+  polygonPoints: [number, number][];
+};
+
+const FALLBACK_PROVIDERS: MapProvider[] = [
+  {
+    id: "usgs-imagery",
+    label: "USGS Imagery",
+    kind: "raster",
+    url_template: USGS_IMAGERY,
+    tile_scheme: "arcgis",
+    attribution: "USGS National Map",
+    min_zoom: 0,
+    max_native_zoom: 23,
+    max_zoom: 23,
+    requires_api_key: false,
+    coverage_mode: "survey-required-us",
+    default_priority: 10,
+    enabled: true,
+    notes: "Free U.S. imagery. Coverage varies; survey before large downloads.",
+    average_tile_kb: 95,
+  },
+  {
+    id: "esri-world-imagery",
+    label: "Esri World Imagery",
+    kind: "raster",
+    url_template: ESRI_SATELLITE,
+    tile_scheme: "arcgis",
+    attribution: "Esri World Imagery",
+    min_zoom: 0,
+    max_native_zoom: 23,
+    max_zoom: 23,
+    requires_api_key: false,
+    coverage_mode: "global-fallback",
+    default_priority: 20,
+    enabled: true,
+    notes: "Global satellite fallback. High zoom quality varies by location.",
+    average_tile_kb: 80,
+  },
+];
+
+const BUILT_IN_PROVIDER_LABELS: Record<string, string> = {
+  "openfreemap-vector": "Vector labels",
+  "usgs-imagery": "USGS",
+  "esri-world-imagery": "Esri",
+  "mapbox-satellite": "Mapbox",
+  "bing-aerial": "Bing",
+  "custom-zxy": "Custom ZXY",
+  "custom-arcgis": "Custom ArcGIS",
+  "custom-wmts": "WMTS",
+  pmtiles: "PMTiles",
 };
 
 const DRAW_MODES: { mode: DrawMode; label: string; hint: string }[] = [
-  { mode: "rectangle", label: "Rectangle", hint: "Click and drag to select a rectangular region" },
-  { mode: "triangle",  label: "Triangle",  hint: "Click 3 corner points — shape closes automatically" },
-  { mode: "polygon",   label: "Polygon",   hint: "Click to add points. Click the first point to close" },
+  { mode: "rectangle", label: "Box Cut", hint: "Drag a box over the map area to save" },
+  { mode: "polygon",   label: "N-gon",   hint: "Click boundary points in any order; the outline is cleaned before saving" },
 ];
 
 const MAP_FILE_EXTENSIONS = ["png", "jpg", "jpeg", "tif", "tiff", "bmp", "webp", "gif"];
@@ -96,9 +199,23 @@ function isTiffPath(path: string): boolean {
 }
 
 function sourceFromMetadata(value: unknown): Region["source"] {
-  return value === "esri" || value === "mapbox" || value === "bing" || value === "uploaded"
-    ? value
-    : "folder";
+  if (typeof value !== "string") return "folder";
+  if (value === "esri") return "esri-world-imagery";
+  if (value === "mapbox") return "mapbox-satellite";
+  if (value === "bing") return "bing-aerial";
+  if (
+    value === "uploaded" ||
+    value === "folder" ||
+    value === "usgs-imagery" ||
+    value === "esri-world-imagery" ||
+    value === "mapbox-satellite" ||
+    value === "bing-aerial" ||
+    value.startsWith("custom-") ||
+    value === "pmtiles"
+  ) {
+    return value;
+  }
+  return "folder";
 }
 
 function defaultImportedOutputPath(filePath: string): string {
@@ -118,6 +235,128 @@ function slugifyPathSegment(value: string): string {
 }
 
 // ── Bing Maps custom tile layer (quadkey addressing) ──────────────────────────
+function canonicalProviderId(id: string): MapProviderId {
+  if (id === "esri") return "esri-world-imagery";
+  if (id === "mapbox") return "mapbox-satellite";
+  if (id === "bing") return "bing-aerial";
+  return id as MapProviderId;
+}
+
+function providerShortLabel(id: string) {
+  return BUILT_IN_PROVIDER_LABELS[id] ?? id;
+}
+
+function providerApiKeys(profile: ReturnType<typeof useAppStore.getState>["profile"]): Record<string, string> {
+  const mapbox = profile?.mapbox_key?.trim() ?? "";
+  const bing = profile?.bing_key?.trim() ?? "";
+  return {
+    "mapbox-satellite": mapbox,
+    mapbox,
+    "bing-aerial": bing,
+    bing,
+  };
+}
+
+function providerNeedsMissingKey(provider: MapProvider | undefined, apiKeys: Record<string, string>) {
+  if (!provider?.requires_api_key) return false;
+  return !(apiKeys[provider.id] || apiKeys[String(provider.id).replace(/-(satellite|aerial)$/, "")]);
+}
+
+function providerPreviewUrl(providerId: string, apiKey: string) {
+  const id = canonicalProviderId(providerId);
+  if (id === "usgs-imagery") return USGS_IMAGERY;
+  if (id === "mapbox-satellite" && apiKey) {
+    return `https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}.jpg90?access_token=${apiKey}`;
+  }
+  return ESRI_SATELLITE;
+}
+
+function providerPreviewAttribution(provider: MapProvider | undefined) {
+  return provider?.attribution ?? "Esri World Imagery";
+}
+
+function buildProviderOrder(
+  selectedProviderId: MapProviderId,
+  providers: MapProvider[],
+  apiKeys: Record<string, string>,
+) {
+  const selected = canonicalProviderId(selectedProviderId);
+  const ids = new Set<MapProviderId>();
+  const addIfReady = (id: MapProviderId) => {
+    const provider = providers.find((item) => item.id === id);
+    if (!provider || provider.kind === "vector" || !provider.enabled || !provider.url_template) return;
+    if (providerNeedsMissingKey(provider, apiKeys)) return;
+    ids.add(id);
+  };
+  addIfReady(selected);
+  addIfReady("usgs-imagery");
+  addIfReady("esri-world-imagery");
+  addIfReady("mapbox-satellite");
+  addIfReady("bing-aerial");
+  return Array.from(ids);
+}
+
+function surveyResultForZoom(survey: MapCoverageSurvey | null, zoom: number) {
+  if (!survey) return [];
+  const exact = survey.provider_results.filter((result) => result.zoom === zoom);
+  if (exact.length) return exact;
+  return survey.provider_results.filter((result) => result.zoom === survey.max_zoom);
+}
+
+function formatBytesMb(value: number) {
+  return formatMegabytes(value);
+}
+
+function isDownloadProviderReady(provider: MapProvider, apiKeys: Record<string, string>) {
+  return provider.kind !== "vector" && provider.enabled && Boolean(provider.url_template) && !providerNeedsMissingKey(provider, apiKeys);
+}
+
+function sumSelectedProviderTotals(estimate: MapUsageEstimate): MapUsageEstimate {
+  if (!estimate.provider_breakdown.length) return estimate;
+  return {
+    ...estimate,
+    estimated_source_mb: estimate.provider_breakdown.reduce((sum, provider) => sum + provider.estimated_source_mb, 0),
+    estimated_disk_mb: estimate.provider_breakdown.reduce((sum, provider) => sum + provider.estimated_disk_mb, 0),
+  };
+}
+
+function combineLayeredEstimates(estimates: MapUsageEstimate[]): MapUsageEstimate {
+  const ordered = [...estimates].sort((a, b) => a.zoom - b.zoom);
+  const highest = ordered[ordered.length - 1];
+  if (!highest) throw new Error("No layer estimates available");
+  const providerBreakdown = new Map<string, MapUsageEstimate["provider_breakdown"][number]>();
+  for (const estimate of ordered) {
+    for (const provider of estimate.provider_breakdown) {
+      const current = providerBreakdown.get(provider.provider_id);
+      if (!current) {
+        providerBreakdown.set(provider.provider_id, { ...provider });
+      } else {
+        current.tile_count += provider.tile_count;
+        current.estimated_source_mb += provider.estimated_source_mb;
+        current.estimated_disk_mb += provider.estimated_disk_mb;
+        current.gsd_m_per_px = provider.gsd_m_per_px;
+        current.overzoomed = current.overzoomed || provider.overzoomed;
+        current.key_required = current.key_required || provider.key_required;
+        current.enabled = current.enabled && provider.enabled;
+      }
+    }
+  }
+  const tileCount = ordered.reduce((sum, estimate) => sum + estimate.tile_count, 0);
+  return {
+    ...highest,
+    tile_count: tileCount,
+    estimated_source_mb: Array.from(providerBreakdown.values()).reduce((sum, provider) => sum + provider.estimated_source_mb, 0),
+    estimated_disk_mb: Array.from(providerBreakdown.values()).reduce((sum, provider) => sum + provider.estimated_disk_mb, 0),
+    too_large: ordered.some((estimate) => estimate.too_large),
+    over_100_km2: ordered.some((estimate) => estimate.over_100_km2),
+    warnings: Array.from(new Set([
+      ...ordered.flatMap((estimate) => estimate.warnings),
+      `Multi-layer map includes Z${ordered[0].zoom}-Z${highest.zoom}. Size estimate includes every selected zoom level.`,
+    ])),
+    provider_breakdown: Array.from(providerBreakdown.values()),
+  };
+}
+
 function BingTileLayer({ apiKey }: { apiKey: string }) {
   const map = useMap();
   useEffect(() => {
@@ -148,12 +387,14 @@ function BingTileLayer({ apiKey }: { apiKey: string }) {
 // Triangle/Polygon: L.Draw.Polygon with click-to-place vertices.
 // drawKey increments each time a mode button is clicked, forcing a fresh session.
 function DrawControlInner({
-  onBBoxChange,
+  onSelectionChange,
+  onInvalidPolygon,
   featureGroupRef,
   mode,
   drawKey,
 }: {
-  onBBoxChange: (b: BBox | null) => void;
+  onSelectionChange: (selection: CutSelection | null) => void;
+  onInvalidPolygon: (message: string) => void;
   featureGroupRef: MutableRefObject<L.FeatureGroup | null>;
   mode: DrawMode;
   drawKey: number;
@@ -181,7 +422,7 @@ function DrawControlInner({
         startLatLng = e.latlng;
         map.dragging.disable();
         fg.clearLayers();
-        onBBoxChange(null);
+        onSelectionChange(null);
       };
 
       const onMouseMove = (e: L.LeafletMouseEvent) => {
@@ -202,11 +443,11 @@ function DrawControlInner({
         map.dragging.enable();
         const bounds = L.latLngBounds(startLatLng, e.latlng);
         if (bounds.getNorth() !== bounds.getSouth()) {
-          onBBoxChange({
-            lat_min: bounds.getSouth(),
-            lat_max: bounds.getNorth(),
-            lon_min: bounds.getWest(),
-            lon_max: bounds.getEast(),
+          const points = rectanglePoints(bounds);
+          onSelectionChange({
+            bbox: bboxFromPoints(points),
+            cutShape: "box",
+            polygonPoints: points,
           });
         }
         startLatLng = null;
@@ -229,30 +470,28 @@ function DrawControlInner({
     } else {
       const handler = new (L.Draw as any).Polygon(map, {
         shapeOptions: shapeStyle,
-        allowIntersection: false,
+        allowIntersection: true,
         showArea: false,
       });
       handler.enable();
 
-      let vertexCount = 0;
-      const onDrawStart = () => { vertexCount = 0; };
-      const onDrawVertex = () => {
-        if (mode !== "triangle") return;
-        vertexCount += 1;
-        if (vertexCount >= 3) {
-          vertexCount = 0;
-          setTimeout(() => handler._finishShape?.(), 50);
-        }
-      };
+      const onDrawStart = () => undefined;
+      const onDrawVertex = () => undefined;
       const onCreate = (e: any) => {
+        const latLngs = (e.layer.getLatLngs?.()[0] ?? []) as L.LatLng[];
+        const points = orderPolygonPoints(latLngs.map((point) => [point.lat, point.lng] as [number, number]));
+        if (points.length < 3) {
+          fg.clearLayers();
+          onSelectionChange(null);
+          onInvalidPolygon("Place at least 3 points before saving an n-gon boundary.");
+          return;
+        }
         fg.clearLayers();
-        fg.addLayer(e.layer);
-        const bounds: L.LatLngBounds = e.layer.getBounds();
-        onBBoxChange({
-          lat_min: bounds.getSouth(),
-          lat_max: bounds.getNorth(),
-          lon_min: bounds.getWest(),
-          lon_max: bounds.getEast(),
+        fg.addLayer(L.polygon(points, shapeStyle));
+        onSelectionChange({
+          bbox: bboxFromPoints(points),
+          cutShape: "polygon",
+          polygonPoints: points,
         });
       };
 
@@ -271,7 +510,7 @@ function DrawControlInner({
     }
 
     return () => { handlerRef.current?.disable(); };
-  }, [map, mode, drawKey, onBBoxChange, featureGroupRef]);
+  }, [map, mode, drawKey, onSelectionChange, onInvalidPolygon, featureGroupRef]);
 
   return null;
 }
@@ -281,16 +520,24 @@ export function Maps() {
   const { profile, regions, setRegions, addRegion } = useAppStore();
   const featureGroupRef = useRef<L.FeatureGroup | null>(null);
 
-  const [source,     setSource]     = useState<TileSource>("esri");
+  const [providers,  setProviders]  = useState<MapProvider[]>(FALLBACK_PROVIDERS);
+  const [source,     setSource]     = useState<MapProviderId>("usgs-imagery");
+  const [selectedProviderIds,setSelectedProviderIds]= useState<MapProviderId[]>([]);
   const [drawMode,   setDrawMode]   = useState<DrawMode>("rectangle");
   const [drawKey,    setDrawKey]    = useState(0);
   const [bbox,       setBbox]       = useState<BBox | null>(null);
-  const [zoom,       setZoom]       = useState(17);
+  const [cutShape,   setCutShape]   = useState<CutShape>("box");
+  const [polygonPoints,setPolygonPoints]= useState<[number, number][]>([]);
+  const [zoom,       setZoom]       = useState(18);
+  const [multiLayerMap,setMultiLayerMap]= useState(false);
   const [regionName, setRegionName] = useState("Flight Region");
   const [outputDir,  setOutputDir]  = useState("");
   const [defaultOutputRoot,setDefaultOutputRoot]= useState("");
   const [customOutputDir,setCustomOutputDir]= useState(false);
-  const [estimate,   setEstimate]   = useState<TileEstimate | null>(null);
+  const [estimate,   setEstimate]   = useState<MapUsageEstimate | null>(null);
+  const [coverageSurvey,setCoverageSurvey]= useState<MapCoverageSurvey | null>(null);
+  const [surveying,  setSurveying]  = useState(false);
+  const [confirmLargeArea,setConfirmLargeArea]= useState(false);
   const [downloading,setDownloading]= useState(false);
   const [importingMap,setImportingMap]= useState(false);
   const [progress,   setProgress]   = useState<DownloadProgress | null>(null);
@@ -310,16 +557,106 @@ export function Maps() {
   const [dsmFilePath,setDsmFilePath]= useState("");
   const [importingElevation,setImportingElevation]= useState(false);
 
-  const sourceConfig = SOURCES[source];
-  const apiKey   = source === "mapbox" ? (profile?.mapbox_key ?? "") : (profile?.bing_key ?? "");
-  const missingKey = !sourceConfig.free && !apiKey;
+  const apiKeys = useMemo(() => providerApiKeys(profile), [profile]);
+  const sourceConfig = providers.find((provider) => provider.id === canonicalProviderId(source)) ?? providers[0];
+  const activeApiKey = apiKeys[sourceConfig?.id ?? ""] ?? "";
+  const readyDownloadProviders = useMemo(
+    () => providers.filter((provider) => provider.kind !== "vector" && provider.enabled && Boolean(provider.url_template)),
+    [providers],
+  );
+  const providerOrder = useMemo(
+    () => selectedProviderIds.filter((id) => {
+      const provider = readyDownloadProviders.find((item) => item.id === canonicalProviderId(id));
+      return provider && isDownloadProviderReady(provider, apiKeys);
+    }),
+    [apiKeys, readyDownloadProviders, selectedProviderIds],
+  );
+  const missingKey = providerNeedsMissingKey(sourceConfig, apiKeys);
+  const surveyRows = surveyResultForZoom(coverageSurvey, zoom);
+  const maxMapAreaKm2 = profile?.max_map_area_km2;
+  const maxDownloadSizeGb = profile?.max_map_download_size_gb ?? 20;
+  const mapLimitWarnings = useMemo(() => {
+    if (!estimate) return [];
+    const warnings: string[] = [];
+    if (typeof maxMapAreaKm2 === "number" && maxMapAreaKm2 > 0 && estimate.area_km2 > maxMapAreaKm2) {
+      warnings.push(`Map area ${estimate.area_km2.toFixed(2)} km2 exceeds settings limit ${maxMapAreaKm2.toFixed(2)} km2.`);
+    }
+    if (typeof maxDownloadSizeGb === "number" && maxDownloadSizeGb > 0 && estimate.estimated_disk_mb > maxDownloadSizeGb * 1024) {
+      warnings.push(`Estimated disk size ${formatMegabytes(estimate.estimated_disk_mb)} exceeds settings limit ${formatMegabytes(maxDownloadSizeGb * 1024)}.`);
+    }
+    return warnings;
+  }, [estimate, maxDownloadSizeGb, maxMapAreaKm2]);
+  const requiresDownloadConfirmation = Boolean(estimate && (estimate.over_100_km2 || estimate.too_large || mapLimitWarnings.length > 0));
+  const downloadBlocked = !bbox || !outputDir || downloading || !providerOrder.length || (requiresDownloadConfirmation && !confirmLargeArea);
   const currentMode = DRAW_MODES.find((d) => d.mode === drawMode)!;
   const elevationRegion = regions.find((region) => region.id === elevationRegionId) ?? regions[0];
 
   useEffect(() => {
-    if (!bbox) { setEstimate(null); return; }
-    cmd.estimateTiles(bbox, zoom).then(setEstimate).catch(console.error);
-  }, [bbox, zoom]);
+    cmd.listMapProviders()
+      .then((items) => {
+        const rasterReady = items.filter((provider) => provider.kind !== "vector");
+        setProviders(rasterReady.length ? items : FALLBACK_PROVIDERS);
+      })
+      .catch(() => setProviders(FALLBACK_PROVIDERS));
+  }, []);
+
+  useEffect(() => {
+    if (!readyDownloadProviders.length) return;
+    setSelectedProviderIds((current) => {
+      const validCurrent = current.filter((id) => {
+        const provider = readyDownloadProviders.find((item) => item.id === canonicalProviderId(id));
+        return provider && isDownloadProviderReady(provider, apiKeys);
+      });
+      if (validCurrent.length) return validCurrent;
+      const defaults = buildProviderOrder(source, readyDownloadProviders, apiKeys)
+        .filter((id) => id === "usgs-imagery" || id === "esri-world-imagery");
+      if (defaults.length) return defaults;
+      return readyDownloadProviders
+        .filter((provider) => isDownloadProviderReady(provider, apiKeys))
+        .slice(0, 1)
+        .map((provider) => provider.id);
+    });
+  }, [apiKeys, readyDownloadProviders, source]);
+
+  useEffect(() => {
+    if (!requiresDownloadConfirmation) setConfirmLargeArea(false);
+  }, [requiresDownloadConfirmation]);
+
+  useEffect(() => {
+    if (!bbox) {
+      setEstimate(null);
+      setCoverageSurvey(null);
+      setConfirmLargeArea(false);
+      return;
+    }
+    if (!providerOrder.length) {
+      setEstimate(null);
+      setCoverageSurvey(null);
+      setConfirmLargeArea(false);
+      return;
+    }
+    const zoomLevels = multiLayerMap
+      ? Array.from({ length: zoom - 15 + 1 }, (_, index) => 15 + index)
+      : [zoom];
+    let cancelled = false;
+    Promise.all(zoomLevels.map((zoomLevel) => cmd.estimateMapUsage({
+        bbox,
+        zoom: zoomLevel,
+        cut_shape: cutShape,
+        polygon_points: cutShape === "polygon" ? polygonPoints : undefined,
+        provider_ids: providerOrder,
+        api_keys: apiKeys,
+      })))
+      .then((items) => {
+        if (!cancelled) setEstimate(multiLayerMap ? combineLayeredEstimates(items) : sumSelectedProviderTotals(items[0]));
+      })
+      .catch((err) => {
+        if (!cancelled) console.error(err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bbox, zoom, multiLayerMap, cutShape, polygonPoints, providerOrder, apiKeys]);
 
   useEffect(() => {
     const loadDefaultOutputRoot = async () => {
@@ -354,9 +691,22 @@ export function Maps() {
     }
   }, [regions, elevationRegionId]);
 
-  const handleSourceChange = (s: TileSource) => {
+  const handleSourceChange = (s: MapProviderId) => {
+    const provider = providers.find((item) => item.id === canonicalProviderId(s));
     setSource(s);
-    if (zoom > SOURCES[s].maxZoom) setZoom(SOURCES[s].maxZoom);
+    setCoverageSurvey(null);
+    setConfirmLargeArea(false);
+    if (provider && zoom > provider.max_zoom) setZoom(provider.max_zoom);
+  };
+
+  const toggleDownloadProvider = (providerId: MapProviderId) => {
+    setSelectedProviderIds((current) => (
+      current.includes(providerId)
+        ? current.filter((id) => id !== providerId)
+        : [...current, providerId]
+    ));
+    setCoverageSurvey(null);
+    setConfirmLargeArea(false);
   };
 
   // Clicking a mode button always triggers a fresh draw session (drawKey++) and
@@ -365,6 +715,8 @@ export function Maps() {
     setDrawMode(m);
     setDrawKey((k) => k + 1);
     setBbox(null);
+    setCutShape(m === "polygon" ? "polygon" : "box");
+    setPolygonPoints([]);
     setDone(false);
     setError(null);
     featureGroupRef.current?.clearLayers();
@@ -372,7 +724,11 @@ export function Maps() {
 
   const clearSelection = () => {
     setBbox(null);
+    setCutShape(drawMode === "polygon" ? "polygon" : "box");
+    setPolygonPoints([]);
     setEstimate(null);
+    setCoverageSurvey(null);
+    setConfirmLargeArea(false);
     setDone(false);
     setError(null);
     featureGroupRef.current?.clearLayers();
@@ -452,6 +808,8 @@ export function Maps() {
         georef_crs,
         zoom: z = 0,
         source: src = "folder",
+        cut_shape,
+        polygon_points,
         elevation_assets,
       } = meta;
       const bbox = bboxFromGeoref(
@@ -474,6 +832,8 @@ export function Maps() {
         ...bbox,
         zoom: z,
         source: sourceFromMetadata(src),
+        cut_shape: cut_shape === "polygon" ? "polygon" : cut_shape === "box" ? "box" : undefined,
+        polygon_points: Array.isArray(polygon_points) ? polygon_points : undefined,
         output_path: folder,
         last_downloaded: new Date().toISOString(),
         gsd_m_per_px,
@@ -642,15 +1002,52 @@ export function Maps() {
     }
   };
 
+  const handleSurveyCoverage = async () => {
+    if (!bbox || !providerOrder.length) return;
+    setSurveying(true);
+    setError(null);
+    setCoverageSurvey(null);
+    try {
+      const survey = await cmd.surveyMapCoverage({
+        bbox,
+        min_zoom: Math.max(0, zoom - 2),
+        max_zoom: zoom,
+        cut_shape: cutShape,
+        polygon_points: cutShape === "polygon" ? polygonPoints : undefined,
+        provider_ids: providerOrder,
+        sample_budget: estimate?.tile_count && estimate.tile_count < 24 ? estimate.tile_count : 24,
+        api_keys: apiKeys,
+      });
+      setCoverageSurvey(survey);
+    } catch (e) {
+      setError(`Coverage survey failed: ${e}`);
+    } finally {
+      setSurveying(false);
+    }
+  };
+
   const handleDownload = async () => {
-    if (!bbox || !outputDir || missingKey) return;
+    if (!bbox || !outputDir || !providerOrder.length) return;
     setDownloading(true);
     setDone(false);
     setError(null);
     setProgress(null);
     const unlisten = await listen<DownloadProgress>("tile-progress", (e) => setProgress(e.payload));
     try {
-      const result = await cmd.downloadTiles(bbox, zoom, outputDir, source, apiKey || undefined);
+      const result = await cmd.downloadMapRegion({
+        bbox,
+        zoom,
+        min_zoom: multiLayerMap ? 15 : zoom,
+        multi_layer_map: multiLayerMap,
+        output_dir: outputDir,
+        cut_shape: cutShape,
+        polygon_points: cutShape === "polygon" ? polygonPoints : undefined,
+        provider_ids: providerOrder,
+        api_keys: apiKeys,
+        coverage_survey: coverageSurvey,
+        confirm_over_100_km2: confirmLargeArea,
+        allow_large_tile_count: confirmLargeArea,
+      });
       const centerLat = (bbox.lat_min + bbox.lat_max) / 2;
       const centerLon = (bbox.lon_min + bbox.lon_max) / 2;
       const locationLabel = await reverseGeocode(centerLat, centerLon);
@@ -660,6 +1057,8 @@ export function Maps() {
         ...bbox,
         zoom,
         source,
+        cut_shape: cutShape,
+        polygon_points: polygonPoints,
         output_path: outputDir,
         last_downloaded: new Date().toISOString(),
         tile_count: result.tile_count,
@@ -667,7 +1066,10 @@ export function Maps() {
         georef_source: result.georef_source,
         georef_confidence: result.georef_confidence,
         georef_crs: result.georef_crs,
-        file_size_mb: estimate?.estimated_mb,
+        file_size_mb: result.actual_mb ?? estimate?.estimated_disk_mb,
+        min_zoom: multiLayerMap ? 15 : zoom,
+        zoom_levels: multiLayerMap ? Array.from({ length: zoom - 15 + 1 }, (_, index) => 15 + index) : [zoom],
+        multi_layer_map: multiLayerMap,
         location_label: locationLabel,
         lifecycle_state: "local",
       };
@@ -689,26 +1091,32 @@ export function Maps() {
       {/* Map */}
       <div className="glass-panel panel-3d-center relative flex-1 overflow-hidden border border-border">
         <div className="glass-panel absolute left-4 top-4 z-[650] px-3 py-2">
-          <div className="font-label-caps text-label-caps text-slate-300">MAP LIBRARY</div>
-          <div className="font-data-mono text-[10px] text-slate-500">draw // download // import // georef</div>
+          <div className="font-label-caps text-label-caps text-slate-300">MAP SOURCE PLANNER</div>
+          <div className="font-data-mono text-[10px] text-slate-500">survey // estimate // patch // download</div>
         </div>
         <MapContainer center={[37.775, -122.418]} zoom={14} minZoom={3} className="w-full h-full" zoomControl>
-          {(source === "esri" || missingKey) && (
-            <TileLayer url={ESRI_SATELLITE} attribution="© Esri" maxZoom={20} maxNativeZoom={19} />
-          )}
-          {source === "mapbox" && !missingKey && (
+          {canonicalProviderId(source) !== "bing-aerial" || missingKey ? (
             <TileLayer
-              url={`https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}.jpg90?access_token=${apiKey}`}
-              attribution="© Mapbox © OpenStreetMap"
-              maxZoom={22}
+              url={providerPreviewUrl(source, activeApiKey)}
+              attribution={providerPreviewAttribution(sourceConfig)}
+              maxZoom={sourceConfig?.max_zoom ?? 23}
+              maxNativeZoom={sourceConfig?.max_native_zoom ?? 23}
             />
+          ) : (
+            <BingTileLayer apiKey={activeApiKey} />
           )}
-          {source === "bing" && !missingKey && <BingTileLayer apiKey={apiKey} />}
           {/* Labels / roads / city names overlay — free, no key, always shown */}
-          <TileLayer url={ESRI_LABELS} attribution="" maxZoom={20} opacity={0.85} />
+          <TileLayer url={ESRI_LABELS} attribution="" maxZoom={23} opacity={0.85} />
 
           <DrawControlInner
-            onBBoxChange={setBbox}
+            onSelectionChange={(selection) => {
+              setBbox(selection?.bbox ?? null);
+              setCutShape(selection?.cutShape ?? (drawMode === "polygon" ? "polygon" : "box"));
+              setPolygonPoints(selection?.polygonPoints ?? []);
+              setCoverageSurvey(null);
+              setConfirmLargeArea(false);
+            }}
+            onInvalidPolygon={setError}
             featureGroupRef={featureGroupRef}
             mode={drawMode}
             drawKey={drawKey}
@@ -726,9 +1134,9 @@ export function Maps() {
       {/* Side panel */}
       <div className="glass-panel panel-3d-right flex w-80 flex-col overflow-y-auto">
         <div className="border-b border-border bg-bg-card px-5 py-4">
-          <h2 className="font-label-caps text-label-caps text-slate-300">REGION DOWNLOAD</h2>
+          <h2 className="font-label-caps text-label-caps text-slate-300">MAP SOURCE PLANNER</h2>
           <p className="mt-1 font-data-mono text-[10px] text-slate-500">
-            Define a flight area, then download the satellite mosaic.
+            Choose providers, survey coverage, then patch the best available imagery.
           </p>
         </div>
 
@@ -746,49 +1154,117 @@ export function Maps() {
 
           {/* Imagery source */}
           <div>
-            <label className="label">Imagery source</label>
+            <label className="label">Primary imagery provider</label>
             <div className="space-y-1 mt-1">
-              {(Object.entries(SOURCES) as [TileSource, (typeof SOURCES)[TileSource]][]).map(
-                ([key, cfg]) => (
+              {providers.map((provider) => {
+                const keyMissing = providerNeedsMissingKey(provider, apiKeys);
+                const directReady = provider.kind !== "vector" && provider.enabled && Boolean(provider.url_template);
+                return (
                   <button
-                    key={key}
-                    onClick={() => handleSourceChange(key)}
+                    key={provider.id}
+                    onClick={() => directReady && handleSourceChange(provider.id)}
+                    disabled={!directReady}
                     className={cn(
-                      "flex w-full items-center justify-between border px-3 py-2.5 text-left text-xs transition-colors",
-                      source === key
-                        ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-300"
-                        : "border-border bg-bg-card text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                      "flex w-full items-start justify-between gap-3 border px-3 py-2.5 text-left text-xs transition-colors",
+                      sourceConfig?.id === provider.id
+                        ? "border-orange-500/40 bg-orange-500/10 text-orange-200"
+                        : directReady
+                        ? "border-border bg-bg-card text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                        : "border-border bg-bg-card/60 text-slate-600"
                     )}
                   >
-                    <div>
-                      <div className="font-medium">{cfg.label}</div>
-                      <div className="text-[10px] mt-0.5 opacity-70">{cfg.description}</div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 font-medium">
+                        <span>{provider.label}</span>
+                        {keyMissing && <span className="text-[10px] text-amber-400">key required</span>}
+                      </div>
+                      <div className="mt-0.5 line-clamp-2 text-[10px] opacity-70">{provider.notes}</div>
                     </div>
-                    <span
-                      className={cn(
-                        "ml-2 shrink-0 px-1.5 py-0.5 text-[10px] font-medium",
-                        cfg.free
-                          ? "bg-emerald-500/15 text-emerald-400"
-                          : "bg-amber-500/15 text-amber-400"
-                      )}
-                    >
-                      {cfg.free ? "Free" : `Z${cfg.maxZoom}`}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className="rounded border border-border px-1.5 py-0.5 text-[10px] uppercase text-slate-400">
+                        {provider.kind}
+                      </span>
+                      <span className={cn("text-[10px] font-mono", keyMissing ? "text-amber-400" : "text-slate-300")}>
+                        Z{provider.max_native_zoom}
+                      </span>
+                    </div>
                   </button>
-                )
-              )}
+                );
+              })}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+              <div className="border border-border bg-bg-card px-2 py-1.5">
+                <div className="text-slate-500">Priority</div>
+                <div className="mt-0.5 truncate font-mono text-slate-300">
+                  {providerOrder.map(providerShortLabel).join(" > ") || "none"}
+                </div>
+              </div>
+              <div className="border border-border bg-bg-card px-2 py-1.5">
+                <div className="text-slate-500">Coverage</div>
+                <div className="mt-0.5 truncate font-mono text-slate-300">{sourceConfig?.coverage_mode ?? "unknown"}</div>
+              </div>
             </div>
             {missingKey && (
               <div className="mt-2 border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[10px] text-amber-400">
-                No API key - add yours in Settings / Imagery Sources. Preview using ESRI.
+                API key missing. Preview falls back to Esri; this provider stays unavailable for downloads until a key is configured.
               </div>
             )}
+            <div className="mt-3 border border-border bg-bg-card p-2.5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Download Providers
+                </span>
+                <span className="font-mono text-[10px] text-slate-500">
+                  {providerOrder.length} active
+                </span>
+              </div>
+              <div className="space-y-1">
+                {readyDownloadProviders.map((provider) => {
+                  const selected = selectedProviderIds.includes(provider.id);
+                  const keyMissing = providerNeedsMissingKey(provider, apiKeys);
+                  const readyProvider = isDownloadProviderReady(provider, apiKeys);
+                  return (
+                    <label
+                      key={provider.id}
+                      className={cn(
+                        "flex items-center gap-2 border px-2 py-1.5 text-[10px]",
+                        selected
+                          ? "border-orange-500/35 bg-orange-500/10 text-orange-100"
+                          : readyProvider
+                          ? "border-border bg-bg-elevated text-slate-300"
+                          : "border-border bg-bg-elevated/60 text-slate-600",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={!readyProvider}
+                        onChange={() => toggleDownloadProvider(provider.id)}
+                        className="accent-orange-500 disabled:opacity-40"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{provider.label}</span>
+                      <span className={cn("shrink-0 font-mono", keyMissing ? "text-amber-400" : "text-slate-500")}>
+                        {keyMissing ? "key" : `Z${provider.max_native_zoom}`}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {!providerOrder.length && (
+                <div className="mt-2 border border-orange-500/20 bg-orange-500/10 px-2 py-1.5 text-[10px] text-orange-200">
+                  Select at least one ready provider to estimate or download this map.
+                </div>
+              )}
+              <div className="mt-2 text-[10px] text-slate-500">
+                Estimates add the checked providers together so the download box reflects the selected source set.
+              </div>
+            </div>
           </div>
 
           {/* Selection tool */}
           <div>
             <label className="label">Selection tool</label>
-            <div className="grid grid-cols-3 gap-1 mt-1">
+            <div className="grid grid-cols-2 gap-1 mt-1">
               {DRAW_MODES.map(({ mode, label }) => (
                 <button
                   key={mode}
@@ -805,11 +1281,9 @@ export function Maps() {
               ))}
             </div>
             <p className="text-[10px] text-slate-600 mt-1.5">
-              {drawMode === "triangle"
-                ? "Closes automatically after 3 points."
-                : drawMode === "polygon"
-                ? "Click the first point to close. Crossing lines are blocked."
-                : "Tiles are downloaded for the drawn bounding area."}
+              {drawMode === "polygon"
+                ? "Click boundary points in any order. The saved outline is auto-ordered into an n-gon."
+                : "Tiles are downloaded for the dragged box area."}
             </p>
           </div>
 
@@ -817,20 +1291,23 @@ export function Maps() {
           <div>
             <label className="label flex items-center justify-between">
               <span>Zoom level</span>
-              <span className="text-cyan-400 font-mono">{zoom}</span>
+              <span className="text-orange-400 font-mono">{zoom}</span>
             </label>
             <input
               type="range"
               min={15}
-              max={sourceConfig.maxZoom}
+              max={sourceConfig?.max_zoom ?? 23}
               step={1}
               value={zoom}
-              onChange={(e) => setZoom(Number(e.target.value))}
+              onChange={(e) => {
+                setZoom(Number(e.target.value));
+                setCoverageSurvey(null);
+              }}
               className="w-full mt-2"
             />
             <div className="flex justify-between text-[10px] text-slate-500 mt-1">
               <span>15 (1.2 m/px)</span>
-              <span>Z{sourceConfig.maxZoom}</span>
+              <span>Z{sourceConfig?.max_zoom ?? 23}</span>
             </div>
           </div>
 
@@ -847,33 +1324,120 @@ export function Maps() {
                 <div>Lat {bbox.lat_min.toFixed(5)} → {bbox.lat_max.toFixed(5)}</div>
                 <div>Lon {bbox.lon_min.toFixed(5)} → {bbox.lon_max.toFixed(5)}</div>
               </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="bg-bg-elevated px-2 py-1.5">
+                  <div className="text-slate-500">Shape</div>
+                  <div className="mt-0.5 font-mono uppercase text-slate-200">
+                    {cutShape === "polygon" ? `${polygonPoints.length}-gon` : "box"}
+                  </div>
+                </div>
+                <div className="bg-bg-elevated px-2 py-1.5">
+                  <div className="text-slate-500">Tile footprint</div>
+                  <div className="mt-0.5 font-mono text-slate-200">{bboxAreaKm2(bbox).toFixed(2)} km²</div>
+                </div>
+              </div>
               <div className="bg-bg-elevated px-2 py-1.5 text-center">
-                <span className="text-lg font-bold text-cyan-400 font-mono">
-                  {bboxAreaKm2(bbox).toFixed(2)}
+                <span className="text-lg font-bold text-orange-400 font-mono">
+                  {(estimate?.area_km2 ?? (cutShape === "polygon" ? polygonAreaKm2(polygonPoints) : bboxAreaKm2(bbox))).toFixed(2)}
                 </span>
-                <span className="text-xs text-slate-400 ml-1">km²</span>
+                <span className="text-xs text-slate-400 ml-1">km² cut area</span>
               </div>
               {estimate && (
-                <div className="border-t border-border pt-2 space-y-1">
-                  {estimate.too_large && (
-                    <div className="border border-red-500/20 bg-red-500/10 px-2.5 py-2 text-[10px] text-red-400">
-                      Region too large ({estimate.tile_count.toLocaleString()}+ tiles). Draw a smaller area - keep it under ~18 km x 18 km.
+                <div className="border-t border-border pt-2 space-y-2">
+                  {estimate.warnings.map((warning) => (
+                    <div
+                      key={warning}
+                      className={cn(
+                        "flex gap-2 border px-2.5 py-2 text-[10px]",
+                        estimate.over_100_km2
+                          ? "border-orange-500/25 bg-orange-500/10 text-orange-300"
+                          : "border-red-500/20 bg-red-500/10 text-red-400"
+                      )}
+                    >
+                      <ShieldAlert size={12} className="mt-0.5 shrink-0" />
+                      <span>{warning}</span>
                     </div>
-                  )}
+                  ))}
+                  {mapLimitWarnings.map((warning) => (
+                    <div
+                      key={warning}
+                      className="flex gap-2 border border-orange-500/25 bg-orange-500/10 px-2.5 py-2 text-[10px] text-orange-300"
+                    >
+                      <ShieldAlert size={12} className="mt-0.5 shrink-0" />
+                      <span>{warning}</span>
+                    </div>
+                  ))}
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-400">Tiles</span>
                     <span className={cn("font-medium", estimate.too_large ? "text-red-400" : "text-slate-200")}>
-                      {estimate.tile_count.toLocaleString()} ({estimate.nx}×{estimate.ny})
+                      {estimate.tile_count.toLocaleString()} ({multiLayerMap ? `Z15-Z${zoom}` : `${estimate.nx}×${estimate.ny}`})
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-400">Est. size</span>
-                    <span className="text-slate-200 font-medium">{estimate.estimated_mb.toFixed(1)} MB</span>
+                    <span className="text-slate-400">Source / disk</span>
+                    <span className="text-slate-200 font-medium">
+                      {formatBytesMb(estimate.estimated_source_mb)} / {formatBytesMb(estimate.estimated_disk_mb)}
+                    </span>
+                  </div>
+                  <label className="flex items-start gap-2 border border-border bg-bg-elevated px-2.5 py-2 text-[10px] text-slate-400">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 accent-orange-500"
+                      checked={multiLayerMap}
+                      onChange={(event) => {
+                        setMultiLayerMap(event.target.checked);
+                        setCoverageSurvey(null);
+                        setConfirmLargeArea(false);
+                      }}
+                    />
+                    <span>
+                      <span className="block font-medium text-slate-200">Multi-Layer Map</span>
+                      <span className="block text-slate-500">
+                        Include Z15-Z{zoom}; estimate and download include every selected zoom layer.
+                      </span>
+                    </span>
+                  </label>
+                  <div className="text-[10px] text-slate-500">
+                    Download size is based on the tile footprint and zoom; n-gon edges are saved and masked in the output.
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-400">GSD</span>
                     <span className="text-slate-200 font-medium">{estimate.gsd_m_per_px.toFixed(3)} m/px</span>
                   </div>
+                  {estimate.provider_breakdown.length > 0 && (
+                    <div className="space-y-1 border-t border-border pt-2">
+                      {estimate.provider_breakdown.map((item) => (
+                        <div key={item.provider_id} className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="truncate text-slate-400">{item.label}</span>
+                          <span className={cn("shrink-0 font-mono", item.key_required ? "text-amber-400" : "text-slate-300")}>
+                            {item.key_required ? "key" : item.overzoomed ? "overzoom" : formatBytesMb(item.estimated_source_mb)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {requiresDownloadConfirmation && (
+                    <label className="flex items-start gap-2 border border-orange-500/20 bg-orange-500/10 px-2.5 py-2 text-[10px] text-orange-200">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 accent-orange-500"
+                        checked={confirmLargeArea}
+                        onChange={(event) => setConfirmLargeArea(event.target.checked)}
+                      />
+                      <span>I understand this map cut may exceed warning limits and want to continue.</span>
+                    </label>
+                  )}
+                  <button
+                    onClick={handleSurveyCoverage}
+                    disabled={surveying || !providerOrder.length}
+                    className="btn-secondary w-full justify-center text-xs"
+                  >
+                    {surveying ? (
+                      <><Loader2 size={13} className="animate-spin" /> Surveying Coverage</>
+                    ) : (
+                      <><Search size={13} /> Survey Coverage</>
+                    )}
+                  </button>
                 </div>
               )}
             </div>
@@ -881,6 +1445,47 @@ export function Maps() {
             <div className="border border-dashed border-border bg-bg-card p-4 text-center">
               <Layers size={20} className="text-slate-600 mx-auto mb-2" />
               <p className="text-xs text-slate-500">{currentMode.hint}</p>
+            </div>
+          )}
+
+          {coverageSurvey && (
+            <div className="space-y-3 border border-border bg-bg-card p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ClipboardCheck size={14} className="text-orange-400" />
+                  <span className="text-xs font-medium text-slate-300">Coverage Survey</span>
+                </div>
+                <span className="font-mono text-[10px] text-slate-500">Z{coverageSurvey.min_zoom}-{coverageSurvey.max_zoom}</span>
+              </div>
+              <div className="rounded border border-border bg-bg-elevated px-2 py-1.5 text-[10px] text-slate-400">
+                Recommended:{" "}
+                <span className="font-mono text-slate-200">
+                  {coverageSurvey.recommended_provider_order.map(providerShortLabel).join(" > ") || "none"}
+                </span>
+              </div>
+              <div className="space-y-1">
+                {surveyRows.map((row) => (
+                  <div key={`${row.provider_id}-${row.zoom}`} className="grid grid-cols-[1fr_auto] gap-2 border border-border bg-bg-elevated px-2 py-1.5 text-[10px]">
+                    <div className="min-w-0">
+                      <div className="truncate text-slate-300">{row.label}</div>
+                      <div className="font-mono text-slate-500">
+                        valid {row.valid_count}/{row.sampled_count} · low {row.low_detail_count} · missing {row.missing_count}
+                      </div>
+                    </div>
+                    <div className={cn(
+                      "text-right font-mono",
+                      row.classification === "valid" || row.classification === "available"
+                        ? "text-emerald-400"
+                        : row.classification === "low-detail"
+                        ? "text-amber-400"
+                        : "text-red-400"
+                    )}>
+                      {(row.quality_score * 100).toFixed(0)}%
+                      <div className="uppercase text-slate-500">{row.classification}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -923,7 +1528,7 @@ export function Maps() {
               </div>
               <div className="h-2 overflow-hidden bg-bg-elevated">
                 <div
-                  className="h-full bg-cyan-500 transition-all duration-200"
+                  className="h-full bg-orange-500 transition-all duration-200"
                   style={{ width: `${progress.percent}%` }}
                 />
               </div>
@@ -943,12 +1548,11 @@ export function Maps() {
           )}
 
           <div className="flex items-start gap-1.5 border border-border bg-bg-card p-2.5 text-[10px] text-slate-500">
-            <Info size={11} className="mt-0.5 shrink-0 text-cyan-500" />
-            {source === "esri"
-              ? "ESRI World Imagery — free, no key required. Tiles cached locally."
-              : source === "mapbox"
-              ? "Mapbox Satellite — zoom up to 22. Add your access token in Settings."
-              : "Bing Maps Aerial — zoom up to 20. Add your API key in Settings."}
+            <Info size={11} className="mt-0.5 shrink-0 text-orange-500" />
+            <span>
+              Preview uses {sourceConfig?.label ?? "selected provider"}. Downloads patch missing or low-detail tiles from the checked set:
+              {" "}{providerOrder.map(providerShortLabel).join(" > ") || "no provider selected"}, and save a coverage manifest next to the mosaic.
+            </span>
           </div>
 
           <div className="space-y-3 border border-border bg-bg-card p-3">
@@ -1097,7 +1701,7 @@ export function Maps() {
         <div className="p-5 border-t border-border space-y-2">
           <button
             onClick={handleDownload}
-            disabled={!bbox || !outputDir || downloading || missingKey || !!estimate?.too_large}
+            disabled={downloadBlocked}
             className="btn-primary w-full justify-center"
           >
             {downloading ? (
@@ -1106,6 +1710,21 @@ export function Maps() {
               <><Download size={15} /> Download Mosaic</>
             )}
           </button>
+          {requiresDownloadConfirmation && !confirmLargeArea && (
+            <div className="text-center text-[10px] text-orange-300">
+              Confirm the map download warning before starting.
+            </div>
+          )}
+          {!providerOrder.length && (
+            <div className="text-center text-[10px] text-orange-300">
+              Select at least one ready download provider.
+            </div>
+          )}
+          {missingKey && (
+            <div className="text-center text-[10px] text-amber-400">
+              The preview provider needs a key; checked ready providers can still download.
+            </div>
+          )}
           <button
             onClick={importFromFolder}
             className="btn-secondary w-full justify-center text-xs"

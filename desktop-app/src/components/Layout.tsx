@@ -969,20 +969,45 @@ function clampCoordinate(value: number, min: number, max: number) {
 function missionPreviewBounds(mission: SavedMission): MissionPreviewBounds {
   const bounds = mission.bounds ?? missionBoundsFromParts(mission.border_points, mission.waypoints);
   if (!bounds) return [[-85, -180], [85, 180]];
-  const latSpan = Math.max(bounds.lat_max - bounds.lat_min, 0.02);
-  const lonSpan = Math.max(bounds.lon_max - bounds.lon_min, 0.02);
-  const latPad = Math.max(latSpan * 0.28, 0.01);
-  const lonPad = Math.max(lonSpan * 0.28, 0.01);
+  const centerLat = (bounds.lat_min + bounds.lat_max) / 2;
+  const centerLon = (bounds.lon_min + bounds.lon_max) / 2;
+  const cosLat = Math.max(0.08, Math.abs(Math.cos(centerLat * Math.PI / 180)));
+  let latSpan = Math.max(bounds.lat_max - bounds.lat_min, 0.025);
+  let lonSpan = Math.max(bounds.lon_max - bounds.lon_min, 0.025);
+  const widthKm = lonSpan * 111.32 * cosLat;
+  const heightKm = latSpan * 111.32;
+  const targetAspect = 1.08;
+
+  if (widthKm / Math.max(heightKm, 0.001) < targetAspect) {
+    lonSpan = Math.max(lonSpan, (heightKm * targetAspect) / (111.32 * cosLat));
+  } else if (widthKm / Math.max(heightKm, 0.001) > targetAspect) {
+    latSpan = Math.max(latSpan, widthKm / (targetAspect * 111.32));
+  }
+
+  const latHalfSpan = Math.max(latSpan * 0.78, 0.025);
+  const lonHalfSpan = Math.max(lonSpan * 0.78, 0.025);
   return [
     [
-      clampCoordinate(bounds.lat_min - latPad, -85, 85),
-      clampCoordinate(bounds.lon_min - lonPad, -180, 180),
+      clampCoordinate(centerLat - latHalfSpan, -85, 85),
+      clampCoordinate(centerLon - lonHalfSpan, -180, 180),
     ],
     [
-      clampCoordinate(bounds.lat_max + latPad, -85, 85),
-      clampCoordinate(bounds.lon_max + lonPad, -180, 180),
+      clampCoordinate(centerLat + latHalfSpan, -85, 85),
+      clampCoordinate(centerLon + lonHalfSpan, -180, 180),
     ],
   ];
+}
+
+function missionTooltipPlacement(point: [number, number], center: [number, number]) {
+  const horizontal = Math.abs(point[1] - center[1]) >= Math.abs(point[0] - center[0]);
+  if (horizontal) {
+    return point[1] <= center[1]
+      ? { direction: "right" as const, offset: [8, 0] as [number, number] }
+      : { direction: "left" as const, offset: [-8, 0] as [number, number] };
+  }
+  return point[0] <= center[0]
+    ? { direction: "top" as const, offset: [0, -8] as [number, number] }
+    : { direction: "bottom" as const, offset: [0, 8] as [number, number] };
 }
 
 function livePositionLatLon(position: DronePositionUpdate | null): [number, number] | null {
@@ -1083,7 +1108,7 @@ function MissionPreview({
 }) {
   if (!mission) {
     return (
-      <div className="mission-dot-grid flex h-72 items-center justify-center rounded-lg border border-border p-4">
+      <div className="mission-dot-grid flex h-80 items-center justify-center rounded-lg border border-border p-4">
         <div className="rounded-lg border border-border bg-black/80 px-4 py-3 text-center text-xs text-slate-500">
           No mission preview
         </div>
@@ -1097,17 +1122,15 @@ function MissionPreview({
   const aircraftPosition = livePositionLatLon(livePosition);
 
   return (
-    <div className="mission-dot-grid rounded-lg border border-border p-2">
-      <div className="h-72 overflow-hidden rounded-lg border border-border bg-black">
+    <div className="mission-dot-grid rounded-lg border border-border p-2.5">
+      <div className="h-80 min-h-[280px] overflow-hidden rounded-lg border border-border bg-black shadow-inner">
         <MapContainer
-          key={mission.id}
+          key={`${mission.id}-${mission.updated_at}`}
           center={center}
-          zoom={Math.max(3, Math.min(18, mission.zoom))}
+          zoom={Math.max(3, Math.min(16, mission.zoom))}
           minZoom={3}
-          maxZoom={19}
-          maxBounds={bounds}
-          maxBoundsViscosity={1}
-          className="mission-map h-full w-full"
+          maxZoom={23}
+          className="mission-map mission-preview-map h-full w-full"
           scrollWheelZoom
           attributionControl={false}
           zoomControl={false}
@@ -1115,12 +1138,14 @@ function MissionPreview({
           <MissionPreviewViewport mission={mission} bounds={bounds} />
           <TileLayer
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={19}
+            maxZoom={23}
+            maxNativeZoom={23}
           />
           <Pane name={`mission-preview-labels-${mission.id}`} className="mission-map-label-pane" style={{ zIndex: 420 }}>
             <TileLayer
               url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-              maxZoom={19}
+              maxZoom={23}
+              maxNativeZoom={23}
               opacity={0.92}
             />
           </Pane>
@@ -1154,6 +1179,7 @@ function MissionPreview({
                 const isLand = mission.waypoints.length > 1 && index === mission.waypoints.length - 1;
                 const color = isStart ? "#63D706" : isLand ? "#EF4444" : "#FF6600";
                 const label = isStart ? "Start" : isLand ? "Land" : `WP ${index + 1}`;
+                const placement = missionTooltipPlacement(point, center);
                 return (
                   <CircleMarker
                     key={`mission-waypoint-${index}-${point[0]}-${point[1]}`}
@@ -1161,7 +1187,7 @@ function MissionPreview({
                     radius={6}
                     pathOptions={{ color, fillColor: color, fillOpacity: 0.92, weight: 3 }}
                   >
-                    <Tooltip direction="top" offset={[0, -6]} opacity={0.95} permanent>
+                    <Tooltip direction={placement.direction} offset={placement.offset} opacity={0.95} permanent>
                       {label}
                     </Tooltip>
                   </CircleMarker>
@@ -1175,7 +1201,7 @@ function MissionPreview({
               radius={8}
               pathOptions={{ color: "#63D706", fillColor: "#2E8F49", fillOpacity: 0.95, weight: 3 }}
             >
-              <Tooltip direction="top" offset={[0, -8]} opacity={0.95} permanent>
+              <Tooltip direction={missionTooltipPlacement(aircraftPosition, center).direction} offset={missionTooltipPlacement(aircraftPosition, center).offset} opacity={0.95} permanent>
                 Aircraft
               </Tooltip>
             </CircleMarker>
@@ -1188,15 +1214,37 @@ function MissionPreview({
 
 function MissionPreviewViewport({ mission, bounds }: { mission: SavedMission; bounds: MissionPreviewBounds }) {
   const map = useMap();
+  const south = bounds[0][0];
+  const west = bounds[0][1];
+  const north = bounds[1][0];
+  const east = bounds[1][1];
 
   useEffect(() => {
-    map.setMaxBounds(bounds);
-    map.fitBounds(bounds, {
-      padding: [18, 18],
-      maxZoom: Math.max(12, Math.min(18, mission.zoom)),
-      animate: false,
-    });
-  }, [bounds, map, mission.id, mission.zoom]);
+    const fitPreview = () => {
+      map.invalidateSize(false);
+      map.fitBounds(bounds, {
+        paddingTopLeft: [34, 34],
+        paddingBottomRight: [34, 48],
+        maxZoom: Math.max(13, Math.min(17, mission.zoom)),
+        animate: false,
+      });
+    };
+
+    fitPreview();
+    const animationFrame = window.requestAnimationFrame(fitPreview);
+    const timer = window.setTimeout(fitPreview, 180);
+    const container = map.getContainer();
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(fitPreview)
+      : null;
+    observer?.observe(container);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.clearTimeout(timer);
+      observer?.disconnect();
+    };
+  }, [east, map, mission.id, mission.updated_at, mission.zoom, north, south, west]);
 
   return null;
 }
@@ -2499,37 +2547,15 @@ function BottomDock({
   return (
     <section
       className={cn(
-        "absolute bottom-3 right-3 z-[1200] flex items-stretch justify-end transition-[width,height] duration-200",
-        open ? "w-[calc(100%-24px)]" : "w-14",
+        "absolute bottom-3 left-20 z-[1200] flex items-stretch justify-start transition-[width,height] duration-200",
+        open ? "w-[calc(100%-92px)]" : "w-14",
       )}
       style={{ height: open ? 260 : Math.min(360, visibleTabs.length * 44 + 8) }}
     >
-      {open && (
-        <div className="h-full min-w-0 flex-1 overflow-hidden rounded-l-lg border border-r-0 border-white/10 bg-black/80 shadow-[0_18px_70px_rgba(0,0,0,0.48)] ring-1 ring-white/5 backdrop-blur-2xl">
-          <div className="flex h-12 items-center gap-2 border-b border-white/10 px-4">
-            {ActiveTabIcon && <ActiveTabIcon size={15} className="text-orange-300" />}
-            <span className="text-sm font-semibold text-slate-100">{activeTab?.label ?? "Status"}</span>
-            <span className="ml-auto font-data-mono text-[10px] uppercase tracking-[0.12em] text-slate-600">
-              {effectiveTab}
-            </span>
-          </div>
-          <div className="h-[calc(100%-48px)] overflow-y-auto p-4 font-mono text-xs">
-            {rows.map((row, index) => (
-              <div key={`${row.label}-${index}`} className="flex gap-4 rounded-md border border-transparent px-3 py-1.5 hover:border-orange-500/35 hover:bg-white/[0.04]">
-                <span className="w-[112px] shrink-0 text-slate-600">[{row.label}]</span>
-                <span className={cn(row.tone === "ready" && "text-status-ready", row.tone === "warning" && "text-status-warning", row.tone === "critical" && "text-status-critical", row.tone === "active" && "text-cyan-300", row.tone === "muted" && "text-slate-500")}>
-                  {row.value}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div
         className={cn(
           "flex h-full w-14 shrink-0 flex-col items-center gap-1 border border-white/10 bg-bg-base/60 p-1 shadow-[0_18px_70px_rgba(0,0,0,0.48)] ring-1 ring-white/5 backdrop-blur-xl",
-          open ? "rounded-r-lg" : "rounded-lg",
+          open ? "rounded-l-lg" : "rounded-lg",
         )}
       >
         {visibleTabs.map(({ id, label, Icon }) => {
@@ -2558,6 +2584,28 @@ function BottomDock({
           );
         })}
       </div>
+
+      {open && (
+        <div className="h-full min-w-0 flex-1 overflow-hidden rounded-r-lg border border-l-0 border-white/10 bg-black/80 shadow-[0_18px_70px_rgba(0,0,0,0.48)] ring-1 ring-white/5 backdrop-blur-2xl">
+          <div className="flex h-12 items-center gap-2 border-b border-white/10 px-4">
+            {ActiveTabIcon && <ActiveTabIcon size={15} className="text-orange-300" />}
+            <span className="text-sm font-semibold text-slate-100">{activeTab?.label ?? "Status"}</span>
+            <span className="ml-auto font-data-mono text-[10px] uppercase tracking-[0.12em] text-slate-600">
+              {effectiveTab}
+            </span>
+          </div>
+          <div className="h-[calc(100%-48px)] overflow-y-auto p-4 font-mono text-xs">
+            {rows.map((row, index) => (
+              <div key={`${row.label}-${index}`} className="flex gap-4 rounded-md border border-transparent px-3 py-1.5 hover:border-orange-500/35 hover:bg-white/[0.04]">
+                <span className="w-[112px] shrink-0 text-slate-600">[{row.label}]</span>
+                <span className={cn(row.tone === "ready" && "text-status-ready", row.tone === "warning" && "text-status-warning", row.tone === "critical" && "text-status-critical", row.tone === "active" && "text-cyan-300", row.tone === "muted" && "text-slate-500")}>
+                  {row.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

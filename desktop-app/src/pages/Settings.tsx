@@ -35,6 +35,7 @@ const SETTINGS_GROUPS: Array<{ id: SettingsGroupId; label: string; Icon: LucideI
 const SEARCH_ROWS: Array<{ label: string; detail: string; group: SettingsGroupId; keywords?: string }> = [
   { label: "Light Mode", detail: "Theme", group: "general" },
   { label: "Imagery API Keys", detail: "Mapbox and Bing keys", group: "general", keywords: "maps satellite" },
+  { label: "Map Download Limits", detail: "Area and disk warning thresholds", group: "general", keywords: "maps km2 gb download warning" },
   { label: "Parameter File", detail: "Local params YAML", group: "general", keywords: "yaml config" },
   { label: "Device URL", detail: "Edge API address", group: "device", keywords: "host connection" },
   { label: "Device Mode", detail: "Single camera or VIO", group: "device", keywords: "cyclops micro vps" },
@@ -52,6 +53,13 @@ function isSettingsGroupId(value: string | null): value is SettingsGroupId {
   return SETTINGS_GROUPS.some((group) => group.id === value);
 }
 
+function parseOptionalPositive(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 export function Settings() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -61,6 +69,8 @@ export function Settings() {
   const [searchQuery, setSearchQuery] = useState("");
   const [mapboxKey, setMapboxKey] = useState(profile?.mapbox_key ?? "");
   const [bingKey, setBingKey] = useState(profile?.bing_key ?? "");
+  const [maxMapAreaKm2, setMaxMapAreaKm2] = useState(profile?.max_map_area_km2 != null ? String(profile.max_map_area_km2) : "");
+  const [maxMapDownloadSizeGb, setMaxMapDownloadSizeGb] = useState(profile?.max_map_download_size_gb != null ? String(profile.max_map_download_size_gb) : "20");
   const [savingKeys, setSavingKeys] = useState(false);
   const [keyMessage, setKeyMessage] = useState<string | null>(null);
   const [configPath, setConfigPath] = useState("");
@@ -75,7 +85,9 @@ export function Settings() {
   useEffect(() => {
     setMapboxKey(profile?.mapbox_key ?? "");
     setBingKey(profile?.bing_key ?? "");
-  }, [profile?.bing_key, profile?.mapbox_key]);
+    setMaxMapAreaKm2(profile?.max_map_area_km2 != null ? String(profile.max_map_area_km2) : "");
+    setMaxMapDownloadSizeGb(profile?.max_map_download_size_gb != null ? String(profile.max_map_download_size_gb) : "20");
+  }, [profile?.bing_key, profile?.mapbox_key, profile?.max_map_area_km2, profile?.max_map_download_size_gb]);
 
   const selectGroup = (group: SettingsGroupId) => {
     setActiveGroup(group);
@@ -98,6 +110,8 @@ export function Settings() {
       ...profile,
       mapbox_key: mapboxKey.trim() || undefined,
       bing_key: bingKey.trim() || undefined,
+      max_map_area_km2: parseOptionalPositive(maxMapAreaKm2),
+      max_map_download_size_gb: parseOptionalPositive(maxMapDownloadSizeGb) ?? 20,
     };
     try {
       await cmd.saveProfile(updated);
@@ -221,6 +235,8 @@ export function Settings() {
                 profileName={profile?.name ?? "Operator"}
                 mapboxKey={mapboxKey}
                 bingKey={bingKey}
+                maxMapAreaKm2={maxMapAreaKm2}
+                maxMapDownloadSizeGb={maxMapDownloadSizeGb}
                 savingKeys={savingKeys}
                 keyMessage={keyMessage}
                 configPath={configPath}
@@ -228,6 +244,8 @@ export function Settings() {
                 configError={configError}
                 setMapboxKey={setMapboxKey}
                 setBingKey={setBingKey}
+                setMaxMapAreaKm2={setMaxMapAreaKm2}
+                setMaxMapDownloadSizeGb={setMaxMapDownloadSizeGb}
                 setConfigPath={setConfigPath}
                 saveKeys={saveKeys}
                 pickConfig={pickConfig}
@@ -249,6 +267,8 @@ function GeneralSettings({
   profileName,
   mapboxKey,
   bingKey,
+  maxMapAreaKm2,
+  maxMapDownloadSizeGb,
   savingKeys,
   keyMessage,
   configPath,
@@ -256,6 +276,8 @@ function GeneralSettings({
   configError,
   setMapboxKey,
   setBingKey,
+  setMaxMapAreaKm2,
+  setMaxMapDownloadSizeGb,
   setConfigPath,
   saveKeys,
   pickConfig,
@@ -264,6 +286,8 @@ function GeneralSettings({
   profileName: string;
   mapboxKey: string;
   bingKey: string;
+  maxMapAreaKm2: string;
+  maxMapDownloadSizeGb: string;
   savingKeys: boolean;
   keyMessage: string | null;
   configPath: string;
@@ -271,6 +295,8 @@ function GeneralSettings({
   configError: string | null;
   setMapboxKey: (value: string) => void;
   setBingKey: (value: string) => void;
+  setMaxMapAreaKm2: (value: string) => void;
+  setMaxMapDownloadSizeGb: (value: string) => void;
   setConfigPath: (value: string) => void;
   saveKeys: () => void;
   pickConfig: () => void;
@@ -294,6 +320,32 @@ function GeneralSettings({
           <button type="button" onClick={saveKeys} disabled={savingKeys} className="btn-secondary">
             {savingKeys ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
             Save Keys
+          </button>
+        </div>
+      </SettingCard>
+      <SettingCard title="Map Download Limits" detail="Warnings appear when a selected cut exceeds these thresholds">
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field
+            label="Max Map Area km2"
+            value={maxMapAreaKm2}
+            onChange={setMaxMapAreaKm2}
+            placeholder="blank for no area limit"
+          />
+          <Field
+            label="Max Download Size GB"
+            value={maxMapDownloadSizeGb}
+            onChange={setMaxMapDownloadSizeGb}
+            placeholder="20"
+          />
+        </div>
+        <div className="mt-2 text-xs text-slate-500">
+          Area is optional. Download size defaults to 20 GB and can be overridden per map after warning.
+        </div>
+        <div className="mt-3 flex items-center justify-end gap-3">
+          {keyMessage && <span className="text-xs text-slate-500">{keyMessage}</span>}
+          <button type="button" onClick={saveKeys} disabled={savingKeys} className="btn-secondary">
+            {savingKeys ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+            Save Settings
           </button>
         </div>
       </SettingCard>
