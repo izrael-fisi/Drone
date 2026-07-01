@@ -2424,13 +2424,13 @@ function AccountPanel() {
                   <span className="block text-[10px] text-slate-400">{orgCtx.org_name} · {orgCtx.role}</span>
                 )}
               </div>
-              <span className="shrink-0 rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-300">
-                {orgCtx
-                  ? (planLabel[orgCtx.org_plan] ?? orgCtx.org_plan)
-                  : cloudAccount.plan
-                    ? (planLabel[cloudAccount.plan] ?? cloudAccount.plan)
-                    : "No plan"}
-              </span>
+              {(orgCtx || cloudAccount.plan) && (
+                <span className="shrink-0 rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-300">
+                  {orgCtx
+                    ? (planLabel[orgCtx.org_plan] ?? orgCtx.org_plan)
+                    : (planLabel[cloudAccount.plan!] ?? cloudAccount.plan)}
+                </span>
+              )}
             </div>
 
             {/* Quota numbers */}

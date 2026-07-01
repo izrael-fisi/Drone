@@ -538,6 +538,7 @@ export function Maps() {
   const [defaultOutputRoot,setDefaultOutputRoot]= useState("");
   const [customOutputDir,setCustomOutputDir]= useState(false);
   const [estimate,   setEstimate]   = useState<MapUsageEstimate | null>(null);
+  const [estimating, setEstimating] = useState(false);
   const [coverageSurvey,setCoverageSurvey]= useState<MapCoverageSurvey | null>(null);
   const [surveying,  setSurveying]  = useState(false);
   const [confirmLargeArea,setConfirmLargeArea]= useState(false);
@@ -638,6 +639,13 @@ export function Maps() {
     if (!requiresDownloadConfirmation) setConfirmLargeArea(false);
   }, [requiresDownloadConfirmation]);
 
+  // Fetch cloud account if it wasn't loaded at startup (e.g. API was unreachable)
+  useEffect(() => {
+    if (proxigoSession && !cloudAccount) {
+      proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
+    }
+  }, [proxigoSession, cloudAccount, setCloudAccount]);
+
   // Auto-scroll panel to estimate section when bbox is drawn
   useEffect(() => {
     if (bbox && estimateRef.current && panelRef.current) {
@@ -650,16 +658,20 @@ export function Maps() {
   useEffect(() => {
     if (!bbox) {
       setEstimate(null);
+      setEstimating(false);
       setCoverageSurvey(null);
       setConfirmLargeArea(false);
       return;
     }
     if (!providerOrder.length) {
       setEstimate(null);
+      setEstimating(false);
       setCoverageSurvey(null);
       setConfirmLargeArea(false);
       return;
     }
+    setEstimate(null);
+    setEstimating(true);
     const zoomLevels = multiLayerMap
       ? Array.from({ length: zoom - 15 + 1 }, (_, index) => 15 + index)
       : [zoom];
@@ -673,14 +685,15 @@ export function Maps() {
         api_keys: apiKeys,
       })))
       .then((items) => {
-        if (!cancelled) setEstimate(multiLayerMap ? combineLayeredEstimates(items) : sumSelectedProviderTotals(items[0]));
+        if (!cancelled) {
+          setEstimate(multiLayerMap ? combineLayeredEstimates(items) : sumSelectedProviderTotals(items[0]));
+          setEstimating(false);
+        }
       })
       .catch((err) => {
-        if (!cancelled) console.error(err);
+        if (!cancelled) { console.error(err); setEstimating(false); }
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [bbox, zoom, multiLayerMap, cutShape, polygonPoints, providerOrder, apiKeys]);
 
   useEffect(() => {
@@ -1176,49 +1189,73 @@ export function Maps() {
         </div>
 
         {/* Proxigo quota — always visible */}
-        <div className="border-b border-border px-4 py-3">
-          {proxigoSession && cloudAccount ? (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  {orgCtx ? orgCtx.org_name : "Monthly Quota"}
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  {orgCtx
-                    ? `${orgCtx.org_plan.charAt(0).toUpperCase() + orgCtx.org_plan.slice(1)} · ${orgCtx.role}`
-                    : cloudAccount.plan
-                      ? cloudAccount.plan.charAt(0).toUpperCase() + cloudAccount.plan.slice(1)
-                      : null}
-                </span>
+        <div className="border-b border-border bg-bg-card px-4 py-3 space-y-2">
+          {/* Header row */}
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-orange-400">
+              {orgCtx ? orgCtx.org_name : "Proxigo Quota"}
+            </span>
+            {cloudAccount && (orgCtx || cloudAccount.plan) && (
+              <span className="rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-300">
+                {orgCtx
+                  ? `${orgCtx.org_plan.charAt(0).toUpperCase() + orgCtx.org_plan.slice(1)} · ${orgCtx.role}`
+                  : cloudAccount.plan!.charAt(0).toUpperCase() + cloudAccount.plan!.slice(1)}
+              </span>
+            )}
+          </div>
+
+          {/* Quota numbers */}
+          {cloudAccount ? (
+            <>
+              <div className="grid grid-cols-3 gap-1 text-center">
+                <div className="rounded bg-bg-elevated px-2 py-1.5">
+                  <div className="text-xs font-bold font-mono text-slate-100">{cloudKm2Used.toFixed(1)}</div>
+                  <div className="text-[9px] text-slate-500 mt-0.5">used</div>
+                </div>
+                <div className="rounded bg-bg-elevated px-2 py-1.5">
+                  <div className="text-xs font-bold font-mono text-slate-100">{cloudKm2Limit > 0 ? cloudKm2Limit : "—"}</div>
+                  <div className="text-[9px] text-slate-500 mt-0.5">km² plan</div>
+                </div>
+                <div className={cn("rounded px-2 py-1.5", exceedsCloudQuota ? "bg-red-500/15" : "bg-emerald-500/10")}>
+                  <div className={cn("text-xs font-bold font-mono", exceedsCloudQuota ? "text-red-400" : "text-emerald-400")}>
+                    {cloudKm2Limit > 0 ? (effectiveRemaining ?? 0).toFixed(1) : "∞"}
+                  </div>
+                  <div className="text-[9px] text-slate-500 mt-0.5">remaining</div>
+                </div>
               </div>
-              <div className="flex gap-3 text-xs font-mono">
-                <span><span className="text-slate-200">{cloudKm2Used.toFixed(1)}</span> <span className="text-slate-600">used</span></span>
-                <span className="text-slate-600">/</span>
-                <span><span className="text-slate-200">{cloudKm2Limit}</span> <span className="text-slate-600">km²</span></span>
-                <span className="ml-auto">
-                  <span className={exceedsCloudQuota ? "text-red-400" : "text-emerald-400"}>
-                    {(effectiveRemaining ?? cloudKm2Remaining ?? 0).toFixed(1)}
-                  </span>
-                  <span className="text-slate-600"> left</span>
-                </span>
-              </div>
+
+              {/* Per-member allowance */}
               {orgCtx?.my_km2_allowance != null && (
-                <div className="text-[10px] text-slate-500">
-                  Your allowance: {orgCtx.my_km2_used.toFixed(1)} / {orgCtx.my_km2_allowance} km²
+                <div className="text-[10px] text-slate-400">
+                  Your allowance: <span className="text-slate-200 font-mono">{orgCtx.my_km2_used.toFixed(1)} / {orgCtx.my_km2_allowance} km²</span>
                 </div>
               )}
-              {estimate && effectiveRemaining !== null && (
-                <div className={cn("text-[10px]", exceedsCloudQuota ? "text-red-400 font-medium" : "text-slate-500")}>
+
+              {/* No plan warning */}
+              {cloudKm2Limit === 0 && !orgCtx && (
+                <div className="text-[10px] text-amber-400">
+                  No active plan — usage is unlimited but untracked. Subscribe at proxigo.us.
+                </div>
+              )}
+
+              {/* Impact of current selection */}
+              {estimate && cloudKm2Limit > 0 && effectiveRemaining !== null && (
+                <div className={cn(
+                  "rounded px-2.5 py-1.5 text-[10px] font-medium",
+                  exceedsCloudQuota
+                    ? "bg-red-500/15 text-red-400"
+                    : "bg-bg-elevated text-slate-400"
+                )}>
                   {exceedsCloudQuota
-                    ? `This area (${estimate.area_km2.toFixed(1)} km²) exceeds your ${effectiveRemaining.toFixed(1)} km² remaining`
-                    : `After download: ${(effectiveRemaining - estimate.area_km2).toFixed(1)} km² remaining`}
+                    ? `⚠ Selection (${estimate.area_km2.toFixed(1)} km²) exceeds remaining quota`
+                    : `This download: ${estimate.area_km2.toFixed(1)} km² → ${(effectiveRemaining - estimate.area_km2).toFixed(1)} km² left after`}
                 </div>
               )}
-            </div>
+            </>
           ) : proxigoSession ? (
-            <span className="text-[10px] text-slate-500">Loading quota…</span>
+            <div className="text-[10px] text-slate-500 animate-pulse">Fetching quota…</div>
           ) : (
-            <span className="text-[10px] text-slate-500">Sign in to Proxigo to track quota</span>
+            <div className="text-[10px] text-slate-500">Sign in to Proxigo to see your quota</div>
           )}
         </div>
 
@@ -1395,7 +1432,7 @@ export function Maps() {
 
           {/* BBox / selection info */}
           {bbox ? (
-            <div className="space-y-2 border border-border bg-bg-card p-3">
+            <div ref={estimateRef} className="space-y-2 border border-border bg-bg-card p-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-slate-300">Selected Region</span>
                 <button onClick={clearSelection} className="text-slate-500 hover:text-slate-300">
@@ -1424,9 +1461,15 @@ export function Maps() {
                 </span>
                 <span className="text-xs text-slate-400 ml-1">km² cut area</span>
               </div>
-              <div ref={estimateRef} />
-              {estimate && (
+              {(estimating || estimate) && (
                 <div className="border-t border-border pt-2 space-y-2">
+                  {estimating && !estimate && (
+                    <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                      <Loader2 size={11} className="animate-spin shrink-0" />
+                      Calculating download estimate…
+                    </div>
+                  )}
+                  {estimate && (<>
                   {estimate.warnings.map((warning) => (
                     <div
                       key={warning}
@@ -1510,6 +1553,7 @@ export function Maps() {
                       <span>I understand this map cut may exceed warning limits and want to continue.</span>
                     </label>
                   )}
+                  </>)}
                   <button
                     onClick={handleSurveyCoverage}
                     disabled={surveying || !providerOrder.length}

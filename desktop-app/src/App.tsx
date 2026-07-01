@@ -65,11 +65,11 @@ export default function App() {
     );
   }
 
-  // Gate the app behind Proxigo login for users who have completed onboarding
-  if (!proxigoSession && profile?.onboarding_complete) {
+  // Always require Proxigo login before showing any part of the app
+  if (!proxigoSession) {
     return (
       <ProxigoLoginScreen
-        profile={profile}
+        profile={profile ?? { name: "", email: "", org: "", accent_color: "#FF6600", onboarding_complete: false }}
         onLogin={(session) => {
           setProxigoSession(session);
           proxigo.getAccount(session).then(setCloudAccount).catch(() => {});
