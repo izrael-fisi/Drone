@@ -2299,6 +2299,17 @@ function AccountPanel() {
     setModuleSerial(resolvedProfile.proxigo_module_serial ?? "");
   }, [resolvedProfile.email, resolvedProfile.name, resolvedProfile.org, resolvedProfile.proxigo_module_serial]);
 
+  // Auto-fill org name from Proxigo cloud when logged in to an org
+  useEffect(() => {
+    const orgName = cloudAccount?.org?.org_name;
+    if (!orgName) return;
+    setOrg(orgName);
+    cmd.saveProfile({ ...resolvedProfile, org: orgName })
+      .then(() => setProfile({ ...resolvedProfile, org: orgName }))
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudAccount?.org?.org_name]);
+
   const saveLocalProfile = async () => {
     setSaving(true);
     setProfileMessage(null);
@@ -2403,7 +2414,12 @@ function AccountPanel() {
       </div>
       <CompactField label="Name" value={name} onChange={setName} placeholder="Operator name" />
       <CompactField label="Email" value={email} onChange={setEmail} placeholder="operator@example.com" />
-      <CompactField label="Organization" value={org} onChange={setOrg} placeholder="Organization name" />
+      <CompactField
+        label={orgCtx?.org_name ? "Organization (synced)" : "Organization"}
+        value={org}
+        onChange={orgCtx?.org_name ? undefined : setOrg}
+        placeholder="Organization name"
+      />
       <PanelAction
         label={saving ? "Saving…" : "Save Local Profile"}
         detail={profileMessage ?? "Persist operator name and organization"}
@@ -2635,19 +2651,24 @@ function CompactField({
 }: {
   label: string;
   value: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
   placeholder: string;
   secret?: boolean;
 }) {
+  const readOnly = !onChange;
   return (
-    <label className="block rounded-md border border-border bg-bg-card px-3 py-2">
+    <label className={cn("block rounded-md border bg-bg-card px-3 py-2", readOnly ? "border-white/5 opacity-70" : "border-border")}>
       <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</span>
       <input
         type={secret ? "password" : "text"}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        readOnly={readOnly}
+        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
         placeholder={placeholder}
-        className="mt-1 h-7 w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-700"
+        className={cn(
+          "mt-1 h-7 w-full bg-transparent text-sm outline-none placeholder:text-slate-700",
+          readOnly ? "text-slate-400 cursor-default select-none" : "text-slate-100",
+        )}
       />
     </label>
   );
