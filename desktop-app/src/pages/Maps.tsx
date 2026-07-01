@@ -13,6 +13,7 @@ import {
 import { cmd } from "../lib/tauri";
 import { useAppStore } from "../lib/store";
 import { generateId, cn, formatMegabytes } from "../lib/utils";
+import { proxigo } from "../lib/proxigo";
 import type {
   BBox,
   DownloadProgress,
@@ -517,8 +518,10 @@ function DrawControlInner({
 
 // ── Main Maps page ────────────────────────────────────────────────────────────
 export function Maps() {
-  const { profile, regions, setRegions, addRegion } = useAppStore();
+  const { profile, regions, setRegions, addRegion, proxigoSession, cloudAccount, setCloudAccount } = useAppStore();
   const featureGroupRef = useRef<L.FeatureGroup | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const estimateRef = useRef<HTMLDivElement>(null);
 
   const [providers,  setProviders]  = useState<MapProvider[]>(FALLBACK_PROVIDERS);
   const [source,     setSource]     = useState<MapProviderId>("usgs-imagery");
@@ -575,11 +578,24 @@ export function Maps() {
   const surveyRows = surveyResultForZoom(coverageSurvey, zoom);
   const maxMapAreaKm2 = profile?.max_map_area_km2;
   const maxDownloadSizeGb = profile?.max_map_download_size_gb ?? 20;
+  // Cloud quota — use org pool when in an org, personal limit otherwise
+  const orgCtx = cloudAccount?.org ?? null;
+  const cloudKm2Used   = orgCtx ? orgCtx.org_km2_used   : (cloudAccount?.km2_used   ?? 0);
+  const cloudKm2Limit  = orgCtx ? orgCtx.org_km2_limit  : (cloudAccount?.km2_limit  ?? 0);
+  const cloudKm2Remaining = cloudKm2Limit > 0 ? Math.max(0, cloudKm2Limit - cloudKm2Used) : null;
+  // Per-member allowance (org only): cap effective remaining by personal allowance if set
+  const myAllowanceRemaining = orgCtx?.my_km2_allowance != null
+    ? Math.max(0, orgCtx.my_km2_allowance - orgCtx.my_km2_used)
+    : null;
+  const effectiveRemaining = myAllowanceRemaining !== null
+    ? Math.min(cloudKm2Remaining ?? Infinity, myAllowanceRemaining)
+    : cloudKm2Remaining;
+  const exceedsCloudQuota = effectiveRemaining !== null && estimate !== null && estimate.area_km2 > effectiveRemaining;
   const mapLimitWarnings = useMemo(() => {
     if (!estimate) return [];
     const warnings: string[] = [];
     if (typeof maxMapAreaKm2 === "number" && maxMapAreaKm2 > 0 && estimate.area_km2 > maxMapAreaKm2) {
-      warnings.push(`Map area ${estimate.area_km2.toFixed(2)} km2 exceeds settings limit ${maxMapAreaKm2.toFixed(2)} km2.`);
+      warnings.push(`Map area ${estimate.area_km2.toFixed(2)} km² exceeds settings limit ${maxMapAreaKm2.toFixed(2)} km².`);
     }
     if (typeof maxDownloadSizeGb === "number" && maxDownloadSizeGb > 0 && estimate.estimated_disk_mb > maxDownloadSizeGb * 1024) {
       warnings.push(`Estimated disk size ${formatMegabytes(estimate.estimated_disk_mb)} exceeds settings limit ${formatMegabytes(maxDownloadSizeGb * 1024)}.`);
@@ -587,7 +603,7 @@ export function Maps() {
     return warnings;
   }, [estimate, maxDownloadSizeGb, maxMapAreaKm2]);
   const requiresDownloadConfirmation = Boolean(estimate && (estimate.over_100_km2 || estimate.too_large || mapLimitWarnings.length > 0));
-  const downloadBlocked = !bbox || !outputDir || downloading || !providerOrder.length || (requiresDownloadConfirmation && !confirmLargeArea);
+  const downloadBlocked = !bbox || !outputDir || downloading || !providerOrder.length || exceedsCloudQuota || (requiresDownloadConfirmation && !confirmLargeArea && !exceedsCloudQuota);
   const currentMode = DRAW_MODES.find((d) => d.mode === drawMode)!;
   const elevationRegion = regions.find((region) => region.id === elevationRegionId) ?? regions[0];
 
@@ -621,6 +637,15 @@ export function Maps() {
   useEffect(() => {
     if (!requiresDownloadConfirmation) setConfirmLargeArea(false);
   }, [requiresDownloadConfirmation]);
+
+  // Auto-scroll panel to estimate section when bbox is drawn
+  useEffect(() => {
+    if (bbox && estimateRef.current && panelRef.current) {
+      setTimeout(() => {
+        estimateRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 100);
+    }
+  }, [bbox]);
 
   useEffect(() => {
     if (!bbox) {
@@ -1078,6 +1103,16 @@ export function Maps() {
       await cmd.saveRegions(next);
       setDone(true);
       setDoneMessage("Satellite mosaic saved and added to the map library.");
+
+      // Report usage to Proxigo cloud backend (fire-and-forget)
+      const moduleSerial = profile?.proxigo_module_serial;
+      if (proxigoSession && moduleSerial && estimate) {
+        proxigo.reportMapDownload(proxigoSession, estimate.area_km2, moduleSerial, region.id)
+          .then(() => {
+            proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
+          })
+          .catch((err) => console.warn("[proxigo] usage report failed:", err));
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -1132,12 +1167,59 @@ export function Maps() {
       </div>
 
       {/* Side panel */}
-      <div className="glass-panel panel-3d-right flex w-80 flex-col overflow-y-auto">
+      <div ref={panelRef} className="glass-panel panel-3d-right flex w-80 flex-col overflow-y-auto">
         <div className="border-b border-border bg-bg-card px-5 py-4">
           <h2 className="font-label-caps text-label-caps text-slate-300">MAP SOURCE PLANNER</h2>
           <p className="mt-1 font-data-mono text-[10px] text-slate-500">
             Choose providers, survey coverage, then patch the best available imagery.
           </p>
+        </div>
+
+        {/* Proxigo quota — always visible */}
+        <div className="border-b border-border px-4 py-3">
+          {proxigoSession && cloudAccount ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  {orgCtx ? orgCtx.org_name : "Monthly Quota"}
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  {orgCtx
+                    ? `${orgCtx.org_plan.charAt(0).toUpperCase() + orgCtx.org_plan.slice(1)} · ${orgCtx.role}`
+                    : cloudAccount.plan
+                      ? cloudAccount.plan.charAt(0).toUpperCase() + cloudAccount.plan.slice(1)
+                      : null}
+                </span>
+              </div>
+              <div className="flex gap-3 text-xs font-mono">
+                <span><span className="text-slate-200">{cloudKm2Used.toFixed(1)}</span> <span className="text-slate-600">used</span></span>
+                <span className="text-slate-600">/</span>
+                <span><span className="text-slate-200">{cloudKm2Limit}</span> <span className="text-slate-600">km²</span></span>
+                <span className="ml-auto">
+                  <span className={exceedsCloudQuota ? "text-red-400" : "text-emerald-400"}>
+                    {(effectiveRemaining ?? cloudKm2Remaining ?? 0).toFixed(1)}
+                  </span>
+                  <span className="text-slate-600"> left</span>
+                </span>
+              </div>
+              {orgCtx?.my_km2_allowance != null && (
+                <div className="text-[10px] text-slate-500">
+                  Your allowance: {orgCtx.my_km2_used.toFixed(1)} / {orgCtx.my_km2_allowance} km²
+                </div>
+              )}
+              {estimate && effectiveRemaining !== null && (
+                <div className={cn("text-[10px]", exceedsCloudQuota ? "text-red-400 font-medium" : "text-slate-500")}>
+                  {exceedsCloudQuota
+                    ? `This area (${estimate.area_km2.toFixed(1)} km²) exceeds your ${effectiveRemaining.toFixed(1)} km² remaining`
+                    : `After download: ${(effectiveRemaining - estimate.area_km2).toFixed(1)} km² remaining`}
+                </div>
+              )}
+            </div>
+          ) : proxigoSession ? (
+            <span className="text-[10px] text-slate-500">Loading quota…</span>
+          ) : (
+            <span className="text-[10px] text-slate-500">Sign in to Proxigo to track quota</span>
+          )}
         </div>
 
         <div className="p-5 space-y-5 flex-1">
@@ -1337,11 +1419,12 @@ export function Maps() {
                 </div>
               </div>
               <div className="bg-bg-elevated px-2 py-1.5 text-center">
-                <span className="text-lg font-bold text-orange-400 font-mono">
+                <span className={cn("text-lg font-bold font-mono", exceedsCloudQuota ? "text-red-400" : "text-orange-400")}>
                   {(estimate?.area_km2 ?? (cutShape === "polygon" ? polygonAreaKm2(polygonPoints) : bboxAreaKm2(bbox))).toFixed(2)}
                 </span>
                 <span className="text-xs text-slate-400 ml-1">km² cut area</span>
               </div>
+              <div ref={estimateRef} />
               {estimate && (
                 <div className="border-t border-border pt-2 space-y-2">
                   {estimate.warnings.map((warning) => (
@@ -1710,7 +1793,12 @@ export function Maps() {
               <><Download size={15} /> Download Mosaic</>
             )}
           </button>
-          {requiresDownloadConfirmation && !confirmLargeArea && (
+          {exceedsCloudQuota && (
+            <div className="text-center text-[10px] text-red-400">
+              Quota exceeded — upgrade your plan at proxigo.us to download this area.
+            </div>
+          )}
+          {requiresDownloadConfirmation && !confirmLargeArea && !exceedsCloudQuota && (
             <div className="text-center text-[10px] text-orange-300">
               Confirm the map download warning before starting.
             </div>

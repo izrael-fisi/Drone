@@ -7,21 +7,52 @@ import { useShellStore, type BottomDockTabId, type RightDockRoute } from "./lib/
 import { Dashboard } from "./pages/Dashboard";
 import { Onboarding } from "./pages/Onboarding";
 import { Settings } from "./pages/Settings";
+import { proxigo, type ProxigoSession } from "./lib/proxigo";
+import type { Profile } from "./lib/types";
 
 export default function App() {
-  const { setProfile, setDevices, setRegions } = useAppStore();
+  const { profile, setProfile, setDevices, setRegions, setProxigoSession, setCloudAccount, proxigoSession } = useAppStore();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([cmd.loadProfile(), cmd.loadDevices(), cmd.loadRegions()])
-      .then(([p, d, r]) => {
+      .then(async ([p, d, r]) => {
         setProfile(p);
         setDevices(d);
         setRegions(r);
+
+        // Restore Proxigo session from persisted tokens
+        if (p.proxigo_access_token && p.proxigo_refresh_token && p.proxigo_user_id && p.proxigo_email) {
+          let session: ProxigoSession = {
+            access_token: p.proxigo_access_token,
+            refresh_token: p.proxigo_refresh_token,
+            expires_at: p.proxigo_token_expires_at ?? 0,
+            user_id: p.proxigo_user_id,
+            email: p.proxigo_email,
+          };
+          try {
+            if (proxigo.isExpired(session)) {
+              session = await proxigo.refreshSession(session);
+              const updated = {
+                ...p,
+                proxigo_access_token: session.access_token,
+                proxigo_refresh_token: session.refresh_token,
+                proxigo_token_expires_at: session.expires_at,
+              };
+              await cmd.saveProfile(updated);
+              setProfile(updated);
+            }
+            setProxigoSession(session);
+            const account = await proxigo.getAccount(session);
+            setCloudAccount(account);
+          } catch {
+            // Token invalid — user will need to log in again
+          }
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [setProfile, setDevices, setRegions]);
+  }, [setProfile, setDevices, setRegions, setProxigoSession, setCloudAccount]);
 
   if (loading) {
     return (
@@ -31,6 +62,20 @@ export default function App() {
           <span className="text-slate-400 text-sm">Loading...</span>
         </div>
       </div>
+    );
+  }
+
+  // Gate the app behind Proxigo login for users who have completed onboarding
+  if (!proxigoSession && profile?.onboarding_complete) {
+    return (
+      <ProxigoLoginScreen
+        profile={profile}
+        onLogin={(session) => {
+          setProxigoSession(session);
+          proxigo.getAccount(session).then(setCloudAccount).catch(() => {});
+        }}
+        setProfile={setProfile}
+      />
     );
   }
 
@@ -111,6 +156,139 @@ function OpenHomeSurface({
 
 function OpenSettingsGroup({ group }: { group: string }) {
   return <Navigate to={`/settings?group=${encodeURIComponent(group)}`} replace />;
+}
+
+function ProxigoLoginScreen({
+  profile,
+  onLogin,
+  setProfile,
+}: {
+  profile: Profile;
+  onLogin: (session: ProxigoSession) => void;
+  setProfile: (p: Profile) => void;
+}) {
+  const [email, setEmail] = useState(profile.proxigo_email ?? "");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const session = await proxigo.login(email.trim(), password);
+      const updated = {
+        ...profile,
+        proxigo_access_token: session.access_token,
+        proxigo_refresh_token: session.refresh_token,
+        proxigo_token_expires_at: session.expires_at,
+        proxigo_user_id: session.user_id,
+        proxigo_email: session.email,
+      };
+      await cmd.saveProfile(updated);
+      setProfile(updated);
+      onLogin(session);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: { key: string }) => {
+    if (e.key === "Enter") handleLogin();
+  };
+
+  return (
+    <div className="flex h-screen bg-bg-base items-center justify-center">
+      {/* Background grid */}
+      <div
+        className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage:
+            "linear-gradient(#FF6600 1px, transparent 1px), linear-gradient(90deg, #FF6600 1px, transparent 1px)",
+          backgroundSize: "40px 40px",
+        }}
+      />
+
+      <div className="relative z-10 w-full max-w-sm px-6 animate-fade-in">
+        <div className="flex flex-col items-center mb-8">
+          <DroneLogo size={48} />
+          <h1 className="mt-4 text-2xl font-bold text-slate-100">Sign in to Proxigo</h1>
+          <p className="text-slate-400 text-sm mt-1 text-center">
+            Your account tracks map download quota and subscription status.
+          </p>
+        </div>
+
+        <div className="card space-y-4">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              Email
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="you@example.com"
+              autoFocus
+              className="w-full rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-orange-500/50 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="••••••••"
+              className="w-full rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-orange-500/50 transition-colors"
+            />
+          </div>
+
+          {error && (
+            <div className="rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={handleLogin}
+            disabled={loading || !email.trim() || !password}
+            className="btn-primary w-full justify-center"
+          >
+            {loading ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Signing in…
+              </>
+            ) : (
+              "Sign in"
+            )}
+          </button>
+        </div>
+
+        <p className="mt-4 text-center text-[11px] text-slate-600">
+          Need an account?{" "}
+          <a
+            href="https://proxigo.us"
+            target="_blank"
+            rel="noreferrer"
+            className="text-orange-500 hover:text-orange-400 transition-colors"
+          >
+            Sign up at proxigo.us
+          </a>
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export function DroneLogo({ size = 32 }: { size?: number }) {

@@ -1,11 +1,14 @@
 import { create } from "zustand";
 import type { Device, Profile, Region } from "./types";
+import type { CloudAccount, ProxigoSession } from "./proxigo";
 
 interface AppState {
   profile: Profile | null;
   devices: Device[];
   regions: Region[];
   activeDeviceId: string | null;
+  proxigoSession: ProxigoSession | null;
+  cloudAccount: CloudAccount | null;
 
   setProfile: (p: Profile) => void;
   setDevices: (d: Device[]) => void;
@@ -17,6 +20,8 @@ interface AppState {
   updateRegion: (r: Region) => void;
   removeRegion: (id: string) => void;
   setActiveDevice: (id: string | null) => void;
+  setProxigoSession: (session: ProxigoSession | null) => void;
+  setCloudAccount: (account: CloudAccount | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -24,6 +29,8 @@ export const useAppStore = create<AppState>((set) => ({
   devices: [],
   regions: [],
   activeDeviceId: null,
+  proxigoSession: null,
+  cloudAccount: null,
 
   setProfile: (profile) => set({ profile }),
   setDevices: (devices) => set({ devices }),
@@ -39,4 +46,6 @@ export const useAppStore = create<AppState>((set) => ({
   removeRegion: (id) =>
     set((s) => ({ regions: s.regions.filter((x) => x.id !== id) })),
   setActiveDevice: (activeDeviceId) => set({ activeDeviceId }),
+  setProxigoSession: (proxigoSession) => set({ proxigoSession }),
+  setCloudAccount: (cloudAccount) => set({ cloudAccount }),
 }));

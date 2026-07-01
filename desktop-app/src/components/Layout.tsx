@@ -2,7 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   Archive,
-  Building2,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -54,6 +53,7 @@ import type {
 } from "../lib/types";
 import { cn } from "../lib/utils";
 import { deriveOperatorRuntimeModel, type OperatorRuntimeModel } from "../lib/operatorRuntimeAdapter";
+import { proxigo } from "../lib/proxigo";
 
 const DOCK_LABELS: Record<RightDockRoute, string> = {
   root: "Panel",
@@ -2275,24 +2275,33 @@ function DiagnosticsSettingsPanel({
 }
 
 function AccountPanel() {
-  const { profile, setProfile, regions } = useAppStore();
+  const { profile, setProfile, proxigoSession, setProxigoSession, cloudAccount, setCloudAccount } = useAppStore();
   const resolvedProfile = profileWithDefaults(profile);
+
+  // Local profile fields
   const [name, setName] = useState(resolvedProfile.name);
   const [email, setEmail] = useState(resolvedProfile.email);
   const [org, setOrg] = useState(resolvedProfile.org);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const organizationMaps = regions.filter(isOrganizationMap);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+
+  // Proxigo cloud auth fields
+  const [cloudEmail, setCloudEmail] = useState("");
+  const [cloudPassword, setCloudPassword] = useState("");
+  const [moduleSerial, setModuleSerial] = useState(resolvedProfile.proxigo_module_serial ?? "");
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
 
   useEffect(() => {
     setName(resolvedProfile.name);
     setEmail(resolvedProfile.email);
     setOrg(resolvedProfile.org);
-  }, [resolvedProfile.email, resolvedProfile.name, resolvedProfile.org]);
+    setModuleSerial(resolvedProfile.proxigo_module_serial ?? "");
+  }, [resolvedProfile.email, resolvedProfile.name, resolvedProfile.org, resolvedProfile.proxigo_module_serial]);
 
-  const saveAccount = async () => {
+  const saveLocalProfile = async () => {
     setSaving(true);
-    setMessage(null);
+    setProfileMessage(null);
     const updated: Profile = {
       ...resolvedProfile,
       email: email.trim(),
@@ -2302,16 +2311,87 @@ function AccountPanel() {
     try {
       await cmd.saveProfile(updated);
       setProfile(updated);
-      setMessage("saved");
+      setProfileMessage("saved");
     } catch (error) {
-      setMessage(String(error));
+      setProfileMessage(String(error));
     } finally {
       setSaving(false);
     }
   };
 
+  const handleLogin = async () => {
+    setCloudLoading(true);
+    setCloudError(null);
+    try {
+      const session = await proxigo.login(cloudEmail.trim(), cloudPassword);
+      setProxigoSession(session);
+      const account = await proxigo.getAccount(session);
+      setCloudAccount(account);
+
+      const updated: Profile = {
+        ...resolvedProfile,
+        proxigo_access_token: session.access_token,
+        proxigo_refresh_token: session.refresh_token,
+        proxigo_token_expires_at: session.expires_at,
+        proxigo_user_id: session.user_id,
+        proxigo_email: session.email,
+        proxigo_module_serial: moduleSerial.trim() || resolvedProfile.proxigo_module_serial,
+      };
+      await cmd.saveProfile(updated);
+      setProfile(updated);
+      setCloudPassword("");
+    } catch (err) {
+      setCloudError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setProxigoSession(null);
+    setCloudAccount(null);
+    const updated: Profile = {
+      ...resolvedProfile,
+      proxigo_access_token: undefined,
+      proxigo_refresh_token: undefined,
+      proxigo_token_expires_at: undefined,
+      proxigo_user_id: undefined,
+      proxigo_email: undefined,
+    };
+    await cmd.saveProfile(updated);
+    setProfile(updated);
+  };
+
+  const handleSaveModuleSerial = async () => {
+    const serial = moduleSerial.trim().toUpperCase();
+    const updated: Profile = { ...resolvedProfile, proxigo_module_serial: serial || undefined };
+    await cmd.saveProfile(updated);
+    setProfile(updated);
+  };
+
+  const refreshAccount = async () => {
+    if (!proxigoSession) return;
+    setCloudLoading(true);
+    try {
+      const account = await proxigo.getAccount(proxigoSession);
+      setCloudAccount(account);
+    } catch (err) {
+      setCloudError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
+  const planLabel: Record<string, string> = { starter: "Starter", pro: "Pro", enterprise: "Enterprise" };
+  const orgCtx = cloudAccount?.org ?? null;
+  // Effective quota: org pool if in org, personal otherwise
+  const displayKm2Used      = orgCtx ? orgCtx.org_km2_used      : (cloudAccount?.km2_used      ?? 0);
+  const displayKm2Limit     = orgCtx ? orgCtx.org_km2_limit     : (cloudAccount?.km2_limit     ?? 0);
+  const displayKm2Remaining = orgCtx ? orgCtx.org_km2_remaining : (cloudAccount?.km2_remaining ?? 0);
+
   return (
     <PanelStack title="Account" subtitle={resolvedProfile.org || "Organization not set"}>
+      {/* Local profile */}
       <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-bg-card p-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-orange-500/35 bg-orange-500/10 text-orange-200">
           <UserRound size={18} />
@@ -2324,19 +2404,155 @@ function AccountPanel() {
       <CompactField label="Name" value={name} onChange={setName} placeholder="Operator name" />
       <CompactField label="Email" value={email} onChange={setEmail} placeholder="operator@example.com" />
       <CompactField label="Organization" value={org} onChange={setOrg} placeholder="Organization name" />
-      <PanelAction label={saving ? "Saving Account" : "Save Account"} detail={message ?? "Persist operator and organization"} onClick={saveAccount} disabled={saving} />
-      <SectionLabel>Organization</SectionLabel>
-      <div className="rounded-lg border border-white/10 bg-bg-card p-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-          <Building2 size={15} className="text-orange-300" />
-          {org || "Drone Vision Nav"}
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <StateCard label="Org Maps" value={organizationMaps.length} detail="shared library" tone={organizationMaps.length ? "orange" : "muted"} />
-          <StateCard label="Recordings" value="0" detail="cloud sync off" tone="muted" />
-        </div>
-      </div>
-      <PanelAction label="Create Organization" detail="Cloud sharing is not configured in this build" disabled />
+      <PanelAction
+        label={saving ? "Saving…" : "Save Local Profile"}
+        detail={profileMessage ?? "Persist operator name and organization"}
+        onClick={saveLocalProfile}
+        disabled={saving}
+      />
+
+      {/* Proxigo cloud account */}
+      <SectionLabel>Proxigo Cloud</SectionLabel>
+      {proxigoSession && cloudAccount ? (
+        <>
+          {/* Account identity + quota */}
+          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/8 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <span className="block truncate text-xs font-semibold text-emerald-300">{cloudAccount.email}</span>
+                {orgCtx && (
+                  <span className="block text-[10px] text-slate-400">{orgCtx.org_name} · {orgCtx.role}</span>
+                )}
+              </div>
+              <span className="shrink-0 rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-300">
+                {orgCtx
+                  ? (planLabel[orgCtx.org_plan] ?? orgCtx.org_plan)
+                  : cloudAccount.plan
+                    ? (planLabel[cloudAccount.plan] ?? cloudAccount.plan)
+                    : "No plan"}
+              </span>
+            </div>
+
+            {/* Quota numbers */}
+            {displayKm2Limit > 0 && (
+              <div className="space-y-0.5">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-slate-400">{orgCtx ? "Org pool this month" : "Quota this month"}</span>
+                </div>
+                <div className="flex gap-3 text-xs font-mono">
+                  <span><span className="text-slate-100">{displayKm2Used.toFixed(1)}</span> <span className="text-slate-500">used</span></span>
+                  <span className="text-slate-600">/</span>
+                  <span><span className="text-slate-100">{displayKm2Limit}</span> <span className="text-slate-500">km²</span></span>
+                  <span className="ml-auto text-emerald-400">{displayKm2Remaining.toFixed(1)} <span className="text-slate-500">left</span></span>
+                </div>
+                {orgCtx?.my_km2_allowance != null && (
+                  <div className="text-[10px] text-slate-500">
+                    Your allowance: {orgCtx.my_km2_used.toFixed(1)} / {orgCtx.my_km2_allowance} km²
+                  </div>
+                )}
+              </div>
+            )}
+
+            {cloudAccount.modules.length > 0 && (
+              <div className="text-[10px] text-slate-400">
+                {cloudAccount.modules.length} module{cloudAccount.modules.length !== 1 ? "s" : ""}
+                {" · "}{cloudAccount.modules.filter((m) => m.status === "active").length} active
+              </div>
+            )}
+          </div>
+
+          {/* Org member usage — admins only */}
+          {orgCtx?.role === "admin" && orgCtx.members && orgCtx.members.length > 0 && (
+            <>
+              <SectionLabel>Team Usage</SectionLabel>
+              <div className="rounded-lg border border-border bg-bg-card overflow-hidden">
+                {orgCtx.members.map((member, i) => (
+                  <div
+                    key={member.user_id}
+                    className={cn(
+                      "px-3 py-2 text-[10px]",
+                      i > 0 && "border-t border-border"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate font-mono text-slate-300">
+                        {member.user_id === cloudAccount.user_id ? "You" : member.user_id.slice(0, 8) + "…"}
+                      </span>
+                      <span className="shrink-0 text-slate-400">
+                        {member.km2_used.toFixed(1)} km²
+                        {member.km2_allowance != null && (
+                          <span className="text-slate-600"> / {member.km2_allowance}</span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="text-slate-600 mt-0.5">{member.role}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <CompactField
+            label="Active Module Serial"
+            value={moduleSerial}
+            onChange={setModuleSerial}
+            placeholder="MAC-XXXX-XXXX-XXXX"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <PanelAction
+              label="Save Serial"
+              detail="Used for usage reporting"
+              onClick={handleSaveModuleSerial}
+            />
+            <PanelAction
+              label={cloudLoading ? "Refreshing…" : "Refresh"}
+              detail="Reload account info"
+              onClick={refreshAccount}
+              disabled={cloudLoading}
+            />
+          </div>
+          <PanelAction label="Sign Out of Proxigo" detail={`Logged in as ${cloudAccount.email}`} onClick={handleLogout} />
+        </>
+      ) : (
+        <>
+          <div className="rounded-lg border border-white/10 bg-bg-card p-3 space-y-2">
+            <p className="text-[10px] text-slate-400">
+              Sign in to your proxigo.us account to track map download usage and manage your subscription.
+            </p>
+            <CompactField
+              label="Email"
+              value={cloudEmail}
+              onChange={setCloudEmail}
+              placeholder="you@example.com"
+            />
+            <CompactField
+              label="Password"
+              value={cloudPassword}
+              onChange={setCloudPassword}
+              placeholder="••••••••"
+              secret
+            />
+            {cloudError && (
+              <div className="rounded border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-[10px] text-red-400">
+                {cloudError}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={handleLogin}
+              disabled={cloudLoading || !cloudEmail || !cloudPassword}
+              className={cn(
+                "flex w-full items-center justify-center gap-2 rounded-md border px-3 py-2 text-xs font-medium transition-colors",
+                cloudLoading || !cloudEmail || !cloudPassword
+                  ? "cursor-not-allowed border-border bg-bg-card text-slate-500 opacity-55"
+                  : "border-orange-500/40 bg-orange-500/10 text-orange-200 hover:bg-orange-500/20"
+              )}
+            >
+              {cloudLoading ? <><Loader2 size={13} className="animate-spin" /> Signing in…</> : "Sign in to Proxigo"}
+            </button>
+          </div>
+        </>
+      )}
     </PanelStack>
   );
 }

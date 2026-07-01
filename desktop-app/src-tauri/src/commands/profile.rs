@@ -24,6 +24,19 @@ pub struct Profile {
     pub max_map_area_km2: Option<f64>,
     #[serde(default)]
     pub max_map_download_size_gb: Option<f64>,
+    // Proxigo cloud auth — persisted across restarts
+    #[serde(default)]
+    pub proxigo_access_token: Option<String>,
+    #[serde(default)]
+    pub proxigo_refresh_token: Option<String>,
+    #[serde(default)]
+    pub proxigo_token_expires_at: Option<f64>,
+    #[serde(default)]
+    pub proxigo_user_id: Option<String>,
+    #[serde(default)]
+    pub proxigo_email: Option<String>,
+    #[serde(default)]
+    pub proxigo_module_serial: Option<String>,
 }
 
 impl Default for Profile {
@@ -38,6 +51,12 @@ impl Default for Profile {
             bing_key: None,
             max_map_area_km2: None,
             max_map_download_size_gb: Some(20.0),
+            proxigo_access_token: None,
+            proxigo_refresh_token: None,
+            proxigo_token_expires_at: None,
+            proxigo_user_id: None,
+            proxigo_email: None,
+            proxigo_module_serial: None,
         }
     }
 }

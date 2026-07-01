@@ -8,6 +8,13 @@ export interface Profile {
   bing_key?: string;
   max_map_area_km2?: number;
   max_map_download_size_gb?: number;
+  // Proxigo cloud auth — persisted across restarts
+  proxigo_access_token?: string;
+  proxigo_refresh_token?: string;
+  proxigo_token_expires_at?: number;
+  proxigo_user_id?: string;
+  proxigo_email?: string;
+  proxigo_module_serial?: string;
 }
 
 export type BuiltInMapProviderId =
