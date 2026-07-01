@@ -143,12 +143,23 @@ export const proxigo = {
     session: ProxigoSession,
     km2: number,
     moduleSerial: string,
-    sessionId?: string
+    sessionId?: string,
+    bbox?: { lat_min: number; lat_max: number; lon_min: number; lon_max: number },
+    locationLabel?: string
   ): Promise<{ ok: boolean; total_km2_this_month: number }> {
     const res = await fetch(`${PROXIGO_API_URL}/api/usage`, {
       method: "POST",
       headers: apiHeaders(session.access_token),
-      body: JSON.stringify({ km2, module_serial: moduleSerial, session_id: sessionId }),
+      body: JSON.stringify({
+        km2,
+        module_serial:  moduleSerial,
+        session_id:     sessionId,
+        location_label: locationLabel,
+        lat_min:        bbox?.lat_min,
+        lat_max:        bbox?.lat_max,
+        lon_min:        bbox?.lon_min,
+        lon_max:        bbox?.lon_max,
+      }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? "Failed to report usage");

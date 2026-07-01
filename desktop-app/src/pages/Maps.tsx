@@ -1120,7 +1120,14 @@ export function Maps() {
       // Report usage to Proxigo cloud backend (fire-and-forget)
       const moduleSerial = profile?.proxigo_module_serial;
       if (proxigoSession && moduleSerial && estimate) {
-        proxigo.reportMapDownload(proxigoSession, estimate.area_km2, moduleSerial, region.id)
+        proxigo.reportMapDownload(
+          proxigoSession,
+          estimate.area_km2,
+          moduleSerial,
+          region.id,
+          bbox,
+          locationLabel ?? undefined
+        )
           .then(() => {
             proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
           })
