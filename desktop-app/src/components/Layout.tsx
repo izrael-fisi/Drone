@@ -1,7 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  AlertTriangle,
   Archive,
+  ArrowLeftRight,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -1262,8 +1264,7 @@ function MissionStat({ label, value, detail }: { label: string; value: string | 
 type MapScope = "all" | "local" | "organization";
 
 function isOrganizationMap(region: Region) {
-  const marker = `${region.source ?? ""} ${region.output_path ?? ""} ${region.location_label ?? ""} ${region.active_bundle_path ?? ""}`.toLowerCase();
-  return marker.includes("org://") || marker.includes("organization") || marker.includes("shared") || marker.includes("cloud");
+  return region.lifecycle_state === "org";
 }
 
 function mapMatchesScope(region: Region, scope: MapScope) {
@@ -1306,6 +1307,7 @@ function MapsPanel({ model, regions }: { model: OperatorRuntimeModel; regions: R
   const [openLibrary, setOpenLibrary] = useState<MapScope | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<MapScope>("all");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const localMaps = regions.filter((region) => !isOrganizationMap(region));
   const organizationMaps = regions.filter(isOrganizationMap);
   const visibleMaps = regions.filter((region) => {
@@ -1318,6 +1320,7 @@ function MapsPanel({ model, regions }: { model: OperatorRuntimeModel; regions: R
     setOpenLibrary((current) => (current === scope ? null : scope));
     setFilter(scope);
     setQuery("");
+    setPendingDeleteId(null);
   };
 
   const persistRegions = async (nextRegions: Region[]) => {
@@ -1336,10 +1339,17 @@ function MapsPanel({ model, regions }: { model: OperatorRuntimeModel; regions: R
     await persistRegions(regions.map((item) => (item.id === region.id ? updated : item)));
   };
 
-  const deleteMap = async (region: Region) => {
-    if (!window.confirm(`Delete ${region.name}?`)) return;
+  const confirmDelete = async (region: Region) => {
     removeRegion(region.id);
+    setPendingDeleteId(null);
     await persistRegions(regions.filter((item) => item.id !== region.id));
+  };
+
+  const transferMap = async (region: Region) => {
+    const isOrg = isOrganizationMap(region);
+    const updated = { ...region, lifecycle_state: isOrg ? "local" : "org" } as Region;
+    updateRegion(updated);
+    await persistRegions(regions.map((item) => (item.id === region.id ? updated : item)));
   };
 
   return (
@@ -1390,20 +1400,79 @@ function MapsPanel({ model, regions }: { model: OperatorRuntimeModel; regions: R
             {visibleMaps.length === 0 ? (
               <EmptyLine text="No saved maps match" />
             ) : (
-              visibleMaps.map((region) => (
-                <div key={region.id} className="flex items-center gap-2 border-b border-white/5 px-2 py-2 last:border-b-0">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium text-slate-200">{region.name}</div>
-                    <div className="truncate font-mono text-[10px] text-slate-600">{isOrganizationMap(region) ? "organization" : "local"} / {region.lifecycle_state ?? "saved"}</div>
+              visibleMaps.map((region) => {
+                const isOrg = isOrganizationMap(region);
+                const isPendingDelete = pendingDeleteId === region.id;
+                return (
+                  <div key={region.id} className="border-b border-white/5 last:border-b-0">
+                    {isPendingDelete ? (
+                      <div className={cn(
+                        "px-2 py-2 space-y-1.5 rounded",
+                        isOrg ? "bg-red-500/10 border border-red-500/25" : "bg-zinc-800/60"
+                      )}>
+                        <div className="flex items-center gap-1.5 text-[10px] font-medium text-red-300">
+                          <AlertTriangle size={11} className="shrink-0" />
+                          {isOrg
+                            ? `Remove "${region.name}" from org? All team members will lose access.`
+                            : `Delete "${region.name}" from your local library?`}
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => confirmDelete(region)}
+                            className="flex-1 rounded bg-red-500/20 px-2 py-1 text-[10px] font-medium text-red-300 hover:bg-red-500/30 transition-colors"
+                          >
+                            {isOrg ? "Remove from Org" : "Delete"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingDeleteId(null)}
+                            className="flex-1 rounded bg-white/5 px-2 py-1 text-[10px] text-slate-400 hover:bg-white/10 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-2 py-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-xs font-medium text-slate-200">{region.name}</div>
+                          <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-600">
+                            <span className={cn(isOrg ? "text-violet-400/70" : "text-slate-600")}>
+                              {isOrg ? "org" : "local"}
+                            </span>
+                            {region.location_label && <span className="truncate">· {region.location_label}</span>}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => renameMap(region)}
+                          className="operator-shell-button h-7 w-7 rounded-md"
+                          title="Rename"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => transferMap(region)}
+                          className="operator-shell-button h-7 w-7 rounded-md hover:text-violet-300"
+                          title={isOrg ? "Move to Local" : "Move to Org"}
+                        >
+                          <ArrowLeftRight size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingDeleteId(region.id)}
+                          className="operator-shell-button h-7 w-7 rounded-md hover:text-red-300"
+                          title="Delete"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <button type="button" onClick={() => renameMap(region)} className="operator-shell-button h-7 w-7 rounded-md" title="Rename map">
-                    <Pencil size={13} />
-                  </button>
-                  <button type="button" onClick={() => deleteMap(region)} className="operator-shell-button h-7 w-7 rounded-md hover:text-red-300" title="Delete map">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

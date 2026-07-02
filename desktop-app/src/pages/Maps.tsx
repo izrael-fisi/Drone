@@ -1129,6 +1129,28 @@ export function Maps() {
       if (proxigoSession && moduleSerial && estimate) {
         setUsageReportStatus("reporting");
         setUsageReportError(null);
+
+        // Optimistically update the displayed quota immediately
+        if (cloudAccount) {
+          const delta = estimate.area_km2;
+          const updated = orgCtx
+            ? {
+                ...cloudAccount,
+                org: {
+                  ...orgCtx,
+                  org_km2_used: orgCtx.org_km2_used + delta,
+                  org_km2_remaining: Math.max(0, orgCtx.org_km2_remaining - delta),
+                  my_km2_used: orgCtx.my_km2_used + delta,
+                },
+              }
+            : {
+                ...cloudAccount,
+                km2_used: cloudAccount.km2_used + delta,
+                km2_remaining: Math.max(0, cloudAccount.km2_remaining - delta),
+              };
+          setCloudAccount(updated);
+        }
+
         proxigo.reportMapDownload(
           proxigoSession,
           estimate.area_km2,
@@ -1139,12 +1161,15 @@ export function Maps() {
         )
           .then(() => {
             setUsageReportStatus("ok");
+            // Confirm with real server values
             return proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
           })
           .catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
             setUsageReportStatus("error");
             setUsageReportError(msg);
+            // Roll back optimistic update on failure
+            proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
             console.warn("[proxigo] usage report failed:", msg);
           });
       } else if (proxigoSession && !moduleSerial) {
