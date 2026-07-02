@@ -1159,22 +1159,25 @@ export function Maps() {
           bbox,
           locationLabel ?? undefined
         )
-          .then(() => {
+          .then((result) => {
             setUsageReportStatus("ok");
-            // Confirm with real server values
+            setUsageReportError(`Confirmed — total this month: ${result.total_km2_this_month.toFixed(2)} km²`);
             return proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
           })
           .catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
             setUsageReportStatus("error");
             setUsageReportError(msg);
-            // Roll back optimistic update on failure
             proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
-            console.warn("[proxigo] usage report failed:", msg);
           });
-      } else if (proxigoSession && !moduleSerial) {
+      } else {
+        // Show exactly which condition prevented the report
+        const reasons: string[] = [];
+        if (!proxigoSession) reasons.push("not signed in to Proxigo");
+        if (!moduleSerial) reasons.push(`no module serial (profile.proxigo_module_serial = ${JSON.stringify(profile?.proxigo_module_serial)})`);
+        if (!estimate) reasons.push("estimate is null");
         setUsageReportStatus("error");
-        setUsageReportError("No module serial set in Account — go to Account tab and set your Proxigo Module Serial.");
+        setUsageReportError(reasons.join(" · "));
       }
     } catch (e) {
       setError(String(e));
