@@ -516,9 +516,23 @@ function DrawControlInner({
   return null;
 }
 
+// ── Fly to org map bbox inside MapContainer ───────────────────────────────────
+function FlyToOrgMap() {
+  const map = useMap();
+  const pending = useAppStore((s) => s.pendingOrgMapDownload);
+  useEffect(() => {
+    if (!pending) return;
+    map.fitBounds(
+      [[pending.lat_min, pending.lon_min], [pending.lat_max, pending.lon_max]],
+      { padding: [20, 20], maxZoom: pending.zoom }
+    );
+  }, [pending, map]);
+  return null;
+}
+
 // ── Main Maps page ────────────────────────────────────────────────────────────
 export function Maps() {
-  const { profile, regions, setRegions, addRegion, proxigoSession, cloudAccount, setCloudAccount } = useAppStore();
+  const { profile, regions, setRegions, addRegion, proxigoSession, cloudAccount, setCloudAccount, pendingOrgMapDownload, setPendingOrgMapDownload } = useAppStore();
   const featureGroupRef = useRef<L.FeatureGroup | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const estimateRef = useRef<HTMLDivElement>(null);
@@ -720,6 +734,28 @@ export function Maps() {
     if (!defaultOutputRoot || customOutputDir) return;
     setOutputDir(`${defaultOutputRoot}/${slugifyPathSegment(regionName)}`);
   }, [defaultOutputRoot, regionName, customOutputDir]);
+
+  // Pre-populate from an org map "Download to local" action
+  useEffect(() => {
+    if (!pendingOrgMapDownload || !defaultOutputRoot) return;
+    const om = pendingOrgMapDownload;
+    setBbox({ lat_min: om.lat_min, lat_max: om.lat_max, lon_min: om.lon_min, lon_max: om.lon_max });
+    setCutShape("box");
+    setZoom(om.zoom);
+    setRegionName(om.name);
+    setOutputDir(`${defaultOutputRoot}/${slugifyPathSegment(om.name)}`);
+    setCustomOutputDir(false);
+    // Draw the rectangle visually in the feature group
+    if (featureGroupRef.current) {
+      featureGroupRef.current.clearLayers();
+      L.rectangle(
+        [[om.lat_min, om.lon_min], [om.lat_max, om.lon_max]],
+        { color: "#FF6600", weight: 2, fillOpacity: 0.12 }
+      ).addTo(featureGroupRef.current);
+    }
+    setPendingOrgMapDownload(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOrgMapDownload, defaultOutputRoot]);
 
   useEffect(() => {
     if (!defaultOutputRoot || customMapImportOutput || !mapFilePath) return;
@@ -1127,14 +1163,16 @@ export function Maps() {
       setDoneMessage("Satellite mosaic saved and added to the map library.");
 
       // Report usage to Proxigo cloud
+      // Use estimate if available; fall back to bbox area so usage is always recorded
       const moduleSerial = profile?.proxigo_module_serial;
-      if (proxigoSession && moduleSerial && estimate) {
+      const reportKm2 = estimate?.area_km2 ?? (cutShape === "polygon" ? polygonAreaKm2(polygonPoints) : bboxAreaKm2(bbox));
+      if (proxigoSession && moduleSerial) {
         setUsageReportStatus("reporting");
         setUsageReportError(null);
 
         // Optimistically update the displayed quota immediately
         if (cloudAccount) {
-          const delta = estimate.area_km2;
+          const delta = reportKm2;
           const updated = orgCtx
             ? {
                 ...cloudAccount,
@@ -1157,7 +1195,7 @@ export function Maps() {
         const capturedOrgCtx = orgCtx;
         proxigo.reportMapDownload(
           proxigoSession,
-          estimate.area_km2,
+          reportKm2,
           moduleSerial,
           region.id,
           bbox,
@@ -1250,6 +1288,7 @@ export function Maps() {
             mode={drawMode}
             drawKey={drawKey}
           />
+          <FlyToOrgMap />
         </MapContainer>
 
         {/* Floating hint */}

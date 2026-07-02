@@ -10,6 +10,7 @@ interface AppState {
   activeDeviceId: string | null;
   proxigoSession: ProxigoSession | null;
   cloudAccount: CloudAccount | null;
+  pendingOrgMapDownload: OrgMapRegion | null;
 
   setProfile: (p: Profile) => void;
   setDevices: (d: Device[]) => void;
@@ -26,6 +27,7 @@ interface AppState {
   setActiveDevice: (id: string | null) => void;
   setProxigoSession: (session: ProxigoSession | null) => void;
   setCloudAccount: (account: CloudAccount | null) => void;
+  setPendingOrgMapDownload: (m: OrgMapRegion | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -36,6 +38,7 @@ export const useAppStore = create<AppState>((set) => ({
   activeDeviceId: null,
   proxigoSession: null,
   cloudAccount: null,
+  pendingOrgMapDownload: null,
 
   setProfile: (profile) => set({ profile }),
   setDevices: (devices) => set({ devices }),
@@ -56,4 +59,5 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveDevice: (activeDeviceId) => set({ activeDeviceId }),
   setProxigoSession: (proxigoSession) => set({ proxigoSession }),
   setCloudAccount: (cloudAccount) => set({ cloudAccount }),
+  setPendingOrgMapDownload: (pendingOrgMapDownload) => set({ pendingOrgMapDownload }),
 }));

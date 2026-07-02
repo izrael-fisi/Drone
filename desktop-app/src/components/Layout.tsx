@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Home,
+  Download,
   Loader2,
   Map as MapIcon,
   MapPin,
@@ -885,7 +886,7 @@ function RightDock({
 
           <div className="flex-1 overflow-y-auto p-3">
             {route === "maps" && (
-              <MapsPanel model={model} regions={regions} />
+              <MapsPanel model={model} regions={regions} onDownloadOrgMap={() => onOpenChange(false)} />
             )}
 
             {route === "missions" && (
@@ -1294,8 +1295,8 @@ function MapLibraryCountButton({
   );
 }
 
-function MapsPanel({ model, regions }: { model: OperatorRuntimeModel; regions: Region[] }) {
-  const { updateRegion, removeRegion, orgMapRegions, setOrgMapRegions, addOrgMapRegion, removeOrgMapRegion, proxigoSession, cloudAccount } = useAppStore();
+function MapsPanel({ model, regions, onDownloadOrgMap }: { model: OperatorRuntimeModel; regions: Region[]; onDownloadOrgMap: () => void }) {
+  const { updateRegion, removeRegion, orgMapRegions, setOrgMapRegions, addOrgMapRegion, removeOrgMapRegion, proxigoSession, cloudAccount, setPendingOrgMapDownload } = useAppStore();
   const [openLibrary, setOpenLibrary] = useState<MapScope | null>(null);
   const [query, setQuery] = useState("");
   const [_filter, setFilter] = useState<MapScope>("all");
@@ -1506,6 +1507,14 @@ function MapsPanel({ model, regions }: { model: OperatorRuntimeModel; regions: R
                               {orgMap.location_label ?? `${orgMap.lat_min.toFixed(3)}, ${orgMap.lon_min.toFixed(3)}`} · Z{orgMap.zoom}
                             </div>
                           </div>
+                          <button
+                            type="button"
+                            title="Download to local library"
+                            onClick={() => { setPendingOrgMapDownload(orgMap); onDownloadOrgMap(); }}
+                            className="operator-shell-button h-7 w-7 rounded-md hover:text-emerald-300"
+                          >
+                            <Download size={13} />
+                          </button>
                           {canRemove && (
                             <button type="button" onClick={() => setPendingDeleteId(orgMap.id)}
                               className="operator-shell-button h-7 w-7 rounded-md hover:text-red-300" title="Remove from Org">
