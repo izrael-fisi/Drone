@@ -1254,6 +1254,18 @@ export function Maps() {
             )}
           </div>
 
+          {/* Module serial diagnostic */}
+          {cloudAccount && (
+            <div className={cn(
+              "rounded px-2 py-1.5 text-[10px] font-mono",
+              profile?.proxigo_module_serial ? "bg-bg-elevated text-slate-500" : "bg-red-500/15 text-red-400"
+            )}>
+              {profile?.proxigo_module_serial
+                ? <>Serial: <span className="text-slate-300">{profile.proxigo_module_serial}</span></>
+                : "⚠ No module serial — go to Account tab"}
+            </div>
+          )}
+
           {/* Quota numbers */}
           {cloudAccount ? (
             <>
@@ -1290,18 +1302,19 @@ export function Maps() {
 
               {/* Usage report status */}
               {usageReportStatus === "reporting" && (
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                  <Loader2 size={10} className="animate-spin shrink-0" /> Reporting usage…
+                <div className="flex items-center gap-1.5 rounded bg-bg-elevated px-2.5 py-1.5 text-[10px] text-slate-400">
+                  <Loader2 size={10} className="animate-spin shrink-0" /> Reporting usage to cloud…
                 </div>
               )}
               {usageReportStatus === "ok" && (
-                <div className="flex items-center gap-1.5 text-[10px] text-emerald-400">
-                  <CheckCircle2 size={10} className="shrink-0" /> Usage recorded
+                <div className="flex items-center gap-1.5 rounded bg-emerald-500/10 px-2.5 py-1.5 text-[10px] text-emerald-400">
+                  <CheckCircle2 size={10} className="shrink-0" /> Usage recorded successfully
                 </div>
               )}
               {usageReportStatus === "error" && (
-                <div className="text-[10px] text-red-400">
-                  ⚠ Usage not recorded: {usageReportError}
+                <div className="rounded border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[10px] text-red-400 space-y-0.5">
+                  <div className="font-semibold">Usage not recorded</div>
+                  <div className="text-red-300/80">{usageReportError}</div>
                 </div>
               )}
 
