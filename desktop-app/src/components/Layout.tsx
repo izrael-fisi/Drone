@@ -2310,6 +2310,25 @@ function AccountPanel() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudAccount?.org?.org_name]);
 
+  // Auto-select first active module serial when account loads and none is saved yet
+  useEffect(() => {
+    if (!cloudAccount) return;
+    const activeModules = cloudAccount.modules.filter((m) => m.status === "active");
+    if (!activeModules.length) return;
+    const firstSerial = activeModules[0].serial;
+    // Auto-select if nothing is set, or if the saved serial isn't in the account anymore
+    const savedSerial = resolvedProfile.proxigo_module_serial;
+    const savedValid = savedSerial && cloudAccount.modules.some((m) => m.serial === savedSerial);
+    if (savedValid) {
+      setModuleSerial(savedSerial!);
+      return;
+    }
+    setModuleSerial(firstSerial);
+    const updated: Profile = { ...resolvedProfile, proxigo_module_serial: firstSerial };
+    cmd.saveProfile(updated).then(() => setProfile(updated)).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudAccount?.modules]);
+
   const saveLocalProfile = async () => {
     setSaving(true);
     setProfileMessage(null);
@@ -2508,25 +2527,40 @@ function AccountPanel() {
             </>
           )}
 
-          <CompactField
-            label="Active Module Serial"
-            value={moduleSerial}
-            onChange={setModuleSerial}
-            placeholder="MAC-XXXX-XXXX-XXXX"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <PanelAction
-              label="Save Serial"
-              detail="Used for usage reporting"
-              onClick={handleSaveModuleSerial}
-            />
-            <PanelAction
-              label={cloudLoading ? "Refreshing…" : "Refresh"}
-              detail="Reload account info"
-              onClick={refreshAccount}
-              disabled={cloudLoading}
-            />
+          {/* Active module selector */}
+          <div>
+            <label className="block rounded-md border border-border bg-bg-card px-3 py-2">
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                Active Module
+              </span>
+              {cloudAccount.modules.length > 0 ? (
+                <select
+                  value={moduleSerial}
+                  onChange={(e) => {
+                    const serial = e.target.value;
+                    setModuleSerial(serial);
+                    const updated: Profile = { ...resolvedProfile, proxigo_module_serial: serial || undefined };
+                    cmd.saveProfile(updated).then(() => setProfile(updated)).catch(() => {});
+                  }}
+                  className="mt-1 h-7 w-full bg-transparent text-sm text-slate-100 outline-none"
+                >
+                  {cloudAccount.modules.map((m) => (
+                    <option key={m.serial} value={m.serial} className="bg-zinc-900">
+                      {m.serial}{m.nickname ? ` · ${m.nickname}` : ""}{m.status !== "active" ? ` (${m.status})` : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="mt-1 block text-sm text-slate-500">No modules registered</span>
+              )}
+            </label>
           </div>
+          <PanelAction
+            label={cloudLoading ? "Refreshing…" : "Refresh Account"}
+            detail="Reload modules and quota"
+            onClick={refreshAccount}
+            disabled={cloudLoading}
+          />
           <PanelAction label="Sign Out of Proxigo" detail={`Logged in as ${cloudAccount.email}`} onClick={handleLogout} />
         </>
       ) : (
