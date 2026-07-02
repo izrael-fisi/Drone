@@ -194,7 +194,7 @@ export type VisionPipeline = "classical" | "neural";
 export type FeatureMethod = "orb" | "akaze" | "sift";
 export type RuntimeProfileId = "pi5_full" | "pi5_low_memory" | "desktop_high_compute";
 export type CameraProfileId = "rgb_global_shutter" | "rgb_rolling_shutter" | "thermal_low_res" | "eo_generic";
-export type MapLifecycleState = "local" | "built" | "uploaded" | "active" | "stale" | "failed";
+export type MapLifecycleState = "local" | "org" | "built" | "uploaded" | "active" | "stale" | "failed";
 export type PositionSourceState =
   | "gps_primary"
   | "vision_correction"

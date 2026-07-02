@@ -1,11 +1,12 @@
 import { create } from "zustand";
 import type { Device, Profile, Region } from "./types";
-import type { CloudAccount, ProxigoSession } from "./proxigo";
+import type { CloudAccount, OrgMapRegion, ProxigoSession } from "./proxigo";
 
 interface AppState {
   profile: Profile | null;
   devices: Device[];
   regions: Region[];
+  orgMapRegions: OrgMapRegion[];
   activeDeviceId: string | null;
   proxigoSession: ProxigoSession | null;
   cloudAccount: CloudAccount | null;
@@ -19,6 +20,9 @@ interface AppState {
   addRegion: (r: Region) => void;
   updateRegion: (r: Region) => void;
   removeRegion: (id: string) => void;
+  setOrgMapRegions: (maps: OrgMapRegion[]) => void;
+  addOrgMapRegion: (m: OrgMapRegion) => void;
+  removeOrgMapRegion: (id: string) => void;
   setActiveDevice: (id: string | null) => void;
   setProxigoSession: (session: ProxigoSession | null) => void;
   setCloudAccount: (account: CloudAccount | null) => void;
@@ -28,6 +32,7 @@ export const useAppStore = create<AppState>((set) => ({
   profile: null,
   devices: [],
   regions: [],
+  orgMapRegions: [],
   activeDeviceId: null,
   proxigoSession: null,
   cloudAccount: null,
@@ -45,6 +50,9 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({ regions: s.regions.map((x) => (x.id === r.id ? r : x)) })),
   removeRegion: (id) =>
     set((s) => ({ regions: s.regions.filter((x) => x.id !== id) })),
+  setOrgMapRegions: (orgMapRegions) => set({ orgMapRegions }),
+  addOrgMapRegion: (m) => set((s) => ({ orgMapRegions: [m, ...s.orgMapRegions] })),
+  removeOrgMapRegion: (id) => set((s) => ({ orgMapRegions: s.orgMapRegions.filter((m) => m.id !== id) })),
   setActiveDevice: (activeDeviceId) => set({ activeDeviceId }),
   setProxigoSession: (proxigoSession) => set({ proxigoSession }),
   setCloudAccount: (cloudAccount) => set({ cloudAccount }),

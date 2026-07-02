@@ -63,6 +63,21 @@ export async function setMemberAllowance(
   }
 }
 
+export interface OrgMapRegion {
+  id: string;
+  org_id: string;
+  created_by: string;
+  name: string;
+  lat_min: number;
+  lat_max: number;
+  lon_min: number;
+  lon_max: number;
+  zoom: number;
+  source?: string;
+  location_label?: string;
+  created_at: string;
+}
+
 export interface UsageSummary {
   plan: string | null;
   km2_used: number;
@@ -137,6 +152,40 @@ export const proxigo = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? "Failed to fetch usage");
     return data as UsageSummary;
+  },
+
+  async getOrgMaps(session: ProxigoSession): Promise<OrgMapRegion[]> {
+    const res = await fetch(`${PROXIGO_API_URL}/api/org/maps`, {
+      headers: apiHeaders(session.access_token),
+    });
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  async publishOrgMap(
+    session: ProxigoSession,
+    region: { name: string; lat_min: number; lat_max: number; lon_min: number; lon_max: number; zoom: number; source?: string; location_label?: string }
+  ): Promise<OrgMapRegion> {
+    const res = await fetch(`${PROXIGO_API_URL}/api/org/maps`, {
+      method: "POST",
+      headers: apiHeaders(session.access_token),
+      body: JSON.stringify(region),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? "Failed to publish map");
+    return data;
+  },
+
+  async removeOrgMap(session: ProxigoSession, id: string): Promise<void> {
+    const res = await fetch(`${PROXIGO_API_URL}/api/org/maps`, {
+      method: "DELETE",
+      headers: apiHeaders(session.access_token),
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error ?? "Failed to remove org map");
+    }
   },
 
   async reportMapDownload(
