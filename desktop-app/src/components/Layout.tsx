@@ -2585,21 +2585,23 @@ function AccountPanel() {
               )}
             </div>
 
-            {/* Quota numbers */}
-            {displayKm2Limit > 0 && (
+            {/* Quota numbers — always show if there's usage or a limit */}
+            {(displayKm2Limit > 0 || displayKm2Used > 0) && (
               <div className="space-y-0.5">
                 <div className="flex justify-between text-[10px]">
                   <span className="text-slate-400">{orgCtx ? "Org pool this month" : "Quota this month"}</span>
                 </div>
                 <div className="flex gap-3 text-xs font-mono">
-                  <span><span className="text-slate-100">{displayKm2Used.toFixed(1)}</span> <span className="text-slate-500">used</span></span>
-                  <span className="text-slate-600">/</span>
-                  <span><span className="text-slate-100">{displayKm2Limit}</span> <span className="text-slate-500">km²</span></span>
-                  <span className="ml-auto text-emerald-400">{displayKm2Remaining.toFixed(1)} <span className="text-slate-500">left</span></span>
+                  <span><span className="text-slate-100">{displayKm2Used.toFixed(2)}</span> <span className="text-slate-500">km² used</span></span>
+                  {displayKm2Limit > 0 && (<>
+                    <span className="text-slate-600">/</span>
+                    <span><span className="text-slate-100">{displayKm2Limit}</span> <span className="text-slate-500">km² limit</span></span>
+                    <span className="ml-auto text-emerald-400">{displayKm2Remaining.toFixed(1)} <span className="text-slate-500">left</span></span>
+                  </>)}
                 </div>
                 {orgCtx?.my_km2_allowance != null && (
                   <div className="text-[10px] text-slate-500">
-                    Your allowance: {orgCtx.my_km2_used.toFixed(1)} / {orgCtx.my_km2_allowance} km²
+                    Your allowance: {orgCtx.my_km2_used.toFixed(2)} / {orgCtx.my_km2_allowance} km²
                   </div>
                 )}
               </div>

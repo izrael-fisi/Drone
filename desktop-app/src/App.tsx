@@ -11,8 +11,22 @@ import { proxigo, type ProxigoSession } from "./lib/proxigo";
 import type { Profile } from "./lib/types";
 
 export default function App() {
-  const { profile, setProfile, setDevices, setRegions, setProxigoSession, setCloudAccount, proxigoSession } = useAppStore();
+  const { profile, setProfile, setDevices, setRegions, setProxigoSession, setCloudAccount, proxigoSession, cloudAccount } = useAppStore();
   const [loading, setLoading] = useState(true);
+
+  // Auto-persist the first active module serial so Maps page can always report usage
+  // This must live here (not AccountPanel) because AccountPanel only mounts when that tab is open
+  useEffect(() => {
+    if (!cloudAccount?.modules.length) return;
+    const saved = profile?.proxigo_module_serial;
+    const valid = cloudAccount.modules.some((m) => m.serial === saved && m.status === "active");
+    if (!valid) {
+      const first = cloudAccount.modules.find((m) => m.status === "active");
+      if (!first || !profile) return;
+      const updated = { ...profile, proxigo_module_serial: first.serial };
+      cmd.saveProfile(updated).then(() => setProfile(updated)).catch(() => {});
+    }
+  }, [cloudAccount?.modules, profile?.proxigo_module_serial, profile, setProfile]);
 
   useEffect(() => {
     Promise.all([cmd.loadProfile(), cmd.loadDevices(), cmd.loadRegions()])
