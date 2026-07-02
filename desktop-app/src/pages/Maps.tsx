@@ -560,6 +560,8 @@ export function Maps() {
   const [demFilePath,setDemFilePath]= useState("");
   const [dsmFilePath,setDsmFilePath]= useState("");
   const [importingElevation,setImportingElevation]= useState(false);
+  const [usageReportStatus,setUsageReportStatus]= useState<"idle"|"reporting"|"ok"|"error">("idle");
+  const [usageReportError,setUsageReportError]= useState<string|null>(null);
 
   const apiKeys = useMemo(() => providerApiKeys(profile), [profile]);
   const sourceConfig = providers.find((provider) => provider.id === canonicalProviderId(source)) ?? providers[0];
@@ -639,19 +641,24 @@ export function Maps() {
     if (!requiresDownloadConfirmation) setConfirmLargeArea(false);
   }, [requiresDownloadConfirmation]);
 
-  // Fetch cloud account if it wasn't loaded at startup (e.g. API was unreachable)
+  // Fetch cloud account on mount and refresh every 60s to keep org usage current
   useEffect(() => {
-    if (proxigoSession && !cloudAccount) {
+    if (!proxigoSession) return;
+    proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
+    const id = setInterval(() => {
       proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
-    }
-  }, [proxigoSession, cloudAccount, setCloudAccount]);
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [proxigoSession, setCloudAccount]);
 
   // Auto-scroll panel to estimate section when bbox is drawn
   useEffect(() => {
     if (bbox && estimateRef.current && panelRef.current) {
       setTimeout(() => {
-        estimateRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }, 100);
+        const panel = panelRef.current!;
+        const el = estimateRef.current!;
+        panel.scrollTo({ top: el.offsetTop - 8, behavior: "smooth" });
+      }, 150);
     }
   }, [bbox]);
 
@@ -1117,9 +1124,11 @@ export function Maps() {
       setDone(true);
       setDoneMessage("Satellite mosaic saved and added to the map library.");
 
-      // Report usage to Proxigo cloud backend (fire-and-forget)
+      // Report usage to Proxigo cloud
       const moduleSerial = profile?.proxigo_module_serial;
       if (proxigoSession && moduleSerial && estimate) {
+        setUsageReportStatus("reporting");
+        setUsageReportError(null);
         proxigo.reportMapDownload(
           proxigoSession,
           estimate.area_km2,
@@ -1129,9 +1138,18 @@ export function Maps() {
           locationLabel ?? undefined
         )
           .then(() => {
-            proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
+            setUsageReportStatus("ok");
+            return proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
           })
-          .catch((err) => console.warn("[proxigo] usage report failed:", err));
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            setUsageReportStatus("error");
+            setUsageReportError(msg);
+            console.warn("[proxigo] usage report failed:", msg);
+          });
+      } else if (proxigoSession && !moduleSerial) {
+        setUsageReportStatus("error");
+        setUsageReportError("No module serial set in Account — go to Account tab and set your Proxigo Module Serial.");
       }
     } catch (e) {
       setError(String(e));
@@ -1242,6 +1260,23 @@ export function Maps() {
               {cloudKm2Limit === 0 && !orgCtx && (
                 <div className="text-[10px] text-amber-400">
                   No active plan — usage is unlimited but untracked. Subscribe at proxigo.us.
+                </div>
+              )}
+
+              {/* Usage report status */}
+              {usageReportStatus === "reporting" && (
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                  <Loader2 size={10} className="animate-spin shrink-0" /> Reporting usage…
+                </div>
+              )}
+              {usageReportStatus === "ok" && (
+                <div className="flex items-center gap-1.5 text-[10px] text-emerald-400">
+                  <CheckCircle2 size={10} className="shrink-0" /> Usage recorded
+                </div>
+              )}
+              {usageReportStatus === "error" && (
+                <div className="text-[10px] text-red-400">
+                  ⚠ Usage not recorded: {usageReportError}
                 </div>
               )}
 
