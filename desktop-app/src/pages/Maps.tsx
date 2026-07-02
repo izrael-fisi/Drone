@@ -1756,6 +1756,27 @@ export function Maps() {
               {doneMessage}
             </div>
           )}
+
+          {/* Usage report result — right below download complete, always visible */}
+          {usageReportStatus === "reporting" && (
+            <div className="flex items-center gap-2 border border-slate-500/20 bg-bg-elevated px-3 py-2 text-xs text-slate-400">
+              <Loader2 size={12} className="animate-spin shrink-0" />
+              Reporting usage to Proxigo cloud…
+            </div>
+          )}
+          {usageReportStatus === "ok" && (
+            <div className="flex items-start gap-2 border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400">
+              <CheckCircle2 size={12} className="mt-0.5 shrink-0" />
+              <span>{usageReportError}</span>
+            </div>
+          )}
+          {usageReportStatus === "error" && (
+            <div className="space-y-0.5 border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              <div className="font-semibold">Usage not recorded</div>
+              <div className="break-all text-red-300/80">{usageReportError}</div>
+            </div>
+          )}
+
           {error && (
             <div className="border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
               {error}

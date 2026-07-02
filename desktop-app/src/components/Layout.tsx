@@ -2507,14 +2507,23 @@ function AccountPanel() {
   };
 
 
+  const [lastRefreshResult, setLastRefreshResult] = useState<string | null>(null);
+
   const refreshAccount = async () => {
     if (!proxigoSession) return;
     setCloudLoading(true);
+    setLastRefreshResult(null);
     try {
       const account = await proxigo.getAccount(proxigoSession);
       setCloudAccount(account);
+      const orgCtxLocal = account.org;
+      const used = orgCtxLocal ? orgCtxLocal.org_km2_used : account.km2_used;
+      const limit = orgCtxLocal ? orgCtxLocal.org_km2_limit : account.km2_limit;
+      setLastRefreshResult(`✓ ${used.toFixed(2)} / ${limit} km²  ·  ${account.modules.length} module(s)`);
     } catch (err) {
-      setCloudError(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      setCloudError(msg);
+      setLastRefreshResult(`✗ ${msg}`);
     } finally {
       setCloudLoading(false);
     }
@@ -2669,6 +2678,11 @@ function AccountPanel() {
             onClick={refreshAccount}
             disabled={cloudLoading}
           />
+          {lastRefreshResult && (
+            <div className={`rounded px-2.5 py-2 text-[10px] break-all ${lastRefreshResult.startsWith("✓") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+              {lastRefreshResult}
+            </div>
+          )}
           <PanelAction label="Sign Out of Proxigo" detail={`Logged in as ${cloudAccount.email}`} onClick={handleLogout} />
         </>
       ) : (
