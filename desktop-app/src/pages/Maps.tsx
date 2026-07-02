@@ -1077,6 +1077,8 @@ export function Maps() {
     setDone(false);
     setError(null);
     setProgress(null);
+    setUsageReportStatus("idle");
+    setUsageReportError(null);
     const unlisten = await listen<DownloadProgress>("tile-progress", (e) => setProgress(e.payload));
     try {
       const result = await cmd.downloadMapRegion({
@@ -1151,6 +1153,8 @@ export function Maps() {
           setCloudAccount(updated);
         }
 
+        const capturedCloudAccount = cloudAccount;
+        const capturedOrgCtx = orgCtx;
         proxigo.reportMapDownload(
           proxigoSession,
           estimate.area_km2,
@@ -1162,12 +1166,36 @@ export function Maps() {
           .then((result) => {
             setUsageReportStatus("ok");
             setUsageReportError(`Confirmed — total this month: ${result.total_km2_this_month.toFixed(2)} km²`);
-            return proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
+            // Apply confirmed total directly from the POST response — no second round-trip needed.
+            // The usage POST returns the user's personal total; for org accounts that equals
+            // the org total when this user is the only/primary contributor.
+            if (capturedCloudAccount) {
+              const confirmed = result.total_km2_this_month;
+              const confirmedAccount = capturedOrgCtx
+                ? {
+                    ...capturedCloudAccount,
+                    org: {
+                      ...capturedOrgCtx,
+                      org_km2_used: confirmed,
+                      org_km2_remaining: Math.max(0, capturedOrgCtx.org_km2_limit - confirmed),
+                      my_km2_used: confirmed,
+                    },
+                  }
+                : {
+                    ...capturedCloudAccount,
+                    km2_used: confirmed,
+                    km2_remaining: Math.max(0, capturedCloudAccount.km2_limit - confirmed),
+                  };
+              setCloudAccount(confirmedAccount);
+            }
+            // Full sync in background to catch multi-member org discrepancies
+            proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
           })
           .catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
             setUsageReportStatus("error");
             setUsageReportError(msg);
+            // Roll back optimistic update on failure
             proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
           });
       } else {
