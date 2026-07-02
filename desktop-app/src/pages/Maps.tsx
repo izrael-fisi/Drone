@@ -532,7 +532,7 @@ function FlyToOrgMap() {
 
 // ── Main Maps page ────────────────────────────────────────────────────────────
 export function Maps() {
-  const { profile, regions, setRegions, addRegion, proxigoSession, cloudAccount, setCloudAccount, pendingOrgMapDownload, setPendingOrgMapDownload } = useAppStore();
+  const { profile, setProfile, regions, setRegions, addRegion, proxigoSession, setProxigoSession, cloudAccount, setCloudAccount, pendingOrgMapDownload, setPendingOrgMapDownload, setLastUsageEvent } = useAppStore();
   const featureGroupRef = useRef<L.FeatureGroup | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const estimateRef = useRef<HTMLDivElement>(null);
@@ -1170,7 +1170,6 @@ export function Maps() {
       if (proxigoSession && moduleSerial) {
         setUsageReportStatus("reporting");
         setUsageReportError(null);
-        console.log("[usage] firing reportMapDownload km2=", reportKm2, "serial=", moduleSerial);
 
         // Optimistically update the displayed quota immediately
         if (cloudAccount) {
@@ -1195,21 +1194,30 @@ export function Maps() {
 
         const capturedCloudAccount = cloudAccount;
         const capturedOrgCtx = orgCtx;
-        proxigo.reportMapDownload(
+        let activeSession = proxigoSession;
+
+        // withSession auto-refreshes expired token and retries once on 401
+        console.log("[usage] firing reportMapDownload — km2:", reportKm2, "serial:", moduleSerial, "tokenExpiresAt:", new Date(proxigoSession.expires_at).toISOString());
+        proxigo.withSession(
           proxigoSession,
-          reportKm2,
-          moduleSerial,
-          region.id,
-          bbox,
-          locationLabel ?? undefined
+          async (fresh) => {
+            console.log("[usage] token refreshed mid-call");
+            activeSession = fresh;
+            setProxigoSession(fresh);
+            if (profile) {
+              const updated = { ...profile, proxigo_access_token: fresh.access_token, proxigo_refresh_token: fresh.refresh_token, proxigo_token_expires_at: fresh.expires_at };
+              setProfile(updated);
+              cmd.saveProfile(updated).catch(() => {});
+            }
+          },
+          (s) => proxigo.reportMapDownload(s, reportKm2, moduleSerial, region.id, bbox, locationLabel ?? undefined)
         )
           .then((result) => {
             console.log("[usage] reportMapDownload success:", result);
+            const msg = `Confirmed — total this month: ${result.total_km2_this_month.toFixed(2)} km²`;
             setUsageReportStatus("ok");
-            setUsageReportError(`Confirmed — total this month: ${result.total_km2_this_month.toFixed(2)} km²`);
-            // Apply confirmed total directly from the POST response — no second round-trip needed.
-            // The usage POST returns the user's personal total; for org accounts that equals
-            // the org total when this user is the only/primary contributor.
+            setUsageReportError(msg);
+            setLastUsageEvent({ status: "ok", message: msg, timestamp: Date.now() });
             if (capturedCloudAccount) {
               const confirmed = result.total_km2_this_month;
               const confirmedAccount = capturedOrgCtx
@@ -1230,24 +1238,26 @@ export function Maps() {
               setCloudAccount(confirmedAccount);
             }
             // Full sync in background to catch multi-member org discrepancies
-            proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
+            proxigo.getAccount(activeSession).then(setCloudAccount).catch(() => {});
           })
           .catch((err) => {
-            console.error("[usage] reportMapDownload FAILED:", err);
             const msg = err instanceof Error ? err.message : String(err);
+            console.error("[usage] reportMapDownload FAILED:", msg);
             setUsageReportStatus("error");
             setUsageReportError(msg);
+            setLastUsageEvent({ status: "error", message: msg, timestamp: Date.now() });
             // Roll back optimistic update on failure
-            proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
+            proxigo.getAccount(activeSession).then(setCloudAccount).catch(() => {});
           });
       } else {
-        // Show exactly which condition prevented the report
         const reasons: string[] = [];
         if (!proxigoSession) reasons.push("not signed in to Proxigo");
-        if (!moduleSerial) reasons.push(`no module serial (profile.proxigo_module_serial = ${JSON.stringify(profile?.proxigo_module_serial)})`);
-        console.warn("[usage] skipped — reasons:", reasons);
+        if (!moduleSerial) reasons.push("no module serial (go to Account tab)");
+        const msg = reasons.join(" · ");
+        console.warn("[usage] skipped —", msg);
         setUsageReportStatus("error");
-        setUsageReportError(reasons.join(" · "));
+        setUsageReportError(msg);
+        setLastUsageEvent({ status: "error", message: `Skipped: ${msg}`, timestamp: Date.now() });
       }
     } catch (e) {
       setError(String(e));

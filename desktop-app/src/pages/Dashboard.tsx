@@ -10,6 +10,7 @@ import { createSavedMissionId, loadSavedMissions, missionBoundsFromParts, SAVED_
 import { useShellStore } from "../lib/shellStore";
 import { useAppStore } from "../lib/store";
 import { cmd } from "../lib/tauri";
+import { proxigo } from "../lib/proxigo";
 import type { DownloadProgress, DronePositionUpdate, MapProvider, MapProviderId, MapUsageEstimate, Profile, Region, SavedMission } from "../lib/types";
 import { cn, formatDate, formatMegabytes } from "../lib/utils";
 
@@ -606,7 +607,7 @@ function mapLibreSource(map: MapLibreMap, sourceId: string): GeoJSONSource | nul
 }
 
 export function Dashboard() {
-  const { profile, devices, regions, activeDeviceId, addRegion } = useAppStore();
+  const { profile, setProfile, devices, regions, activeDeviceId, addRegion, proxigoSession, setProxigoSession, cloudAccount, setCloudAccount, setLastUsageEvent } = useAppStore();
   const { rightDockOpen, resetRightDock, pushRightDock, mapSearchTarget, selectedMissionId, setSelectedMissionId, setLivePosition, setMapSearchTarget } = useShellStore();
   const activeDevice = devices.find((device) => device.id === activeDeviceId);
   const readyMaps = regions.filter((region) => region.last_downloaded);
@@ -941,6 +942,50 @@ export function Dashboard() {
         total: result.tile_count,
         tone: "success",
       });
+
+      // Report usage to Proxigo cloud
+      const moduleSerial = profile?.proxigo_module_serial;
+      if (proxigoSession && moduleSerial) {
+        const reportKm2 = cutEstimate?.area_km2 ?? (borderCutShape === "polygon" ? polygonAreaKm2(savedPoints) : bboxAreaKm2(bounds));
+        // Optimistically update quota display
+        const orgCtx = cloudAccount?.org ?? null;
+        if (cloudAccount) {
+          const delta = reportKm2;
+          setCloudAccount(orgCtx
+            ? { ...cloudAccount, org: { ...orgCtx, org_km2_used: orgCtx.org_km2_used + delta, org_km2_remaining: Math.max(0, orgCtx.org_km2_remaining - delta), my_km2_used: orgCtx.my_km2_used + delta } }
+            : { ...cloudAccount, km2_used: cloudAccount.km2_used + delta, km2_remaining: Math.max(0, cloudAccount.km2_remaining - delta) });
+        }
+        let activeSession = proxigoSession;
+        proxigo.withSession(
+          proxigoSession,
+          async (fresh) => {
+            activeSession = fresh;
+            setProxigoSession(fresh);
+            if (profile) {
+              const updated = { ...profile, proxigo_access_token: fresh.access_token, proxigo_refresh_token: fresh.refresh_token, proxigo_token_expires_at: fresh.expires_at };
+              setProfile(updated);
+              cmd.saveProfile(updated).catch(() => {});
+            }
+          },
+          (s) => proxigo.reportMapDownload(s, reportKm2, moduleSerial, installedRegion.id, bounds)
+        )
+          .then((usageResult) => {
+            const msg = `Recorded ${reportKm2.toFixed(2)} km² — total this month: ${usageResult.total_km2_this_month.toFixed(2)} km²`;
+            setLastUsageEvent({ status: "ok", message: msg, timestamp: Date.now() });
+            if (cloudAccount) {
+              const confirmed = usageResult.total_km2_this_month;
+              setCloudAccount(orgCtx
+                ? { ...cloudAccount, org: { ...orgCtx, org_km2_used: confirmed, org_km2_remaining: Math.max(0, orgCtx.org_km2_limit - confirmed), my_km2_used: confirmed } }
+                : { ...cloudAccount, km2_used: confirmed, km2_remaining: Math.max(0, cloudAccount.km2_limit - confirmed) });
+            }
+            proxigo.getAccount(activeSession).then(setCloudAccount).catch(() => {});
+          })
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            setLastUsageEvent({ status: "error", message: `Usage report failed: ${msg}`, timestamp: Date.now() });
+            proxigo.getAccount(activeSession).then(setCloudAccount).catch(() => {});
+          });
+      }
     } catch (error) {
       console.warn("Failed to install manual border cut", error);
       setCutInstallProgress({

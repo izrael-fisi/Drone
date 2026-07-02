@@ -50,6 +50,16 @@ Tokens are persisted in `profile.json` on the user's machine:
 
 On startup, the app tries to restore the session. If the access token is expired, it calls the Supabase refresh endpoint automatically before loading.
 
+### Token Lifecycle (Three-Layer Defense)
+
+| Layer | Where | What it does |
+|-------|-------|--------------|
+| **Startup refresh** | `App.tsx` `useEffect` | If stored token is expired, refreshes before restoring session. |
+| **Proactive refresh** | `App.tsx` `useEffect` | Schedules a refresh 5 minutes before the current token expires. Reschedules itself each time a new token is issued — creating a self-perpetuating refresh chain for the duration of the app session. |
+| **Per-call refresh** | `proxigo.withSession()` | Before every critical API call, checks if the token is within 60 s of expiry and refreshes proactively. If a call still returns 401 (e.g., server-side revocation), refreshes and retries once automatically. |
+
+This triple defense means a stale token should never silently drop a usage event.
+
 ---
 
 ## Endpoints
@@ -232,17 +242,49 @@ Delete `proxigo_token_expires_at` from `profile.json` or set it to `0`, then res
 
 ---
 
+## Usage Report Flow (Desktop App)
+
+When the user downloads a map, the following happens in sequence:
+
+```
+1. Download completes (Rust backend returns tile_count, file_size_mb, etc.)
+2. Region saved to local library (regions.json)
+3. Optimistic UI update — quota bar decreases immediately (before API call)
+4. proxigo.withSession() wrapper:
+   a. Checks if token is within 60 s of expiry → refreshes if so
+   b. Calls POST /api/usage with { km2, module_serial, session_id, bbox }
+   c. If 401 → refreshes token and retries once
+5. On success: updates quota bar to confirmed total from POST response
+   - Background: calls GET /api/account to sync any org-wide discrepancies
+6. On failure: rolls back optimistic update, shows error in quota section
+```
+
+The Account tab quota display updates at step 3 (instant), then again at step 5 (confirmed). The website reflects step 5 on the next page load.
+
+### In-App Diagnostics
+
+**Account tab → "Test Cloud Connection"** posts 0.01 km² to `/api/usage` and shows either:
+- `✓ API OK — total this month: X.XXX km²` (green) — API is working
+- `✗ API FAILED: <reason>` (red) — exact error from the server
+
+**Account tab → "Refresh Account"** re-fetches `/api/account` and shows the current km² tally.
+
+Both buttons use the same `withSession` auto-refresh wrapper, so they work even if the in-memory session has expired.
+
+---
+
 ## Key Files
 
 ### Desktop App (`Drone/desktop-app/`)
 | File | Purpose |
 |------|---------|
-| `src/lib/proxigo.ts` | All API calls: login, refresh, getAccount, reportMapDownload |
+| `src/lib/proxigo.ts` | All API calls: login, refresh, getAccount, reportMapDownload, `withSession` wrapper |
 | `src/lib/types.ts` | `Profile` interface with `proxigo_*` token fields |
 | `src/lib/store.ts` | Zustand store: `proxigoSession`, `cloudAccount` |
-| `src/App.tsx` | Session restore on startup + login gate |
-| `src/pages/Maps.tsx` | Quota display + enforcement before download |
-| `src/components/Layout.tsx` | AccountPanel: login form + usage HUD |
+| `src/App.tsx` | Session restore on startup, proactive refresh chain, login gate |
+| `src/pages/Dashboard.tsx` | `saveBorderCut()` — real download handler; usage reporting with `withSession` lives here |
+| `src/pages/Maps.tsx` | **Dead code** — never imported or rendered; do not add download/usage logic here |
+| `src/components/Layout.tsx` | AccountPanel: login form, usage HUD, Test/Refresh buttons |
 | `src-tauri/src/commands/profile.rs` | Rust: persists `proxigo_*` fields in `profile.json` |
 
 ### ProxigoWebsite (`ProxigoWebsite/`)

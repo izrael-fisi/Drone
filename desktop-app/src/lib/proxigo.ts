@@ -136,6 +136,36 @@ export const proxigo = {
     return Date.now() >= session.expires_at - 60_000; // 1 min buffer
   },
 
+  /**
+   * Execute `fn` with a guaranteed-fresh session.
+   * - Refreshes before the call if the token is within 60 s of expiry.
+   * - On a 401 response, refreshes once and retries.
+   * `onRefresh` is called whenever a new session is issued so the caller
+   * can persist it (update store + disk).
+   */
+  async withSession<T>(
+    session: ProxigoSession,
+    onRefresh: (fresh: ProxigoSession) => void | Promise<void>,
+    fn: (s: ProxigoSession) => Promise<T>
+  ): Promise<T> {
+    let s = session;
+    if (this.isExpired(s)) {
+      s = await this.refreshSession(s);
+      await onRefresh(s);
+    }
+    try {
+      return await fn(s);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("401") || msg.toLowerCase().includes("unauthorized")) {
+        s = await this.refreshSession(s);
+        await onRefresh(s);
+        return fn(s);
+      }
+      throw err;
+    }
+  },
+
   async getAccount(session: ProxigoSession): Promise<CloudAccount> {
     const res = await fetch(`${PROXIGO_API_URL}/api/account`, {
       headers: apiHeaders(session.access_token),

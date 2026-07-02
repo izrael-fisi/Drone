@@ -2398,7 +2398,7 @@ function DiagnosticsSettingsPanel({
 }
 
 function AccountPanel() {
-  const { profile, setProfile, proxigoSession, setProxigoSession, cloudAccount, setCloudAccount } = useAppStore();
+  const { profile, setProfile, proxigoSession, setProxigoSession, cloudAccount, setCloudAccount, lastUsageEvent } = useAppStore();
   const resolvedProfile = profileWithDefaults(profile);
 
   // Local profile fields
@@ -2517,13 +2517,26 @@ function AccountPanel() {
 
 
   const [lastRefreshResult, setLastRefreshResult] = useState<string | null>(null);
+  const [apiTestResult, setApiTestResult] = useState<string | null>(null);
+  const [apiTestLoading, setApiTestLoading] = useState(false);
 
   const refreshAccount = async () => {
     if (!proxigoSession) return;
     setCloudLoading(true);
     setLastRefreshResult(null);
     try {
-      const account = await proxigo.getAccount(proxigoSession);
+      const account = await proxigo.withSession(
+        proxigoSession,
+        async (fresh) => {
+          setProxigoSession(fresh);
+          if (profile) {
+            const updated = { ...profile, proxigo_access_token: fresh.access_token, proxigo_refresh_token: fresh.refresh_token, proxigo_token_expires_at: fresh.expires_at };
+            await cmd.saveProfile(updated);
+            setProfile(updated);
+          }
+        },
+        (s) => proxigo.getAccount(s)
+      );
       setCloudAccount(account);
       const orgCtxLocal = account.org;
       const used = orgCtxLocal ? orgCtxLocal.org_km2_used : account.km2_used;
@@ -2535,6 +2548,35 @@ function AccountPanel() {
       setLastRefreshResult(`✗ ${msg}`);
     } finally {
       setCloudLoading(false);
+    }
+  };
+
+  const testCloudApi = async () => {
+    if (!proxigoSession || !profile?.proxigo_module_serial) return;
+    setApiTestLoading(true);
+    setApiTestResult(null);
+    try {
+      let activeSession = proxigoSession;
+      const result = await proxigo.withSession(
+        proxigoSession,
+        async (fresh) => {
+          activeSession = fresh;
+          setProxigoSession(fresh);
+          if (profile) {
+            const updated = { ...profile, proxigo_access_token: fresh.access_token, proxigo_refresh_token: fresh.refresh_token, proxigo_token_expires_at: fresh.expires_at };
+            setProfile(updated);
+            cmd.saveProfile(updated).catch(() => {});
+          }
+        },
+        (s) => proxigo.reportMapDownload(s, 0.01, profile!.proxigo_module_serial!)
+      );
+      setApiTestResult(`✓ API OK — total this month: ${result.total_km2_this_month.toFixed(3)} km²`);
+      proxigo.getAccount(activeSession).then(setCloudAccount).catch(() => {});
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setApiTestResult(`✗ API FAILED: ${msg}`);
+    } finally {
+      setApiTestLoading(false);
     }
   };
 
@@ -2694,6 +2736,27 @@ function AccountPanel() {
               {lastRefreshResult}
             </div>
           )}
+          <PanelAction
+            label={apiTestLoading ? "Testing…" : "Test Cloud Connection"}
+            detail="Posts 0.01 km² to verify the usage API works end-to-end"
+            onClick={testCloudApi}
+            disabled={apiTestLoading || !profile?.proxigo_module_serial}
+          />
+          {apiTestResult && (
+            <div className={`rounded px-2.5 py-2 text-[10px] break-all ${apiTestResult.startsWith("✓") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+              {apiTestResult}
+            </div>
+          )}
+
+          {/* Last usage event from actual map downloads — persists across tab switches */}
+          {lastUsageEvent && (
+            <div className={`rounded px-2.5 py-2 text-[10px] break-all space-y-0.5 ${lastUsageEvent.status === "ok" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+              <div className="font-semibold">{lastUsageEvent.status === "ok" ? "Last download recorded" : "Last download failed"}</div>
+              <div className="opacity-80">{lastUsageEvent.message}</div>
+              <div className="text-[9px] opacity-50">{new Date(lastUsageEvent.timestamp).toLocaleTimeString()}</div>
+            </div>
+          )}
+
           <PanelAction label="Sign Out of Proxigo" detail={`Logged in as ${cloudAccount.email}`} onClick={handleLogout} />
         </>
       ) : (
