@@ -1257,8 +1257,8 @@ export function Maps() {
             )}
           </div>
 
-          {/* Module serial diagnostic */}
-          {cloudAccount && (
+          {/* Always-visible diagnostics — show even when cloudAccount is null */}
+          {proxigoSession && (
             <div className={cn(
               "rounded px-2 py-1.5 text-[10px] font-mono",
               profile?.proxigo_module_serial ? "bg-bg-elevated text-slate-500" : "bg-red-500/15 text-red-400"
@@ -1266,6 +1266,22 @@ export function Maps() {
               {profile?.proxigo_module_serial
                 ? <>Serial: <span className="text-slate-300">{profile.proxigo_module_serial}</span></>
                 : "⚠ No module serial — go to Account tab"}
+            </div>
+          )}
+          {!cloudAccount && proxigoSession && (
+            <div className="rounded bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-400">
+              ⚠ Account not loaded — quota unavailable. Check network.
+            </div>
+          )}
+          {usageReportStatus === "error" && (
+            <div className="rounded border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[10px] text-red-400 space-y-0.5">
+              <div className="font-semibold">Usage not recorded</div>
+              <div className="text-red-300/80 break-all">{usageReportError}</div>
+            </div>
+          )}
+          {usageReportStatus === "ok" && (
+            <div className="rounded bg-emerald-500/10 px-2.5 py-1.5 text-[10px] text-emerald-400">
+              ✓ {usageReportError}
             </div>
           )}
 
@@ -1303,21 +1319,10 @@ export function Maps() {
                 </div>
               )}
 
-              {/* Usage report status */}
+              {/* Usage report status (reporting spinner only — ok/error shown above) */}
               {usageReportStatus === "reporting" && (
                 <div className="flex items-center gap-1.5 rounded bg-bg-elevated px-2.5 py-1.5 text-[10px] text-slate-400">
                   <Loader2 size={10} className="animate-spin shrink-0" /> Reporting usage to cloud…
-                </div>
-              )}
-              {usageReportStatus === "ok" && (
-                <div className="flex items-center gap-1.5 rounded bg-emerald-500/10 px-2.5 py-1.5 text-[10px] text-emerald-400">
-                  <CheckCircle2 size={10} className="shrink-0" /> Usage recorded successfully
-                </div>
-              )}
-              {usageReportStatus === "error" && (
-                <div className="rounded border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[10px] text-red-400 space-y-0.5">
-                  <div className="font-semibold">Usage not recorded</div>
-                  <div className="text-red-300/80">{usageReportError}</div>
                 </div>
               )}
 
