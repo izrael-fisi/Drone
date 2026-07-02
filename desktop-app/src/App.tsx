@@ -14,6 +14,33 @@ export default function App() {
   const { profile, setProfile, setDevices, setRegions, setProxigoSession, setCloudAccount, proxigoSession, cloudAccount } = useAppStore();
   const [loading, setLoading] = useState(true);
 
+  // Proactively refresh the Proxigo session before the JWT expires.
+  // Without this, the token silently goes stale mid-session and all API calls return 401.
+  useEffect(() => {
+    if (!proxigoSession || !profile) return;
+    const msUntilExpiry = proxigoSession.expires_at - Date.now();
+    // Refresh 5 minutes before expiry; if already past that window, refresh immediately.
+    const delay = Math.max(0, msUntilExpiry - 5 * 60 * 1000);
+    const timer = setTimeout(async () => {
+      try {
+        const fresh = await proxigo.refreshSession(proxigoSession);
+        const updated = {
+          ...profile,
+          proxigo_access_token: fresh.access_token,
+          proxigo_refresh_token: fresh.refresh_token,
+          proxigo_token_expires_at: fresh.expires_at,
+        };
+        await cmd.saveProfile(updated);
+        setProfile(updated);
+        setProxigoSession(fresh);
+      } catch {
+        // Refresh failed — clear session so login screen appears
+        setProxigoSession(null);
+      }
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [proxigoSession?.expires_at, profile, setProfile, setProxigoSession]);
+
   // Auto-persist the first active module serial so Maps page can always report usage
   // This must live here (not AccountPanel) because AccountPanel only mounts when that tab is open
   useEffect(() => {

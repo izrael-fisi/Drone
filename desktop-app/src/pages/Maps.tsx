@@ -1166,9 +1166,11 @@ export function Maps() {
       // Use estimate if available; fall back to bbox area so usage is always recorded
       const moduleSerial = profile?.proxigo_module_serial;
       const reportKm2 = estimate?.area_km2 ?? (cutShape === "polygon" ? polygonAreaKm2(polygonPoints) : bboxAreaKm2(bbox));
+      console.log("[usage] download complete — proxigoSession:", !!proxigoSession, "moduleSerial:", moduleSerial, "reportKm2:", reportKm2);
       if (proxigoSession && moduleSerial) {
         setUsageReportStatus("reporting");
         setUsageReportError(null);
+        console.log("[usage] firing reportMapDownload km2=", reportKm2, "serial=", moduleSerial);
 
         // Optimistically update the displayed quota immediately
         if (cloudAccount) {
@@ -1202,6 +1204,7 @@ export function Maps() {
           locationLabel ?? undefined
         )
           .then((result) => {
+            console.log("[usage] reportMapDownload success:", result);
             setUsageReportStatus("ok");
             setUsageReportError(`Confirmed — total this month: ${result.total_km2_this_month.toFixed(2)} km²`);
             // Apply confirmed total directly from the POST response — no second round-trip needed.
@@ -1230,6 +1233,7 @@ export function Maps() {
             proxigo.getAccount(proxigoSession).then(setCloudAccount).catch(() => {});
           })
           .catch((err) => {
+            console.error("[usage] reportMapDownload FAILED:", err);
             const msg = err instanceof Error ? err.message : String(err);
             setUsageReportStatus("error");
             setUsageReportError(msg);
@@ -1241,7 +1245,7 @@ export function Maps() {
         const reasons: string[] = [];
         if (!proxigoSession) reasons.push("not signed in to Proxigo");
         if (!moduleSerial) reasons.push(`no module serial (profile.proxigo_module_serial = ${JSON.stringify(profile?.proxigo_module_serial)})`);
-        if (!estimate) reasons.push("estimate is null");
+        console.warn("[usage] skipped — reasons:", reasons);
         setUsageReportStatus("error");
         setUsageReportError(reasons.join(" · "));
       }
