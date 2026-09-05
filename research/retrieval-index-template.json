@@ -1,0 +1,24 @@
+{
+  "schema_version": "vision_nav_retrieval_index_v1",
+  "map_release_id": "field-area@1.0.0",
+  "model_release_id": "pi5-crossview-nav@1.0.0",
+  "descriptor_dimension": 4096,
+  "metric": "inner_product_cosine",
+  "normalize_query": true,
+  "tiles": [
+    {
+      "tile_id": "tile_000001",
+      "faiss_id": 0,
+      "center_enu_m": [0.0, 0.0, 0.0],
+      "scale_m_per_px": 0.15,
+      "bounds_enu_m": [-75.0, -75.0, 75.0, 75.0],
+      "image_uri": "imagery/tiles/tile_000001.png"
+    }
+  ],
+  "notes": [
+    "Every FAISS vector row must have exactly one entry.",
+    "faiss_id must match the ID returned by the serialized FAISS index, not an incidental JSON row number.",
+    "The release compiler checksum-protects this file alongside the index.",
+    "bounds_enu_m and image_uri are required by build_training_map_pairs.sh. They bind a cloud-training positive to a real, release-controlled map crop; the Pi retrieval runtime only needs tile_id, faiss_id, center_enu_m, and scale_m_per_px."
+  ]
+}

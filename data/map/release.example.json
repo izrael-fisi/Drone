@@ -1,0 +1,17 @@
+{
+  "map_id": "example-area",
+  "version": "2026.08.30-example",
+  "epoch_utc": "2026-08-30T00:00:00Z",
+  "crs": "ENU:0.0,0.0",
+  "local_origin_enu": [0.0, 0.0, 0.0],
+  "gsd_m_per_px": 0.12,
+  "tile_index_uri": "index/tiles.jsonl",
+  "descriptor_dimension": 8448,
+  "descriptor_model_version": "salad-v1",
+  "sparse_model_version": "superpoint-v1",
+  "dense_model_version": "roma-v1",
+  "compatible_calibration_ids": ["pi5-downward-rgb-v1"],
+  "checksums_sha256": {
+    "index/tiles.jsonl": "replace-with-sha256-before-release"
+  }
+}

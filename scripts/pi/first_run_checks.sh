@@ -28,7 +28,8 @@ else
   run_step "Check global shutter camera health" ./scripts/pi/check_global_shutter_camera.sh
 fi
 
-run_step "Run host camera/synthetic vision smoke test" ./scripts/pi/smoke_test_vision.sh
+run_step "Verify learned runtime interfaces" bash -c "PYTHONPATH='$repo_root/src' '$HOME/drone_vision_nav_venv/bin/python' -c 'import onnxruntime, pymavlink, vision_nav.neural.shadow_runtime'"
+run_step "Verify learned training-capture interface" bash -c "PYTHONPATH='$repo_root/src' '$HOME/drone_vision_nav_venv/bin/python' -m vision_nav.training_capture --help >/dev/null"
 
 if [[ "$skip_docker" == "1" ]]; then
   section "Skip Docker smoke test"
@@ -41,5 +42,5 @@ fi
 section "First-run checks complete"
 echo "Diagnostics: $HOME/DroneTransfer/outgoing/pi-info/"
 echo "Camera health outputs: $HOME/DroneTransfer/outgoing/camera-health/"
-echo "Host smoke outputs: $HOME/DroneTransfer/outgoing/vision-smoke/"
+echo "Training captures: $HOME/drone-data/captures/"
 echo "Docker smoke outputs: $repo_root/data/docker-smoke/"

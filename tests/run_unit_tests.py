@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import math
@@ -10,6 +11,7 @@ import shutil
 import shlex
 import sqlite3
 import struct
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -17,7 +19,9 @@ import time
 from types import SimpleNamespace
 import zipfile
 
+import cv2
 import numpy as np
+import vision_nav.training_capture as training_capture_module
 
 from vision_nav.barometer import BarometerSample, BarometerTracker, pressure_to_altitude_m
 from vision_nav.ardupilot_params import check_ardupilot_external_nav_params, params_from_text as ardupilot_params_from_text
@@ -49,6 +53,9 @@ from vision_nav.bundle_checksums import verify_checksum_file, write_checksum_fil
 from vision_nav.bundle_diagnostics import compact_bundle_diagnostic, diagnose_bundle_inputs
 from vision_nav.build_bundle_from_map_source import build_bundle_from_map_source
 from vision_nav.camera import load_camera_calibration, validate_image_size
+from vision_nav.camera_ingress import CapturedFrame
+from vision_nav.camera_extrinsics import create_extrinsics_document, load_camera_to_body
+from vision_nav.calibrate_camera import calibration_yaml
 from vision_nav.external_position import (
     ExternalPositionEstimate,
     OdometryResetTracker,
@@ -80,11 +87,16 @@ from vision_nav.georef import SimpleGeoReference, build_georef_from_cli, georef_
 from vision_nav.gnss_denied_plan import evaluate_gnss_denied_plan
 from vision_nav.mavlink_bridge import (
     MavlinkSendResult,
+    MavlinkTelemetrySample,
     MavlinkVisionBridge,
     _load_mavutil,
     parse_mavlink_endpoint,
     send_records_once,
+    summarize_timesync_exchanges,
 )
+from vision_nav.mavlink_bench import summarize_mavlink_bench
+from vision_nav.camera_bench import summarize_camera_bench
+from vision_nav.prop_off_preflight import evaluate_prop_off_preflight
 from vision_nav.px4_sitl_evidence import Px4SitlEvidenceConfig, evaluate_px4_sitl_evidence
 from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.px4_params import check_px4_external_vision_params, evaluate_px4_param_file, params_from_text
@@ -124,6 +136,72 @@ from vision_nav.terrain_tiles import (
     tile_origins,
 )
 from vision_nav.validate_map_bundle import validate_bundle
+from vision_nav.neural.profiles import PI5_CROSSVIEW_NAV_V1
+from vision_nav.neural.dataset_release import create_dataset_release, validate_dataset_release
+from vision_nav.neural.artifacts import artifact_aggregate_digest, validate_model_artifacts
+from vision_nav.neural.onnx_runtime import LearnedModelRunner
+from vision_nav.neural.onnx_parity import evaluate_onnx_parity_cases
+from vision_nav.neural.releases import ModelRelease
+from vision_nav.neural.shadow_runtime import check_runtime_compatibility, runtime_status_v3
+from vision_nav.neural.training_dataset import _gps_reference, build_training_index
+from vision_nav.neural.training_experiment import prepare_teacher_experiment
+from vision_nav.neural.training_labels import materialize_training_labels
+from vision_nav.neural.training_map_pairs import build_training_map_pairs
+from vision_nav.neural.temporal_training_windows import build_temporal_training_windows, validate_temporal_training_windows
+from vision_nav.neural.temporal_teacher_baseline import TemporalTeacherBaselineConfig, build_evaluation_record, build_run_record
+from vision_nav.neural.teacher_targets import build_teacher_target_record
+from vision_nav.neural.teacher_targets import validate_teacher_targets
+from vision_nav.neural.pi_temporal_student import PiTemporalStudentConfig, build_student_run_record
+from vision_nav.neural.pi_temporal_student_export import (
+    validate_pi_temporal_student_export,
+    validate_pi_temporal_student_release_binding,
+)
+from vision_nav.neural.xfeat_export import (
+    build_xfeat_dense_export_manifest,
+    build_xfeat_sparse_export_manifest,
+    validate_xfeat_dense_export,
+    validate_xfeat_sparse_export,
+)
+from vision_nav.neural.lighterglue_probe import (
+    build_lighterglue_probe_manifest,
+    validate_lighterglue_probe,
+)
+from vision_nav.neural.research_environment import evaluate_research_environment
+from vision_nav.neural.map_tile_layout import build_map_tile_layout
+from vision_nav.neural.map_asset_compiler import compile_learned_map_assets
+from vision_nav.neural.map_asset_validation import validate_learned_map_assets
+from vision_nav.neural.local_feature_cache import load_local_feature_cache
+from vision_nav.neural.runtime_benchmark import benchmark_shadow_frames
+from vision_nav.neural.shadow_inference import ShadowFrame, filter_local_feature_outputs
+from vision_nav.neural.training_capture_preflight import evaluate_training_capture_preflight
+from vision_nav.neural.reference_map import create_reference_map, load_reference_map
+from vision_nav.neural.reference_map_import import import_reference_geotiff
+from vision_nav.neural.teacher_dataset import validate_teacher_dataset
+from vision_nav.neural.training_readiness import evaluate_training_readiness
+from vision_nav.neural.training_splits import create_training_splits
+from vision_nav.neural.upstreams import load_upstream_lock, validate_upstream_lock
+from vision_nav.neural.retrieval_index import load_tile_retriever
+from vision_nav.neural.upstream_training import preflight_upstream_workflow
+from vision_nav.training_capture import (
+    _ContinuousTelemetryRecorder,
+    _capture_timesync_summary,
+    record_training_session,
+    sha256_file,
+    validate_training_session,
+    write_session_checksums,
+)
+from test_vision_first_navigation import (
+    test_demo_runtime_withholds_unbound_backend,
+    test_geometry_rejects_insufficient_matches,
+    test_hypothesis_requires_temporal_support,
+    test_map_release_rejects_mixed_calibration_or_model_versions,
+    test_px4_publication_requires_fresh_compatible_tracking_estimate,
+    test_px4_publish_only_in_tracking_mode,
+    test_runtime_withholds_anonymous_or_reordered_frames,
+)
+from test_neural_pipeline import (
+    test_temporal_student_records_uncalibrated_location_and_heading_evidence as neural_temporal_student_evidence_test,
+)
 
 
 def assert_equal(actual, expected, label: str) -> None:
@@ -733,6 +811,65 @@ def test_mavlink_endpoint_parsing_and_axis_mapping() -> None:
     assert_equal(z_down, -0.0, "MAVLink down axis")
     assert_equal(covariance[0], 16.0, "MAVLink north covariance")
     assert_equal(covariance[6], 9.0, "MAVLink east covariance")
+
+
+def test_mavlink_timesync_evidence_rejects_high_latency_or_missing_samples() -> None:
+    ready = summarize_timesync_exchanges(
+        [
+            {"host_sent_monotonic_ns": 1_000_000_000, "host_received_monotonic_ns": 1_004_000_000, "px4_timestamp_ns": 504_000_000},
+            {"host_sent_monotonic_ns": 2_000_000_000, "host_received_monotonic_ns": 2_006_000_000, "px4_timestamp_ns": 1_506_000_000},
+            {"host_sent_monotonic_ns": 3_000_000_000, "host_received_monotonic_ns": 3_008_000_000, "px4_timestamp_ns": 2_508_000_000},
+        ],
+        requested_sample_count=3,
+        max_round_trip_ms=50.0,
+    )
+    assert_equal(ready["status"], "available", "low-latency TIMESYNC exchanges become capture evidence")
+    assert_equal(ready["accepted_sample_count"], 3, "TIMESYNC audit retains accepted exchanges")
+    assert_equal(ready["px4_minus_host_midpoint_median_ns"], -497_000_000, "TIMESYNC offset uses host midpoint")
+
+    rejected = summarize_timesync_exchanges(
+        [
+            {"host_sent_monotonic_ns": 1_000_000_000, "host_received_monotonic_ns": 1_100_000_000, "px4_timestamp_ns": 550_000_000},
+            {"status": "rejected", "reason": "timesync_response_timeout"},
+        ],
+        requested_sample_count=2,
+        max_round_trip_ms=50.0,
+    )
+    assert_equal(rejected["status"], "unavailable", "high-latency or absent exchanges fail field evidence")
+    assert "timesync_round_trip_exceeds_limit" in rejected["rejection_counts"]
+    assert "insufficient_low_latency_timesync_samples" in rejected["errors"]
+
+    class FakeMav:
+        def __init__(self) -> None:
+            self.requests: list[tuple[int, int]] = []
+
+        def timesync_send(self, tc1: int, ts1: int) -> None:
+            self.requests.append((tc1, ts1))
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.mav = FakeMav()
+
+        def recv_match(self, *, type: str, blocking: bool, timeout: float):
+            assert_equal(type, "TIMESYNC", "TIMESYNC audit reads only matching responses")
+            assert_equal(blocking, True, "TIMESYNC audit uses bounded blocking reads")
+            _tc1, ts1 = self.mav.requests[-1]
+            return SimpleNamespace(tc1=time.monotonic_ns() - 500_000_000, ts1=ts1)
+
+    bridge = MavlinkVisionBridge("udp:14550")
+    bridge._conn = FakeConnection()
+    measured = bridge.capture_timesync_evidence(sample_count=3, timeout_s=0.01, max_round_trip_ms=50.0)
+    assert_equal(measured["status"], "available", "bridge records a valid bounded TIMESYNC exchange")
+    assert_equal(bridge._conn.mav.requests[0][0], 0, "TIMESYNC request uses tc1=0")
+
+    session_timing = _capture_timesync_summary(
+        ready,
+        {**ready, "px4_minus_host_midpoint_median_ns": -496_000_000},
+        sample_count=3,
+        max_round_trip_ms=50.0,
+    )
+    assert_equal(session_timing["status"], "available", "capture requires both TIMESYNC snapshots")
+    assert_equal(session_timing["px4_minus_host_midpoint_drift_ns"], 1_000_000, "capture preserves PX4/Pi timing drift")
 
 
 def test_mavlink_log_sender_uses_selected_message_type() -> None:
@@ -1738,14 +1875,100 @@ def test_camera_health_report_on_synthetic_image() -> None:
             image_path,
             sharpness_min=0.0,
             entropy_min=0.0,
-            feature_density_min=0.0,
+            edge_density_min=0.0,
             saturation_max=1.0,
         )
 
         assert_equal(report["status"], "passed", "camera health status")
         assert_equal(report["resolution"], {"width": 220, "height": 160}, "camera health resolution")
-        if report["feature_count"] <= 0:
-            raise AssertionError("Expected synthetic camera frame to produce features")
+        if report["edge_density_per_megapixel"] <= 0:
+            raise AssertionError("Expected synthetic camera frame to produce edge content")
+
+
+def test_camera_bench_requires_consistent_measured_image_quality() -> None:
+    def frame(sequence: int, warnings: list[str] | None = None) -> dict[str, object]:
+        return {
+            "sequence": sequence,
+            "camera_metadata": {"sensor_timestamp_ns": 1_000_000 + sequence},
+            "analysis": {
+                "warnings": warnings or [],
+                "frame_quality": {"sharpness_laplacian_var": 80.0 + sequence},
+                "edge_density_per_megapixel": 12_000.0 + sequence,
+                "exposure": {"dark_pixel_fraction": 0.01, "bright_pixel_fraction": 0.02},
+            },
+        }
+
+    passed = summarize_camera_bench([frame(0), frame(1), frame(2)])
+    assert_equal(passed["status"], "passed", "clean camera bench passes")
+    assert_equal(passed["timing"]["sensor_timestamp_coverage"], 1.0, "camera bench tracks sensor timestamp coverage")
+    failed = summarize_camera_bench([frame(0), frame(1, ["low_sharpness"]), frame(2)])
+    assert_equal(failed["status"], "failed", "focus warning fails strict camera bench")
+    assert "camera_quality_warnings_exceed_limit" in failed["errors"]
+
+
+def test_prop_off_preflight_requires_operator_safety_attestation_and_bench_evidence() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        camera_report = root / "camera_bench_report.json"
+        mavlink_report = root / "mavlink_bench_report.json"
+        camera_report.write_text(
+            json.dumps({"schema_version": "vision_nav_camera_bench_v1", "status": "passed", "errors": [], "warnings": []}),
+            encoding="utf-8",
+        )
+        mavlink_report.write_text(
+            json.dumps({"schema_version": "vision_nav_mavlink_bench_v1", "status": "passed", "errors": [], "warnings": []}),
+            encoding="utf-8",
+        )
+        ready = evaluate_prop_off_preflight(
+            camera_bench_report=camera_report,
+            mavlink_bench_report=mavlink_report,
+            propellers_removed_confirmed=True,
+        )
+        assert_equal(ready["status"], "passed", "valid prop-off bench evidence passes")
+        assert_equal(ready["stage"], "ready_for_calibration", "calibration is the next preflight stage")
+        unconfirmed = evaluate_prop_off_preflight(
+            camera_bench_report=camera_report,
+            mavlink_bench_report=mavlink_report,
+            propellers_removed_confirmed=False,
+        )
+        assert_equal(unconfirmed["status"], "failed", "operator must attest propellers removed")
+        assert_equal(unconfirmed["stage"], "not_ready", "unattested prop-off state blocks bench progress")
+
+
+def test_training_splits_keep_capture_sessions_disjoint() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        index_dir = root / "training-index"
+        index_dir.mkdir()
+        samples = [
+            {"sample_id": "session-a:000001", "capture_session_id": "session-a"},
+            {"sample_id": "session-a:000002", "capture_session_id": "session-a"},
+            {"sample_id": "session-b:000001", "capture_session_id": "session-b"},
+            {"sample_id": "session-c:000001", "capture_session_id": "session-c"},
+        ]
+        index_path = index_dir / "samples.jsonl"
+        index_path.write_text("".join(json.dumps(sample) + "\n" for sample in samples), encoding="utf-8")
+        index_dir.joinpath("manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_training_index_v1",
+                    "dataset_release_id": "unit-dataset@1",
+                    "index_sha256": hashlib.sha256(index_path.read_bytes()).hexdigest(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = create_training_splits(index_dir, root / "splits", validation_fraction=0.34, seed=7)
+        manifest = result["manifest"]
+        train_sessions = set(manifest["train"]["capture_session_ids"])
+        validation_sessions = set(manifest["validation"]["capture_session_ids"])
+        assert_equal(bool(train_sessions & validation_sessions), False, "training split sessions are disjoint")
+        assert_equal(manifest["split_policy"]["group_by"], "capture_session_id", "training split groups by session")
+        assert_equal(
+            manifest["train"]["sample_count"] + manifest["validation"]["sample_count"],
+            len(samples),
+            "training split preserves all samples",
+        )
 
 
 def test_bundle_checksums_detect_changed_file() -> None:
@@ -9039,8 +9262,2341 @@ def test_barometer_tracker_and_estimator_fields() -> None:
     assert_equal(result["local_enu_m"]["z"], 4.0, "barometer local z")
 
 
+def test_learned_release_contract_is_shadow_only() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        assets = {
+            "cog_uri": "imagery/map.tif",
+            "stac_item_uri": "stac/item.json",
+            "tile_index_uri": "index/tiles.sqlite",
+            "retrieval_index_uri": "index/megaloc.faiss",
+            "xfeat_index_uri": "index/xfeat_tiles.sqlite",
+        }
+        for relative in assets.values():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"test")
+        model = ModelRelease(
+            release_id="pi5-crossview-nav@unit",
+            profile_id=PI5_CROSSVIEW_NAV_V1.profile_id,
+            semantic_version="1.0.0",
+            checkpoint_digest_sha256="a" * 64,
+            onnx_digest_sha256="b" * 64,
+            training_dataset_releases=("unit-data@1",),
+            source_revision="unit",
+            license_summary="unit",
+            redistribution_allowed=False,
+            calibration_ids=("camera-v1",),
+            artifact_paths={"temporal_student": "models/student.onnx"},
+        )
+        release = {
+            "schema_version": "vision_nav_map_release_v2",
+            "release_id": "unit-map@1",
+            "map_id": "unit-map",
+            "version": "1",
+            "profile_id": PI5_CROSSVIEW_NAV_V1.profile_id,
+            "model_release_id": model.release_id,
+            "crs": "EPSG:32610",
+            "local_origin_enu": [0.0, 0.0, 0.0],
+            "gsd_m_per_px": 0.2,
+            **assets,
+            "calibration_ids": ["camera-v1"],
+            "geometry_modes": ["pnp_3d", "homography_restricted"],
+            "checksums_sha256": {
+                relative: hashlib.sha256((root / relative).read_bytes()).hexdigest()
+                for relative in assets.values()
+            },
+        }
+        compatibility = check_runtime_compatibility(
+            release, model, calibration_id="camera-v1", provider="onnxruntime_cpu", root=root
+        )
+        assert_equal(compatibility.compatible, True, "learned map/model compatibility")
+        status = runtime_status_v3(
+            compatibility=compatibility,
+            map_release=release,
+            model_release=model,
+            camera_health="ready",
+            runtime_state="NO_GLOBAL_FIX",
+            sequence=1,
+        )
+        assert_equal(status["px4_publication"]["enabled"], False, "shadow runtime PX4 publication")
+
+
+def test_mavlink_bench_evidence_requires_heartbeat_and_stable_attitude_cadence() -> None:
+    def record(index: int, timestamp_ns: int, message_type: str) -> dict[str, object]:
+        return {
+            "index": index,
+            "host_monotonic_ns": timestamp_ns,
+            "sample": {
+                "message_type": message_type,
+                "vehicle_timestamp_us": timestamp_ns // 1_000,
+                "vehicle_time_domain": "px4_boot_us",
+            },
+        }
+
+    good_records = [
+        record(0, 0, "HEARTBEAT"),
+        record(1, 10_000_000, "ATTITUDE"),
+        record(2, 60_000_000, "ATTITUDE"),
+        record(3, 110_000_000, "ATTITUDE"),
+        record(4, 120_000_000, "LOCAL_POSITION_NED"),
+    ]
+    passed = summarize_mavlink_bench(
+        good_records,
+        duration_s=0.15,
+        endpoint="serial:/dev/ttyACM0:921600",
+        min_attitude_rate_hz=15.0,
+        max_attitude_gap_ms=100.0,
+    )
+    assert_equal(passed["status"], "passed", "stable MAVLink bench telemetry passes")
+    assert_equal(passed["capture"]["px4_commands_sent"], False, "bench recorder is read only")
+    assert_equal(passed["attitude"]["observed_rate_hz"], 20.0, "bench recorder measures attitude cadence")
+
+    failed = summarize_mavlink_bench(
+        [record(0, 0, "ATTITUDE"), record(1, 400_000_000, "ATTITUDE")],
+        duration_s=0.5,
+        endpoint="serial:/dev/ttyACM0:921600",
+        min_attitude_rate_hz=20.0,
+        max_attitude_gap_ms=150.0,
+    )
+    assert_equal(failed["status"], "failed", "missing heartbeat and slow attitude cadence fail")
+    assert "missing_px4_heartbeat" in failed["errors"]
+    assert "attitude_rate_below_minimum" in failed["errors"]
+    assert "attitude_gap_exceeds_limit" in failed["errors"]
+
+
+def test_training_capture_and_dataset_release_preserve_provenance() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        input_frames = root / "input_frames"
+        input_frames.mkdir()
+        (input_frames / "0001.jpg").write_bytes(b"frame-one")
+        (input_frames / "0002.jpg").write_bytes(b"frame-two")
+        telemetry = iter(
+            [
+                MavlinkTelemetrySample(
+                    message_type="ATTITUDE",
+                    timestamp_us=1,
+                    vehicle_timestamp_us=10_000,
+                    vehicle_time_domain="px4_boot_us",
+                    roll_rad=0.1,
+                ),
+                MavlinkTelemetrySample(
+                    message_type="ATTITUDE",
+                    timestamp_us=2,
+                    vehicle_timestamp_us=20_000,
+                    vehicle_time_domain="px4_boot_us",
+                    pitch_rad=0.2,
+                ),
+            ]
+        )
+        capture = record_training_session(
+            root / "capture",
+            calibration_id="down-camera-v1",
+            map_release_id="unit-map@1",
+            map_reference_kind="reference_map_release",
+            capture_count=2,
+            interval_s=0.0,
+            session_id="unit-capture-1",
+            input_frames_dir=input_frames,
+            telemetry_reader=lambda: next(telemetry, None),
+        )
+        assert_equal(capture["manifest"]["frame_count"], 2, "training capture frame count")
+        assert_equal(
+            capture["manifest"]["map_reference"]["kind"],
+            "reference_map_release",
+            "training capture records reference-map provenance separately from later deployment assets",
+        )
+        assert_equal(
+            capture["manifest"]["camera"]["backend"],
+            "picamera2",
+            "training capture defaults to timestamp-capable Picamera2 provenance",
+        )
+        alignment = capture["manifest"]["mavlink"]["frame_attitude_alignment"]
+        assert_equal(alignment["paired_frame_count"], 2, "training capture aligns every frame to attitude")
+        assert_equal(alignment["vehicle_time_domains"]["px4_boot_us"]["sample_count"], 2, "capture retains PX4 clock provenance")
+        validation = validate_training_session(root / "capture", require_attitude=True)
+        assert_equal(validation["status"], "valid", "training capture checksum and attitude validation")
+
+        release = create_dataset_release(
+            [root / "capture"],
+            release_id="unit-dataset@1",
+            attitude_timing_policy="legacy_host_receipt",
+            version="1.0.0",
+            source_revision="unit",
+            license_summary="unit-only",
+            require_sensor_timestamps=False,
+            require_offline_gnss_reference=False,
+            require_mavlink_timesync=False,
+        )
+        validate_dataset_release(release)
+        assert_equal(release["frame_count"], 2, "dataset release aggregates frame count")
+        assert_equal(release["capture_session_ids"], ("unit-capture-1",), "dataset release session IDs")
+        dataset_path = root / "dataset-release.json"
+        dataset_path.write_text(json.dumps(release), encoding="utf-8")
+        try:
+            build_training_index(dataset_path, root / "training-index")
+        except ValueError as exc:
+            if "Camera sensor timestamp is missing" not in str(exc):
+                raise AssertionError(f"Expected sensor timestamp gate, got {exc}")
+        else:
+            raise AssertionError("Expected default training index build to reject imported timestamp-less frames")
+        index = build_training_index(
+            dataset_path,
+            root / "training-index",
+            require_sensor_timestamps=False,
+            timing_policy="legacy_host_receipt",
+        )
+        assert_equal(index["manifest"]["sample_count"], 2, "training index includes synchronized frames")
+        samples = [json.loads(line) for line in (root / "training-index" / "samples.jsonl").read_text().splitlines()]
+        assert_equal(samples[0]["attitude"]["message_type"], "ATTITUDE", "training index preserves attitude")
+        assert_equal(samples[0]["capture_timing"]["sensor_timestamp_ns"], None, "legacy capture timing stays explicit")
+        smoke_readiness = evaluate_training_readiness(
+            root / "training-index",
+            min_samples=1,
+            min_capture_sessions=1,
+            require_gps_labels=False,
+            require_quality_metrics=False,
+            require_measured_extrinsics=False,
+            require_sensor_timestamps=False,
+        )
+        assert_equal(smoke_readiness["status"], "ready", "training index passes scoped smoke readiness")
+        field_readiness = evaluate_training_readiness(root / "training-index", min_samples=1, min_capture_sessions=1)
+        assert_equal(field_readiness["status"], "not_ready", "field readiness requires offline geo labels")
+
+        manifest_path = root / "capture" / "manifest.json"
+        altered_manifest = json.loads(manifest_path.read_text())
+        altered_manifest["frames"][0]["attitude_alignment"]["host_delta_ms"] = 500.0
+        manifest_path.write_text(json.dumps(altered_manifest), encoding="utf-8")
+        write_session_checksums(root / "capture")
+        stale_validation = validate_training_session(root / "capture", require_attitude=True)
+        assert_equal(stale_validation["status"], "invalid", "stale frame attitude evidence is rejected")
+        assert "Frame-to-attitude alignment exceeds" in stale_validation["errors"][0]
+        altered_manifest["mavlink"]["state"] = "connected_continuous"
+        altered_manifest["mavlink"]["capture"] = {
+            "mode": "continuous_background_reader",
+            "errors": ["telemetry_reader_failed:OSError:serial disconnected"],
+        }
+        manifest_path.write_text(json.dumps(altered_manifest), encoding="utf-8")
+        write_session_checksums(root / "capture")
+        reader_failed = validate_training_session(root / "capture", require_attitude=True)
+        if not any("Continuous MAVLink telemetry capture failed" in error for error in reader_failed["errors"]):
+            raise AssertionError("Training capture validation must reject continuous telemetry reader failure evidence")
+
+
+def test_continuous_telemetry_capture_preserves_attitude_cadence_evidence() -> None:
+    samples = iter(
+        [
+            MavlinkTelemetrySample(message_type="ATTITUDE", timestamp_us=1, roll_rad=0.1),
+            MavlinkTelemetrySample(message_type="GPS_RAW_INT", timestamp_us=2, gps_fix_type=3),
+            MavlinkTelemetrySample(message_type="ATTITUDE", timestamp_us=3, pitch_rad=0.2),
+        ]
+    )
+    recorder = _ContinuousTelemetryRecorder(lambda: next(samples, None))
+    recorder.start()
+    deadline = time.monotonic() + 1.0
+    while len(recorder.records()) < 3 and time.monotonic() < deadline:
+        time.sleep(0.005)
+    recorder.stop()
+    records = recorder.records()
+    summary = recorder.summary()
+    assert_equal(len(records), 3, "continuous recorder preserves every received MAVLink sample")
+    assert_equal([record["index"] for record in records], [0, 1, 2], "continuous recorder assigns stable telemetry indices")
+    assert_equal(summary["mode"], "continuous_background_reader", "Pi endpoint capture records continuous reader provenance")
+    assert_equal(summary["attitude_sample_count"], 2, "continuous recorder counts PX4 attitude samples")
+    assert_equal(summary["errors"], [], "continuous recorder stops without reader failure")
+
+
+def test_first_training_capture_preparation_script_keeps_prop_off_gate_order() -> None:
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "pi" / "prepare_first_training_capture.sh").read_text(
+        encoding="utf-8"
+    )
+    for expected in (
+        "VISION_NAV_PROP_OFF_CONFIRMED",
+        "VISION_NAV_REFERENCE_MAP",
+        "VISION_NAV_CALIBRATION_ID",
+        "VISION_NAV_MAVLINK_ENDPOINT",
+        "VISION_NAV_REFERENCE_MAP=$reference_map",
+        "capture_camera_bench.sh",
+        "capture_mavlink_bench.sh",
+        "run_prop_off_preflight.sh",
+        "preflight_training_capture.sh",
+    ):
+        if expected not in script:
+            raise AssertionError(f"First training-capture preparation script is missing {expected}")
+    order = [
+        script.index("capture_camera_bench.sh"),
+        script.index("capture_mavlink_bench.sh"),
+        script.index("run_prop_off_preflight.sh"),
+        script.index("preflight_training_capture.sh"),
+    ]
+    if order != sorted(order):
+        raise AssertionError("First training-capture preparation stages must run in camera, MAVLink, prop-off, storage order")
+
+    recorder = (Path(__file__).resolve().parents[1] / "scripts" / "pi" / "record_training_capture.sh").read_text(
+        encoding="utf-8"
+    )
+    for expected in ("VISION_NAV_REFERENCE_MAP", "json.loads", "release_id", "reference_map_release"):
+        if expected not in recorder:
+            raise AssertionError(f"Training capture recorder must derive ReferenceMapRelease identity from {expected}")
+
+
+def test_windows_pi_capture_import_revalidates_before_training_preparation() -> None:
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "research" / "import_pi_training_captures.ps1").read_text(
+        encoding="utf-8"
+    )
+    for expected in (
+        "RemoteCaptureSessionDir",
+        "DestinationRoot",
+        "Get-Command scp",
+        "scp -r",
+        "validate_training_session",
+        "require_attitude=True",
+        "require_sensor_timestamps=True",
+        "require_offline_gnss_reference=True",
+        "require_mavlink_timesync=True",
+        "vision_nav_windows_pi_capture_import_v1",
+        "prepare_first_temporal_windows.ps1",
+        "px4_external_vision = \"disabled\"",
+    ):
+        if expected not in script:
+            raise AssertionError(f"Windows Pi capture importer is missing {expected}")
+
+
+def test_training_capture_preserves_camera_ingress_metadata() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        class FakeIngress:
+            backend = "fake_picamera2"
+
+            def capture(self, output: Path) -> CapturedFrame:
+                output.write_bytes(b"not-a-real-image")
+                return CapturedFrame(
+                    path=output,
+                    backend=self.backend,
+                    sensor_timestamp_ns=123456,
+                    exposure_time_us=8000,
+                    analogue_gain=1.5,
+                    crop=(0, 0, 1456, 1088),
+                    quality={"status": "measured", "laplacian_variance": 50.0, "saturated_fraction": 0.1},
+                )
+
+            def close(self) -> None:
+                return None
+
+        telemetry = iter(
+            [
+                MavlinkTelemetrySample(message_type="ATTITUDE", timestamp_us=1, roll_rad=0.1),
+                MavlinkTelemetrySample(
+                    message_type="GPS_RAW_INT",
+                    timestamp_us=2,
+                    gps_lat=37.0,
+                    gps_lon=-122.0,
+                    gps_alt_m=12.0,
+                    gps_fix_type=3,
+                    gps_h_acc_m=1.2,
+                ),
+            ]
+        )
+        capture = record_training_session(
+            root / "capture",
+            calibration_id="down-camera-v1",
+            map_release_id="unit-map@1",
+            capture_count=1,
+            interval_s=0.0,
+            camera_ingress=FakeIngress(),
+            telemetry_reader=lambda: next(telemetry, None),
+        )
+        metadata = capture["manifest"]["frames"][0]["camera_metadata"]
+        assert_equal(metadata["sensor_timestamp_ns"], 123456, "camera sensor timestamp retained")
+        assert_equal(metadata["quality"]["laplacian_variance"], 50.0, "camera quality retained")
+        frame = capture["manifest"]["frames"][0]
+        assert_equal(
+            frame["host_capture_started_monotonic_ns"] <= frame["host_monotonic_ns"] <= frame["host_capture_finished_monotonic_ns"],
+            True,
+            "frame midpoint stays inside capture window",
+        )
+        assert_equal(
+            capture["manifest"]["camera"]["frame_timing"]["sensor_timestamps_strictly_monotonic"],
+            True,
+            "camera timing records sensor timestamp quality",
+        )
+        sensor_validation = validate_training_session(root / "capture", require_sensor_timestamps=True)
+        assert_equal(sensor_validation["status"], "valid", "sensor-timestamp capture passes strict validation")
+        release = create_dataset_release(
+            [root / "capture"],
+            release_id="quality-dataset@1",
+            attitude_timing_policy="legacy_host_receipt",
+            version="1.0.0",
+            source_revision="unit",
+            license_summary="unit-only",
+            require_offline_gnss_reference=False,
+            require_mavlink_timesync=False,
+        )
+        dataset_path = root / "quality-dataset.json"
+        dataset_path.write_text(json.dumps(release), encoding="utf-8")
+        build_training_index(dataset_path, root / "quality-index", timing_policy="legacy_host_receipt")
+        readiness = evaluate_training_readiness(
+            root / "quality-index",
+            min_samples=1,
+            min_capture_sessions=1,
+            require_gps_labels=False,
+            require_measured_extrinsics=False,
+        )
+        assert_equal(readiness["status"], "ready", "measured camera quality passes readiness gate")
+        manifest_path = root / "capture" / "manifest.json"
+        tampered = json.loads(manifest_path.read_text())
+        tampered["frames"][0]["camera_metadata"]["sensor_timestamp_ns"] = None
+        manifest_path.write_text(json.dumps(tampered), encoding="utf-8")
+        write_session_checksums(root / "capture")
+        sensor_validation = validate_training_session(root / "capture", require_sensor_timestamps=True)
+        assert_equal(sensor_validation["status"], "invalid", "missing sensor timestamp fails strict capture validation")
+        if not any("Camera sensor timestamp is missing" in error for error in sensor_validation["errors"]):
+            raise AssertionError("Expected strict capture validation to report missing sensor timestamp")
+
+
+def test_training_capture_requires_offline_gnss_reference_for_supervised_data() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        class FakeIngress:
+            backend = "fake_picamera2"
+
+            def capture(self, output: Path) -> CapturedFrame:
+                output.write_bytes(b"gnss-training-frame")
+                return CapturedFrame(
+                    path=output,
+                    backend=self.backend,
+                    sensor_timestamp_ns=123456,
+                    exposure_time_us=8000,
+                    analogue_gain=1.5,
+                    crop=(0, 0, 1456, 1088),
+                    quality={"status": "measured", "laplacian_variance": 50.0, "saturated_fraction": 0.1},
+                )
+
+            def close(self) -> None:
+                return None
+
+        telemetry = iter(
+            [
+                MavlinkTelemetrySample(message_type="ATTITUDE", timestamp_us=1, roll_rad=0.1),
+                MavlinkTelemetrySample(
+                    message_type="GPS_RAW_INT",
+                    timestamp_us=2,
+                    gps_lat=37.0,
+                    gps_lon=-122.0,
+                    gps_alt_m=12.0,
+                    gps_fix_type=3,
+                    gps_h_acc_m=1.2,
+                    gps_v_acc_m=2.0,
+                    gps_satellites_visible=12,
+                ),
+            ]
+        )
+        capture_dir = root / "capture"
+        result = record_training_session(
+            capture_dir,
+            calibration_id="down-camera-v1",
+            map_release_id="unit-map@1",
+            capture_count=1,
+            interval_s=0.0,
+            camera_ingress=FakeIngress(),
+            telemetry_reader=lambda: next(telemetry, None),
+        )
+        gnss = result["manifest"]["mavlink"]["offline_gnss_reference"]
+        assert_equal(gnss["status"], "ready", "capture records offline GNSS reference readiness")
+        assert_equal(gnss["accepted_frame_count"], 1, "capture accepts nearby healthy GNSS reference")
+        validation = validate_training_session(
+            capture_dir,
+            require_attitude=True,
+            require_sensor_timestamps=True,
+            require_offline_gnss_reference=True,
+        )
+        assert_equal(validation["status"], "valid", "healthy offline GNSS reference passes supervised capture gate")
+
+        manifest_path = capture_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["mavlink"]["offline_gnss_reference"]["status"] = "not_ready"
+        manifest_path.write_text(json.dumps(manifest))
+        write_session_checksums(capture_dir)
+        rejected = validate_training_session(capture_dir, require_offline_gnss_reference=True)
+        assert_equal(rejected["status"], "invalid", "missing GNSS label readiness blocks supervised capture")
+        if not any("Offline GNSS references" in error for error in rejected["errors"]):
+            raise AssertionError("Expected supervised capture gate to report GNSS-label readiness failure")
+
+
+def test_training_capture_records_pre_and_post_mavlink_timesync() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        class FakeIngress:
+            backend = "fake_picamera2"
+
+            def capture(self, output: Path) -> CapturedFrame:
+                output.write_bytes(b"training-frame")
+                return CapturedFrame(
+                    path=output,
+                    backend=self.backend,
+                    sensor_timestamp_ns=123456,
+                    quality={"status": "measured", "laplacian_variance": 50.0, "saturated_fraction": 0.1},
+                )
+
+            def close(self) -> None:
+                return None
+
+        class FakeBridge:
+            instances: list["FakeBridge"] = []
+
+            def __init__(self, _endpoint: str, **_kwargs: Any) -> None:
+                self.timesync_calls = 0
+                self.telemetry = iter([MavlinkTelemetrySample(message_type="ATTITUDE", timestamp_us=1, roll_rad=0.1)])
+                FakeBridge.instances.append(self)
+
+            def connect(self) -> None:
+                return None
+
+            def start_timesync_recording(self) -> None:
+                return None
+
+            def stop_timesync_recording(self) -> dict[str, Any]:
+                return {"status": "recorded", "exchanges": []}
+
+            def capture_timesync_evidence(self, *, sample_count: int, max_round_trip_ms: float) -> dict[str, Any]:
+                self.timesync_calls += 1
+                offset = -500_000_000 + self.timesync_calls * 1_000_000
+                snapshot = summarize_timesync_exchanges(
+                    [
+                        {"host_sent_monotonic_ns": 1_000_000_000, "host_received_monotonic_ns": 1_004_000_000, "px4_timestamp_ns": 502_000_000 + offset + 500_000_000},
+                        {"host_sent_monotonic_ns": 2_000_000_000, "host_received_monotonic_ns": 2_006_000_000, "px4_timestamp_ns": 1_503_000_000 + offset + 500_000_000},
+                        {"host_sent_monotonic_ns": 3_000_000_000, "host_received_monotonic_ns": 3_008_000_000, "px4_timestamp_ns": 2_504_000_000 + offset + 500_000_000},
+                    ],
+                    requested_sample_count=sample_count,
+                    max_round_trip_ms=max_round_trip_ms,
+                )
+                return snapshot
+
+            def try_read_telemetry(self, timeout_s: float = 0.0) -> MavlinkTelemetrySample | None:
+                return next(self.telemetry, None)
+
+            def close(self) -> None:
+                return None
+
+        original_bridge = training_capture_module.MavlinkVisionBridge
+        training_capture_module.MavlinkVisionBridge = FakeBridge
+        try:
+            capture = record_training_session(
+                root / "capture",
+                calibration_id="down-camera-v1",
+                map_release_id="unit-map@1",
+                capture_count=1,
+                interval_s=0.0,
+                camera_ingress=FakeIngress(),
+                mavlink_endpoint="serial:/dev/ttyACM0:921600",
+            )
+        finally:
+            training_capture_module.MavlinkVisionBridge = original_bridge
+
+        timesync = capture["manifest"]["mavlink"]["timesync"]
+        assert_equal(timesync["status"], "available", "capture requires valid pre/post TIMESYNC evidence")
+        assert_equal(FakeBridge.instances[0].timesync_calls, 2, "capture probes MAVLink TIMESYNC before and after frames")
+        assert_equal(timesync["px4_minus_host_midpoint_drift_ns"], 1_000_000, "capture retains timing drift between snapshots")
+
+
+def test_support_bundle_summarizes_strict_training_capture_without_raw_data() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        class FakeIngress:
+            backend = "fake_picamera2"
+
+            def capture(self, output: Path) -> CapturedFrame:
+                output.write_bytes(b"training-frame")
+                return CapturedFrame(
+                    path=output,
+                    backend=self.backend,
+                    sensor_timestamp_ns=123456,
+                    exposure_time_us=8000,
+                    analogue_gain=1.5,
+                    crop=(0, 0, 1456, 1088),
+                    quality={"status": "measured", "laplacian_variance": 50.0, "saturated_fraction": 0.1},
+                )
+
+            def close(self) -> None:
+                return None
+
+        telemetry = iter(
+            [
+                MavlinkTelemetrySample(message_type="ATTITUDE", timestamp_us=1, roll_rad=0.1),
+                MavlinkTelemetrySample(
+                    message_type="GPS_RAW_INT",
+                    timestamp_us=2,
+                    gps_lat=37.0,
+                    gps_lon=-122.0,
+                    gps_alt_m=12.0,
+                    gps_fix_type=3,
+                    gps_h_acc_m=1.2,
+                ),
+            ]
+        )
+        capture_dir = root / "capture"
+        record_training_session(
+            capture_dir,
+            calibration_id="down-camera-v1",
+            map_release_id="unit-map@1",
+            capture_count=1,
+            interval_s=0.0,
+            session_id="support-summary-capture",
+            camera_ingress=FakeIngress(),
+            telemetry_reader=lambda: next(telemetry, None),
+        )
+        manifest_path = capture_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["training_policy"]["require_mavlink_timesync"] = True
+        timesync_snapshot = summarize_timesync_exchanges(
+            [
+                {"host_sent_monotonic_ns": 1_000_000_000, "host_received_monotonic_ns": 1_004_000_000, "px4_timestamp_ns": 504_000_000},
+                {"host_sent_monotonic_ns": 2_000_000_000, "host_received_monotonic_ns": 2_006_000_000, "px4_timestamp_ns": 1_506_000_000},
+                {"host_sent_monotonic_ns": 3_000_000_000, "host_received_monotonic_ns": 3_008_000_000, "px4_timestamp_ns": 2_508_000_000},
+            ],
+            requested_sample_count=8,
+            max_round_trip_ms=50.0,
+        )
+        manifest["mavlink"]["timesync"] = _capture_timesync_summary(
+            timesync_snapshot,
+            timesync_snapshot,
+            sample_count=8,
+            max_round_trip_ms=50.0,
+        )
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        write_session_checksums(capture_dir)
+        result = create_support_bundle(
+            repo=root,
+            output_dir=root / "support-bundles",
+            name="capture-summary",
+            training_capture_paths=[str(capture_dir)],
+        )
+        summary = result["manifest"]["training_captures"]
+        assert_equal(summary["status"], "passed", "support bundle accepts strict-valid training capture")
+        assert_equal(summary["valid_count"], 1, "support bundle counts strict-valid training capture")
+        assert_equal(summary["raw_frames_included"], False, "support bundle excludes raw training frames")
+        assert_equal(summary["raw_telemetry_included"], False, "support bundle excludes raw training telemetry")
+        with zipfile.ZipFile(result["zip_path"]) as archive:
+            names = archive.namelist()
+        if not any(name.endswith("training_capture_summary.json") for name in names):
+            raise AssertionError("support bundle must include a training capture summary")
+        if any("frames/frame_000000.jpg" in name or "telemetry/px4.jsonl" in name for name in names):
+            raise AssertionError("support bundle must not include raw training capture data")
+
+
+def test_measured_calibration_id_is_loaded_and_enforced_for_capture() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        calibration = calibration_yaml(
+            "unit-camera",
+            (2, 2),
+            np.eye(3),
+            np.zeros((1, 5)),
+            0.2,
+            5,
+            calibration_id="unit-camera-v1",
+            board_cols=9,
+            board_rows=6,
+            square_size_m=0.024,
+            accepted_images=[],
+            per_view_error_px=[0.2],
+            capture_manifest=None,
+            capture_manifest_sha256=None,
+        )
+        calibration_path = root / "measured-camera.yaml"
+        import yaml
+        calibration_path.write_text(yaml.safe_dump(calibration), encoding="utf-8")
+        loaded = load_camera_calibration(calibration_path)
+        assert_equal(loaded.calibration_id, "unit-camera-v1", "measured calibration ID loads")
+        assert_equal(loaded.calibration_status, "measured", "measured calibration status loads")
+        extrinsics_path = root / "camera-to-body.yaml"
+        extrinsics_document = create_extrinsics_document(
+            extrinsic_id="unit-mount-v1",
+            camera_calibration_id="unit-camera-v1",
+            translation_m=(0.02, 0.0, 0.05),
+            rotation_quat_xyzw=(0.0, 0.0, 0.0, 1.0),
+            measurement_method="unit_mount_jig",
+            translation_sigma_m=0.002,
+            rotation_sigma_deg=1.0,
+            mount_id="unit-downward-mount",
+        )
+        extrinsics_path.write_text(yaml.safe_dump(extrinsics_document), encoding="utf-8")
+        loaded_extrinsics = load_camera_to_body(extrinsics_path)
+        assert_equal(loaded_extrinsics.extrinsic_id, "unit-mount-v1", "measured extrinsic ID loads")
+        assert_equal(
+            loaded_extrinsics.transform_direction,
+            "body_frd_T_camera_optical",
+            "measured extrinsics record the PX4-to-camera frame direction",
+        )
+        malformed_extrinsics = dict(extrinsics_document)
+        malformed_extrinsics["transform_direction"] = "camera_optical_T_body_frd"
+        malformed_path = root / "wrong-camera-to-body.yaml"
+        malformed_path.write_text(yaml.safe_dump(malformed_extrinsics), encoding="utf-8")
+        try:
+            load_camera_to_body(malformed_path)
+        except ValueError as exc:
+            if "transform_direction" not in str(exc):
+                raise
+        else:
+            raise AssertionError("Expected measured extrinsics to reject an inverse frame direction.")
+        frames = root / "frames"
+        frames.mkdir()
+        (frames / "frame.jpg").write_bytes(b"unit-frame")
+        result = record_training_session(
+            root / "capture",
+            calibration_id="unit-camera-v1",
+            calibration_file=calibration_path,
+            camera_to_body_file=extrinsics_path,
+            map_release_id="unit-map@1",
+            capture_count=1,
+            interval_s=0.0,
+            width=2,
+            height=2,
+            input_frames_dir=frames,
+        )
+        assert_equal(result["manifest"]["calibration"]["calibration_status"], "measured", "capture records measured calibration")
+        assert_equal(result["manifest"]["camera_to_body"]["extrinsic_id"], "unit-mount-v1", "capture records measured extrinsics")
+        try:
+            record_training_session(
+                root / "mismatched-capture",
+                calibration_id="wrong-camera-id",
+                calibration_file=calibration_path,
+                map_release_id="unit-map@1",
+                capture_count=1,
+                interval_s=0.0,
+                width=2,
+                height=2,
+                input_frames_dir=frames,
+            )
+        except ValueError as exc:
+            if "does not match" not in str(exc):
+                raise
+        else:
+            raise AssertionError("Expected training capture to reject mismatched calibration IDs")
+
+
+def test_onnx_parity_reports_logical_output_error_without_model_specific_assumptions() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        cases_dir = root / "cases"
+        cases_dir.mkdir()
+        np.savez(cases_dir / "inputs.npz", image=np.zeros((1, 3, 8, 8), dtype=np.float32))
+        np.savez(cases_dir / "reference.npz", embedding=np.asarray([[0.25, 0.75]], dtype=np.float32))
+        manifest_path = cases_dir / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_onnx_parity_cases_v1",
+                    "model_release_id": "unit-onnx@1",
+                    "cases": [
+                        {
+                            "case_id": "retrieval-001",
+                            "role": "global_retriever",
+                            "inputs_npz": "inputs.npz",
+                            "reference_outputs_npz": "reference.npz",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        model = ModelRelease(
+            release_id="unit-onnx@1",
+            profile_id=PI5_CROSSVIEW_NAV_V1.profile_id,
+            semantic_version="1.0.0",
+            checkpoint_digest_sha256="a" * 64,
+            onnx_digest_sha256="b" * 64,
+            training_dataset_releases=("unit-dataset@1",),
+            source_revision="unit",
+            license_summary="unit",
+            redistribution_allowed=False,
+            calibration_ids=("unit-camera",),
+            artifact_paths={"global_retriever": "unused.onnx"},
+            artifact_interfaces={
+                "global_retriever": {
+                    "inputs": {"image": {"name": "image", "rank": 4}},
+                    "outputs": {"embedding": {"name": "embedding", "rank": 2}},
+                }
+            },
+        )
+
+        class FakeRunner:
+            def __init__(self, value):
+                self.value = value
+
+            def run(self, role, logical_inputs):
+                assert_equal(role, "global_retriever", "parity evaluates selected logical role")
+                assert_equal(tuple(logical_inputs["image"].shape), (1, 3, 8, 8), "parity loads input tensor")
+                return {"embedding": self.value}
+
+        passed = evaluate_onnx_parity_cases(
+            manifest_path,
+            model_release=model,
+            runner=FakeRunner(np.asarray([[0.25, 0.75]], dtype=np.float32)),
+        )
+        assert_equal(passed["status"], "passed", "matching ONNX output passes parity")
+        failed = evaluate_onnx_parity_cases(
+            manifest_path,
+            model_release=model,
+            runner=FakeRunner(np.asarray([[0.9, 0.1]], dtype=np.float32)),
+        )
+        assert_equal(failed["status"], "failed", "divergent ONNX output fails parity")
+        assert_equal(failed["cases"][0]["failed_outputs"], ["embedding"], "parity identifies divergent output")
+
+
+def test_neural_model_artifacts_require_real_matching_release_digest() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        roles = ("global_retriever", "local_features", "local_matcher", "temporal_student")
+        artifact_paths = {role: f"models/{role}.onnx" for role in roles}
+        digest_entries = []
+        for index, role in enumerate(roles):
+            path = root / artifact_paths[role]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f"unit-model-{index}".encode("utf-8"))
+            digest_entries.append({"role": role, "path": artifact_paths[role], "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+        model = ModelRelease(
+            release_id="unit-neural@1",
+            profile_id=PI5_CROSSVIEW_NAV_V1.profile_id,
+            semantic_version="1.0.0",
+            checkpoint_digest_sha256="a" * 64,
+            onnx_digest_sha256=artifact_aggregate_digest(digest_entries),
+            training_dataset_releases=("unit-dataset@1",),
+            source_revision="unit",
+            license_summary="unit",
+            redistribution_allowed=False,
+            calibration_ids=("down-camera-v1",),
+            artifact_paths=artifact_paths,
+            artifact_interfaces={
+                role: {
+                    "inputs": {"input": {"name": "image", "rank": 4}},
+                    "outputs": {"output": {"name": "embedding", "rank": 2}},
+                }
+                for role in roles
+            },
+        )
+        validation = validate_model_artifacts(model, artifact_root=root, require_interfaces=True)
+        assert_equal(validation.status, "valid", "model artifacts match manifest digest")
+        class FakeSession:
+            def run(self, output_names, feeds):
+                assert_equal(output_names, ["embedding"], "logical output maps to ONNX output")
+                assert_equal(sorted(feeds), ["image"], "logical input maps to ONNX input")
+                return [np.asarray([[0.25, 0.75]], dtype=np.float32)]
+
+        runner = LearnedModelRunner(
+            model,
+            artifact_root=root,
+            session_factory=lambda _path, _providers: FakeSession(),
+        )
+        outputs = runner.run("global_retriever", {"input": np.zeros((1, 3, 16, 16), dtype=np.float32)})
+        assert_equal(outputs["output"].shape, (1, 2), "logical ONNX runner output shape")
+        try:
+            runner.run("global_retriever", {"input": np.zeros((3, 16, 16), dtype=np.float32)})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Expected ONNX runner to reject a tensor rank mismatch")
+        (root / artifact_paths["temporal_student"]).write_bytes(b"tampered")
+        invalid = validate_model_artifacts(model, artifact_root=root)
+        assert_equal(invalid.status, "invalid", "model artifacts detect tampering")
+        if "onnx_aggregate_digest_mismatch" not in invalid.errors:
+            raise AssertionError("Expected tampered model artifact to fail aggregate digest validation")
+
+
+def test_research_upstream_lock_is_pinned_and_valid() -> None:
+    root = Path(__file__).resolve().parents[1]
+    lock = load_upstream_lock(root / "research" / "upstreams.lock.json")
+    assert_equal(lock["schema_version"], "vision_nav_research_upstreams_v1", "research upstream lock schema")
+    malformed = {**lock, "projects": [{**lock["projects"][0], "commit": "not-a-commit"}]}
+    try:
+        validate_upstream_lock(malformed)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected malformed upstream lock commit to be rejected")
+    workflow_ids = {workflow["id"] for workflow in lock["workflows"]}
+    assert_equal(
+        workflow_ids,
+        {"video2bev_first_stage_v1", "video2bev_second_stage_v1", "xfeat_default_v1"},
+        "pinned upstream workflow ids",
+    )
+
+
+def test_upstream_training_preflight_requires_matching_checkout_and_stage_checkpoint() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        checkout = root / "checkout"
+        checkout.mkdir()
+        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        (checkout / "train.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(checkout), "add", "train.sh"], check=True)
+        subprocess.run(
+            [
+                "git", "-C", str(checkout), "-c", "user.name=Drone Vision Test", "-c", "user.email=test@example.invalid",
+                "commit", "-qm", "fixture",
+            ],
+            check=True,
+        )
+        commit = subprocess.run(
+            ["git", "-C", str(checkout), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        dataset_root = root / "dataset"
+        dataset_root.mkdir()
+        (dataset_root / "sample.json").write_text("{}\n", encoding="utf-8")
+        lock = {
+            "schema_version": "vision_nav_research_upstreams_v1",
+            "projects": [{
+                "name": "fixture", "role": "teacher", "repository": "https://github.com/example/fixture.git",
+                "commit": commit, "runtime_scope": "cloud_teacher", "license_status": "research_only",
+            }],
+            "workflows": [{
+                "id": "fixture_second_stage", "project": "fixture", "branch": "second-stage", "commit": commit,
+                "entrypoint": "train.sh", "data_contract": "official_dataset_layout",
+                "required_checkpoint_key": "first_stage_checkpoint",
+            }],
+        }
+        report = preflight_upstream_workflow(
+            lock,
+            "fixture_second_stage",
+            checkout=checkout,
+            dataset_root=dataset_root,
+        )
+        assert_equal(report["status"], "not_ready", "workflow requires prior stage checkpoint")
+        if "missing_required_checkpoint:first_stage_checkpoint" not in report["errors"]:
+            raise AssertionError("Expected workflow preflight to identify the missing prior-stage checkpoint")
+        checkpoint = root / "first-stage.ckpt"
+        checkpoint.write_bytes(b"fixture")
+        report = preflight_upstream_workflow(
+            lock,
+            "fixture_second_stage",
+            checkout=checkout,
+            dataset_root=dataset_root,
+            checkpoint=checkpoint,
+        )
+        assert_equal(report["status"], "ready", "matching immutable upstream workflow preflight")
+
+
+def test_learned_map_asset_compiler_creates_portable_retrieval_and_xfeat_cache() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        image_root = root / "imagery" / "tiles"
+        image_root.mkdir(parents=True)
+        assert cv2.imwrite(str(image_root / "tile_dark.png"), np.full((6, 8, 3), 20, dtype=np.uint8))
+        assert cv2.imwrite(str(image_root / "tile_bright.png"), np.full((6, 8, 3), 220, dtype=np.uint8))
+        layout = {
+            "schema_version": "vision_nav_map_tile_layout_v1",
+            "tiles": [
+                {
+                    "tile_id": "tile_dark", "image_uri": "imagery/tiles/tile_dark.png",
+                    "bounds_enu_m": [0.0, 0.0, 8.0, 6.0], "center_enu_m": [4.0, 3.0, 0.0],
+                    "source_window_px": {"column": 0, "row": 0, "width": 8, "height": 6},
+                },
+                {
+                    "tile_id": "tile_bright", "image_uri": "imagery/tiles/tile_bright.png",
+                    "bounds_enu_m": [8.0, 0.0, 16.0, 6.0], "center_enu_m": [12.0, 3.0, 0.0],
+                    "source_window_px": {"column": 8, "row": 0, "width": 8, "height": 6},
+                },
+            ],
+        }
+        layout_path = root / "tile_layout.json"
+        layout_path.write_text(json.dumps(layout), encoding="utf-8")
+        frame_contract = {
+            "name": "image", "rank": 4, "shadow_source": "frame_rgb",
+            "preprocess": {"image_size": [8, 6], "color_space": "rgb", "layout": "nchw", "dtype": "float32"},
+        }
+        model = ModelRelease(
+            release_id="learned-map-compiler@1", profile_id=PI5_CROSSVIEW_NAV_V1.profile_id, semantic_version="1.0.0",
+            checkpoint_digest_sha256="a" * 64, onnx_digest_sha256="b" * 64,
+            training_dataset_releases=("test@1",), source_revision="unit", license_summary="test-only",
+            redistribution_allowed=False, calibration_ids=("camera-v1",), artifact_paths={},
+            artifact_interfaces={
+                "global_retriever": {
+                    "inputs": {"image": frame_contract},
+                    "outputs": {"embedding": {"name": "embedding", "rank": 2, "shadow_output": "retrieval_embedding"}},
+                },
+                "local_features": {
+                    "inputs": {"image": frame_contract},
+                    "outputs": {
+                        "keypoints": {"name": "keypoints", "rank": 3, "shadow_output": "local_keypoints"},
+                        "descriptors": {"name": "descriptors", "rank": 3, "shadow_output": "local_descriptors"},
+                    },
+                },
+            },
+        )
+
+        class FakeRunner:
+            def run(self, role, logical_inputs):
+                image = logical_inputs["image"]
+                if role == "global_retriever":
+                    brightness = float(image.mean())
+                    return {"embedding": np.asarray([[brightness, 1.0 - brightness]], dtype=np.float32)}
+                return {
+                    "keypoints": np.asarray([[[1.0, 1.0], [6.0, 4.0]]], dtype=np.float32),
+                    "descriptors": np.asarray([[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]], dtype=np.float32),
+                }
+
+        result = compile_learned_map_assets(
+            layout_path,
+            map_release_id="field-map@1.0.0",
+            model_release=model,
+            runner=FakeRunner(),
+        )
+        assets = result["compilation"]["assets"]
+        retriever = load_tile_retriever(
+            root / assets["retrieval_index_uri"], root / assets["retrieval_metadata_uri"],
+            expected_map_release_id="field-map@1.0.0", expected_model_release_id=model.release_id,
+        )
+        assert_equal(retriever.search(np.asarray([1.0, 0.0], dtype=np.float32), top_k=1)[0]["tile_id"], "tile_bright", "portable retrieval uses learned map embeddings")
+        cache = load_local_feature_cache(
+            root / assets["local_feature_metadata_uri"], expected_map_release_id="field-map@1.0.0", expected_model_release_id=model.release_id,
+        )
+        assert_equal(cache.load("tile_dark")["descriptors"].shape, (1, 2, 3), "compiled XFeat cache shape")
+        with sqlite3.connect(root / assets["xfeat_index_uri"]) as connection:
+            assert_equal(connection.execute("SELECT COUNT(*) FROM tile_features").fetchone()[0], 2, "compiled XFeat index count")
+        with sqlite3.connect(root / assets["tile_index_uri"]) as connection:
+            assert_equal(connection.execute("SELECT COUNT(*) FROM tiles").fetchone()[0], 2, "compiled map tile index count")
+        (root / "imagery" / "map.tif").write_bytes(b"synthetic-cog")
+        stac_path = root / "stac" / "item.json"
+        stac_path.parent.mkdir()
+        stac_path.write_text("{}\n", encoding="utf-8")
+        release_assets = {
+            "cog_uri": "imagery/map.tif",
+            "stac_item_uri": "stac/item.json",
+            "tile_index_uri": assets["tile_index_uri"],
+            "retrieval_index_uri": assets["retrieval_index_uri"],
+            "retrieval_metadata_uri": assets["retrieval_metadata_uri"],
+            "xfeat_index_uri": assets["xfeat_index_uri"],
+            "local_feature_metadata_uri": assets["local_feature_metadata_uri"],
+        }
+        map_release = {
+            "schema_version": "vision_nav_map_release_v2", "release_id": "field-map@1.0.0",
+            "map_id": "field-map", "version": "1.0.0", "profile_id": PI5_CROSSVIEW_NAV_V1.profile_id,
+            "model_release_id": model.release_id, "crs": "EPSG:32610", "local_origin_enu": [0.0, 0.0, 0.0],
+            "gsd_m_per_px": 1.0, **release_assets, "calibration_ids": ["camera-v1"],
+            "geometry_modes": result["compilation"]["supported_geometry_modes"],
+            "checksums_sha256": {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in release_assets.values()},
+        }
+        map_release_path = root / "map_release.json"
+        map_release_path.write_text(json.dumps(map_release), encoding="utf-8")
+        report = validate_learned_map_assets(map_release_path)
+        assert_equal(report["status"], "valid", "compiled learned map asset preflight")
+        (root / "features" / "xfeat" / "tile_dark.npz").write_bytes(b"tampered")
+        report = validate_learned_map_assets(map_release_path)
+        assert_equal(report["status"], "invalid", "tampered learned feature asset is rejected")
+        if not any("Local feature asset failed checksum validation" in error for error in report["errors"]):
+            raise AssertionError("Expected compiled map asset preflight to report tampered XFeat cache")
+
+
+def test_learned_runtime_benchmark_records_shadow_only_performance_evidence() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        frames: list[ShadowFrame] = []
+        for sequence, brightness in enumerate((40, 120, 220)):
+            path = root / f"frame_{sequence}.png"
+            image = np.full((6, 8, 3), brightness, dtype=np.uint8)
+            assert cv2.imwrite(str(path), image)
+            frames.append(ShadowFrame(path=path, bgr=image))
+        frame_contract = {
+            "name": "image", "rank": 4, "shadow_source": "frame_rgb",
+            "preprocess": {"image_size": [8, 6], "color_space": "rgb", "layout": "nchw", "dtype": "float32"},
+        }
+        model = ModelRelease(
+            release_id="runtime-benchmark@1", profile_id=PI5_CROSSVIEW_NAV_V1.profile_id, semantic_version="1.0.0",
+            checkpoint_digest_sha256="a" * 64, onnx_digest_sha256="b" * 64,
+            training_dataset_releases=("test@1",), source_revision="unit", license_summary="test-only",
+            redistribution_allowed=False, calibration_ids=("camera-v1",), artifact_paths={},
+            artifact_interfaces={
+                "global_retriever": {
+                    "inputs": {"image": frame_contract},
+                    "outputs": {"embedding": {"name": "embedding", "rank": 2, "shadow_output": "retrieval_embedding"}},
+                },
+                "local_features": {
+                    "inputs": {"image": frame_contract},
+                    "outputs": {
+                        "keypoints": {"name": "keypoints", "rank": 3, "shadow_output": "local_keypoints"},
+                        "descriptors": {"name": "descriptors", "rank": 3, "shadow_output": "local_descriptors"},
+                    },
+                },
+            },
+        )
+
+        class FakeRunner:
+            def run(self, role, _inputs):
+                if role == "global_retriever":
+                    return {"embedding": np.asarray([[0.5, 0.5]], dtype=np.float32)}
+                if role == "local_features":
+                    return {
+                        "keypoints": np.asarray([[[1.0, 1.0], [6.0, 4.0]]], dtype=np.float32),
+                        "descriptors": np.asarray([[[1.0, 0.0], [0.0, 1.0]]], dtype=np.float32),
+                    }
+                raise AssertionError(f"Unexpected benchmark role: {role}")
+
+        report = benchmark_shadow_frames(
+            FakeRunner(), model_release=model, frames=frames, map_release_id="unit-map@1",
+            required_roles=("global_retriever", "local_features"), warmup_count=1,
+            min_recorded_frames=3, max_p95_end_to_end_ms=1_000.0, max_rss_mib=16_384.0,
+        )
+        assert_equal(report["status"], "passed", "learned runtime benchmark passes complete synthetic probes")
+        assert_equal(report["publication"]["px4_external_vision"], "disabled", "benchmark withholds PX4 publication")
+        assert_equal(report["metrics"]["completed_frame_count"], 3, "benchmark completes each frame")
+        assert_equal(report["metrics"]["stage_latency_ms"]["global_retriever"]["count"], 3, "benchmark records retrieval latency")
+        assert_equal(
+            report["metrics"]["capture_drop_measurement"]["status"],
+            "not_measured_saved_frame_benchmark",
+            "benchmark does not misrepresent saved frames as live capture cadence",
+        )
+        assert_equal(report["coverage"]["missing_required_roles"], [], "benchmark covers required learned stages")
+        failed = benchmark_shadow_frames(
+            FakeRunner(), model_release=model, frames=frames[:2], required_roles=("global_retriever", "local_features"),
+            warmup_count=0, min_recorded_frames=3, max_p95_end_to_end_ms=1_000.0, max_rss_mib=16_384.0,
+        )
+        assert_equal(failed["status"], "failed", "benchmark rejects insufficient evidence frames")
+        if "insufficient_input_frames" not in failed["errors"]:
+            raise AssertionError("Expected runtime benchmark to name insufficient frame evidence")
+
+
+def test_training_capture_preflight_binds_prop_off_evidence_to_map_and_storage() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        prop_report = root / "prop_off_preflight_report.json"
+        prop_report.write_text(
+            json.dumps({
+                "schema_version": "vision_nav_prop_off_preflight_v1",
+                "status": "passed",
+                "stage": "ready_for_training_capture",
+            }),
+            encoding="utf-8",
+        )
+        assets = {
+            "cog_uri": "imagery/map.tif",
+            "stac_item_uri": "stac/item.json",
+            "tile_index_uri": "index/tiles.sqlite",
+            "retrieval_index_uri": "index/megaloc.npz",
+            "xfeat_index_uri": "index/xfeat_tiles.sqlite",
+        }
+        for relative in assets.values():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"training-preflight")
+        map_release = {
+            "schema_version": "vision_nav_map_release_v2",
+            "release_id": "training-map@1", "map_id": "training-map", "version": "1",
+            "profile_id": PI5_CROSSVIEW_NAV_V1.profile_id, "model_release_id": "model@1",
+            "crs": "EPSG:32610", "local_origin_enu": [0.0, 0.0, 0.0], "gsd_m_per_px": 0.2,
+            **assets, "calibration_ids": ["camera-v1"],
+            "geometry_modes": ["pnp_3d", "homography_restricted"],
+            "checksums_sha256": {
+                relative: hashlib.sha256((root / relative).read_bytes()).hexdigest()
+                for relative in assets.values()
+            },
+        }
+        map_path = root / "map_release.json"
+        map_path.write_text(json.dumps(map_release), encoding="utf-8")
+        usage = SimpleNamespace(free=40 * 1024 ** 3, total=64 * 1024 ** 3)
+        report = evaluate_training_capture_preflight(
+            prop_off_report=prop_report,
+            map_release=map_path,
+            calibration_id="camera-v1",
+            capture_output_dir=root / "captures" / "next-session",
+            capture_frame_count=4,
+            min_free_gib=1.0,
+            estimated_frame_bytes=1024,
+            disk_usage=lambda _path: usage,
+        )
+        assert_equal(report["status"], "passed", "training preflight accepts compatible prop-off and map evidence")
+        assert_equal(report["read_only"], True, "training preflight is read only")
+        assert_equal(report["px4_commands_sent"], False, "training preflight does not command PX4")
+        (root / "captures" / "next-session").mkdir(parents=True)
+        (root / "captures" / "next-session" / "already-there").write_text("x", encoding="utf-8")
+        failed = evaluate_training_capture_preflight(
+            prop_off_report=prop_report,
+            map_release=map_path,
+            calibration_id="camera-v1",
+            capture_output_dir=root / "captures" / "next-session",
+            capture_frame_count=4,
+            min_free_gib=1.0,
+            estimated_frame_bytes=1024,
+            disk_usage=lambda _path: usage,
+        )
+        assert_equal(failed["status"], "failed", "training preflight rejects a non-empty capture directory")
+
+
+def test_reference_map_starts_capture_and_labels_before_deployment_map_exists() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        imagery = root / "imagery" / "reference.tif"
+        imagery.parent.mkdir(parents=True)
+        imagery.write_bytes(b"reference-cog-fixture")
+        stac = root / "stac" / "item.json"
+        stac.parent.mkdir()
+        stac.write_text("{}\n", encoding="utf-8")
+        reference_path = root / "reference_map.json"
+        reference = create_reference_map(
+            reference_path,
+            map_id="first-site", version="0.1.0", crs="EPSG:32610",
+            local_origin_enu=(0.0, 0.0, 0.0), geodetic_origin_wgs84=(37.0, -122.0, 5.0),
+            gsd_m_per_px=0.2, imagery_uri="imagery/reference.tif", stac_item_uri="stac/item.json",
+            calibration_ids=["camera-v1"],
+        )
+        assert_equal(load_reference_map(reference_path)["release_id"], "first-site@0.1.0", "reference map validates immutable source files")
+        index = root / "training-index"
+        index.mkdir()
+        sample = {
+            "sample_id": "capture-a:000001", "capture_session_id": "capture-a",
+            "map_release_id": reference["release_id"], "calibration_id": "camera-v1", "timestamp_ns": 1_000_000_000,
+            "attitude": {"yaw_rad": 0.2},
+            "gps_reference": {"lat": 37.0, "lon": -122.0, "alt_m": 5.0, "fix_type": 3, "horizontal_accuracy_m": 1.0, "timestamp_ns": 1_000_000_000},
+        }
+        samples_path = index / "samples.jsonl"
+        samples_path.write_text(json.dumps(sample) + "\n", encoding="utf-8")
+        (index / "manifest.json").write_text(
+            json.dumps({"schema_version": "vision_nav_training_index_v1", "index_sha256": sha256_file(samples_path)}),
+            encoding="utf-8",
+        )
+        labels = materialize_training_labels(index, root / "labels", reference_map=reference_path)
+        assert_equal(
+            labels["manifest"]["coordinate_frame"]["origin_source"],
+            "reference_map_geodetic_origin",
+            "reference map provides first-label ENU origin",
+        )
+        assert_equal(labels["manifest"]["accepted_count"], 1, "reference map label accepts matching capture")
+        output = root / "wrong-reference"
+        mismatch = dict(reference)
+        mismatch["release_id"] = "other-site@0.1.0"
+        mismatch["map_id"] = "other-site"
+        wrong_path = root / "wrong_reference_map.json"
+        wrong_path.write_text(json.dumps(mismatch), encoding="utf-8")
+        try:
+            materialize_training_labels(index, output, reference_map=wrong_path)
+        except ValueError as exc:
+            if "ReferenceMapRelease" not in str(exc):
+                raise
+        else:
+            raise AssertionError("Expected label generation to reject a reference-map/capture mismatch")
+
+
+def test_reference_geotiff_import_creates_cog_stac_and_capture_anchor() -> None:
+    try:
+        import rasterio
+        from rasterio.transform import from_origin
+    except ImportError as exc:
+        raise SkipTest("requires rasterio map-production dependency") from exc
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = root / "source.tif"
+        pixels = np.full((3, 16, 16), 127, dtype=np.uint8)
+        with rasterio.open(
+            source, "w", driver="GTiff", width=16, height=16, count=3, dtype="uint8",
+            crs="EPSG:32610", transform=from_origin(500_000.0, 4_100_000.0, 0.2, 0.2),
+        ) as dataset:
+            dataset.write(pixels)
+        report = import_reference_geotiff(
+            source, root / "reference-map", map_id="first-site", version="0.1.0",
+            calibration_ids=["camera-v1"],
+        )
+        assert_equal(report["status"], "valid", "GeoTIFF import validates reference package")
+        assert_equal(report["gsd_m_per_px"], 0.2, "GeoTIFF import derives projected pixel GSD")
+        reference = load_reference_map(root / "reference-map" / "reference_map.json")
+        assert_equal(reference["release_id"], "first-site@0.1.0", "GeoTIFF import creates reference release")
+        stac = json.loads((root / "reference-map" / "stac" / "item.json").read_text(encoding="utf-8"))
+        assert_equal(stac["properties"]["proj:epsg"], 32610, "GeoTIFF import records projected CRS")
+        with rasterio.open(root / "reference-map" / "imagery" / "map.tif") as cog:
+            assert_equal(cog.width, 16, "GeoTIFF import writes readable map image")
+
+
+def test_training_labels_materialize_offline_enu_and_reject_stale_gps() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        index_dir = root / "training-index"
+        index_dir.mkdir()
+        samples = [
+            {
+                "sample_id": "capture-a:000001",
+                "capture_session_id": "capture-a",
+                "map_release_id": "map-a@1",
+                "calibration_id": "camera-a",
+                "timestamp_ns": 1_000_000_000,
+                "attitude": {"yaw_rad": 3.4},
+                "gps_reference": {"lat": 37.0, "lon": -122.0, "alt_m": 20.0, "fix_type": 3, "horizontal_accuracy_m": 1.0, "timestamp_ns": 1_000_000_000},
+            },
+            {
+                "sample_id": "capture-b:000001",
+                "capture_session_id": "capture-b",
+                "map_release_id": "map-a@1",
+                "calibration_id": "camera-a",
+                "timestamp_ns": 1_100_000_000,
+                "attitude": {"yaw_rad": 0.25},
+                "gps_reference": {"lat": 37.0, "lon": -121.9999, "alt_m": 20.0, "fix_type": 3, "horizontal_accuracy_m": 1.0, "timestamp_ns": 1_080_000_000},
+            },
+            {
+                "sample_id": "capture-b:000002",
+                "capture_session_id": "capture-b",
+                "map_release_id": "map-a@1",
+                "calibration_id": "camera-a",
+                "timestamp_ns": 2_000_000_000,
+                "attitude": {"yaw_rad": 0.0},
+                "gps_reference": {"lat": 37.0, "lon": -121.9998, "alt_m": 20.0, "fix_type": 3, "horizontal_accuracy_m": 1.0, "timestamp_ns": 1_000_000_000},
+            },
+        ]
+        index_path = index_dir / "samples.jsonl"
+        index_path.write_text("".join(json.dumps(sample) + "\n" for sample in samples), encoding="utf-8")
+        (index_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_training_index_v1",
+                    "dataset_release_id": "dataset-a@1",
+                    "index_sha256": sha256_file(index_path),
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = materialize_training_labels(index_dir, root / "training-labels", max_gps_age_ms=100.0)
+        manifest = result["manifest"]
+        assert_equal(manifest["policy"], "offline_training_only", "training labels are offline-only")
+        assert_equal(manifest["accepted_count"], 2, "training labels accept healthy GPS")
+        assert_equal(manifest["rejection_counts"], {"gps_reference_too_old": 1}, "training labels reject stale GPS")
+        labels = [json.loads(line) for line in (root / "training-labels" / "labels.jsonl").read_text().splitlines()]
+        assert_equal(labels[0]["target"]["position_enu_m"], {"east": 0.0, "north": 0.0, "up": 0.0}, "origin label is zero ENU")
+        if labels[1]["target"]["position_enu_m"]["east"] < 8.0:
+            raise AssertionError("Expected longitude offset to produce a positive east ENU target")
+        if not math.isclose(labels[0]["target"]["heading_rad"], -2.8831853071795863, abs_tol=1e-9):
+            raise AssertionError("Expected heading target to normalize to [-pi, pi]")
+        assert_equal(labels[2]["status"], "rejected", "stale GPS label is rejected")
+
+
+def test_training_gps_labels_prefer_quality_and_reject_weak_accuracy() -> None:
+    timestamp_ns = 1_000_000_000
+    raw = {
+        "host_monotonic_ns": timestamp_ns - 100_000_000,
+        "sample": {
+            "message_type": "GPS_RAW_INT", "gps_lat": 37.0, "gps_lon": -122.0, "gps_alt_m": 20.0,
+            "gps_fix_type": 3, "gps_h_acc_m": 1.5, "gps_v_acc_m": 2.0, "gps_satellites_visible": 12,
+        },
+    }
+    global_position = {
+        "host_monotonic_ns": timestamp_ns,
+        "sample": {"message_type": "GLOBAL_POSITION_INT", "gps_lat": 37.0, "gps_lon": -122.0, "global_alt_m": 20.0},
+    }
+    selected = _gps_reference([global_position, raw], timestamp_ns)
+    assert_equal(selected["source_message_type"], "GPS_RAW_INT", "training index preserves raw GPS quality evidence")
+    assert_equal(selected["horizontal_accuracy_m"], 1.5, "training index preserves GPS horizontal accuracy")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        index_dir = root / "training-index"
+        index_dir.mkdir()
+        sample = {
+            "sample_id": "capture-a:000001", "capture_session_id": "capture-a", "map_release_id": "map-a@1",
+            "calibration_id": "camera-a", "timestamp_ns": timestamp_ns, "attitude": {"yaw_rad": 0.0},
+            "gps_reference": {**selected, "horizontal_accuracy_m": 25.0},
+        }
+        index_path = index_dir / "samples.jsonl"
+        index_path.write_text(json.dumps(sample) + "\n", encoding="utf-8")
+        (index_dir / "manifest.json").write_text(
+            json.dumps({"schema_version": "vision_nav_training_index_v1", "index_sha256": sha256_file(index_path)}),
+            encoding="utf-8",
+        )
+        result = materialize_training_labels(
+            index_dir, root / "labels", origin_lat_deg=37.0, origin_lon_deg=-122.0, origin_altitude_m=20.0,
+        )
+        assert_equal(result["manifest"]["rejection_counts"], {"gps_horizontal_accuracy_below_training_policy": 1}, "weak GPS is not used as offline training truth")
+
+
+def test_teacher_experiment_joins_only_verified_session_disjoint_labels() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        index_dir = root / "training-index"
+        index_dir.mkdir()
+        samples = [
+            {
+                "sample_id": "capture-a:000001", "capture_session_id": "capture-a", "map_release_id": "map-a@1",
+                "calibration_id": "camera-a", "timestamp_ns": 1_000_000_000,
+                "attitude": {"yaw_rad": 0.0},
+                "gps_reference": {"lat": 37.0, "lon": -122.0, "alt_m": 20.0, "fix_type": 3, "horizontal_accuracy_m": 1.0, "timestamp_ns": 1_000_000_000},
+            },
+            {
+                "sample_id": "capture-b:000001", "capture_session_id": "capture-b", "map_release_id": "map-a@1",
+                "calibration_id": "camera-a", "timestamp_ns": 1_100_000_000,
+                "attitude": {"yaw_rad": 0.1},
+                "gps_reference": {"lat": 37.0, "lon": -121.9999, "alt_m": 20.0, "fix_type": 3, "horizontal_accuracy_m": 1.0, "timestamp_ns": 1_100_000_000},
+            },
+        ]
+        index_path = index_dir / "samples.jsonl"
+        index_path.write_text("".join(json.dumps(sample) + "\n" for sample in samples), encoding="utf-8")
+        index_digest = sha256_file(index_path)
+        (index_dir / "manifest.json").write_text(
+            json.dumps({"schema_version": "vision_nav_training_index_v1", "dataset_release_id": "dataset-a@1", "index_sha256": index_digest}),
+            encoding="utf-8",
+        )
+        labels_dir = root / "labels"
+        materialize_training_labels(index_dir, labels_dir)
+        split_dir = root / "split"
+        split_dir.mkdir()
+        train_path = split_dir / "train.jsonl"
+        validation_path = split_dir / "validation.jsonl"
+        train_path.write_text(json.dumps(samples[0]) + "\n", encoding="utf-8")
+        validation_path.write_text(json.dumps(samples[1]) + "\n", encoding="utf-8")
+        (split_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_training_split_v1",
+                    "source_training_index": {"dataset_release_id": "dataset-a@1", "samples_sha256": index_digest},
+                    "train": {"path": "train.jsonl", "sha256": sha256_file(train_path)},
+                    "validation": {"path": "validation.jsonl", "sha256": sha256_file(validation_path)},
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = prepare_teacher_experiment(split_dir, labels_dir, root / "teacher-input", require_heading=True)
+        assert_equal(result["manifest"]["train"]["counts"]["accepted"], 1, "teacher experiment train label count")
+        assert_equal(result["manifest"]["validation"]["counts"]["accepted"], 1, "teacher experiment validation label count")
+        train_records = [json.loads(line) for line in (root / "teacher-input" / "train.jsonl").read_text().splitlines()]
+        assert_equal(train_records[0]["label"]["policy"], "offline_training_only", "teacher inputs preserve label policy")
+        assert_equal(train_records[0]["supervision"]["heading_source"], "px4_attitude", "teacher inputs expose attitude heading")
+
+
+def test_training_map_pairs_bind_labels_to_release_tiles_and_hard_negatives() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        map_root = root / "map-release"
+        (map_root / "imagery" / "tiles").mkdir(parents=True)
+        for tile_id in ("tile-center", "tile-east", "tile-west"):
+            (map_root / "imagery" / "tiles" / f"{tile_id}.png").write_bytes(b"image")
+        metadata_path = map_root / "index" / "megaloc_tiles.json"
+        metadata_path.parent.mkdir()
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_retrieval_index_v1",
+                    "map_release_id": "map-a@1",
+                    "model_release_id": "model-a@1",
+                    "descriptor_dimension": 16,
+                    "metric": "inner_product_cosine",
+                    "tiles": [
+                        {"tile_id": "tile-center", "faiss_id": 0, "center_enu_m": [0.0, 0.0, 0.0], "scale_m_per_px": 0.2, "bounds_enu_m": [-20.0, -20.0, 20.0, 20.0], "image_uri": "imagery/tiles/tile-center.png"},
+                        {"tile_id": "tile-east", "faiss_id": 1, "center_enu_m": [120.0, 0.0, 0.0], "scale_m_per_px": 0.2, "bounds_enu_m": [100.0, -20.0, 140.0, 20.0], "image_uri": "imagery/tiles/tile-east.png"},
+                        {"tile_id": "tile-west", "faiss_id": 2, "center_enu_m": [-120.0, 0.0, 0.0], "scale_m_per_px": 0.2, "bounds_enu_m": [-140.0, -20.0, -100.0, 20.0], "image_uri": "imagery/tiles/tile-west.png"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        map_release_path = map_root / "map_release.json"
+        map_release_path.write_text(
+            json.dumps({"schema_version": "vision_nav_map_release_v2", "release_id": "map-a@1", "model_release_id": "model-a@1", "retrieval_metadata_uri": "index/megaloc_tiles.json"}),
+            encoding="utf-8",
+        )
+        labels_dir = root / "labels"
+        labels_dir.mkdir()
+        labels_manifest_path = labels_dir / "manifest.json"
+        labels_manifest_path.write_text(
+            json.dumps({"schema_version": "vision_nav_training_labels_v1", "policy": "offline_training_only", "coordinate_frame": {"type": "enu", "map_release": {"release_id": "map-a@1"}}}),
+            encoding="utf-8",
+        )
+        experiment_dir = root / "teacher-experiment"
+        experiment_dir.mkdir()
+        sample = {"sample_id": "capture-a:000001", "capture_session_id": "capture-a", "map_release_id": "map-a@1"}
+        paired = {"sample": sample, "supervision": {"position_enu_m": {"east": 0.0, "north": 0.0, "up": 0.0}, "heading_rad": 0.0}}
+        for split_name in ("train", "validation"):
+            (experiment_dir / f"{split_name}.jsonl").write_text(json.dumps({**paired, "sample": {**sample, "sample_id": f"{split_name}:000001", "capture_session_id": split_name}}) + "\n", encoding="utf-8")
+        experiment_manifest_path = experiment_dir / "manifest.json"
+        experiment_manifest_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_teacher_experiment_input_v1",
+                    "labels": {"path": str(labels_dir), "manifest_sha256": sha256_file(labels_manifest_path)},
+                    "train": {"path": "train.jsonl", "sha256": sha256_file(experiment_dir / "train.jsonl")},
+                    "validation": {"path": "validation.jsonl", "sha256": sha256_file(experiment_dir / "validation.jsonl")},
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = build_training_map_pairs(experiment_dir, map_release_path, root / "map-pairs", negative_count=2, min_negative_distance_m=75.0)
+        assert_equal(result["manifest"]["splits"]["train"]["pair_count"], 1, "map pairs train count")
+        row = json.loads((root / "map-pairs" / "train.jsonl").read_text())
+        assert_equal(row["positive"]["tile_id"], "tile-center", "map pair positive tile")
+        assert_equal({item["tile_id"] for item in row["spatial_hard_negatives"]}, {"tile-east", "tile-west"}, "map pair hard negatives")
+
+
+def test_reference_map_pairs_break_first_teacher_bootstrap_cycle() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        reference_root = root / "reference-map"
+        imagery = reference_root / "imagery" / "map.tif"
+        imagery.parent.mkdir(parents=True)
+        imagery.write_bytes(b"immutable-reference-cog")
+        stac = reference_root / "stac" / "item.json"
+        stac.parent.mkdir()
+        stac.write_text("{}\n", encoding="utf-8")
+        reference_path = reference_root / "reference_map.json"
+        reference = create_reference_map(
+            reference_path, map_id="first-site", version="0.1.0", crs="EPSG:32610",
+            local_origin_enu=(0.0, 0.0, 0.0), geodetic_origin_wgs84=(37.0, -122.0, 5.0),
+            gsd_m_per_px=0.2, imagery_uri="imagery/map.tif", stac_item_uri="stac/item.json",
+            calibration_ids=["camera-v1"],
+        )
+        layout_root = root / "reference-layout"
+        tile_root = layout_root / "imagery" / "tiles"
+        tile_root.mkdir(parents=True)
+        tiles = []
+        for tile_id, center, bounds in (
+            ("tile-center", [0.0, 0.0, 0.0], [-20.0, -20.0, 20.0, 20.0]),
+            ("tile-east", [120.0, 0.0, 0.0], [100.0, -20.0, 140.0, 20.0]),
+            ("tile-west", [-120.0, 0.0, 0.0], [-140.0, -20.0, -100.0, 20.0]),
+        ):
+            image_path = tile_root / f"{tile_id}.png"
+            assert cv2.imwrite(str(image_path), np.full((8, 8, 3), 127, dtype=np.uint8))
+            tiles.append({"tile_id": tile_id, "image_uri": f"imagery/tiles/{tile_id}.png", "center_enu_m": center, "bounds_enu_m": bounds})
+        layout_path = layout_root / "tile_layout.json"
+        layout_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_map_tile_layout_v1",
+                    "cog": {"path": str(imagery), "sha256": reference["checksums_sha256"]["imagery/map.tif"]},
+                    "geodetic_origin_wgs84": {"lat_deg": 37.0, "lon_deg": -122.0, "altitude_m": 5.0},
+                    "tiles": tiles,
+                }
+            ),
+            encoding="utf-8",
+        )
+        labels_dir = root / "labels"
+        labels_dir.mkdir()
+        labels_manifest_path = labels_dir / "manifest.json"
+        labels_manifest_path.write_text(
+            json.dumps({"schema_version": "vision_nav_training_labels_v1", "policy": "offline_training_only", "coordinate_frame": {"type": "enu", "map_release": {"release_id": reference["release_id"]}}}),
+            encoding="utf-8",
+        )
+        experiment_dir = root / "teacher-experiment"
+        experiment_dir.mkdir()
+        sample = {"capture_session_id": "capture-a", "map_release_id": reference["release_id"]}
+        paired = {"sample": sample, "supervision": {"position_enu_m": {"east": 0.0, "north": 0.0, "up": 0.0}, "heading_rad": 0.0}}
+        for split_name in ("train", "validation"):
+            (experiment_dir / f"{split_name}.jsonl").write_text(
+                json.dumps({**paired, "sample": {**sample, "sample_id": f"{split_name}:000001", "capture_session_id": split_name}}) + "\n",
+                encoding="utf-8",
+            )
+        manifest_path = experiment_dir / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_teacher_experiment_input_v1",
+                    "labels": {"path": str(labels_dir), "manifest_sha256": sha256_file(labels_manifest_path)},
+                    "train": {"path": "train.jsonl", "sha256": sha256_file(experiment_dir / "train.jsonl")},
+                    "validation": {"path": "validation.jsonl", "sha256": sha256_file(experiment_dir / "validation.jsonl")},
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = build_training_map_pairs(
+            experiment_dir, None, root / "map-pairs", reference_map_path=reference_path, tile_layout_path=layout_path,
+            negative_count=2, min_negative_distance_m=75.0,
+        )
+        assert_equal(result["manifest"]["map_source"]["kind"], "reference_map_release", "first teacher uses model-independent reference map")
+        assert_equal(result["manifest"]["retrieval_metadata"], None, "first teacher does not require learned retrieval assets")
+        wrong_layout = json.loads(layout_path.read_text(encoding="utf-8"))
+        wrong_layout["cog"]["sha256"] = "0" * 64
+        wrong_layout_path = root / "wrong-layout.json"
+        wrong_layout_path.write_text(json.dumps(wrong_layout), encoding="utf-8")
+        try:
+            build_training_map_pairs(
+                experiment_dir, None, root / "wrong-map-pairs", reference_map_path=reference_path,
+                tile_layout_path=wrong_layout_path, negative_count=2, min_negative_distance_m=75.0,
+            )
+        except ValueError as exc:
+            if "checksum" not in str(exc):
+                raise
+        else:
+            raise AssertionError("Expected first-teacher pairs to reject a tile layout from different imagery.")
+
+        labels_manifest = json.loads(labels_manifest_path.read_text(encoding="utf-8"))
+        experiment_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for bound_digest, valid in ((sha256_file(reference_path), True), ("0" * 64, False)):
+            labels_manifest["coordinate_frame"]["map_release"]["manifest_sha256"] = bound_digest
+            labels_manifest_path.write_text(json.dumps(labels_manifest), encoding="utf-8")
+            experiment_manifest["labels"]["manifest_sha256"] = sha256_file(labels_manifest_path)
+            manifest_path.write_text(json.dumps(experiment_manifest), encoding="utf-8")
+            try:
+                build_training_map_pairs(
+                    experiment_dir, None, root / f"digest-bound-pairs-{valid}",
+                    reference_map_path=reference_path, tile_layout_path=layout_path,
+                    negative_count=2, min_negative_distance_m=75.0,
+                )
+            except ValueError as exc:
+                if valid or "Teacher label map manifest differs" not in str(exc):
+                    raise
+            else:
+                if not valid:
+                    raise AssertionError("Expected labels bound to a different map digest to be rejected.")
+
+
+def test_map_tile_layout_exports_georeferenced_training_crops() -> None:
+    try:
+        import rasterio
+        from rasterio.transform import from_origin
+    except ImportError as exc:
+        raise SkipTest("requires rasterio map-production dependency") from exc
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        cog = root / "map.tif"
+        pixels = np.full((3, 16, 16), 127, dtype=np.uint8)
+        with rasterio.open(
+            cog, "w", driver="GTiff", width=16, height=16, count=3, dtype="uint8",
+            crs="EPSG:4326", transform=from_origin(-122.001, 37.001, 0.0001, 0.0001),
+        ) as dataset:
+            dataset.write(pixels)
+        result = build_map_tile_layout(
+            cog, root / "tile-layout", origin_lat_deg=37.0, origin_lon_deg=-122.0,
+            origin_altitude_m=0.0, tile_size_px=8, stride_px=8,
+        )
+        assert_equal(result["layout"]["schema_version"], "vision_nav_map_tile_layout_v1", "map tile layout schema")
+        assert_equal(result["layout"]["tile_count"], 4, "map tile crop count")
+        first = result["layout"]["tiles"][0]
+        if not (root / "tile-layout" / first["image_uri"]).is_file():
+            raise AssertionError("Expected map tile layout to write the crop image")
+        bounds = first["bounds_enu_m"]
+        if not bounds[0] < bounds[2] or not bounds[1] < bounds[3]:
+            raise AssertionError("Expected map tile ENU bounds to have positive area")
+
+
+def test_teacher_dataset_audit_requires_readable_camera_map_and_negative_images() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        image_paths = {name: root / f"{name}.png" for name in ("uav", "positive", "negative")}
+        for index, path in enumerate(image_paths.values()):
+            assert cv2.imwrite(str(path), np.full((12, 16, 3), index * 50, dtype=np.uint8))
+        pair_dir = root / "map-pairs"
+        pair_dir.mkdir()
+        record = {
+            "schema_version": "vision_nav_training_map_pairs_v1",
+            "sample": {"sample_id": "capture-a:000001", "frame_path": str(image_paths["uav"]), "capture_session_id": "capture-a"},
+            "supervision": {"position_enu_m": {"east": 1.0, "north": 2.0, "up": 3.0}, "heading_rad": 0.2},
+            "positive": {"tile_id": "tile-a", "image_path": str(image_paths["positive"])},
+            "spatial_hard_negatives": [{"tile_id": "tile-b", "image_path": str(image_paths["negative"]), "center_distance_m": 100.0}],
+        }
+        for split_name in ("train", "validation"):
+            (pair_dir / f"{split_name}.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+        (pair_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "vision_nav_training_map_pairs_v1", "policy": "offline_training_only",
+                    "splits": {
+                        split_name: {"path": f"{split_name}.jsonl", "sha256": sha256_file(pair_dir / f"{split_name}.jsonl"), "pair_count": 1}
+                        for split_name in ("train", "validation")
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        report = validate_teacher_dataset(pair_dir, require_heading=True)
+        assert_equal(report["status"], "valid", "teacher dataset audit status")
+        assert_equal(report["splits"]["train"]["negative_count_min"], 1, "teacher dataset negative count")
+        try:
+            validate_teacher_dataset(pair_dir, require_pose_context=True)
+        except ValueError as exc:
+            if "body_frd_T_camera_optical" not in str(exc):
+                raise
+        else:
+            raise AssertionError("Expected IMU-aware teacher audit to require measured pose context.")
+        record["sample"].update(
+            {
+                "attitude": {"roll_rad": 0.1, "pitch_rad": -0.2, "yaw_rad": 0.3},
+                "camera_to_body": {
+                    "status": "measured", "frame_id": "body_frd", "child_frame_id": "down_camera_optical",
+                    "transform_direction": "body_frd_T_camera_optical",
+                    "translation_m": {"x": 0.02, "y": 0.0, "z": 0.05},
+                    "rotation_quat_xyzw": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                },
+            }
+        )
+        for split_name in ("train", "validation"):
+            path = pair_dir / f"{split_name}.jsonl"
+            path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+            manifest = json.loads((pair_dir / "manifest.json").read_text(encoding="utf-8"))
+            manifest["splits"][split_name]["sha256"] = sha256_file(path)
+            (pair_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        strict = validate_teacher_dataset(pair_dir, require_heading=True, require_pose_context=True)
+        assert_equal(strict["splits"]["train"]["attitude_available_count"], 1, "teacher dataset tracks PX4 attitude context")
+        assert_equal(strict["splits"]["train"]["camera_extrinsics_available_count"], 1, "teacher dataset tracks measured camera context")
+        image_paths["negative"].unlink()
+        try:
+            validate_teacher_dataset(pair_dir)
+        except ValueError as exc:
+            if "negative map crop" not in str(exc):
+                raise AssertionError(f"Expected missing negative image error, got {exc}")
+        else:
+            raise AssertionError("Expected teacher dataset audit to reject a missing map crop")
+
+
+def test_temporal_training_windows_keep_frames_session_local_and_time_ordered() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        image_paths = {name: root / f"{name}.png" for name in ("uav", "positive", "negative")}
+        for index, path in enumerate(image_paths.values()):
+            assert cv2.imwrite(str(path), np.full((12, 16, 3), index * 50, dtype=np.uint8))
+        pair_dir = root / "map-pairs"
+        pair_dir.mkdir()
+
+        def record(session_id: str, sequence: int) -> dict[str, Any]:
+            timestamp_ns = 1_000_000_000 + sequence * 100_000_000
+            return {
+                "schema_version": "vision_nav_training_map_pairs_v1",
+                "sample": {
+                    "sample_id": f"{session_id}:{sequence:06d}", "capture_session_id": session_id,
+                    "frame_path": str(image_paths["uav"]), "timestamp_ns": timestamp_ns,
+                    "capture_timing": {"sensor_timestamp_ns": 5_000_000_000 + sequence * 100_000_000},
+                    "map_release_id": "first-site@0.1.0", "calibration_id": "camera-v1",
+                    "attitude": {"roll_rad": 0.1, "pitch_rad": -0.2, "yaw_rad": 0.3},
+                    "camera_to_body": {
+                        "status": "measured", "frame_id": "body_frd", "child_frame_id": "down_camera_optical",
+                        "transform_direction": "body_frd_T_camera_optical",
+                        "translation_m": {"x": 0.02, "y": 0.0, "z": 0.05},
+                        "rotation_quat_xyzw": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                    },
+                },
+                "supervision": {"position_enu_m": {"east": float(sequence), "north": 0.0, "up": 0.0}, "heading_rad": 0.3},
+                "positive": {"tile_id": "tile-a", "image_path": str(image_paths["positive"])},
+                "spatial_hard_negatives": [{"tile_id": "tile-b", "image_path": str(image_paths["negative"]), "center_distance_m": 100.0}],
+            }
+
+        for split_name, session_id in (("train", "capture-a"), ("validation", "capture-b")):
+            path = pair_dir / f"{split_name}.jsonl"
+            path.write_text("".join(json.dumps(record(session_id, index)) + "\n" for index in range(4)), encoding="utf-8")
+        manifest = {
+            "schema_version": "vision_nav_training_map_pairs_v1", "policy": "offline_training_only",
+            "splits": {
+                split_name: {"path": f"{split_name}.jsonl", "sha256": sha256_file(pair_dir / f"{split_name}.jsonl"), "pair_count": 4}
+                for split_name in ("train", "validation")
+            },
+        }
+        (pair_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        result = build_temporal_training_windows(pair_dir, root / "temporal-windows", window_size=3, max_frame_gap_ms=200.0)
+        assert_equal(result["manifest"]["splits"]["train"]["window_count"], 2, "three-frame teacher windows slide inside a session")
+        train_windows = [json.loads(line) for line in (root / "temporal-windows" / "train.jsonl").read_text().splitlines()]
+        assert_equal(train_windows[0]["capture_session_id"], "capture-a", "temporal window preserves capture session")
+        assert_equal([frame["sample_id"] for frame in train_windows[0]["frames"]], ["capture-a:000000", "capture-a:000001", "capture-a:000002"], "temporal window preserves chronological frame order")
+        assert_equal(train_windows[0]["anchor"]["sample_id"], "capture-a:000002", "last frame is the supervised temporal anchor")
+        audit = validate_temporal_training_windows(root / "temporal-windows")
+        assert_equal(audit["status"], "valid", "temporal package audit status")
+        run_record = build_run_record(
+            window_dir=root / "temporal-windows",
+            config=TemporalTeacherBaselineConfig(image_width=16, image_height=12, feature_dim=32, temporal_heads=4),
+            device="cpu", seed=7, epochs=1, batch_size=1, learning_rate=1e-4,
+        )
+        assert_equal(run_record["status"], "initialized", "teacher baseline initializes from audited temporal input")
+        assert_equal(run_record["publication_mode"], "research_only", "teacher baseline cannot enter a flight publication path")
+        assert_equal(run_record["not_a_paper_reproduction"], True, "teacher baseline provenance avoids paper-reproduction claims")
+        checkpoint = root / "teacher-baseline.pt"
+        checkpoint.write_bytes(b"test checkpoint provenance only")
+        evaluation_record = build_evaluation_record(
+            checkpoint_path=checkpoint, window_dir=root / "temporal-windows", device="cpu",
+        )
+        assert_equal(evaluation_record["status"], "initialized", "teacher evaluation binds checkpoint and temporal input before inference")
+        assert_equal(
+            evaluation_record["input"]["temporal_windows_manifest_sha256"],
+            run_record["input"]["temporal_windows_manifest_sha256"],
+            "training and evaluation bind the same immutable temporal source",
+        )
+        target_record = build_teacher_target_record(
+            checkpoint_path=checkpoint, window_dir=root / "temporal-windows", device="cpu",
+        )
+        assert_equal(target_record["status"], "initialized", "teacher target export binds an immutable checkpoint and temporal source")
+        assert_equal(target_record["publication_mode"], "research_only", "teacher targets cannot become a vehicle release directly")
+        target_dir = root / "teacher-targets"
+        split_metadata: dict[str, dict[str, Any]] = {}
+        for split_name in ("train", "validation"):
+            records: list[dict[str, Any]] = []
+            for source_window in [json.loads(line) for line in (root / "temporal-windows" / f"{split_name}.jsonl").read_text().splitlines()]:
+                target_path = target_dir / "targets" / split_name / f"{len(records):03d}.npz"
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                np.savez_compressed(
+                    target_path,
+                    temporal_feature=np.zeros(4, dtype=np.float32),
+                    position_enu_m=np.zeros(3, dtype=np.float32),
+                    heading_sin_cos=np.asarray([0.0, 1.0], dtype=np.float32),
+                )
+                records.append({
+                    "window_id": source_window["window_id"], "capture_session_id": source_window["capture_session_id"],
+                    "target_npz": target_path.relative_to(target_dir).as_posix(), "target_sha256": sha256_file(target_path),
+                })
+            index_path = target_dir / f"{split_name}.jsonl"
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            index_path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+            split_metadata[split_name] = {"path": index_path.name, "sha256": sha256_file(index_path), "target_count": len(records)}
+        (target_dir / "manifest.json").write_text(
+            json.dumps({
+                "schema_version": "vision_nav_temporal_teacher_targets_v1", "status": "completed",
+                "input": {
+                    "temporal_windows_schema": "vision_nav_temporal_training_windows_v1",
+                    "temporal_windows_manifest_sha256": sha256_file(root / "temporal-windows" / "manifest.json"),
+                },
+                "splits": split_metadata,
+            }),
+            encoding="utf-8",
+        )
+        target_audit = validate_teacher_targets(target_dir, window_dir=root / "temporal-windows")
+        assert_equal(target_audit["status"], "valid", "teacher target package has one verified target per temporal window")
+        student_record = build_student_run_record(
+            target_dir=target_dir, window_dir=root / "temporal-windows",
+            config=PiTemporalStudentConfig(image_width=16, image_height=12, feature_dim=8, teacher_feature_dim=4),
+            device="cpu", seed=7, epochs=1, learning_rate=1e-4,
+        )
+        assert_equal(student_record["map_release_id"], "first-site@0.1.0", "Pi student remains bound to one training map reference")
+        assert_equal(student_record["calibration_id"], "camera-v1", "Pi student remains bound to one camera calibration")
+        try:
+            TemporalTeacherBaselineConfig(feature_dim=30, temporal_heads=4).validate()
+        except ValueError as exc:
+            if "divisible" not in str(exc):
+                raise AssertionError(f"Expected temporal baseline dimension validation, got {exc}")
+        else:
+            raise AssertionError("Expected temporal baseline config to reject incompatible transformer heads.")
+        train_windows[0]["frames"][1]["sensor_timestamp_ns"] = train_windows[0]["frames"][0]["sensor_timestamp_ns"]
+        train_path = root / "temporal-windows" / "train.jsonl"
+        train_path.write_text("".join(json.dumps(window) + "\n" for window in train_windows), encoding="utf-8")
+        temporal_manifest_path = root / "temporal-windows" / "manifest.json"
+        temporal_manifest = json.loads(temporal_manifest_path.read_text(encoding="utf-8"))
+        temporal_manifest["splits"]["train"]["sha256"] = sha256_file(train_path)
+        temporal_manifest_path.write_text(json.dumps(temporal_manifest), encoding="utf-8")
+        try:
+            validate_temporal_training_windows(root / "temporal-windows")
+        except ValueError as exc:
+            if "non-monotonic sensor timestamps" not in str(exc):
+                raise AssertionError(f"Expected temporal ordering failure, got {exc}")
+        else:
+            raise AssertionError("Expected temporal validator to reject reordered camera timestamps.")
+
+
+def test_pi_temporal_student_export_validator_binds_tensors_and_provenance() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        parity_root = root / "parity"
+        parity_root.mkdir()
+        onnx_path = root / "temporal_student.onnx"
+        # Structural validation deliberately does not parse the graph. ONNX
+        # Runtime parity is the later machine-dependent graph gate.
+        onnx_path.write_bytes(b"standalone student fixture")
+        inputs_path = parity_root / "inputs.npz"
+        outputs_path = parity_root / "pytorch_outputs.npz"
+        inputs = {
+            "frame_window": np.zeros((1, 3, 3, 12, 16), dtype=np.float32),
+            "attitude_window": np.zeros((1, 3, 3), dtype=np.float32),
+        }
+        outputs = {
+            "location_distribution": np.zeros((1, 3), dtype=np.float32),
+            "heading_distribution": np.asarray([[0.0, 1.0]], dtype=np.float32),
+            "temporal_feature": np.zeros((1, 4), dtype=np.float32),
+        }
+        np.savez_compressed(inputs_path, **inputs)
+        np.savez_compressed(outputs_path, **outputs)
+        manifest = {
+            "schema_version": "vision_nav_pi_temporal_student_export_v1",
+            "status": "exported",
+            "publication_mode": "research_only",
+            "px4_external_vision": "disabled",
+            "profile_id": "pi5_crossview_nav_v1",
+            "map_release_id": "site-a@0.1.0",
+            "calibration_id": "down-camera-v1",
+            "teacher_targets_manifest_sha256": "teacher-targets-digest",
+            "temporal_windows_manifest_sha256": "windows-digest",
+            "onnx": {"path": onnx_path.name, "sha256": sha256_file(onnx_path), "opset_version": 17},
+            "interface": {
+                "inputs": {name: {"rank": value.ndim, "shape": list(value.shape)} for name, value in inputs.items()},
+                "outputs": {name: {"rank": value.ndim, "shape": list(value.shape)} for name, value in outputs.items()},
+                "window_size": 3,
+            },
+            "parity_reference": {
+                "inputs_npz": "parity/inputs.npz", "inputs_sha256": sha256_file(inputs_path),
+                "outputs_npz": "parity/pytorch_outputs.npz", "outputs_sha256": sha256_file(outputs_path),
+            },
+        }
+        (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        report = validate_pi_temporal_student_export(root)
+        assert_equal(report["status"], "valid", "student export contract passes before graph execution")
+        assert_equal(report["map_release_id"], "site-a@0.1.0", "student export preserves map provenance")
+        assert_equal(report["tensor_summary"]["inputs"]["frame_window"]["shape"], [1, 3, 3, 12, 16], "student export preserves temporal input shape")
+        manifest["parity_reference"]["inputs_npz"] = "../escape.npz"
+        (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        try:
+            validate_pi_temporal_student_export(root)
+        except ValueError as exc:
+            if "escapes" not in str(exc):
+                raise AssertionError(f"Expected export path escape rejection, got {exc}")
+        else:
+            raise AssertionError("Expected student export validator to reject a path escaping its export directory.")
+
+
+def test_xfeat_dense_export_preserves_raw_backbone_provenance_and_parity_contract() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        parity_root = root / "parity"
+        parity_root.mkdir()
+        weights = root / "xfeat.pt"
+        onnx_path = root / "xfeat_dense.onnx"
+        inputs_path = parity_root / "inputs.npz"
+        outputs_path = parity_root / "pytorch_outputs.npz"
+        weights.write_bytes(b"pinned-xfeat-weights-fixture")
+        # Structural validation deliberately does not execute arbitrary graphs.
+        # ONNX Runtime parity remains the machine-dependent promotion gate.
+        onnx_path.write_bytes(b"pinned-xfeat-dense-onnx-fixture")
+        inputs = {"image": np.zeros((1, 3, 32, 32), dtype=np.float32)}
+        outputs = {
+            "dense_descriptors": np.zeros((1, 64, 4, 4), dtype=np.float32),
+            "keypoint_logits": np.zeros((1, 65, 4, 4), dtype=np.float32),
+            "reliability": np.ones((1, 1, 4, 4), dtype=np.float32),
+        }
+        np.savez_compressed(inputs_path, **inputs)
+        np.savez_compressed(outputs_path, **outputs)
+        interface = {
+            "inputs": {"image": {"name": "image", "rank": 4, "shape": [1, 3, 32, 32]}},
+            "outputs": {
+                "dense_descriptors": {"name": "dense_descriptors", "rank": 4, "shape": [1, 64, 4, 4]},
+                "keypoint_logits": {"name": "keypoint_logits", "rank": 4, "shape": [1, 65, 4, 4]},
+                "reliability": {"name": "reliability", "rank": 4, "shape": [1, 1, 4, 4]},
+            },
+            "descriptor_dimension": 64,
+            "feature_stride_px": 8,
+        }
+        manifest = build_xfeat_dense_export_manifest(
+            export_root=root,
+            upstream={
+                "project": "xfeat", "repository": "https://github.com/XinningC/XFeat.git",
+                "commit": "d84a9e2a8615dc7ea408c71cac04c0dd85444a27", "license": "Apache-2.0",
+                "license_status": "verified", "checkout": "/research/vendor/xfeat",
+                "upstream_lock": "/project/research/upstreams.lock.json", "upstream_lock_sha256": "a" * 64,
+            },
+            weights=weights, onnx_path=onnx_path, inputs_path=inputs_path, outputs_path=outputs_path,
+            interface=interface, opset_version=17,
+        )
+        (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        report = validate_xfeat_dense_export(root)
+        assert_equal(report["status"], "valid", "raw XFeat export remains structurally verifiable before graph parity")
+        assert_equal(report["interface"]["feature_stride_px"], 8, "XFeat raw export preserves its stride-8 feature contract")
+        assert_equal(
+            report["upstream"]["commit"], "d84a9e2a8615dc7ea408c71cac04c0dd85444a27",
+            "XFeat export retains the locked source revision",
+        )
+        outputs_path.write_bytes(b"tampered-parity-output")
+        try:
+            validate_xfeat_dense_export(root)
+        except ValueError as exc:
+            if "checksum mismatch" not in str(exc):
+                raise AssertionError(f"Expected XFeat parity fixture checksum rejection, got {exc}")
+        else:
+            raise AssertionError("Expected XFeat export validator to reject a changed parity fixture.")
+
+
+def test_xfeat_sparse_export_binds_static_local_features_without_claiming_release_readiness() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        parity_root = root / "parity"
+        parity_root.mkdir()
+        weights = root / "xfeat.pt"
+        onnx_path = root / "xfeat_sparse.onnx"
+        inputs_path = parity_root / "inputs.npz"
+        outputs_path = parity_root / "pytorch_outputs.npz"
+        weights.write_bytes(b"pinned-xfeat-sparse-weights-fixture")
+        onnx_path.write_bytes(b"pinned-xfeat-sparse-onnx-fixture")
+        inputs = {"image": np.zeros((1, 3, 32, 32), dtype=np.float32)}
+        normalized = np.full((64,), 1.0 / 8.0, dtype=np.float32)
+        outputs = {
+            "keypoints": np.asarray([[[3.0, 4.0], [0.0, 0.0]]], dtype=np.float32),
+            "descriptors": np.asarray([[normalized, np.zeros((64,), dtype=np.float32)]], dtype=np.float32),
+            "scores": np.asarray([[0.5, -1.0]], dtype=np.float32),
+        }
+        np.savez_compressed(inputs_path, **inputs)
+        np.savez_compressed(outputs_path, **outputs)
+        interface = {
+            "inputs": {"image": {"name": "image", "rank": 4, "shape": [1, 3, 32, 32]}},
+            "outputs": {
+                "keypoints": {"name": "keypoints", "rank": 3, "shape": [1, 2, 2]},
+                "descriptors": {"name": "descriptors", "rank": 3, "shape": [1, 2, 64]},
+                "scores": {"name": "scores", "rank": 2, "shape": [1, 2]},
+            },
+            "descriptor_dimension": 64,
+            "maximum_feature_count": 2,
+            "invalid_feature_score": -1.0,
+        }
+        manifest = build_xfeat_sparse_export_manifest(
+            export_root=root,
+            upstream={
+                "project": "xfeat", "repository": "https://github.com/XinningC/XFeat.git",
+                "commit": "d84a9e2a8615dc7ea408c71cac04c0dd85444a27", "license": "Apache-2.0",
+                "license_status": "verified", "checkout": "/research/vendor/xfeat",
+                "upstream_lock": "/project/research/upstreams.lock.json", "upstream_lock_sha256": "a" * 64,
+            },
+            weights=weights, onnx_path=onnx_path, inputs_path=inputs_path, outputs_path=outputs_path,
+            interface=interface, opset_version=17, detection_threshold=0.05,
+        )
+        (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        report = validate_xfeat_sparse_export(root)
+        assert_equal(report["status"], "valid", "fixed XFeat sparse tensors validate before graph parity")
+        assert_equal(
+            report["interface"]["maximum_feature_count"], 2,
+            "fixed XFeat sparse export records its bounded local-feature count",
+        )
+        assert_equal(
+            report["postprocessing"]["invalid_feature_score"], -1.0,
+            "invalid XFeat feature slots remain explicitly filterable",
+        )
+        manifest["deployment_state"] = "model_release_ready"
+        (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        try:
+            validate_xfeat_sparse_export(root)
+        except ValueError as exc:
+            if "must not claim" not in str(exc):
+                raise AssertionError(f"Expected premature XFeat release-promotion rejection, got {exc}")
+        else:
+            raise AssertionError("Expected XFeat sparse validator to reject a premature ModelRelease claim.")
+
+
+def test_fixed_xfeat_feature_slots_are_filtered_before_map_or_matcher_use() -> None:
+    contract = {
+        "outputs": {
+            "keypoints": {"shadow_output": "local_keypoints"},
+            "descriptors": {"shadow_output": "local_descriptors"},
+            "scores": {"shadow_output": "local_feature_scores", "minimum_score": 0.0},
+        },
+    }
+    output = {
+        "keypoints": np.asarray([[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]], dtype=np.float32),
+        "descriptors": np.ones((1, 3, 64), dtype=np.float32),
+        "scores": np.asarray([[0.7, -1.0, 0.0]], dtype=np.float32),
+    }
+    filtered, audit = filter_local_feature_outputs(contract, output)
+    assert_equal(filtered["keypoints"].shape, (1, 1, 2), "invalid fixed XFeat slots cannot enter local geometry")
+    assert_equal(filtered["descriptors"].shape, (1, 1, 64), "XFeat descriptors stay aligned after score filtering")
+    assert_equal(filtered["scores"].shape, (1, 1), "XFeat score output remains aligned after filtering")
+    assert_equal(audit["rejected_feature_count"], 2, "XFeat local feature filter records dropped padding slots")
+    malformed = dict(output)
+    malformed["scores"] = np.asarray([[0.1, 0.2]], dtype=np.float32)
+    try:
+        filter_local_feature_outputs(contract, malformed)
+    except ValueError as exc:
+        if "scores_invalid" not in str(exc):
+            raise AssertionError(f"Expected score alignment failure, got {exc}")
+    else:
+        raise AssertionError("Expected fixed XFeat filter to reject score/keypoint cardinality mismatch.")
+
+
+def test_xfeat_sparse_export_wrappers_keep_research_and_pi_boundaries() -> None:
+    root = Path(__file__).resolve().parents[1]
+    for relative, expected in (
+        ("scripts/research/export_xfeat_sparse_onnx.sh", "sparse_main"),
+        ("scripts/research/export_xfeat_sparse_onnx.ps1", "sparse_main"),
+    ):
+        script = (root / relative).read_text(encoding="utf-8")
+        for token in (expected, "sparse_validate_main", "sparse_parity_main", "upstreams.lock.json"):
+            if token not in script:
+                raise AssertionError(f"XFeat sparse export wrapper is missing {token}: {relative}")
+        for prohibited in ("run_vision_nav_shadow", "ModelRelease", "mavlink", "PX4 external vision"):
+            if prohibited in script and prohibited not in {"ModelRelease", "PX4 external vision"}:
+                raise AssertionError(f"XFeat sparse export wrapper must not perform deployment action: {relative}: {prohibited}")
+    powershell = (root / "scripts/research/export_xfeat_sparse_onnx.ps1").read_text(encoding="utf-8")
+    if "MaximumFeatureCount -gt ($ImageWidth * $ImageHeight)" not in powershell:
+        raise AssertionError("Windows XFeat sparse wrapper must preflight its fixed feature cardinality.")
+
+
+def test_lighterglue_probe_records_official_xfeat_matcher_contract_without_claiming_onnx() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        reference = root / "reference"
+        reference.mkdir()
+        weights = root / "xfeat-lighterglue.pt"
+        inputs_path = reference / "inputs.npz"
+        outputs_path = reference / "upstream_outputs.npz"
+        weights.write_bytes(b"official-xfeat-lighterglue-weights-fixture")
+        inputs = {
+            "keypoints0": np.asarray([[[10.0, 12.0], [22.0, 24.0]]], dtype=np.float32),
+            "keypoints1": np.asarray([[[11.0, 13.0], [30.0, 32.0], [40.0, 42.0]]], dtype=np.float32),
+            "descriptors0": np.ones((1, 2, 64), dtype=np.float32),
+            "descriptors1": np.ones((1, 3, 64), dtype=np.float32),
+            "image_size0": np.asarray([[640.0, 384.0]], dtype=np.float32),
+            "image_size1": np.asarray([[640.0, 384.0]], dtype=np.float32),
+        }
+        outputs = {
+            "matches0": np.asarray([[0, -1]], dtype=np.int64),
+            "matching_scores0": np.asarray([[0.9, 0.0]], dtype=np.float32),
+            "matches1": np.asarray([[0, -1, -1]], dtype=np.int64),
+            "matching_scores1": np.asarray([[0.9, 0.0, 0.0]], dtype=np.float32),
+            "matches": np.asarray([[0, 0]], dtype=np.int64),
+            "scores": np.asarray([0.9], dtype=np.float32),
+        }
+        np.savez_compressed(inputs_path, **inputs)
+        np.savez_compressed(outputs_path, **outputs)
+        interface = {
+            "input_feature_count": {"query": 2, "map": 3}, "descriptor_dimension": 64,
+            "accepted_match_count": 1, "match_ratio_query": 0.5, "match_ratio_map": 1.0 / 3.0,
+            "score_range": {"min": float(np.float32(0.9)), "max": float(np.float32(0.9))},
+        }
+        manifest = build_lighterglue_probe_manifest(
+            probe_root=root,
+            upstream={
+                "project": "xfeat_lighterglue", "repository": "https://github.com/verlab/accelerated_features.git",
+                "commit": "e92685f57f8318b18725c5c8c0bd28c7fe188d9a", "license": "Apache-2.0",
+                "license_status": "verified", "checkout": "/research/vendor/xfeat",
+                "upstream_lock": "/project/research/upstreams.lock.json", "upstream_lock_sha256": "a" * 64,
+            },
+            weights=weights, inputs_path=inputs_path, outputs_path=outputs_path,
+            interface=interface, minimum_confidence=0.2,
+        )
+        (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        report = validate_lighterglue_probe(root)
+        assert_equal(report["status"], "valid", "official XFeat LighterGlue probe remains structurally auditable")
+        assert_equal(report["interface"]["accepted_match_count"], 1, "probe preserves accepted matcher evidence")
+        manifest["deployment_state"] = "model_release_ready"
+        (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        report = validate_lighterglue_probe(root)
+        if "probe_must_not_claim_onnx_or_model_release_readiness" not in report["errors"]:
+            raise AssertionError("LighterGlue probe must block a premature ModelRelease claim.")
+
+
+def test_lighterglue_probe_wrappers_are_research_only_and_use_pinned_source() -> None:
+    root = Path(__file__).resolve().parents[1]
+    for relative in ("scripts/research/probe_lighterglue.sh", "scripts/research/probe_lighterglue.ps1"):
+        script = (root / relative).read_text(encoding="utf-8")
+        for token in ("lighterglue_probe", "upstreams.lock.json", "research-only"):
+            if token not in script.lower():
+                raise AssertionError(f"LighterGlue probe wrapper is missing {token}: {relative}")
+        for prohibited in ("run_vision_nav_shadow", "mavlink"):
+            if prohibited in script:
+                raise AssertionError(f"LighterGlue probe wrapper must not perform deployment action: {relative}: {prohibited}")
+
+
+def test_pi_bootstrap_requires_onnx_runtime_before_claiming_learned_runtime_readiness() -> None:
+    root = Path(__file__).resolve().parents[1]
+    for relative in ("requirements/pi-host.txt", "requirements/pi.txt"):
+        requirement_text = (root / relative).read_text(encoding="utf-8")
+        if "onnxruntime>=1.18" not in requirement_text:
+            raise AssertionError(f"Pi dependency set must install ONNX Runtime: {relative}")
+    verification = (root / "scripts/pi/verify_pi_setup.sh").read_text(encoding="utf-8")
+    for module in ("onnxruntime", "pymavlink", "vision_nav"):
+        if module not in verification:
+            raise AssertionError(f"Pi setup verification must import learned runtime dependency: {module}")
+    first_run = (root / "scripts/pi/first_run_checks.sh").read_text(encoding="utf-8")
+    for module in ("onnxruntime", "pymavlink", "vision_nav.neural.shadow_runtime"):
+        if module not in first_run:
+            raise AssertionError(f"Pi first-run checks must exercise learned runtime interface: {module}")
+
+
+def test_model_release_example_filters_fixed_xfeat_padding_before_matching() -> None:
+    root = Path(__file__).resolve().parents[1]
+    raw = json.loads((root / "data/models/pi5-crossview-nav-v1.example.json").read_text(encoding="utf-8"))
+    outputs = raw["artifact_interfaces"]["local_features"]["outputs"]
+    score_specs = [
+        spec for spec in outputs.values()
+        if isinstance(spec, dict) and spec.get("shadow_output") == "local_feature_scores"
+    ]
+    if len(score_specs) != 1 or score_specs[0].get("minimum_score") != 0.0:
+        raise AssertionError("ModelRelease example must bind XFeat fixed-cardinality scores to the invalid-slot filter.")
+
+
+def test_research_dockerfile_installs_cuda_torch_after_copying_project_source() -> None:
+    root = Path(__file__).resolve().parents[1]
+    dockerfile = (root / "docker/research/Dockerfile").read_text(encoding="utf-8")
+    required = (
+        "FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04",
+        "ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu124",
+        "COPY src ./src",
+        "torch torchvision --index-url ${PYTORCH_INDEX_URL}",
+        'pip install -e ".[research,neural-runtime,map-production]"',
+        "research/requirements-research.txt",
+    )
+    for token in required:
+        if token not in dockerfile:
+            raise AssertionError(f"Research Dockerfile is missing reproducible CUDA dependency: {token}")
+    if dockerfile.index("COPY src ./src") > dockerfile.index('pip install -e ".[research,neural-runtime,map-production]"'):
+        raise AssertionError("Research Dockerfile must copy src before editable project installation.")
+
+
+def test_pi_temporal_student_binding_requires_identical_artifact_map_and_calibration() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        export_root = root / "export"
+        parity_root = export_root / "parity"
+        parity_root.mkdir(parents=True)
+        student = export_root / "temporal_student.onnx"
+        student.write_bytes(b"student-release-binding-fixture")
+        inputs_path = parity_root / "inputs.npz"
+        outputs_path = parity_root / "pytorch_outputs.npz"
+        inputs = {
+            "frame_window": np.zeros((1, 3, 3, 12, 16), dtype=np.float32),
+            "attitude_window": np.zeros((1, 3, 3), dtype=np.float32),
+        }
+        outputs = {
+            "location_distribution": np.zeros((1, 3), dtype=np.float32),
+            "heading_distribution": np.asarray([[0.0, 1.0]], dtype=np.float32),
+            "temporal_feature": np.zeros((1, 4), dtype=np.float32),
+        }
+        np.savez_compressed(inputs_path, **inputs)
+        np.savez_compressed(outputs_path, **outputs)
+        manifest = {
+            "schema_version": "vision_nav_pi_temporal_student_export_v1", "status": "exported",
+            "publication_mode": "research_only", "px4_external_vision": "disabled",
+            "profile_id": PI5_CROSSVIEW_NAV_V1.profile_id, "map_release_id": "site-a@0.1.0",
+            "calibration_id": "down-camera-v1", "teacher_targets_manifest_sha256": "targets",
+            "temporal_windows_manifest_sha256": "windows",
+            "onnx": {"path": student.name, "sha256": sha256_file(student), "opset_version": 17},
+            "interface": {
+                "inputs": {name: {"rank": value.ndim, "shape": list(value.shape)} for name, value in inputs.items()},
+                "outputs": {name: {"rank": value.ndim, "shape": list(value.shape)} for name, value in outputs.items()},
+                "window_size": 3,
+            },
+            "parity_reference": {
+                "inputs_npz": "parity/inputs.npz", "inputs_sha256": sha256_file(inputs_path),
+                "outputs_npz": "parity/pytorch_outputs.npz", "outputs_sha256": sha256_file(outputs_path),
+            },
+        }
+        (export_root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        artifact_root = root / "release"
+        artifact = artifact_root / "models" / "temporal_student.onnx"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_bytes(student.read_bytes())
+        model = ModelRelease(
+            release_id="pi5-student@0.1.0", profile_id=PI5_CROSSVIEW_NAV_V1.profile_id, semantic_version="0.1.0",
+            checkpoint_digest_sha256="a" * 64, onnx_digest_sha256="b" * 64,
+            training_dataset_releases=("training@0.1.0",), source_revision="unit", license_summary="test-only",
+            redistribution_allowed=False, calibration_ids=("down-camera-v1",),
+            artifact_paths={"temporal_student": "models/temporal_student.onnx"},
+            artifact_interfaces={
+                "temporal_student": {
+                    "inputs": {
+                        "frame_window": {"name": "frame_window", "rank": 5, "shadow_source": "frame_window_rgb", "window_size": 3},
+                        "attitude_window": {"name": "attitude_window", "rank": 3, "shadow_source": "attitude_window_rpy", "window_size": 3},
+                    },
+                    "outputs": {
+                        "location_distribution": {"name": "location_distribution", "rank": 2, "shadow_output": "temporal_location_evidence"},
+                        "heading_distribution": {"name": "heading_distribution", "rank": 2, "shadow_output": "temporal_heading_evidence"},
+                        "temporal_feature": {"name": "temporal_feature", "rank": 2, "shadow_output": "temporal_feature_evidence"},
+                    },
+                },
+            },
+        )
+        map_release = {
+            "schema_version": "vision_nav_map_release_v2", "release_id": "site-a@0.1.0", "map_id": "site-a", "version": "0.1.0",
+            "profile_id": model.profile_id, "model_release_id": model.release_id, "crs": "EPSG:32610",
+            "local_origin_enu": [0.0, 0.0, 0.0], "gsd_m_per_px": 0.2, "calibration_ids": ["down-camera-v1"],
+            "geometry_modes": ["pnp_3d"], "checksums_sha256": {"release-placeholder": "c" * 64},
+            "cog_uri": "https://example.invalid/map.tif", "stac_item_uri": "https://example.invalid/item.json",
+            "tile_index_uri": "https://example.invalid/tiles.sqlite", "retrieval_index_uri": "https://example.invalid/retrieval.faiss",
+            "xfeat_index_uri": "https://example.invalid/xfeat.sqlite",
+        }
+        report = validate_pi_temporal_student_release_binding(
+            export_root, model_release=model, map_release=map_release, artifact_root=artifact_root,
+        )
+        assert_equal(
+            report["status"],
+            "valid",
+            f"student binding accepts exact artifact and compatible map/model/calibration (errors={report['errors']})",
+        )
+        artifact.write_bytes(b"changed")
+        changed = validate_pi_temporal_student_release_binding(
+            export_root, model_release=model, map_release=map_release, artifact_root=artifact_root,
+        )
+        assert_equal(changed["status"], "invalid", "student binding rejects changed temporal artifact")
+        if "temporal_student_artifact_digest_mismatch" not in changed["errors"]:
+            raise AssertionError("Expected student binding to report temporal artifact digest mismatch")
+
+
+def test_windows_temporal_smoke_runner_uses_contract_entrypoints() -> None:
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "research" / "run_first_temporal_smoke.ps1").read_text(
+        encoding="utf-8"
+    )
+    for expected in (
+        "vision_nav.neural.research_environment",
+        "from vision_nav.neural.temporal_training_windows import validate_main; validate_main()",
+        "vision_nav.neural.temporal_teacher_baseline",
+        "from vision_nav.neural.temporal_teacher_baseline import evaluate_main; evaluate_main()",
+        "vision_nav.neural.teacher_targets",
+        "vision_nav.neural.pi_temporal_student",
+        "vision_nav.neural.pi_temporal_student_export",
+        "from vision_nav.neural.pi_temporal_student_export import validate_main; validate_main()",
+        "from vision_nav.neural.pi_temporal_student_export import parity_main; parity_main()",
+        "px4_external_vision = \"disabled\"",
+        "TeacherFeatureDim % 4 -ne 0",
+    ):
+        if expected not in script:
+            raise AssertionError(f"Windows temporal smoke runner is missing required contract command: {expected}")
+    for prohibited in ("--validate-dir", "vision_nav.mavlink", "vision_nav.neural.map_release", "run_vision_nav_shadow"):
+        if prohibited in script:
+            raise AssertionError(f"Windows temporal smoke runner must not perform unrelated deployment action: {prohibited}")
+    if "--max-batches-per-split" in script:
+        raise AssertionError("Windows temporal smoke runner must materialize complete teacher targets, not a partial target package.")
+
+
+def test_windows_temporal_preparation_runner_uses_verified_capture_contracts() -> None:
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "research" / "prepare_first_temporal_windows.ps1").read_text(
+        encoding="utf-8"
+    )
+    for expected in (
+        "vision_nav.neural.research_environment",
+        "vision_nav.neural.dataset_release",
+        "vision_nav.neural.training_dataset",
+        "vision_nav.neural.training_readiness",
+        "vision_nav.neural.training_labels",
+        "vision_nav.neural.training_splits",
+        "vision_nav.neural.training_experiment",
+        "vision_nav.neural.map_tile_layout",
+        "vision_nav.neural.training_map_pairs",
+        "vision_nav.neural.teacher_dataset",
+        "vision_nav.neural.temporal_training_windows",
+        "--reference-map $ReferenceMapPath",
+        "--require-heading",
+        "--require-pose-context",
+        "px4_external_vision = \"disabled\"",
+    ):
+        if expected not in script:
+            raise AssertionError(f"Windows temporal preparation runner is missing required contract stage: {expected}")
+    for prohibited in ("--allow-missing-attitude", "--allow-missing-sensor-timestamps", "vision_nav.mavlink", "run_vision_nav_shadow"):
+        if prohibited in script:
+            raise AssertionError(f"Windows temporal preparation runner must not weaken training/deployment boundaries: {prohibited}")
+
+
+def test_temporal_student_records_uncalibrated_location_and_heading_evidence() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        neural_temporal_student_evidence_test(Path(tmp))
+
+
+def test_research_environment_gate_requires_real_cuda_dependencies() -> None:
+    fake_torch = SimpleNamespace(
+        __version__="2.test",
+        cuda=SimpleNamespace(is_available=lambda: True, device_count=lambda: 1, get_device_name=lambda index: "Test RTX"),
+    )
+    report = evaluate_research_environment(
+        require_cuda=True,
+        require_map_production=True,
+        require_onnx=True,
+        require_lighterglue=True,
+        module_finder=lambda _name: object(),
+        torch_loader=lambda: fake_torch,
+        command_finder=lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None,
+        command_runner=lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="Test RTX, 999.0, 16 GiB\n"),
+    )
+    assert_equal(report["status"], "ready", "research environment passes only with CUDA and required packages")
+    assert_equal(report["pytorch"]["cuda_device_name"], "Test RTX", "research environment records CUDA device identity")
+    missing = evaluate_research_environment(
+        require_cuda=True, require_map_production=True, require_onnx=True, require_lighterglue=True,
+        module_finder=lambda _name: None,
+        command_finder=lambda _name: None,
+    )
+    assert_equal(missing["status"], "not_ready", "research environment blocks missing PyTorch/CUDA packages")
+    if "pytorch_unavailable" not in missing["errors"] or "cuda_pytorch_unavailable" not in missing["errors"]:
+        raise AssertionError("Research environment gate must distinguish missing PyTorch from missing CUDA support.")
+    if "missing_lighterglue_dependency:kornia" not in missing["errors"]:
+        raise AssertionError("Research environment gate must reject a missing official LighterGlue dependency.")
+
+
 def main() -> None:
     tests = [
+        test_geometry_rejects_insufficient_matches,
+        test_hypothesis_requires_temporal_support,
+        test_px4_publish_only_in_tracking_mode,
+        test_demo_runtime_withholds_unbound_backend,
+        test_runtime_withholds_anonymous_or_reordered_frames,
+        test_px4_publication_requires_fresh_compatible_tracking_estimate,
+        test_map_release_rejects_mixed_calibration_or_model_versions,
         test_pixel_to_local_default_north_up_axes,
         test_georef_json_round_trip,
         test_build_georef_requires_core_fields_together,
@@ -9050,6 +11606,7 @@ def main() -> None:
         test_field_log_capture_report_writes_desktop_compatible_audit,
         test_quality_metrics_and_covariance,
         test_mavlink_endpoint_parsing_and_axis_mapping,
+        test_mavlink_timesync_evidence_rejects_high_latency_or_missing_samples,
         test_mavlink_log_sender_uses_selected_message_type,
         test_mavlink_odometry_requires_mavlink2_dialect,
         test_mavlink_odometry_reports_unsupported_connection,
@@ -9058,6 +11615,9 @@ def main() -> None:
         test_external_position_stream_health,
         test_position_telemetry_prefers_gps_and_falls_back_to_vision,
         test_camera_health_report_on_synthetic_image,
+        test_camera_bench_requires_consistent_measured_image_quality,
+        test_prop_off_preflight_requires_operator_safety_attestation_and_bench_evidence,
+        test_training_splits_keep_capture_sessions_disjoint,
         test_bundle_checksums_detect_changed_file,
         test_validate_bundle_passes_complete_bundle,
         test_terrain_bundle_validation_report_writes_durable_json,
@@ -9091,6 +11651,49 @@ def main() -> None:
         test_hierarchical_tile_query_uses_prior_or_spatial_coverage,
         test_terrain_estimator_updates_and_inflates_covariance,
         test_barometer_tracker_and_estimator_fields,
+        test_learned_release_contract_is_shadow_only,
+        test_mavlink_bench_evidence_requires_heartbeat_and_stable_attitude_cadence,
+        test_training_capture_and_dataset_release_preserve_provenance,
+        test_continuous_telemetry_capture_preserves_attitude_cadence_evidence,
+        test_first_training_capture_preparation_script_keeps_prop_off_gate_order,
+        test_windows_pi_capture_import_revalidates_before_training_preparation,
+        test_training_capture_preserves_camera_ingress_metadata,
+        test_training_capture_requires_offline_gnss_reference_for_supervised_data,
+        test_training_capture_records_pre_and_post_mavlink_timesync,
+        test_support_bundle_summarizes_strict_training_capture_without_raw_data,
+        test_measured_calibration_id_is_loaded_and_enforced_for_capture,
+        test_onnx_parity_reports_logical_output_error_without_model_specific_assumptions,
+        test_neural_model_artifacts_require_real_matching_release_digest,
+        test_research_upstream_lock_is_pinned_and_valid,
+        test_upstream_training_preflight_requires_matching_checkout_and_stage_checkpoint,
+        test_learned_map_asset_compiler_creates_portable_retrieval_and_xfeat_cache,
+        test_learned_runtime_benchmark_records_shadow_only_performance_evidence,
+        test_training_capture_preflight_binds_prop_off_evidence_to_map_and_storage,
+        test_reference_map_starts_capture_and_labels_before_deployment_map_exists,
+        test_reference_geotiff_import_creates_cog_stac_and_capture_anchor,
+        test_training_labels_materialize_offline_enu_and_reject_stale_gps,
+        test_training_gps_labels_prefer_quality_and_reject_weak_accuracy,
+        test_teacher_experiment_joins_only_verified_session_disjoint_labels,
+        test_training_map_pairs_bind_labels_to_release_tiles_and_hard_negatives,
+        test_reference_map_pairs_break_first_teacher_bootstrap_cycle,
+        test_map_tile_layout_exports_georeferenced_training_crops,
+        test_teacher_dataset_audit_requires_readable_camera_map_and_negative_images,
+        test_temporal_training_windows_keep_frames_session_local_and_time_ordered,
+        test_pi_temporal_student_export_validator_binds_tensors_and_provenance,
+        test_xfeat_dense_export_preserves_raw_backbone_provenance_and_parity_contract,
+        test_xfeat_sparse_export_binds_static_local_features_without_claiming_release_readiness,
+        test_fixed_xfeat_feature_slots_are_filtered_before_map_or_matcher_use,
+        test_xfeat_sparse_export_wrappers_keep_research_and_pi_boundaries,
+        test_lighterglue_probe_records_official_xfeat_matcher_contract_without_claiming_onnx,
+        test_lighterglue_probe_wrappers_are_research_only_and_use_pinned_source,
+        test_pi_bootstrap_requires_onnx_runtime_before_claiming_learned_runtime_readiness,
+        test_model_release_example_filters_fixed_xfeat_padding_before_matching,
+        test_research_dockerfile_installs_cuda_torch_after_copying_project_source,
+        test_pi_temporal_student_binding_requires_identical_artifact_map_and_calibration,
+        test_windows_temporal_smoke_runner_uses_contract_entrypoints,
+        test_windows_temporal_preparation_runner_uses_verified_capture_contracts,
+        test_temporal_student_records_uncalibrated_location_and_heading_evidence,
+        test_research_environment_gate_requires_real_cuda_dependencies,
     ]
     for test in tests:
         try:

@@ -8,13 +8,13 @@ import cv2
 import numpy as np
 
 from vision_nav.capture_frame import capture_frame
-from vision_nav.features import extract_features, load_gray_image
-from vision_nav.quality import feature_density, frame_quality_metrics
+from vision_nav.features import load_gray_image
+from vision_nav.quality import edge_density_per_megapixel, frame_quality_metrics
 
 
 DEFAULT_SHARPNESS_MIN = 60.0
 DEFAULT_ENTROPY_MIN = 3.5
-DEFAULT_FEATURE_DENSITY_MIN = 300.0
+DEFAULT_EDGE_DENSITY_MIN = 8_000.0
 DEFAULT_SATURATION_MAX = 0.15
 
 
@@ -27,11 +27,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=1456)
     parser.add_argument("--height", type=int, default=1088)
     parser.add_argument("--timeout-ms", type=int, default=1000)
-    parser.add_argument("--method", choices=["orb", "akaze", "sift"], default="orb")
-    parser.add_argument("--max-features", type=int, default=3000)
     parser.add_argument("--sharpness-min", type=float, default=DEFAULT_SHARPNESS_MIN)
     parser.add_argument("--entropy-min", type=float, default=DEFAULT_ENTROPY_MIN)
-    parser.add_argument("--feature-density-min", type=float, default=DEFAULT_FEATURE_DENSITY_MIN)
+    parser.add_argument("--edge-density-min", type=float, default=DEFAULT_EDGE_DENSITY_MIN)
     parser.add_argument("--saturation-max", type=float, default=DEFAULT_SATURATION_MAX)
     parser.add_argument("--fail-on-warning", action="store_true")
     return parser.parse_args()
@@ -55,10 +53,10 @@ def warning_messages(
     *,
     quality: dict[str, float],
     exposure: dict[str, float],
-    density_per_megapixel: float,
+    edge_density_per_megapixel: float,
     sharpness_min: float,
     entropy_min: float,
-    feature_density_min: float,
+    edge_density_min: float,
     saturation_max: float,
 ) -> list[str]:
     warnings: list[str] = []
@@ -66,8 +64,8 @@ def warning_messages(
         warnings.append("low_sharpness")
     if quality["entropy_bits"] < entropy_min:
         warnings.append("low_texture_entropy")
-    if density_per_megapixel < feature_density_min:
-        warnings.append("low_feature_density")
+    if edge_density_per_megapixel < edge_density_min:
+        warnings.append("low_edge_content")
     if exposure["dark_pixel_fraction"] > saturation_max:
         warnings.append("underexposed_or_lens_covered")
     if exposure["bright_pixel_fraction"] > saturation_max:
@@ -78,26 +76,23 @@ def warning_messages(
 def analyze_frame_file(
     image_path: Path,
     *,
-    method: str = "orb",
-    max_features: int = 3000,
     sharpness_min: float = DEFAULT_SHARPNESS_MIN,
     entropy_min: float = DEFAULT_ENTROPY_MIN,
-    feature_density_min: float = DEFAULT_FEATURE_DENSITY_MIN,
+    edge_density_min: float = DEFAULT_EDGE_DENSITY_MIN,
     saturation_max: float = DEFAULT_SATURATION_MAX,
 ) -> dict[str, object]:
     gray = load_gray_image(str(image_path))
     height, width = gray.shape[:2]
     quality = frame_quality_metrics(gray)
     exposure = exposure_metrics(gray)
-    features = extract_features(gray, method=method, max_features=max_features)
-    density = feature_density(int(features.keypoints_xy.shape[0]), gray.shape[:2])
+    edge_density = edge_density_per_megapixel(gray)
     warnings = warning_messages(
         quality=quality,
         exposure=exposure,
-        density_per_megapixel=density,
+        edge_density_per_megapixel=edge_density,
         sharpness_min=sharpness_min,
         entropy_min=entropy_min,
-        feature_density_min=feature_density_min,
+        edge_density_min=edge_density_min,
         saturation_max=saturation_max,
     )
 
@@ -105,15 +100,13 @@ def analyze_frame_file(
         "status": "warning" if warnings else "passed",
         "image_path": str(image_path),
         "resolution": {"width": int(width), "height": int(height)},
-        "feature_method": method,
-        "feature_count": int(features.keypoints_xy.shape[0]),
-        "feature_density_per_megapixel": density,
+        "edge_density_per_megapixel": edge_density,
         "frame_quality": quality,
         "exposure": exposure,
         "thresholds": {
             "sharpness_min": sharpness_min,
             "entropy_min": entropy_min,
-            "feature_density_min": feature_density_min,
+            "edge_density_min": edge_density_min,
             "saturation_max": saturation_max,
         },
         "warnings": warnings,
@@ -143,11 +136,9 @@ def main() -> None:
 
     report = analyze_frame_file(
         image_path,
-        method=args.method,
-        max_features=args.max_features,
         sharpness_min=args.sharpness_min,
         entropy_min=args.entropy_min,
-        feature_density_min=args.feature_density_min,
+        edge_density_min=args.edge_density_min,
         saturation_max=args.saturation_max,
     )
     report["report_path"] = str(output_dir / "camera_health_report.json")

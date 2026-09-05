@@ -90,8 +90,10 @@ export function MissionBundleBuilder() {
         output_dir: effectiveOutputDir,
         repo_path: repoPath,
         pipeline: pipeline.pipeline,
-        feature_method: pipeline.featureMethod,
-        max_features: pipeline.maxFeatures,
+        model_release_id: pipeline.modelReleaseId,
+        map_release_id: pipeline.mapReleaseId,
+        calibration_id: pipeline.calibrationId,
+        inference_provider: pipeline.inferenceProvider,
         runtime_profile: runtimeProfile,
         camera_profile: cameraProfile,
         hardware_profile: activeDevice?.hardware_profile,
@@ -203,8 +205,8 @@ export function MissionBundleBuilder() {
         <DefenseSection title="FEATURE PACKAGE" icon={<Cpu size={14} />}>
           <div className="grid grid-cols-1 gap-2">
             <DefenseListItem label="Pipeline" detail={pipeline.pipeline} tone="active" />
-            <DefenseListItem label="Feature method" detail={pipeline.featureMethod.toUpperCase()} tone="active" />
-            <DefenseListItem label="Max features" detail={pipeline.maxFeatures.toLocaleString()} tone="active" />
+            <DefenseListItem label="Local evidence" detail="XFeat + LighterGlue" tone="active" />
+            <DefenseListItem label="Model release" detail={pipeline.modelReleaseId} tone="active" />
           </div>
         </DefenseSection>
       </div>

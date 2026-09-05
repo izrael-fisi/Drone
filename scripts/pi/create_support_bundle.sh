@@ -4,9 +4,14 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 venv_python="${VISION_NAV_PYTHON:-$HOME/drone_vision_nav_venv/bin/python}"
 bundle="${VISION_NAV_BUNDLE:-$HOME/drone-data/map_bundles/mission_bundle}"
+map_release="${VISION_NAV_MAP_RELEASE:-$HOME/drone-data/map_releases/active/map_release.json}"
+model_release="${VISION_NAV_MODEL_RELEASE:-$HOME/drone-data/model_releases/pi5_crossview_nav_v1/model_release.json}"
+calibration_file="${VISION_NAV_CALIBRATION_FILE:-$repo_root/config/camera/down_camera.yaml}"
+neural_output_dir="${VISION_NAV_OUTPUT_DIR:-$HOME/DroneTransfer/outgoing/neural-shadow}"
 output_dir="${VISION_NAV_SUPPORT_OUTPUT_DIR:-$HOME/DroneTransfer/outgoing/support-bundles}"
 mavlink_endpoint="${VISION_NAV_MAVLINK_ENDPOINT:-}"
 feature_method_benchmark="${VISION_NAV_FEATURE_METHOD_BENCHMARK:-$HOME/DroneTransfer/outgoing/feature-method-bench}"
+learned_runtime_benchmark="${VISION_NAV_LEARNED_RUNTIME_BENCHMARK:-$HOME/DroneTransfer/outgoing/learned-runtime-bench/learned_runtime_benchmark.json}"
 field_evidence_report="${VISION_NAV_FIELD_EVIDENCE_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/field_evidence_report.json}"
 field_collection_plan="${VISION_NAV_FIELD_COLLECTION_PLAN:-$HOME/DroneTransfer/outgoing/replay-cases/field_collection_plan.json}"
 field_capture_preflight="${VISION_NAV_FIELD_CAPTURE_PREFLIGHT:-$HOME/DroneTransfer/outgoing/replay-cases/field_capture_preflight.json}"
@@ -15,6 +20,10 @@ gnss_denied_plan_check="${VISION_NAV_GNSS_DENIED_PLAN_CHECK:-$HOME/DroneTransfer
 threshold_tuning_report="${VISION_NAV_THRESHOLD_TUNING_REPORT:-$HOME/DroneTransfer/outgoing/replay-cases/threshold_tuning_report.json}"
 px4_params="${VISION_NAV_PX4_PARAMS:-}"
 replay_case_manifest="${VISION_NAV_REPLAY_CASE_MANIFEST:-}"
+camera_bench_dir="${VISION_NAV_CAMERA_BENCH_DIR:-}"
+mavlink_bench_dir="${VISION_NAV_MAVLINK_BENCH_DIR:-}"
+prop_off_preflight_dir="${VISION_NAV_PROP_OFF_PREFLIGHT_DIR:-}"
+training_capture_dir="${VISION_NAV_TRAINING_CAPTURE_DIR:-}"
 
 if [[ -z "$px4_params" && -f "$HOME/px4.params" ]]; then
   px4_params="$HOME/px4.params"
@@ -46,6 +55,7 @@ if [[ -d "$bundle" || -f "$bundle" ]]; then
 fi
 
 for log in \
+  "${VISION_NAV_NEURAL_DECISION_TRACE:-$neural_output_dir/decision_trace.jsonl}" \
   "${VISION_NAV_TERRAIN_RUNTIME_LOG:-$HOME/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl}" \
   "${VISION_NAV_RUNTIME_LOG:-$HOME/DroneTransfer/outgoing/runtime-match/matches.jsonl}" \
   "${VISION_NAV_TERRAIN_REPLAY_OUTPUT_LOG:-$HOME/DroneTransfer/outgoing/terrain-replay/replay_matches.jsonl}" \
@@ -55,6 +65,17 @@ do
     args+=(--log "$log")
   fi
 done
+
+# Learned-release manifests and measured calibration are lightweight evidence.
+# The large model and map assets remain opt-in through --include-map-assets.
+for evidence in "$map_release" "$model_release" "$calibration_file"; do
+  if [[ -f "$evidence" ]]; then
+    args+=(--extra "$evidence")
+  fi
+done
+if [[ -d "$neural_output_dir" ]]; then
+  args+=(--extra "$neural_output_dir")
+fi
 
 if [[ -n "$mavlink_endpoint" ]]; then
   args+=(--mavlink-endpoint "$mavlink_endpoint")
@@ -78,6 +99,9 @@ fi
 
 if [[ -n "$feature_method_benchmark" && -e "$feature_method_benchmark" ]]; then
   args+=(--feature-method-benchmark "$feature_method_benchmark")
+fi
+if [[ -n "$learned_runtime_benchmark" && -f "$learned_runtime_benchmark" ]]; then
+  args+=(--extra "$learned_runtime_benchmark")
 fi
 
 if [[ -n "$field_evidence_report" && -e "$field_evidence_report" ]]; then
@@ -132,6 +156,38 @@ fi
 
 if [[ "${VISION_NAV_SUPPORT_INCLUDE_MAP_ASSETS:-0}" == "1" ]]; then
   args+=(--include-map-assets)
+fi
+
+latest_evidence_dir() {
+  local root="$1"
+  if [[ ! -d "$root" ]]; then
+    return
+  fi
+  find "$root" -mindepth 1 -maxdepth 1 -type d -print0 | xargs -0 -r ls -dt 2>/dev/null | head -n 1 || true
+}
+
+if [[ -z "$camera_bench_dir" ]]; then
+  camera_bench_dir="$(latest_evidence_dir "$HOME/DroneTransfer/outgoing/camera-bench")"
+fi
+if [[ -z "$mavlink_bench_dir" ]]; then
+  mavlink_bench_dir="$(latest_evidence_dir "$HOME/DroneTransfer/outgoing/mavlink-bench")"
+fi
+if [[ -z "$prop_off_preflight_dir" ]]; then
+  prop_off_preflight_dir="$(latest_evidence_dir "$HOME/DroneTransfer/outgoing/prop-off-preflight")"
+fi
+if [[ -n "$camera_bench_dir" && -d "$camera_bench_dir" ]]; then
+  args+=(--extra "$camera_bench_dir")
+fi
+if [[ -n "$mavlink_bench_dir" && -d "$mavlink_bench_dir" ]]; then
+  args+=(--extra "$mavlink_bench_dir")
+fi
+if [[ -n "$prop_off_preflight_dir" && -d "$prop_off_preflight_dir" ]]; then
+  args+=(--extra "$prop_off_preflight_dir")
+fi
+if [[ -n "$training_capture_dir" && -d "$training_capture_dir" ]]; then
+  # The support bundle copies only strict validation/provenance summaries, not
+  # the raw camera frames or telemetry used by the Windows training pipeline.
+  args+=(--training-capture "$training_capture_dir")
 fi
 
 PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.support_bundle "${args[@]}"

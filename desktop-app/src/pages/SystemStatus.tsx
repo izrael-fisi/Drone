@@ -133,7 +133,7 @@ export function SystemStatus() {
     { message: `SYS_INIT: Drone Vision GCS diagnostics loaded. Runtime target: ${activeDevice?.name ?? "none selected"}.`, tone: activeDevice ? "ready" : "warning" },
     { message: `ACTIVE_MAP: ${activeRegion?.name ?? "none"} lifecycle=${activeRegion?.lifecycle_state ?? "not_selected"} bundle=${activeRegion?.active_bundle_path ?? "not activated"}.`, tone: activeRegion ? "ready" : "warning" },
     { message: `MAP_CACHE: ${downloadedRegions.length} downloaded map source${downloadedRegions.length === 1 ? "" : "s"} available.`, tone: downloadedRegions.length ? "ready" : "warning" },
-    { message: `VISION: ${pipelineConfig.pipeline.toUpperCase()} pipeline, ${pipelineConfig.featureMethod.toUpperCase()} features, ${pipelineConfig.maxFeatures} max features.`, tone: "cyan" as LogTone },
+    { message: `VISION: ${pipelineConfig.pipeline} using MegaLoc, XFeat + LighterGlue, and the temporal student.`, tone: "cyan" as LogTone },
     { message: `POSITION: ${sourceLabel(position)}; ${telemetryMessage}.`, tone: sourceTone(position) as LogTone },
     { message: `FIX_CADENCE: last=${position?.last_vision_fix_utc ?? "none"} age=${position?.seconds_since_vision_fix ?? "n/a"}s distance=${position?.meters_since_vision_fix ?? "n/a"}m.`, tone: position?.last_vision_fix_utc ? "cyan" : "warning" },
     { message: `GPS_HEALTH: ${position?.gps_health?.healthy ? "healthy" : position?.gps_health?.reason ?? "not reported"}.`, tone: position?.gps_health?.healthy ? "ready" : "warning" },
@@ -144,9 +144,9 @@ export function SystemStatus() {
   const parameterLogs: Array<{ message: string; tone: LogTone }> = [
     { message: `VISION_NAV_POSITION_UDP_PORT=${port}`, tone: "cyan" },
     { message: `VISION_PIPELINE=${pipelineConfig.pipeline}`, tone: "cyan" },
-    { message: `FEATURE_METHOD=${pipelineConfig.featureMethod}`, tone: "cyan" },
-    { message: `MATCHER_RATIO=${pipelineConfig.matcherRatio.toFixed(2)}`, tone: "cyan" },
-    { message: `MIN_MATCHES=${pipelineConfig.minMatches}`, tone: "cyan" },
+    { message: `MODEL_RELEASE=${pipelineConfig.modelReleaseId}`, tone: "cyan" },
+    { message: `CALIBRATION_ID=${pipelineConfig.calibrationId}`, tone: "cyan" },
+    { message: `INFERENCE_PROVIDER=${pipelineConfig.inferenceProvider}`, tone: "cyan" },
     { message: `ACTIVE_DEVICE=${activeDevice?.name ?? "none"}`, tone: activeDevice ? "ready" : "warning" },
   ];
 
@@ -161,12 +161,12 @@ export function SystemStatus() {
 
   const tabLogs = activeTab === "diagnostics" ? diagnosticsLogs : activeTab === "parameters" ? parameterLogs : mavlinkLogs;
   const cpuLoad = activeDevice ? (position ? 42 : 24) : 8;
-  const memoryLoad = pipelineConfig.pipeline === "neural" ? 78 : 46;
+  const memoryLoad = 78;
   const serviceRows = [
     { label: "FLIGHT_CORE", ok: Boolean(activeDevice), degraded: false },
     { label: "TELEMETRY_LINK", ok: Boolean(position), degraded: !position },
     { label: "POSITION_SOURCE", ok: Boolean(position && position.source_state !== "no_position"), degraded: position?.source_state === "gps_degraded" || position?.dead_reckoning_active },
-    { label: "VISION_RUNTIME", ok: true, degraded: pipelineConfig.pipeline === "neural" && activeDevice?.kind === "pi5" },
+    { label: "VISION_RUNTIME", ok: true, degraded: activeDevice?.kind === "pi5" },
     { label: "MAP_CACHE", ok: downloadedRegions.length > 0, degraded: false },
   ];
 

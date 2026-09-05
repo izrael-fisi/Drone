@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tiff::decoder::Decoder as TiffDecoder;
 use tiff::tags::Tag;
 
@@ -20,8 +19,10 @@ pub struct BuildDroneBundleRequest {
     pub output_dir: String,
     pub repo_path: String,
     pub pipeline: String,
-    pub feature_method: String,
-    pub max_features: u32,
+    pub model_release_id: String,
+    pub map_release_id: String,
+    pub calibration_id: String,
+    pub inference_provider: String,
     #[serde(default)]
     pub mission_plan_json: Option<String>,
     #[serde(default)]
@@ -726,7 +727,6 @@ fn affine_georef_confidence(crs: GeoTiffCrs, x_enu: (f64, f64), y_enu: (f64, f64
 }
 
 fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDroneBundleResult> {
-    validate_feature_method(&request.feature_method)?;
     validate_pipeline(&request.pipeline)?;
 
     let region_dir = PathBuf::from(&request.region_dir);
@@ -762,27 +762,17 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
     let bundle_dir = output_dir;
     let ortho_dir = bundle_dir.join("ortho");
     let elevation_bundle_dir = bundle_dir.join("elevation");
-    let features_dir = bundle_dir.join("features");
+    let index_dir = bundle_dir.join("index");
     let calibration_dir = bundle_dir.join("calibration");
     let mission_dir = bundle_dir.join("mission");
-    let high_compute_region_dir = bundle_dir.join("high_compute_region");
     std::fs::create_dir_all(&ortho_dir)?;
-    std::fs::create_dir_all(&features_dir)?;
+    std::fs::create_dir_all(&index_dir)?;
     std::fs::create_dir_all(&calibration_dir)?;
     std::fs::create_dir_all(&mission_dir)?;
-    std::fs::create_dir_all(&high_compute_region_dir)?;
 
     let orthophoto_path = ortho_dir.join("map.png");
     std::fs::copy(&satellite_path, &orthophoto_path)
         .with_context(|| format!("Cannot copy {}", satellite_path.display()))?;
-    std::fs::copy(
-        &satellite_path,
-        high_compute_region_dir.join("satellite.png"),
-    )?;
-    std::fs::copy(
-        &metadata_path,
-        high_compute_region_dir.join("metadata.json"),
-    )?;
     if elevation_bundle_dir.exists() {
         std::fs::remove_dir_all(&elevation_bundle_dir)
             .with_context(|| format!("Cannot clear {}", elevation_bundle_dir.display()))?;
@@ -855,14 +845,13 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         },
         "pipeline": {
             "selected": request.pipeline,
-            "low_compute": {
-                "name": "Classical ORB/AKAZE",
-                "features_path": "features/map_features.npz"
-            },
-            "high_compute": {
-                "name": "SuperPoint + LightGlue",
-                "region_path": "high_compute_region"
-            }
+            "profile_id": "pi5_crossview_nav_v1",
+            "model_release_id": request.model_release_id,
+            "inference_provider": request.inference_provider,
+            "global_retriever": "MegaLoc",
+            "local_correspondence": "XFeat + LighterGlue",
+            "temporal_student": "distilled_temporal_bev_bearing_v1",
+            "shadow_only": true
         },
         "terrain_bundle": {
             "version": "0.1.0",
@@ -878,14 +867,6 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
             "crs": region_metadata_georef_crs(&metadata),
             "gsd_m": metadata.gsd_m_per_px,
             "coordinate_frame": "local_enu",
-            "vertical_source": "barometer_optional",
-            "sensors": {
-                "barometer": {
-                    "enabled_optional": true,
-                    "source": "mavlink_or_replay",
-                    "required": false
-                }
-            },
             "runtime": "vision_imu_map"
         },
         "orthophoto": {
@@ -900,10 +881,17 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
             "georef_confidence": region_metadata_georef_confidence(&metadata),
             "georef_crs": region_metadata_georef_crs(&metadata)
         },
-        "features": {
-            "path": "features/map_features.npz",
-            "method": request.feature_method,
-            "max_features": request.max_features
+        "learned_map": {
+            "schema_version": "vision_nav_map_release_v2_candidate",
+            "map_release_id": request.map_release_id,
+            "model_release_id": request.model_release_id,
+            "calibration_id": request.calibration_id,
+            "cog_path": "ortho/map.png",
+            "stac_path": "manifest.stac.json",
+            "tile_index_path": "index/tiles.sqlite",
+            "retrieval_index_path": "index/megaloc.faiss",
+            "xfeat_index_path": "index/xfeat_tiles.sqlite",
+            "artifact_readiness": "awaiting_learned_map_compiler"
         },
         "calibration": calibration,
         "source_region": {
@@ -922,9 +910,9 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
             "georef_crs": region_metadata_georef_crs(&metadata)
         },
         "notes": [
-            "Low-compute Pi runtime uses the classical feature index.",
-            "Terrain runtime uses tiled map descriptors for coarse-to-local vision matching.",
-            "High-compute runtimes can use high_compute_region/satellite.png and metadata.json with SuperPoint + LightGlue."
+            "This candidate contains georeferenced imagery and mission data but no classical descriptors.",
+            "Compile MegaLoc retrieval embeddings and XFeat tile features with the learned map compiler before activation.",
+            "The Pi runtime rejects this map until its learned artifacts and calibration compatibility are complete."
         ]
     });
     std::fs::write(
@@ -932,75 +920,18 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         serde_json::to_string_pretty(&manifest)? + "\n",
     )?;
 
-    let python = std::env::var("DRONE_DESKTOP_PYTHON").unwrap_or_else(|_| "python3".to_string());
-    let command_display = format!(
-        "{} -m vision_nav.build_terrain_bundle --bundle {} --write-checksums",
-        python,
-        shellish(&bundle_dir)
-    );
-    let python_path = repo_path.join("src");
-    let output = Command::new(&python)
-        .current_dir(&repo_path)
-        .env("PYTHONPATH", python_path)
-        .arg("-m")
-        .arg("vision_nav.build_terrain_bundle")
-        .arg("--bundle")
-        .arg(&bundle_dir)
-        .arg("--write-checksums")
-        .output()
-        .with_context(|| format!("Failed to run {}", python))?;
-
-    let exit_code = output.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    if !output.status.success() {
-        return Err(anyhow!(
-            "Bundle manifest was written, but feature build failed with exit code {}.\n{}\n{}",
-            exit_code,
-            stdout,
-            stderr
-        ));
-    }
-
-    let terrain_output: Option<serde_json::Value> = serde_json::from_str(&stdout).ok();
-    let terrain_index_path = terrain_output
-        .as_ref()
-        .and_then(|value| value.pointer("/tile_index/path"))
-        .and_then(|value| value.as_str())
-        .map(|value| value.to_string());
-    let terrain_config_path = terrain_output
-        .as_ref()
-        .and_then(|value| value.get("config_path"))
-        .and_then(|value| value.as_str())
-        .map(|value| value.to_string());
-    let stac_manifest_path = terrain_output
-        .as_ref()
-        .and_then(|value| value.get("stac_manifest_path"))
-        .and_then(|value| value.as_str())
-        .map(|value| value.to_string());
-    let terrain_tile_count = terrain_output
-        .as_ref()
-        .and_then(|value| value.pointer("/tile_index/tile_count"))
-        .and_then(|value| value.as_u64());
-    let terrain_feature_count = terrain_output
-        .as_ref()
-        .and_then(|value| value.pointer("/tile_index/feature_count"))
-        .and_then(|value| value.as_u64());
-    let terrain_gsd_m = terrain_output
-        .as_ref()
-        .and_then(|value| value.pointer("/terrain_bundle/gsd_m"))
-        .and_then(|value| value.as_f64())
-        .or(Some(metadata.gsd_m_per_px));
-    let terrain_tile_size_px = terrain_output
-        .as_ref()
-        .and_then(|value| value.pointer("/terrain_bundle/tile_size_px"))
-        .and_then(|value| value.as_u64())
-        .map(|value| value as u32)
-        .or(Some(512));
-    let geospatial_health = terrain_output
-        .as_ref()
-        .and_then(|value| value.get("geospatial_health"))
-        .cloned();
+    let command_display = "desktop learned map candidate package".to_string();
+    let stdout = "Created learned-map candidate. Run the research map compiler to add MegaLoc and XFeat artifacts before activation.".to_string();
+    let stderr = String::new();
+    let terrain_index_path = Some(index_dir.join("tiles.sqlite").to_string_lossy().into_owned());
+    let terrain_config_path = None;
+    let stac_manifest_path = None;
+    let terrain_tile_count = None;
+    let terrain_feature_count = None;
+    let terrain_gsd_m = Some(metadata.gsd_m_per_px);
+    let terrain_tile_size_px = Some(512);
+    let geospatial_health = Some(json!({"status": "degraded", "reason": "awaiting_learned_map_compiler", "map_quality": {"estimated_pi_runtime_cost": "unknown"}}));
+    let exit_code = 0;
 
     Ok(BuildDroneBundleResult {
         bundle_dir: bundle_dir.to_string_lossy().into_owned(),
@@ -1008,8 +939,8 @@ fn inner_build_drone_bundle(request: BuildDroneBundleRequest) -> Result<BuildDro
         stac_manifest_path,
         orthophoto_path: orthophoto_path.to_string_lossy().into_owned(),
         features_path: bundle_dir
-            .join("features")
-            .join("map_features.npz")
+            .join("index")
+            .join("xfeat_tiles.sqlite")
             .to_string_lossy()
             .into_owned(),
         terrain_index_path,
@@ -1144,22 +1075,11 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-fn validate_feature_method(method: &str) -> Result<()> {
-    match method {
-        "orb" | "akaze" | "sift" => Ok(()),
-        other => Err(anyhow!("Unsupported feature method: {other}")),
-    }
-}
-
 fn validate_pipeline(pipeline: &str) -> Result<()> {
     match pipeline {
-        "classical" | "neural" => Ok(()),
+        "pi5_crossview_nav_v1" => Ok(()),
         other => Err(anyhow!("Unsupported pipeline: {other}")),
     }
-}
-
-fn shellish(path: &Path) -> String {
-    path.to_string_lossy().replace(' ', "\\ ")
 }
 
 #[cfg(test)]

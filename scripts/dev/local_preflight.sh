@@ -100,10 +100,14 @@ for path in \
   README.md \
   docs/project-summary.md \
   docs/project-plan.md \
+  docs/legacy-prototype-components.md \
+  docs/first-learned-shadow-run.md \
   docs/stable-project-scaffold.md \
   docs/software-download-checklist.md \
   docs/raspberry-pi-setup.md \
   docs/desktop-app.md \
+  docs/operator-handoff.md \
+  docs/px4-external-vision-bench.md \
   docs/holybro-x500v2-hardware-data-inputs.md \
   docs/holybro-x500v2-prop-off-hardware-test.md
 do
@@ -111,7 +115,7 @@ do
 done
 
 if rg -n "make px4_sitl|gz_x500|ros2 launch|Micro XRCE|PX4 SITL Receiver Capture|Native rosbag2 Review|ROS Bag Validation" \
-  README.md docs desktop-app/src/pages desktop-app/src/components >/tmp/vision-nav-stale-scaffold.txt; then
+  README.md docs/operator-handoff.md docs/px4-external-vision-bench.md desktop-app/src/pages desktop-app/src/components >/tmp/vision-nav-stale-scaffold.txt; then
   cat /tmp/vision-nav-stale-scaffold.txt >&2
   echo "Active scaffold still contains required-workflow ROS/SITL wording." >&2
   exit 1

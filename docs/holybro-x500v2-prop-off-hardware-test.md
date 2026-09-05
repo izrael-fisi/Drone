@@ -69,18 +69,23 @@ git pull
 ./scripts/pi/first_run_checks.sh
 ```
 
-Prepare or select a test map bundle from the desktop Mission Planner and upload
-it to:
+For the learned-shadow milestone, prepare an approved model release, a learned
+MapRelease, and a measured camera calibration. Copy them to:
 
 ```text
-~/drone-data/map_bundles/mission_bundle
+~/drone-data/model_releases/pi5_crossview_nav_v1/model_release.json
+~/drone-data/map_releases/active/map_release.json
+~/drone-data/calibration/down_camera.yaml
 ```
 
 Validate on the Pi:
 
 ```bash
 cd ~/Drone
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh
+VISION_NAV_MAP_RELEASE=$HOME/drone-data/map_releases/active/map_release.json \
+VISION_NAV_MODEL_RELEASE=$HOME/drone-data/model_releases/pi5_crossview_nav_v1/model_release.json \
+VISION_NAV_CALIBRATION_ID=down-camera-v1 \
+./scripts/pi/validate_neural_runtime.sh
 ```
 
 ## Step 1: Mechanical And Wiring Inspection
@@ -137,7 +142,7 @@ On the Pi:
 cd ~/Drone
 ./scripts/pi/collect_pi_info.sh
 ./scripts/pi/check_global_shutter_camera.sh
-./scripts/pi/smoke_test_vision.sh
+./scripts/pi/capture_camera_bench.sh
 ```
 
 Expected outputs:
@@ -145,7 +150,7 @@ Expected outputs:
 ```text
 ~/DroneTransfer/outgoing/pi-info/
 ~/DroneTransfer/outgoing/camera-health/camera_health_report.json
-~/DroneTransfer/outgoing/vision-smoke/
+~/DroneTransfer/outgoing/camera-bench/<timestamp>/camera_bench_report.json
 ```
 
 If the lens is manual focus/manual aperture:
@@ -153,7 +158,8 @@ If the lens is manual focus/manual aperture:
 - Point the camera at high-texture ground or a printed map.
 - Adjust focus until the camera-health image looks sharp.
 - Avoid very small aperture settings that force blur from low light.
-- Re-run camera health after adjustment.
+- Re-run the multi-frame camera bench after adjustment. It requires every frame
+  to pass sharpness, texture/edge-content, and exposure checks by default.
 
 ## Step 4: Camera Calibration
 
@@ -166,6 +172,7 @@ source ~/drone_vision_nav_venv/bin/activate
 vision-nav-calibrate-camera \
   --images "$HOME/DroneTransfer/outgoing/calibration/down_camera/*.jpg" \
   --output config/camera/down_camera.yaml \
+  --calibration-id down-camera-v1 \
   --camera-name down_camera \
   --cols 9 \
   --rows 6 \
@@ -198,7 +205,7 @@ Do not use multiple companion links at once until one link is proven.
 On the Pi, set the endpoint in the environment or config. Example only:
 
 ```bash
-export VISION_NAV_MAVLINK_ENDPOINT=/dev/ttyACM0
+export VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600
 ```
 
 Then run:
@@ -206,13 +213,40 @@ Then run:
 ```bash
 cd ~/Drone
 ./scripts/pi/check_mavlink_endpoint.sh
+
+# Capture 15 seconds of read-only telemetry evidence. This sends no PX4 command.
+VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
+./scripts/pi/capture_mavlink_bench.sh
 ```
 
 Pass criteria:
 
-- heartbeat is detected, or the script clearly reports the endpoint problem
+- heartbeat is observed
+- PX4 `ATTITUDE` cadence is at least 20 Hz with no gap longer than 150 ms
+- `mavlink_bench_report.json` records the endpoint, raw telemetry path, message
+  counts, attitude cadence, gaps, and PX4-native timestamp domains
 - no arming or motor command is sent
 - endpoint path and baud assumptions are recorded
+
+## Step 5.5: Prop-Off Evidence Decision
+
+After the camera and MAVLink bench reports exist, make the explicit bench
+decision. This is still read-only, but it requires an operator attestation that
+the propellers are physically removed:
+
+```bash
+cd ~/Drone
+VISION_NAV_PROP_OFF_CONFIRMED=1 \
+./scripts/pi/run_prop_off_preflight.sh
+```
+
+The report identifies one of three states:
+
+- `not_ready`: resolve camera, Pixhawk telemetry, or safety-attestation failures.
+- `ready_for_calibration`: the physical data links are healthy; create measured
+  intrinsics and camera-to-body extrinsics next.
+- `ready_for_training_capture`: both measured camera records match and the
+  system can record a synchronized training session.
 
 ## Step 6: PX4 Parameter Check
 
@@ -235,52 +269,75 @@ Pass criteria:
 - GNSS-denied warnings/errors are understood
 - no PX4 parameters are auto-modified by this repo
 
-## Step 7: Terrain Runtime Logging-Only Check
+## Step 7: Learned Shadow Runtime Check
 
 Keep propellers removed.
 
-Run without MAVLink output first:
+Run one saved, calibrated test frame first. The output remains diagnostic only:
 
 ```bash
 cd ~/Drone
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
-VISION_NAV_COUNT=30 \
-./scripts/pi/run_terrain_nav_loop.sh
+VISION_NAV_MAP_RELEASE=$HOME/drone-data/map_releases/active/map_release.json \
+VISION_NAV_MODEL_RELEASE=$HOME/drone-data/model_releases/pi5_crossview_nav_v1/model_release.json \
+VISION_NAV_MODEL_ARTIFACT_ROOT=$HOME/drone-data/model_releases/pi5_crossview_nav_v1 \
+VISION_NAV_CALIBRATION_ID=down-camera-v1 \
+VISION_NAV_CALIBRATION_FILE=$HOME/drone-data/calibration/down_camera.yaml \
+VISION_NAV_SHADOW_FRAME=$HOME/drone-data/test-frame.jpg \
+./scripts/pi/run_vision_nav_shadow.sh --once
 ```
 
 Then:
 
 ```bash
-VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match \
+VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/neural-shadow \
 ./scripts/pi/read_runtime_status.sh
 ```
 
 Pass criteria:
 
-- `terrain_matches.jsonl` exists
+- `decision_trace.jsonl` exists
 - `runtime_status.json` exists
-- status is accepted, degraded, rejected, or failed with clear reason
-- no MAVLink send is attempted unless explicitly configured
+- `shadow_mode` is true and `px4_publication.enabled` is false
+- status is `TRACKING`, `RECOVERING`, or `NO_GLOBAL_FIX` with a clear reason
+- no external-vision MAVLink send is attempted
 
-## Step 8: MAVLink Output Dry Bench
+## Step 8: MAVLink Telemetry Dry Bench
 
-Only after Step 7 works, run a short MAVLink-enabled test:
+Only after Step 7 works, run live camera plus read-only attitude collection:
 
 ```bash
 cd ~/Drone
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
-VISION_NAV_MAVLINK_ENDPOINT=/dev/ttyACM0 \
-VISION_NAV_MAVLINK_MESSAGE=odometry \
-VISION_NAV_COUNT=30 \
-./scripts/pi/run_terrain_nav_loop.sh
+VISION_NAV_CAMERA_BACKEND=auto \
+VISION_NAV_CALIBRATION_FILE=$HOME/drone-data/calibration/down_camera.yaml \
+VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
+./scripts/pi/run_vision_nav_shadow.sh --once
 ```
 
 Pass criteria:
 
-- logs include external-position health
-- accepted measurements are sent only when the estimator result is valid
-- rejected/failed measurements are not sent as trusted external vision
+- logs include PX4 ATTITUDE telemetry health
+- the learned trace records a disabled publication decision
+- no learned estimate is sent to PX4
 - QGroundControl/PX4 shows no unexpected arming or mode behavior
+
+## Step 8.5: Prepare The First Training Capture
+
+After measured camera intrinsics, camera-to-body transform, and the first
+ReferenceMapRelease exist, run the combined preparation workflow. Keep the
+props removed and vehicle disarmed:
+
+```bash
+cd ~/Drone
+VISION_NAV_PROP_OFF_CONFIRMED=1 \
+VISION_NAV_REFERENCE_MAP=$HOME/drone-data/reference-maps/first-site/reference_map.json \
+VISION_NAV_CALIBRATION_ID=down-camera-v1 \
+VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
+VISION_NAV_TRAINING_SESSION_ID=first-field-capture \
+./scripts/pi/prepare_first_training_capture.sh
+```
+
+This is the required preparation path before the first synchronized
+camera/PX4 training session. It only gathers evidence and validates readiness.
 
 ## Step 9: Support Bundle
 
@@ -288,6 +345,7 @@ Create the bench evidence bundle:
 
 ```bash
 cd ~/Drone
+VISION_NAV_TRAINING_CAPTURE_DIR=$HOME/drone-data/captures/first-field-capture \
 ./scripts/pi/create_support_bundle.sh
 ```
 
@@ -297,11 +355,19 @@ The bundle should contain:
 
 - Pi info
 - camera health
-- terrain bundle health
+- camera bench report and captured camera-bench frames
+- learned map/model release health
 - runtime log
 - runtime status
-- MAVLink check output if available
+- MAVLink endpoint check output if available
+- `mavlink_bench_report.json` and `mavlink_telemetry.jsonl` from the prop-off
+  telemetry bench capture
+- `prop_off_preflight_report.json`
 - PX4 parameter check output
+- a strict training-capture summary when `VISION_NAV_TRAINING_CAPTURE_DIR` is
+  provided. It includes the session manifest, checksums, camera/PX4 timing, and
+  validation result, but intentionally excludes raw frames and telemetry. Keep
+  those in the training transfer path.
 
 ## Stop Criteria
 

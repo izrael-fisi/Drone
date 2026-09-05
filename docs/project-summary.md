@@ -3,8 +3,8 @@
 ## Project Vision
 
 Build a low-cost drone navigation stack that can estimate position in
-GNSS-denied environments using onboard computer vision, flight-controller
-telemetry, optional altitude sensing, and pre-installed georeferenced maps.
+GNSS-denied environments using onboard learned computer vision,
+flight-controller attitude telemetry, and pre-installed georeferenced maps.
 
 The project is not a general autonomy, chatbot, ROS middleware, or simulation
 project. The active scope is now hardware-first GNSS-denied vision navigation
@@ -27,6 +27,12 @@ simulation or ROS 2.
 Produce a reliable navigation estimate when GNSS is unavailable, degraded, or
 intentionally ignored.
 
+The active navigation runtime is `FramePacket -> learned shadow inference ->
+decision trace/runtime status`. It keeps map coordinates internally in ENU,
+uses named camera calibration and monotonic timestamps, and fails closed on
+stale, ambiguous, invalid, or incompatible evidence. `Px4VisionBridge` remains
+future-gated; the current release never publishes vehicle position.
+
 The navigation estimate should include:
 
 - local east/north/down or east/north position where validated
@@ -37,16 +43,19 @@ The navigation estimate should include:
 
 ## Preferred Output Strategy
 
-The default output path is MAVLink to PX4/Pixhawk.
+The future vehicle output path is MAVLink `ODOMETRY` to PX4/Pixhawk, only after
+the new runtime reaches `TRACKING` with finite/fresh covariance, a compatible
+map/model/calibration release, and healthy transport. The existing ORB/AKAZE
+terrain loops are map/replay evidence paths and do not publish PX4 vision.
 
 Preferred outputs:
 
-1. MAVLink `ODOMETRY` for PX4 external-vision bench/product readiness.
-2. MAVLink `VISION_POSITION_ESTIMATE` only as a compatibility/debug path.
-3. MAVLink `GPS_INPUT` only when intentionally presenting the output as a
-   GPS-like global source, with quality clearly marked.
-4. Optional NMEA adapter only for downstream systems that specifically require
-   NMEA sentences.
+1. MAVLink `ODOMETRY` from `Px4VisionBridge` after the architecture validation
+   ladder has been completed.
+2. GPS stays an independent telemetry source for comparison/fallback policy;
+   it is not rewritten by this project.
+3. Optional NMEA remains a downstream-format adapter, never a navigation
+   authority.
 
 ## Planned Hardware
 
@@ -59,7 +68,6 @@ Known hardware target:
   before GNSS-denied operation
 - SiK telemetry radio from the kit for QGroundControl/PX4 parameter/log access
 - Raspberry Pi camera or global-shutter camera for downward map matching
-- Optional Pixhawk barometer telemetry for relative vertical confidence
 - Optional Raspberry Pi AI HAT+ only after CPU benchmarks prove it is needed
 
 ## Software Architecture
@@ -67,12 +75,12 @@ Known hardware target:
 ```text
 Drone code operation
   -> camera capture and calibration
-  -> terrain bundle loading and tile retrieval
-  -> ORB/AKAZE feature matching
-  -> RANSAC geometry checks
-  -> estimator confidence/covariance
+  -> versioned map release and calibrated frame ingress
+  -> learned MegaLoc recovery retrieval and XFeat/LighterGlue correspondence
+  -> distilled temporal BEV/bearing context and robust geometry
+  -> hypothesis bank and graph estimate with covariance
   -> runtime log and status artifacts
-  -> MAVLink external-vision output to Pixhawk when enabled
+  -> PX4 ODOMETRY only through the versioned publication gate
 
 Ground control / mission planner app
   -> import/select map source

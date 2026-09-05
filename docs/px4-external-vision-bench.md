@@ -1,10 +1,11 @@
-# PX4 External Vision Hardware Bench Guide
+# PX4 External Vision Hardware Bench Guide (Future Milestone)
 
 This guide is for real Pixhawk hardware bench testing. It does not use PX4
 SITL, Gazebo, or ROS 2.
 
-Use it after the basic Holybro X500 V2 prop-off wiring and QGroundControl checks
-are complete.
+Use it only after the learned shadow runtime has passed held-out replay,
+ONNX-parity, Pi thermal, and real prop-off capture reviews. It is not part of
+the current data-collection or learned-model development milestone.
 
 ## Safety Scope
 
@@ -15,31 +16,25 @@ are complete.
 - No raw motor commands from this repo.
 - No PX4 parameter auto-writes from this repo.
 
-## Preferred Message
+## Output Boundary
 
-Use MAVLink `ODOMETRY` for PX4 external-vision readiness:
-
-```bash
-VISION_NAV_MAVLINK_MESSAGE=odometry
-```
-
-Use `vision_position_estimate` only for compatibility/debug:
-
-```bash
-VISION_NAV_MAVLINK_MESSAGE=vision_position_estimate
-```
+The current learned runtime is shadow-only. It will not publish a match,
+candidate, or estimate to PX4. A future controlled output path may use MAVLink
+`ODOMETRY` from `VisionNavigationRuntime` through `Px4VisionBridge`, but only
+after `TRACKING`, freshness, covariance, compatibility, and transport-health
+gates pass. Do not substitute `VISION_POSITION_ESTIMATE` as a shortcut.
 
 ## Hardware Inputs
 
 Required before external-vision output:
 
-- validated terrain bundle
+- compatible learned `MapRelease` and `ModelRelease`
 - camera health report
 - camera calibration
 - camera-to-body metadata
 - Pixhawk telemetry endpoint
 - PX4 parameter export
-- logging-only runtime capture that produces `terrain_matches.jsonl`
+- learned shadow trace that records disabled PX4 publication
 
 ## Endpoint Check
 
@@ -47,7 +42,7 @@ On the Pi:
 
 ```bash
 cd ~/Drone
-export VISION_NAV_MAVLINK_ENDPOINT=/dev/ttyACM0
+export VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600
 ./scripts/pi/check_mavlink_endpoint.sh
 ```
 
@@ -71,46 +66,44 @@ VISION_NAV_PX4_PARAMS=$HOME/px4.params ./scripts/pi/check_px4_params.sh
 
 The checker reports readiness issues but does not modify the controller.
 
-## Logging-Only Runtime
+## Current Shadow Runtime Evidence
 
-Run this before enabling MAVLink send:
+Run this before any future external-vision integration:
 
 ```bash
 cd ~/Drone
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
-VISION_NAV_COUNT=30 \
-./scripts/pi/run_terrain_nav_loop.sh
+VISION_NAV_MAP_RELEASE=$HOME/drone-data/map_releases/active/map_release.json \
+VISION_NAV_MODEL_RELEASE=$HOME/drone-data/model_releases/pi5_crossview_nav_v1/model_release.json \
+VISION_NAV_MODEL_ARTIFACT_ROOT=$HOME/drone-data/model_releases/pi5_crossview_nav_v1 \
+VISION_NAV_CALIBRATION_ID=down-camera-v1 \
+VISION_NAV_CALIBRATION_FILE=$HOME/drone-data/calibration/down_camera.yaml \
+VISION_NAV_SHADOW_FRAME=$HOME/drone-data/test-frame.jpg \
+./scripts/pi/run_vision_nav_shadow.sh --once
 ```
 
 Then:
 
 ```bash
-VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match \
+VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/neural-shadow \
 ./scripts/pi/read_runtime_status.sh
 ```
 
 Proceed only if the log/status output is understandable and no safety issue is
 present.
 
-## MAVLink-Enabled Prop-Off Run
+## MAVLink Telemetry Prop-Off Run
 
 ```bash
 cd ~/Drone
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
-VISION_NAV_MAVLINK_ENDPOINT=/dev/ttyACM0 \
-VISION_NAV_MAVLINK_MESSAGE=odometry \
-VISION_NAV_POSITION_UDP_TARGET=255.255.255.255:17660 \
-VISION_NAV_COUNT=30 \
-./scripts/pi/run_terrain_nav_loop.sh
+VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
+./scripts/pi/capture_mavlink_bench.sh
 ```
 
 Pass criteria:
 
-- accepted measurements are sent only when estimator confidence passes gates
-- rejected/failed measurements are logged but not sent as trusted updates
-- runtime log includes external-position health
-- Mission Planner receives live position packets and labels GPS or vision as
-  the active position source
+- Pixhawk heartbeat, attitude, and GPS telemetry are captured as bench evidence
+- no PX4 external-vision message is sent
+- every learned runtime decision remains publication-disabled
 - QGroundControl/PX4 shows no unexpected arming, mode, or motor behavior
 
 ## Evidence To Save
@@ -124,13 +117,13 @@ cd ~/Drone
 
 The bundle should include:
 
-- mission bundle health
-- runtime terrain log
+- learned map/model release health
+- learned shadow decision trace
 - runtime status
 - camera health
 - PX4 parameter report
 - MAVLink endpoint check output if available
-- external-position health from runtime logs
+- MAVLink telemetry health from runtime logs
 
 ## Do Not Proceed If
 
@@ -141,5 +134,5 @@ The bundle should include:
 - GPS/compass/power module status is unknown
 - Pi cannot read MAVLink heartbeat/telemetry
 - camera focus or mount is not stable
-- map bundle validation fails
+- map/model/calibration compatibility validation fails
 - runtime output is low confidence but still being treated as valid

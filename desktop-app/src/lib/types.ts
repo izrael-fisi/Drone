@@ -13,8 +13,8 @@ export type MapSource = TileSource | "uploaded" | "folder";
 
 export type DeviceKind = "pi5" | "local";
 export type AuthMethod = "password" | "key";
-export type VisionPipeline = "classical" | "neural";
-export type FeatureMethod = "orb" | "akaze" | "sift";
+export type VisionPipeline = "pi5_crossview_nav_v1";
+export type FeatureMethod = "xfeat_lighterglue";
 export type RuntimeProfileId = "pi5_full" | "pi5_low_memory" | "desktop_high_compute";
 export type CameraProfileId = "rgb_global_shutter" | "rgb_rolling_shutter" | "thermal_low_res" | "eo_generic";
 export type MapLifecycleState = "local" | "built" | "uploaded" | "active" | "stale" | "failed";
@@ -86,8 +86,8 @@ export interface Region {
 export interface ModelSet {
   id: string;
   name: string;
-  superpoint_path: string;
-  lightglue_path: string;
+  model_release_path: string;
+  inference_profile: VisionPipeline;
   is_active: boolean;
   downloaded: boolean;
 }
@@ -172,6 +172,15 @@ export interface DronePositionUpdate {
     tile_id?: string | null;
     inliers?: number | null;
     reprojection_error_px?: number | null;
+  };
+  learned_runtime?: {
+    profile_id?: string | null;
+    model_release_id?: string | null;
+    provider?: string | null;
+    provider_ready?: boolean | null;
+    navigation_mode?: "TRACKING" | "RECOVERING" | "NO_GLOBAL_FIX" | string;
+    shadow_mode?: boolean | null;
+    compatibility?: { compatible?: boolean; reasons?: string[] } | null;
   };
 }
 
@@ -1414,8 +1423,10 @@ export interface BuildDroneBundleRequest {
   output_dir: string;
   repo_path: string;
   pipeline: VisionPipeline;
-  feature_method: FeatureMethod;
-  max_features: number;
+  model_release_id: string;
+  map_release_id: string;
+  calibration_id: string;
+  inference_provider: "onnxruntime_cpu" | "hailo_ai_hat_optional";
   mission_plan_json?: string;
   qgc_plan_json?: string;
   runtime_profile?: RuntimeProfileId;

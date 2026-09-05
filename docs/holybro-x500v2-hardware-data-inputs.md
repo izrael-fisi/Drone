@@ -124,6 +124,7 @@ source ~/drone_vision_nav_venv/bin/activate
 vision-nav-calibrate-camera \
   --images "$HOME/DroneTransfer/outgoing/calibration/down_camera/*.jpg" \
   --output config/camera/down_camera.yaml \
+  --calibration-id down-camera-v1 \
   --camera-name down_camera \
   --cols 9 \
   --rows 6 \
@@ -132,6 +133,22 @@ vision-nav-calibrate-camera \
 ```
 
 Adjust the chessboard values to match the real board.
+
+Then, after the mounted camera and Pixhawk reference point are fixed, create a
+measured camera-to-body transform. Use the measured translation and unit
+quaternion from the mount procedure; do not use the placeholder transform:
+
+```bash
+vision-nav-create-camera-extrinsics \
+  --output config/camera/camera_to_body.yaml \
+  --extrinsic-id x500-down-camera-mount-v1 \
+  --camera-calibration-id down-camera-v1 \
+  --translation-m MEASURED_X MEASURED_Y MEASURED_Z \
+  --rotation-quat-xyzw MEASURED_QX MEASURED_QY MEASURED_QZ MEASURED_QW \
+  --measurement-method measured_mount_jig_v1 \
+  --translation-sigma-m 0.003 \
+  --rotation-sigma-deg 1.0
+```
 
 ## GPS Data Inputs
 
@@ -191,27 +208,70 @@ VISION_NAV_PX4_PARAMS=$HOME/px4.params ./scripts/pi/check_px4_params.sh
 
 The output belongs in the support bundle.
 
-## Mission Bundle Data Inputs
+## Learned Shadow Data Inputs
 
 Before hardware runtime tests, prepare:
 
 ```text
-~/drone-data/map_bundles/mission_bundle/manifest.json
-~/drone-data/map_bundles/mission_bundle/ortho/map.png
-~/drone-data/map_bundles/mission_bundle/index/tiles.sqlite
-~/drone-data/map_bundles/mission_bundle/features/map_features.npz
-~/drone-data/map_bundles/mission_bundle/config/terrain_nav.yaml
-~/drone-data/map_bundles/mission_bundle/bundle_health.json
-~/drone-data/map_bundles/mission_bundle/checksums.sha256
+~/drone-data/model_releases/pi5_crossview_nav_v1/model_release.json
+~/drone-data/model_releases/pi5_crossview_nav_v1/models/*.onnx
+~/drone-data/map_releases/active/map_release.json
+~/drone-data/map_releases/active/index/megaloc.npz  # default portable index
+# or ~/drone-data/map_releases/active/index/megaloc.faiss after Pi FAISS validation
+~/drone-data/map_releases/active/index/megaloc_tiles.json
+~/drone-data/map_releases/active/index/tiles.sqlite
+~/drone-data/map_releases/active/index/xfeat_tiles.json
+~/drone-data/map_releases/active/index/xfeat_tiles.sqlite
+~/drone-data/map_releases/active/features/xfeat/*.npz
+~/drone-data/calibration/down_camera.yaml
+~/drone-data/calibration/camera_to_body.yaml
 ```
 
 Validate:
 
 ```bash
 cd ~/Drone
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle ./scripts/pi/validate_terrain_bundle.sh
-vision-nav-map-health --bundle $HOME/drone-data/map_bundles/mission_bundle --json
+VISION_NAV_MAP_RELEASE=$HOME/drone-data/map_releases/active/map_release.json \
+./scripts/pi/validate_learned_map_assets.sh
+
+VISION_NAV_MODEL_RELEASE=$HOME/drone-data/model_releases/pi5_crossview_nav_v1/model_release.json \
+VISION_NAV_MODEL_ARTIFACT_ROOT=$HOME/drone-data/model_releases/pi5_crossview_nav_v1 \
+./scripts/pi/validate_neural_model.sh
+
+VISION_NAV_MAP_RELEASE=$HOME/drone-data/map_releases/active/map_release.json \
+VISION_NAV_MODEL_RELEASE=$HOME/drone-data/model_releases/pi5_crossview_nav_v1/model_release.json \
+VISION_NAV_CALIBRATION_ID=down-camera-v1 \
+./scripts/pi/validate_neural_runtime.sh
 ```
+
+For a training capture, keep props removed and use the direct Pi camera rather
+than imported image files. The default recorder requires a measured
+calibration/extrinsic pair, PX4 ATTITUDE evidence, and a per-frame camera
+sensor timestamp:
+
+```bash
+cd ~/Drone
+VISION_NAV_PROP_OFF_PREFLIGHT_REPORT=$HOME/DroneTransfer/outgoing/prop-off-preflight/<timestamp>/prop_off_preflight_report.json \
+VISION_NAV_REFERENCE_MAP=$HOME/drone-data/reference-maps/first-site/reference_map.json \
+VISION_NAV_CALIBRATION_ID=down-camera-v1 \
+VISION_NAV_TRAINING_SESSION_ID=first-field-capture \
+./scripts/pi/preflight_training_capture.sh
+
+# Run only after the preflight passes, using the same session ID.
+VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
+VISION_NAV_CALIBRATION_ID=down-camera-v1 \
+VISION_NAV_REFERENCE_MAP_ID=field-area@0.1.0 \
+VISION_NAV_MAP_REFERENCE_KIND=reference_map_release \
+VISION_NAV_CAMERA_BACKEND=picamera2 \
+./scripts/pi/record_training_capture.sh
+```
+
+The saved session records the camera capture midpoint used to pair PX4
+attitude, the unmodified sensor timestamp, and a bounded MAVLink `TIMESYNC`
+audit. The audit measures PX4-to-Pi timing offset and transport dispersion; it
+does not command PX4 or establish a camera/PX4 clock model by itself. A capture
+with missing sensor timestamps or failed time-sync evidence is a bench artifact,
+not training data.
 
 ## Support Bundle Data Inputs
 
@@ -219,10 +279,11 @@ For the first prop-off bench test, the support bundle should include:
 
 - Pi info
 - camera health report
-- terrain bundle health
+- learned MapRelease and ModelRelease manifests
 - PX4 parameter report
 - MAVLink endpoint check
-- runtime `terrain_matches.jsonl`
+- MAVLink bench report with heartbeat, attitude cadence, and raw telemetry
+- runtime `decision_trace.jsonl`
 - runtime `runtime_status.json`
 - field log capture report if the app/Pi flow creates one
 

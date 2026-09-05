@@ -11,6 +11,33 @@ instructions or hardware-readiness criteria.
 
 ## Drone Code Operation
 
+### Canonical navigation boundary
+
+New navigation work belongs in the learned shadow architecture, not in the
+legacy single-frame terrain loop:
+
+```text
+FramePacket -> VisionNavigationRuntime -> NavEstimate -> Px4VisionBridge
+```
+
+`FramePacket` carries a monotonic timestamp, clock domain, calibration ID, and
+camera model. The runtime joins each frame with read-only PX4 attitude,
+requires a compatible ModelRelease and MapRelease, and records learned
+retrieval, correspondence, geometry, and temporal evidence. It returns
+`NO_GLOBAL_FIX` or `RECOVERING` when evidence is stale or ambiguous.
+`Px4VisionBridge` remains a future output boundary; the current runtime is
+shadow-only and cannot publish vehicle position.
+
+The root-level `terrain_matcher.py` / `run_terrain_loop.py` path remains useful
+for map build evaluation, recorded replay, and camera bench evidence. It does
+not publish vision observations to PX4.
+
+Use `vision-nav-create-map-release` after a map's feature/cache build to write
+its immutable release manifest. The release records the ENU origin, GSD, tile
+index, model versions, compatible camera calibration IDs, and checksums. The
+runtime must reject a partial or incompatible release before it reaches the PX4
+boundary.
+
 Runtime source:
 
 ```text
@@ -33,27 +60,37 @@ config/camera/camera_to_body.yaml
 config/pi/vision-nav.env.example
 ```
 
-Expected runtime data:
+Expected active runtime data:
 
 ```text
-~/drone-data/map_bundles/mission_bundle/
-~/DroneTransfer/outgoing/terrain-match/
+~/drone-data/model_releases/pi5_crossview_nav_v1/
+~/drone-data/map_releases/active/
+~/drone-data/calibration/
+~/DroneTransfer/outgoing/neural-shadow/
 ~/DroneTransfer/outgoing/support-bundles/
 ~/DroneTransfer/outgoing/camera-health/
 ~/DroneTransfer/outgoing/replay-cases/
 ```
 
-Stable commands:
+Active Pi commands:
 
 ```bash
 ./scripts/pi/first_run_checks.sh
-./scripts/pi/validate_terrain_bundle.sh
-./scripts/pi/run_terrain_nav_loop.sh
+./scripts/pi/run_prop_off_preflight.sh
+./scripts/pi/capture_calibration_set.sh
+./scripts/pi/record_training_capture.sh
+./scripts/pi/validate_neural_model.sh
+./scripts/pi/validate_neural_runtime.sh
+./scripts/pi/run_vision_nav_shadow.sh --once
 ./scripts/pi/read_runtime_status.sh
 ./scripts/pi/check_mavlink_endpoint.sh
 ./scripts/pi/check_px4_params.sh
 ./scripts/pi/create_support_bundle.sh
 ```
+
+See [First Learned Shadow Run](first-learned-shadow-run.md) for the required
+release layout and [Legacy Prototype Components](legacy-prototype-components.md)
+for explicitly non-operational tools retained for replay compatibility.
 
 ## Ground Control / Mission Planner Desktop App
 

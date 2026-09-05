@@ -3,6 +3,11 @@
 The desktop app in `desktop-app/` is the ground-control / mission-planner
 surface for the project. It is a Tauri + React app.
 
+> Current priority: vehicle runtime, camera calibration, data capture, learned
+> map production, and shadow validation. Desktop UI modernization is deferred.
+> The app must not be treated as a source of truth for selecting a classical
+> vision pipeline.
+
 ## UI Direction
 
 The Stitch panes are design references, not authoritative implementation
@@ -64,10 +69,10 @@ The hardware-first setup flow is:
 3. Test Wi-Fi SSH.
 4. Install/sync the project onto the Pi.
 5. Run Pi setup checks.
-6. Run camera health and synthetic vision smoke checks.
-7. Validate the deployed terrain bundle.
+6. Run camera health and learned-runtime dependency checks.
+7. Validate the deployed ModelRelease, MapRelease, and camera calibration.
 8. Check MAVLink endpoint access.
-9. Run a short prop-off terrain runtime capture.
+9. Run a short prop-off learned shadow probe.
 10. Download runtime status and support bundle.
 
 The setup report excludes passwords and records device metadata, commands,
@@ -76,33 +81,14 @@ and hardware bench evidence.
 
 ## Vision Pipeline
 
-The Camera & Vision / Vision Pipeline page is the editable feature/matcher
-configuration surface.
+The Camera & Vision / Vision Pipeline page is reserved for release metadata and
+read-only status until the deferred UI modernization pass. The only active
+vehicle profile is `pi5_crossview_nav_v1`: learned retrieval, XFeat,
+LighterGlue, temporal context, and a compatible ONNX model release.
 
-The default mode is `classical`.
-
-```text
-saved map source
-  -> mission_bundle/ortho/map.png
-  -> ORB or AKAZE feature/tile index
-  -> Raspberry Pi runtime
-```
-
-The optional `neural` mode stores SuperPoint/LightGlue-style metadata for later
-higher-compute devices. The Raspberry Pi-safe classical feature index remains
-the default.
-
-The Vision Pipeline page stores:
-
-- pipeline mode
-- feature method
-- max features
-- matcher ratio
-- minimum matches
-- optional neural weight paths
-
-Other pages may summarize these settings, but they should not create duplicate
-editable pipeline controls outside the Camera & Vision page.
+ORB, AKAZE, SIFT, and classical matcher controls must not be offered as active
+vehicle selections. They are retained only as frozen replay baselines in the
+drone-code repository.
 
 ## Maps
 

@@ -1,0 +1,52 @@
+experiment: crossview_teacher_v1
+publication_mode: shadow_only
+px4_external_vision: disabled
+training_split:
+  required: true
+  group_by: capture_session_id
+  validation_fraction: 0.2
+pose_context:
+  required_for_holybro_imu_aware_runs: true
+  attitude_frame: px4_body_frd_roll_pitch_yaw
+  camera_transform: body_frd_T_camera_optical
+dataset_releases:
+  - univ@pending-registration
+  - airlock-plus@pending-registration
+  - holybro-field@pending-registration
+providers:
+  global_retrieval:
+    provider: megaloc_pretrained_frozen
+    trainable: false
+    role: coarse_candidate_retrieval_baseline
+    note: "MegaLoc public source is used as a pinned pretrained retrieval baseline; do not claim fine-tuning support."
+  temporal_bev_teacher:
+    provider: video2bev_official
+    workflow: video2bev_first_stage_v1
+    data_contract: official_dataset_layout
+    second_stage_workflow: video2bev_second_stage_v1
+    role: temporal_cross_view_teacher_reproduction
+  local_features:
+    provider: xfeat
+    workflow: xfeat_default_v1
+    data_contract: vision_nav_map_pairs
+    role: learned_local_feature_student_source
+  local_matching:
+    provider: lighterglue
+    training_source: xfeat_lighterglue_or_gluefactory
+    role: learned_correspondence
+  bearing_location_heading:
+    provider: bearing_uav_reproduction
+    status: paper_reproduction_pending_public_code
+  dense_registration:
+    provider: roma
+    scope: cloud_teacher_only
+  reconstruction:
+    provider: vggt
+    scope: map_production_teacher_only
+  semantic_auxiliary:
+    provider: topicgeo
+    scope: auxiliary_retrieval_and_hard_negative_signal
+tracking:
+  mlflow_experiment: drone-vision-nav-teachers
+  require_dataset_release: true
+  record_license_and_revision: true

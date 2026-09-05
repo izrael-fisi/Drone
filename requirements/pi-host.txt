@@ -7,3 +7,7 @@ rich>=13.0
 pymavlink>=2.4
 geographiclib>=2.0
 pyproj>=3.4
+# Required by the Pi shadow runtime to load the four learned ONNX stages.
+# The default portable retrieval index does not require faiss-cpu.
+onnxruntime>=1.18
+Pillow>=10

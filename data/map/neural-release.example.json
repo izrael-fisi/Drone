@@ -1,0 +1,27 @@
+{
+  "schema_version": "vision_nav_map_release_v2",
+  "release_id": "demo-area@2.0.0",
+  "map_id": "demo-area",
+  "version": "2.0.0",
+  "profile_id": "pi5_crossview_nav_v1",
+  "model_release_id": "pi5-crossview-nav@1.0.0",
+  "crs": "EPSG:32610",
+  "local_origin_enu": [0.0, 0.0, 0.0],
+  "gsd_m_per_px": 0.2,
+  "cog_uri": "imagery/map.tif",
+  "stac_item_uri": "stac/item.json",
+  "tile_index_uri": "index/tiles.sqlite",
+  "retrieval_index_uri": "index/megaloc.faiss",
+  "xfeat_index_uri": "index/xfeat_tiles.sqlite",
+  "landmark_index_uri": "index/landmarks.sqlite",
+  "dem_uri": null,
+  "calibration_ids": ["down-camera-v1"],
+  "geometry_modes": ["pnp_3d", "homography_restricted"],
+  "checksums_sha256": {
+    "imagery/map.tif": "0000000000000000000000000000000000000000000000000000000000000000",
+    "stac/item.json": "0000000000000000000000000000000000000000000000000000000000000000",
+    "index/tiles.sqlite": "0000000000000000000000000000000000000000000000000000000000000000",
+    "index/megaloc.faiss": "0000000000000000000000000000000000000000000000000000000000000000",
+    "index/xfeat_tiles.sqlite": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

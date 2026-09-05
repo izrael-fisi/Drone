@@ -26,6 +26,7 @@ from vision_nav.px4_sitl_session import evaluate_px4_sitl_session
 from vision_nav.replay_gates import ReplayGateConfig, evaluate_replay_log
 from vision_nav.replay_case_schema import evaluate_replay_case_schema
 from vision_nav.summarize_match_log import summarize_log
+from vision_nav.training_capture import validate_training_session
 
 
 DEFAULT_MAX_LOG_BYTES = 50 * 1024 * 1024
@@ -39,6 +40,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bundle", help="Mission/terrain bundle directory or manifest.json path.")
     parser.add_argument("--log", action="append", default=[], help="Runtime or replay JSONL log. Can be repeated.")
     parser.add_argument("--extra", action="append", default=[], help="Extra file or directory to include. Can be repeated.")
+    parser.add_argument(
+        "--training-capture",
+        action="append",
+        default=[],
+        help="Validated Pi training-capture session directory. Copies manifest/checksums and a review summary, never raw frames.",
+    )
     parser.add_argument("--repo", default=".", help="Repo path for git/app metadata. Defaults to current directory.")
     parser.add_argument("--output-dir", default="support-bundles", help="Directory for generated support bundles.")
     parser.add_argument("--name", help="Stable bundle name. Defaults to timestamp plus bundle id.")
@@ -546,6 +553,101 @@ def copy_extras(extras: list[str], support_dir: Path) -> dict[str, Any]:
         dst = support_dir / "extras" / safe_relpath(src)
         copied.append(copy_tree(src, dst) if src.is_dir() else copy_file(src, dst))
     return {"copied": copied, "missing": missing}
+
+
+def copy_training_capture_summaries(training_capture_paths: list[str], support_dir: Path) -> dict[str, Any]:
+    """Preserve auditable capture provenance without copying raw training imagery."""
+
+    if not training_capture_paths:
+        return {
+            "status": "not_provided",
+            "report_count": 0,
+            "valid_count": 0,
+            "invalid_count": 0,
+            "raw_frames_included": False,
+            "raw_telemetry_included": False,
+            "reports": [],
+            "missing": [],
+        }
+
+    reports: list[dict[str, Any]] = []
+    missing: list[str] = []
+    seen: set[str] = set()
+    summary_root = support_dir / "summaries" / "training_captures"
+    for raw_path in training_capture_paths:
+        source = Path(raw_path).expanduser()
+        source_key = str(source.resolve()) if source.exists() else str(source)
+        if source_key in seen:
+            continue
+        seen.add(source_key)
+        if not source.is_dir():
+            missing.append(str(source))
+            continue
+
+        validation = validate_training_session(
+            source,
+            require_attitude=True,
+            require_sensor_timestamps=True,
+            require_offline_gnss_reference=True,
+            require_mavlink_timesync=True,
+        )
+        manifest = validation.get("manifest") if isinstance(validation.get("manifest"), dict) else {}
+        session_id = str(manifest.get("session_id") or source.name)
+        destination = summary_root / sanitize_filename(session_id)
+        if destination.exists():
+            destination = summary_root / f"{sanitize_filename(session_id)}-{len(reports) + 1}"
+        destination.mkdir(parents=True, exist_ok=True)
+
+        copied: list[dict[str, Any]] = []
+        for filename in ("manifest.json", "checksums.sha256"):
+            candidate = source / filename
+            if candidate.is_file():
+                copied.append(copy_file(candidate, destination / filename))
+
+        mavlink = manifest.get("mavlink", {}) if isinstance(manifest.get("mavlink"), dict) else {}
+        report = {
+            "schema_version": "vision_nav_training_capture_support_summary_v1",
+            "status": "passed" if validation.get("status") == "valid" else "failed",
+            "source_session_dir": str(source.resolve()),
+            "session_id": manifest.get("session_id"),
+            "map_release_id": manifest.get("map_release_id"),
+            "map_reference": manifest.get("map_reference"),
+            "calibration": manifest.get("calibration"),
+            "camera_to_body": manifest.get("camera_to_body"),
+            "frame_count": manifest.get("frame_count"),
+            "telemetry_count": manifest.get("telemetry_count"),
+            "mavlink": {
+                "state": mavlink.get("state"),
+                "attitude_sample_count": validation.get("attitude_sample_count"),
+                "capture": mavlink.get("capture", {}),
+                "frame_attitude_alignment": validation.get("frame_attitude_alignment"),
+                "offline_gnss_reference": validation.get("offline_gnss_reference"),
+                "timesync": validation.get("mavlink_timesync"),
+            },
+            "camera_frame_timing": validation.get("camera_frame_timing"),
+            "checksums": validation.get("checksums"),
+            "validation_errors": validation.get("errors", []),
+            "raw_frames_included": False,
+            "raw_telemetry_included": False,
+            "copied": copied,
+        }
+        summary_path = destination / "training_capture_summary.json"
+        summary_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        report["summary_path"] = str(summary_path)
+        reports.append(report)
+
+    valid_count = sum(1 for report in reports if report["status"] == "passed")
+    invalid_count = sum(1 for report in reports if report["status"] != "passed")
+    return {
+        "status": "passed" if reports and not missing and invalid_count == 0 else "failed",
+        "report_count": len(reports),
+        "valid_count": valid_count,
+        "invalid_count": invalid_count,
+        "raw_frames_included": False,
+        "raw_telemetry_included": False,
+        "reports": reports,
+        "missing": missing,
+    }
 
 
 def sanitize_filename(value: str) -> str:
@@ -2196,6 +2298,7 @@ def create_support_bundle(
     bundle: str | None = None,
     logs: list[str] | None = None,
     extras: list[str] | None = None,
+    training_capture_paths: list[str] | None = None,
     repo: str | Path = ".",
     output_dir: str | Path = "support-bundles",
     name: str | None = None,
@@ -2270,6 +2373,7 @@ def create_support_bundle(
         log_summary["field_collection_plan_logs"] = field_collection_log_paths
         log_summary["auto_added_field_collection_log_count"] = len(auto_added)
     extra_summary = copy_extras(extras, support_dir)
+    training_captures = copy_training_capture_summaries(training_capture_paths or [], support_dir)
     replay_cases = load_replay_cases(
         replay_case_manifest=replay_case_manifest_path,
         inline_replay_cases=inline_replay_cases,
@@ -2357,6 +2461,7 @@ def create_support_bundle(
         "bundle": bundle_summary,
         "logs": log_summary,
         "flight_evidence": flight_evidence_summary,
+        "training_captures": training_captures,
         "replay_gates": replay_gate_summary,
         "px4_sitl_evidence": px4_evidence_summary,
         "px4_sitl_prereqs": px4_prereq_summary,
@@ -2407,6 +2512,13 @@ def print_human(result: dict[str, Any]) -> None:
         print(f"Bundle: {bundle.get('bundle_id') or '(unnamed)'} health={health.get('status') or 'unknown'}")
     logs = manifest.get("logs") or {}
     print(f"Logs: {len(logs.get('copied') or [])} copied, {len(logs.get('missing') or [])} missing")
+    training_captures = manifest.get("training_captures") or {}
+    if training_captures.get("status") not in {None, "not_provided"}:
+        print(
+            "Training captures: "
+            f"{training_captures.get('status')} "
+            f"({training_captures.get('valid_count', 0)}/{training_captures.get('report_count', 0)} strict-valid; raw frames excluded)"
+        )
     replay_gates = manifest.get("replay_gates") or {}
     if replay_gates.get("case_count"):
         print(f"Replay gates: {replay_gates.get('status')} ({replay_gates.get('case_count')} case(s))")
@@ -2475,6 +2587,7 @@ def main() -> None:
         bundle=args.bundle,
         logs=args.log,
         extras=args.extra,
+        training_capture_paths=args.training_capture,
         repo=args.repo,
         output_dir=args.output_dir,
         name=args.name,

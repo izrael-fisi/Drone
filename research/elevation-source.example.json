@@ -1,0 +1,15 @@
+{
+  "schema_version": "vision_nav_elevation_source_v1",
+  "raster_path": "surface-wgs84-ellipsoid.tif",
+  "sha256": "REPLACE_WITH_RASTER_SHA256",
+  "vertical_datum": "wgs84_ellipsoid",
+  "origin_vertical_datum": "wgs84_ellipsoid",
+  "units": "m",
+  "surface_type": "dsm",
+  "source": "REPLACE_WITH_PROVIDER_AND_RELEASE",
+  "acquisition_date": "REPLACE_WITH_ACQUISITION_DATE",
+  "license": "REPLACE_WITH_DATA_USAGE_TERMS",
+  "alignment_evidence": "REPLACE_WITH_ORTHO_DSM_ALIGNMENT_REPORT",
+  "horizontal_sigma_m": null,
+  "vertical_sigma_m": null
+}

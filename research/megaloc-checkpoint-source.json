@@ -1,0 +1,20 @@
+{
+  "schema_version": "vision_nav_checkpoint_source_v1",
+  "model_family": "MegaLoc",
+  "repository": "https://huggingface.co/gberton/MegaLoc",
+  "revision": "37bb43d65dd6388d1578052de5eb0bcdceb497e7",
+  "filename": "model.safetensors",
+  "sha256": "d4f9f2bcb60018f91eb6a8e061ed054fd55654e10c2569cf13841ea986ffb4f8",
+  "size_bytes": 914577436,
+  "weights_license": "MIT",
+  "license_file": {
+    "path": "LICENSE",
+    "sha256": "0a906f9a65db6f645483f6cbf56b01e20615b9b943df3f70112f3d0fe0521e2a"
+  },
+  "model_card": {
+    "path": "README.md",
+    "sha256": "b5e7db929f9fc6ab3f359981f88ceb3b00b9f820e5bd842fc5451e2104e55103"
+  },
+  "field_use_approved": false,
+  "training_data_provenance": "Original training data are not publicly redistributed; separate field-release review remains required."
+}

@@ -70,7 +70,7 @@ if [[ -x "$HOME/drone_vision_nav_venv/bin/python" ]]; then
   "$HOME/drone_vision_nav_venv/bin/python" - <<'PY'
 import importlib
 
-modules = ["cv2", "numpy", "vision_nav"]
+modules = ["cv2", "numpy", "onnxruntime", "pymavlink", "vision_nav"]
 for module in modules:
     importlib.import_module(module)
     print(f"[OK] Imported Python module: {module}")
@@ -87,4 +87,3 @@ if ((failures > 0)); then
 fi
 
 echo "Verification passed."
-

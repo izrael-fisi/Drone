@@ -1,0 +1,56 @@
+cmake_minimum_required(VERSION 3.20)
+project(vision_nav_openvins_replay LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(OPENVINS_SOURCE "" CACHE PATH "Pinned OpenVINS checkout")
+find_package(Git REQUIRED)
+execute_process(COMMAND ${GIT_EXECUTABLE} -C ${OPENVINS_SOURCE} rev-parse HEAD
+                OUTPUT_VARIABLE REV OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+if(NOT REV STREQUAL "69488123ed9362dd44b6f28e7f4680abbff1442b")
+  message(FATAL_ERROR "Unverified OpenVINS revision")
+endif()
+execute_process(COMMAND ${GIT_EXECUTABLE} -C ${OPENVINS_SOURCE} status --porcelain --untracked-files=all
+                OUTPUT_VARIABLE DIRTY OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+if(DIRTY)
+  message(FATAL_ERROR "OpenVINS checkout must be clean; keep builds outside it")
+endif()
+
+find_package(Eigen3 REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs video features2d calib3d)
+if(NOT OpenCV_VERSION_MAJOR EQUAL 4)
+  message(FATAL_ERROR "This pinned OpenVINS adapter requires OpenCV 4; select OpenCV_DIR explicitly")
+endif()
+find_package(Boost REQUIRED COMPONENTS filesystem thread date_time)
+find_package(Ceres REQUIRED)
+find_package(nlohmann_json REQUIRED)
+find_package(Threads REQUIRED)
+
+# Build the pinned library sources without ROS, visualization, or simulator targets.
+file(GLOB_RECURSE CORE CONFIGURE_DEPENDS "${OPENVINS_SOURCE}/ov_core/src/*.cpp")
+file(GLOB_RECURSE INIT CONFIGURE_DEPENDS "${OPENVINS_SOURCE}/ov_init/src/*.cpp")
+list(FILTER CORE EXCLUDE REGEX ".*/test_[^/]*\\.cpp$")
+list(FILTER INIT EXCLUDE REGEX ".*/test_[^/]*\\.cpp$|.*/Simulator\\.cpp$")
+set(MSCKF)
+foreach(FILE state/State state/StateHelper state/Propagator core/VioManager core/VioManagerHelper
+             update/UpdaterHelper update/UpdaterMSCKF update/UpdaterSLAM update/UpdaterZeroVelocity)
+  list(APPEND MSCKF "${OPENVINS_SOURCE}/ov_msckf/src/${FILE}.cpp")
+endforeach()
+add_library(openvins_research STATIC ${CORE} ${INIT} ${MSCKF})
+# Eigen 5 no longer supplies this transitive include used by upstream sources.
+target_precompile_headers(openvins_research PRIVATE <cassert>)
+target_compile_definitions(openvins_research PUBLIC ROS_AVAILABLE=0 ENABLE_ARUCO_TAGS=0)
+target_include_directories(openvins_research SYSTEM PUBLIC
+  ${OPENVINS_SOURCE}/ov_core/src ${OPENVINS_SOURCE}/ov_init/src ${OPENVINS_SOURCE}/ov_msckf/src ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(openvins_research PUBLIC Eigen3::Eigen ${OpenCV_LIBS}
+  Boost::filesystem Boost::thread Boost::date_time Ceres::ceres Threads::Threads)
+add_executable(vision-nav-openvins replay.cpp)
+target_compile_definitions(vision-nav-openvins PRIVATE OPENVINS_REVISION="${REV}")
+target_link_libraries(vision-nav-openvins PRIVATE openvins_research nlohmann_json::nlohmann_json)
+enable_testing()
+add_executable(vision-nav-openvins-pose-contract-test pose_contract_test.cpp)
+target_link_libraries(vision-nav-openvins-pose-contract-test PRIVATE openvins_research)
+add_test(NAME native_pose_covariance_convention COMMAND vision-nav-openvins-pose-contract-test)
+add_executable(vision-nav-openvins-passive-anchor-test passive_anchor_test.cpp)
+target_link_libraries(vision-nav-openvins-passive-anchor-test PRIVATE openvins_research)
+add_test(NAME native_passive_anchor_covariance COMMAND vision-nav-openvins-passive-anchor-test)

@@ -1,0 +1,22 @@
+{
+  "schema_version": "vision_nav_learned_local_reference_v1",
+  "backend": "pytorch_reference",
+  "px4_external_vision": "disabled",
+  "device": "cpu",
+  "checkout": "vendor/xfeat",
+  "upstream_lock": "upstreams.lock.json",
+  "xfeat_weights": "vendor/xfeat/weights/xfeat.pt",
+  "lighterglue_weights": "vendor/xfeat/weights/xfeat-lighterglue.pt",
+  "elevation_spec": null,
+  "policy": {
+    "image_width": 640,
+    "image_height": 384,
+    "max_features": 512,
+    "detection_threshold": 0.05,
+    "minimum_score": 0.2,
+    "min_inliers": 12,
+    "min_inlier_ratio": 0.4,
+    "max_reprojection_error_px": 3.0,
+    "min_grid_coverage": 0.25
+  }
+}

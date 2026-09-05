@@ -1,0 +1,26 @@
+experiment: pi5_crossview_nav_v1
+profile_id: pi5_crossview_nav_v1
+student:
+  global_retriever: megaloc
+  local_correspondence: xfeat_lighterglue
+  temporal_bearing: distilled_temporal_bev_bearing_v1
+  temporal_architecture: compact_gru_temporal_distillation_student
+  default_feature_dim: 64
+  teacher_feature_dim: 128
+  input_contract:
+    frame_window: "[batch, window, channel, height, width] RGB float32"
+    attitude_window: "[batch, window, roll_pitch_yaw] float32"
+  output_contract:
+    location_distribution: "map-release-bound learned location evidence; not an aircraft position authority"
+    heading_distribution: "learned heading evidence"
+    temporal_feature: "distilled temporal representation"
+export:
+  format: onnx
+  providers:
+    - onnxruntime_cpu
+    - hailo_ai_hat_optional
+promotion:
+  require_export_parity: true
+  require_pi_thermal_report: true
+  require_deterministic_replay: true
+  px4_publication_enabled: false

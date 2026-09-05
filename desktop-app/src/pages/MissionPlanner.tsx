@@ -172,6 +172,10 @@ type MissionPlanPayload = {
     pipeline: PipelineConfig["pipeline"];
     feature_method: PipelineConfig["featureMethod"];
     max_features: number;
+    model_release_id: string;
+    map_release_id: string;
+    calibration_id: string;
+    inference_provider: PipelineConfig["inferenceProvider"];
   };
   gnss_denied: GnssDeniedReadinessExport;
   terrain_planning: TerrainPlanningMetadata;
@@ -741,6 +745,10 @@ function buildMissionPlanPayload({
       pipeline: pipelineConfig.pipeline,
       feature_method: pipelineConfig.featureMethod,
       max_features: pipelineConfig.maxFeatures,
+      model_release_id: pipelineConfig.modelReleaseId,
+      map_release_id: pipelineConfig.mapReleaseId,
+      calibration_id: pipelineConfig.calibrationId,
+      inference_provider: pipelineConfig.inferenceProvider,
     },
     gnss_denied: exportGnssDeniedReadiness(gnssDeniedReadiness, gnssDeniedChecks),
     terrain_planning: terrainPlanning,
@@ -1688,8 +1696,10 @@ export function MissionPlanner() {
         output_dir: effectiveBundleDir,
         repo_path: repoPath,
         pipeline: pipelineConfig.pipeline,
-        feature_method: pipelineConfig.featureMethod,
-        max_features: pipelineConfig.maxFeatures,
+        model_release_id: pipelineConfig.modelReleaseId,
+        map_release_id: pipelineConfig.mapReleaseId,
+        calibration_id: pipelineConfig.calibrationId,
+        inference_provider: pipelineConfig.inferenceProvider,
         mission_plan_json: missionPlanJson,
         qgc_plan_json: qgcPlanJson,
       });
@@ -2103,7 +2113,7 @@ export function MissionPlanner() {
               className="border border-border bg-bg-surface/90 px-3 py-2 text-left backdrop-blur-sm hover:border-cyan-500/40"
             >
               <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">Vision</div>
-              <div className="truncate text-xs text-cyan-300">{pipelineConfig.featureMethod.toUpperCase()}</div>
+              <div className="truncate text-xs text-cyan-300">LEARNED SHADOW</div>
             </button>
           </div>
 
@@ -2466,15 +2476,15 @@ export function MissionPlanner() {
             <div className="grid grid-cols-3 gap-3 text-xs">
               <div>
                 <span className="block text-slate-500">Mode</span>
-                <span className="text-slate-200 font-medium">{pipelineConfig.pipeline === "classical" ? "Classical CPU" : "SP + LightGlue"}</span>
+                <span className="text-slate-200 font-medium">Pi 5 cross-view v1</span>
               </div>
               <div>
                 <span className="block text-slate-500">Features</span>
-                <span className="text-slate-200 font-medium">{pipelineConfig.featureMethod.toUpperCase()}</span>
+                <span className="text-slate-200 font-medium">XFeat + LighterGlue</span>
               </div>
               <div>
                 <span className="block text-slate-500">Max</span>
-                <span className="text-slate-200 font-medium">{pipelineConfig.maxFeatures.toLocaleString()}</span>
+                <span className="text-slate-200 font-medium">Shadow-only</span>
               </div>
             </div>
             <Link to="/vision-pipeline" className="btn-secondary justify-center text-xs py-1.5">

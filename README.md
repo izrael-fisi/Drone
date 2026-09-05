@@ -9,29 +9,39 @@ project:
 ROS 2, Gazebo, and PX4 SITL are no longer part of the active project scaffold.
 Hardware bench testing with the real Pixhawk/Holybro stack is the path forward.
 
+The canonical navigation architecture is a vision-first, fail-closed runtime:
+
+```text
+versioned map release + calibrated camera frame
+  -> distilled temporal BEV / bearing features
+  -> MegaLoc retrieval -> XFeat + LighterGlue correspondence
+  -> robust geometry -> multi-hypothesis fusion
+  -> shadow telemetry with explicit no-fix state
+```
+
 The project goal is narrow:
 
 - Downward camera visual map-relative localization
-- Precomputed map features from georeferenced imagery, including GeoTIFF-derived map metadata
-- Runtime feature matching with confidence scoring
+- Learned map releases from georeferenced imagery, including COG/STAC metadata,
+  MegaLoc indexes, and XFeat tile caches
+- Versioned map/model/calibration compatibility checks, persistent ambiguity
+  management, and robust geometry before an external-vision observation exists
 - Approximate map-pixel to lat/lon conversion for simple orthophoto bundles
-- Pixhawk/PX4 MAVLink integration as a navigation source after bench validation
+- Pixhawk/PX4 MAVLink integration as a status source after bench validation
 
-The first implementation is intentionally classical computer vision:
+The active vehicle profile is `pi5_crossview_nav_v1`: MegaLoc, XFeat +
+LighterGlue, and a distilled temporal BEV/bearing student. ORB, AKAZE, and SIFT
+are frozen replay baselines only. They are not an active map builder, Pi runtime,
+desktop setting, mission-bundle format, or automatic fallback.
 
-```text
-downward global-shutter frame
-  -> undistort / normalize
-    -> ORB or AKAZE feature extraction
-      -> match against precomputed map-tile descriptors
-        -> RANSAC homography verification
-          -> confidence/covariance estimate
-            -> log result
-            -> later publish to PX4 external vision
-```
-
-Do not start with AI accelerators or model training. Add neural features only
-after the classical pipeline has been measured and its failure modes are known.
+Read [Target Vision-First Architecture](docs/architecture.md),
+[Integration Interface Reference](docs/interface-reference.md),
+[PX4 Integration Boundary](docs/px4-integration.md), and
+[Change Playbook](docs/change-playbook.md) before binding a model or vehicle.
+The [Architecture Reassessment](docs/architecture-reassessment-2026-08.md)
+records what is implemented today and the modern stack selected for migration.
+The active learned product program is documented in
+[Flagship Modern Vision Pipeline](docs/flagship-modern-vision-pipeline.md).
 
 ## Current Hardware Target
 
@@ -47,13 +57,18 @@ after the classical pipeline has been measured and its failure modes are known.
 
 ### 1. Drone Code Operation
 
-- `src/vision_nav/`: terrain bundle, map matching, estimator, MAVLink, camera,
-  field-evidence, and support-bundle tools
-- `scripts/pi/`: Raspberry Pi bootstrap, camera checks, MAVLink checks, bundle
-  validation, terrain runtime, field capture, and support-bundle wrappers
+- `src/vision_nav/neural/`: learned model/map releases, ONNX execution,
+  MegaLoc retrieval, XFeat/LighterGlue evidence, temporal windows, robust
+  geometry, and shadow candidate gating
+- `src/vision_nav/`: camera calibration, MAVLink/PX4 read-only telemetry,
+  training capture, field-evidence, and support-bundle tools
+- `scripts/pi/`: Raspberry Pi bootstrap, camera/MAVLink bench checks, learned
+  release validation, shadow runtime, training capture, and support-bundle
+  wrappers
 - `scripts/mac/`: Mac transfer and SSH helpers for moving bundles/logs between
   the desktop and Raspberry Pi
-- `docker/pi/`: optional reproducible Pi runtime container
+- `docker/pi/`: optional reproducible offline map-build and replay container;
+  the hardware runtime owns camera/MAVLink devices through host systemd
 - `config/`: camera and Pi runtime configuration examples
 
 ### 2. Ground Control / Mission Planner Desktop App
@@ -77,6 +92,7 @@ Key docs:
 - [SSH And File Transfer](docs/ssh-and-transfer.md)
 - [Desktop App](docs/desktop-app.md)
 - [Operator Handoff](docs/operator-handoff.md)
+- [First Learned Shadow Run](docs/first-learned-shadow-run.md)
 
 ## Quick Pi Setup
 
@@ -100,44 +116,27 @@ cd Drone
 Rebooting after bootstrap makes Docker group membership and camera/system
 services fully active.
 
-After you copy a mission map bundle to `~/drone-data/map_bundles/mission_bundle`,
-validate it, then start the logging-only bench loop:
+After you copy an approved MapRelease v2 and ModelRelease to the Pi, validate
+the release chain and start learned shadow telemetry:
 
 ```bash
-./scripts/pi/validate_terrain_bundle.sh
-vision-nav-map-health --bundle ~/drone-data/map_bundles/mission_bundle
-./scripts/pi/run_terrain_nav_loop.sh
+./scripts/pi/validate_neural_runtime.sh
+./scripts/pi/run_vision_nav_shadow.sh
 ```
 
-For transfer-safe mission bundles, write checksums after building features:
+The Pi writes `runtime_status.json` and `decision_trace.jsonl` under
+`~/DroneTransfer/outgoing/neural-shadow/`. PX4 external-vision publication is
+disabled during this shadow stage.
 
-```bash
-vision-nav-build-terrain-bundle --bundle mission_bundle --write-checksums
-```
+For the exact camera, model-release, map-release, and PX4-attitude sequence,
+follow [First Learned Shadow Run](docs/first-learned-shadow-run.md). The shadow
+runtime may record retrieval, correspondence, geometry, and temporal candidate
+evidence, but it never sends `ODOMETRY`, external vision, parameter changes, or
+motor commands to PX4.
 
-It captures camera frames, matches them against the bundle, and writes logs to
-`~/DroneTransfer/outgoing/terrain-match/`.
-By default, Pi runtime matching undistorts frames with
-`config/camera/down_camera.yaml`.
-When `VISION_NAV_MAVLINK_ENDPOINT` is set, accepted local map measurements can
-be sent over MAVLink. Use `VISION_NAV_MAVLINK_MESSAGE=odometry` for the preferred
-PX4 external-vision bench path, or `vision_position_estimate` only as a
-compatibility/debug mode.
-MAVLink-enabled logs include external-position health with send rate, latency,
-skip reasons, and covariance warnings.
-
-Replay saved frames without using the camera:
-
-```bash
-./scripts/pi/replay_terrain_nav_log.sh
-```
-
-Summarize runtime and replay match logs:
-
-```bash
-./scripts/pi/summarize_vision_nav_logs.sh
-vision-nav-evaluate-replay-gates --case-name bench --expected good_map --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl
-```
+Root-level terrain-bundle and feature-method tools remain as frozen replay and
+migration baselines. They are not the active vehicle runtime or a fallback for
+`pi5_crossview_nav_v1`.
 
 Package a bench run for debugging or desktop transfer:
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, CheckCircle2, Gauge, Mountain, Save, SplitSquareHorizontal } from "lucide-react";
 import {
   DefenseHeader,
@@ -8,7 +8,6 @@ import {
   DefenseRightPanel,
   DefenseSection,
 } from "../components/DefensePane";
-import { loadPipelineConfig } from "../lib/pipelineConfig";
 import { useAppStore } from "../lib/store";
 import { loadTerrainConstraints, saveTerrainConstraints } from "../lib/terrainPlanning";
 import type { TerrainPlanningConstraints } from "../lib/terrainPlanning";
@@ -24,7 +23,6 @@ export function TerrainPlanning() {
   const selectedRegion = regions.find((region) => region.id === selectedRegionId) ?? availableRegions[0] ?? regions[0];
   const [constraints, setConstraints] = useState<TerrainPlanningConstraints>(() => loadTerrainConstraints());
   const [saved, setSaved] = useState(false);
-  const pipeline = useMemo(() => loadPipelineConfig(), []);
 
   const gsd = selectedRegion?.gsd_m_per_px ?? null;
   const aglToGsd = gsd ? constraints.min_agl_m / gsd : null;
@@ -127,7 +125,7 @@ export function TerrainPlanning() {
           </div>
           <div className="mt-4 rounded-lg border border-status-active/20 bg-black/30 p-3">
             <div className="font-label-caps text-label-caps text-secondary">Runtime profile</div>
-            <div className="mt-1 font-data-mono text-sm text-white">{pipeline.pipeline} / {pipeline.featureMethod.toUpperCase()}</div>
+            <div className="mt-1 font-data-mono text-sm text-white">Pi 5 learned cross-view navigation</div>
             <p className="mt-2 font-data-mono text-[10px] text-white/40">
               These defaults are included in new mission bundles and Mission Planner terrain metadata.
             </p>

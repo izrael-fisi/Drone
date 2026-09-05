@@ -34,7 +34,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-candidates", type=int, default=64)
     parser.add_argument("--search-radius-m", type=float, default=80.0)
     parser.add_argument("--camera-calibration", help="Optional camera calibration YAML for frame undistortion.")
-    parser.add_argument("--mavlink-endpoint", help="Optional MAVLink endpoint for accepted vision measurements.")
+    parser.add_argument(
+        "--mavlink-endpoint",
+        help="Optional MAVLink endpoint for PX4 telemetry. This legacy terrain loop never publishes vision poses.",
+    )
     parser.add_argument("--mavlink-ev-delay-ms", type=int, default=50)
     parser.add_argument("--mavlink-system-id", type=int, default=1)
     parser.add_argument("--mavlink-component-id", type=int, default=197)
@@ -198,10 +201,16 @@ def main() -> None:
                 mavlink_result = None
                 external_position_health_snapshot = None
                 if mavlink_bridge is not None:
-                    mavlink_result = mavlink_bridge.send_match_result(
-                        result,
-                        message_type=args.mavlink_message,
-                    ).to_dict()
+                    # A single terrain matcher result is map-evaluation evidence, not a
+                    # mature VisionNavigationRuntime estimate. Publishing is intentionally
+                    # disabled here: only the versioned runtime + Px4VisionBridge boundary
+                    # may emit ODOMETRY after its TRACKING gate passes.
+                    mavlink_result = {
+                        "sent": False,
+                        "reason": "legacy_terrain_loop_publication_disabled",
+                        "architecture": "vision_first_v2",
+                        "requested_message_type": args.mavlink_message,
+                    }
                     if external_position_health is not None:
                         external_position_health_snapshot = external_position_health.update(
                             result=result,

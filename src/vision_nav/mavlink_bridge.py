@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 import json
 import math
 import os
+from statistics import median
 import time
 from pathlib import Path
 from typing import Any
@@ -36,7 +36,14 @@ class MavlinkSendResult:
 @dataclass(frozen=True)
 class MavlinkTelemetrySample:
     message_type: str
+    # Host Unix time captured when the message was received. This is useful for
+    # audit logs, but host monotonic time is used for camera/telemetry pairing.
     timestamp_us: int
+    # PX4/MAVLink message time is retained verbatim with its stated domain. It
+    # is not silently converted to wall time because that would imply a clock
+    # synchronization guarantee we do not have on a bench or field vehicle.
+    vehicle_timestamp_us: int | None = None
+    vehicle_time_domain: str | None = None
     roll_rad: float | None = None
     pitch_rad: float | None = None
     yaw_rad: float | None = None
@@ -56,11 +63,20 @@ class MavlinkTelemetrySample:
     pressure_altitude_m: float | None = None
     relative_altitude_m: float | None = None
     pressure_hpa: float | None = None
+    acceleration_m_s2: tuple[float, float, float] | None = None
+    angular_velocity_rad_s: tuple[float, float, float] | None = None
+    imu_sensor_id: int | None = None
+    imu_frame: str | None = None
+    imu_fields_updated: int | None = None
+    source_system: int | None = None
+    source_component: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "message_type": self.message_type,
             "timestamp_us": self.timestamp_us,
+            "vehicle_timestamp_us": self.vehicle_timestamp_us,
+            "vehicle_time_domain": self.vehicle_time_domain,
             "roll_rad": self.roll_rad,
             "pitch_rad": self.pitch_rad,
             "yaw_rad": self.yaw_rad,
@@ -80,6 +96,13 @@ class MavlinkTelemetrySample:
             "pressure_altitude_m": self.pressure_altitude_m,
             "relative_altitude_m": self.relative_altitude_m,
             "pressure_hpa": self.pressure_hpa,
+            "acceleration_m_s2": list(self.acceleration_m_s2) if self.acceleration_m_s2 is not None else None,
+            "angular_velocity_rad_s": list(self.angular_velocity_rad_s) if self.angular_velocity_rad_s is not None else None,
+            "imu_sensor_id": self.imu_sensor_id,
+            "imu_frame": self.imu_frame,
+            "imu_fields_updated": self.imu_fields_updated,
+            "source_system": self.source_system,
+            "source_component": self.source_component,
         }
 
 
@@ -130,6 +153,7 @@ class MavlinkVisionBridge:
         self._conn = None
         self._last_heartbeat_s = 0.0
         self._odometry_reset_tracker = OdometryResetTracker()
+        self._timesync_recording: dict[str, Any] | None = None
 
     def connect(self) -> None:
         try:
@@ -147,6 +171,7 @@ class MavlinkVisionBridge:
         self._conn = mavutil.mavlink_connection(conn_str, **kwargs)
 
     def close(self) -> None:
+        self._timesync_recording = None
         if self._conn is not None:
             self._conn.close()
             self._conn = None
@@ -168,6 +193,204 @@ class MavlinkVisionBridge:
         )
         self._last_heartbeat_s = now
 
+    def start_timesync_recording(self, *, interval_s: float = 1.0, timeout_s: float = 0.25,
+                                max_exchanges: int = 36000) -> None:
+        """Enable diagnostic probes multiplexed by the sole telemetry reader.
+
+        Call before starting the reader thread. This creates no second serial
+        reader and sends no vehicle commands or parameter changes.
+        """
+        if self._timesync_recording is not None:
+            raise RuntimeError("TIMESYNC recording already active")
+        if not all(math.isfinite(v) and v > 0 for v in (interval_s, timeout_s)) or timeout_s >= interval_s:
+            raise ValueError("TIMESYNC requires 0 < timeout_s < interval_s")
+        if type(max_exchanges) is not int or max_exchanges <= 0:
+            raise ValueError("max_exchanges must be a positive integer")
+        self._timesync_recording = {"exchanges": [], "interval_ns": round(interval_s * 1e9),
+                                    "timeout_ns": round(timeout_s * 1e9), "pending_ns": None,
+                                    "last_request_ns": None, "max_exchanges": max_exchanges,
+                                    "capacity_reached": False}
+
+    def _poll_timesync_recording(self, now_ns: int) -> None:
+        state = self._timesync_recording
+        if state is None:
+            return
+        pending = state["pending_ns"]
+        if pending is not None and now_ns - pending >= state["timeout_ns"]:
+            state["exchanges"].append({"status": "rejected", "reason": "timesync_response_timeout",
+                                       "host_sent_monotonic_ns": pending})
+            state["pending_ns"] = None
+        if len(state["exchanges"]) >= state["max_exchanges"]:
+            state["capacity_reached"] = True
+            return
+        if state["pending_ns"] is not None or (state["last_request_ns"] is not None and
+                                               now_ns - state["last_request_ns"] < state["interval_ns"]):
+            return
+        state["last_request_ns"] = now_ns
+        try:
+            self._conn.mav.timesync_send(0, now_ns)
+        except Exception as exc:
+            state["exchanges"].append({"status": "rejected", "reason": f"timesync_request_failed:{type(exc).__name__}",
+                                       "host_sent_monotonic_ns": now_ns})
+        else:
+            state["pending_ns"] = now_ns
+
+    def _consume_timesync_response(self, message: Any, received_ns: int) -> None:
+        state = self._timesync_recording
+        if state is None or state["pending_ns"] is None:
+            return
+        sent = state["pending_ns"]
+        if getattr(message, "ts1", None) != sent:
+            return
+        target_system, target_component = getattr(message, "target_system", 0), getattr(message, "target_component", 0)
+        if target_system not in (0, self.source_system) or target_component not in (0, self.source_component):
+            return
+        remote = _as_optional_int(getattr(message, "tc1", None))
+        if remote is None or remote <= 0:
+            return
+        state["exchanges"].append({"status": "observed", "host_sent_monotonic_ns": sent,
+            "host_received_monotonic_ns": received_ns, "px4_timestamp_ns": remote,
+            "source_system": message.get_srcSystem() if hasattr(message, "get_srcSystem") else None,
+            "source_component": message.get_srcComponent() if hasattr(message, "get_srcComponent") else None,
+            "response_target_system": target_system, "response_target_component": target_component})
+        state["pending_ns"] = None
+
+    def stop_timesync_recording(self) -> dict[str, Any]:
+        """Snapshot after joining the reader thread; unfinished probes stay explicit."""
+        state = self._timesync_recording
+        self._timesync_recording = None
+        if state is None:
+            return {"status": "not_configured", "exchanges": []}
+        if state["pending_ns"] is not None:
+            state["exchanges"].append({"status": "rejected", "reason": "capture_ended_before_response",
+                                       "host_sent_monotonic_ns": state["pending_ns"]})
+        return {"schema_version": "vision_nav_mavlink_periodic_timesync_v1", "status": "recorded",
+                "interval_s": state["interval_ns"] / 1e9, "exchanges": state["exchanges"],
+                "capacity_reached": state["capacity_reached"], "max_exchanges": state["max_exchanges"]}
+
+    def read_timesync_recording(self, cursor: int = 0) -> dict[str, Any]:
+        """Copy new exchanges on the sole telemetry reader's thread.
+
+        This sends nothing and does not reset the pending request or truncate
+        evidence retained for stop_timesync_recording. Not a second serial read.
+        """
+        state = self._timesync_recording
+        if state is None:
+            raise RuntimeError("TIMESYNC recording is not active")
+        if type(cursor) is not int or not 0 <= cursor <= len(state["exchanges"]):
+            raise ValueError("Invalid TIMESYNC evidence cursor")
+        return {"next_cursor": len(state["exchanges"]),
+                "exchanges": [dict(row) for row in state["exchanges"][cursor:]],
+                "capacity_reached": state["capacity_reached"]}
+
+    def capture_timesync_evidence(
+        self,
+        *,
+        sample_count: int = 8,
+        timeout_s: float = 0.25,
+        max_round_trip_ms: float = 50.0,
+    ) -> dict[str, Any]:
+        """Measure PX4-to-host clock-offset evidence with MAVLink TIMESYNC.
+
+        This is a bounded diagnostics exchange, not a vehicle command. It
+        follows the MAVLink v2 request/response sequence: the Pi sends its
+        monotonic timestamp in ``ts1`` with ``tc1=0``; PX4 mirrors ``ts1`` and
+        returns its timestamp in ``tc1``. The result is deliberately evidence,
+        not a claim that the camera sensor clock has been synchronized to PX4.
+        """
+
+        if sample_count <= 0:
+            raise ValueError("sample_count must be positive.")
+        if timeout_s <= 0.0:
+            raise ValueError("timeout_s must be positive.")
+        if max_round_trip_ms <= 0.0:
+            raise ValueError("max_round_trip_ms must be positive.")
+        if self._conn is None:
+            return summarize_timesync_exchanges(
+                [],
+                requested_sample_count=sample_count,
+                max_round_trip_ms=max_round_trip_ms,
+                transport_error="mavlink_not_connected",
+            )
+        if not hasattr(self._conn.mav, "timesync_send"):
+            return summarize_timesync_exchanges(
+                [],
+                requested_sample_count=sample_count,
+                max_round_trip_ms=max_round_trip_ms,
+                transport_error="timesync_message_unsupported_by_mavlink_dialect",
+            )
+
+        exchanges: list[dict[str, Any]] = []
+        for _ in range(sample_count):
+            host_sent_ns = time.monotonic_ns()
+            try:
+                self._conn.mav.timesync_send(0, host_sent_ns)
+            except Exception as exc:
+                exchanges.append(
+                    {
+                        "status": "rejected",
+                        "reason": f"timesync_request_failed:{type(exc).__name__}",
+                        "host_sent_monotonic_ns": host_sent_ns,
+                    }
+                )
+                continue
+
+            deadline = time.monotonic() + timeout_s
+            accepted_response = False
+            while time.monotonic() < deadline:
+                remaining_s = max(0.0, deadline - time.monotonic())
+                message = self._conn.recv_match(type="TIMESYNC", blocking=True, timeout=remaining_s)
+                if message is None:
+                    break
+                host_received_ns = time.monotonic_ns()
+                returned_ts1 = _as_optional_int(getattr(message, "ts1", None))
+                remote_tc1 = _as_optional_int(getattr(message, "tc1", None))
+                if returned_ts1 != host_sent_ns:
+                    # Other MAVLink clients can have an in-flight TIMESYNC
+                    # request. It is not evidence for this Pi request.
+                    continue
+                response_target_system = getattr(message, "target_system", 0)
+                response_target_component = getattr(message, "target_component", 0)
+                if response_target_system not in (0, self.source_system) or response_target_component not in (0, self.source_component):
+                    continue
+                if remote_tc1 is None or remote_tc1 <= 0:
+                    exchanges.append(
+                        {
+                            "status": "rejected",
+                            "reason": "timesync_response_missing_remote_timestamp",
+                            "host_sent_monotonic_ns": host_sent_ns,
+                            "host_received_monotonic_ns": host_received_ns,
+                        }
+                    )
+                else:
+                    exchanges.append(
+                        {
+                            "status": "observed",
+                            "host_sent_monotonic_ns": host_sent_ns,
+                            "host_received_monotonic_ns": host_received_ns,
+                            "px4_timestamp_ns": remote_tc1,
+                            "source_system": message.get_srcSystem() if hasattr(message, "get_srcSystem") else None,
+                            "source_component": message.get_srcComponent() if hasattr(message, "get_srcComponent") else None,
+                            "response_target_system": response_target_system,
+                            "response_target_component": response_target_component,
+                        }
+                    )
+                accepted_response = True
+                break
+            if not accepted_response:
+                exchanges.append(
+                    {
+                        "status": "rejected",
+                        "reason": "timesync_response_timeout",
+                        "host_sent_monotonic_ns": host_sent_ns,
+                    }
+                )
+        return summarize_timesync_exchanges(
+            exchanges,
+            requested_sample_count=sample_count,
+            max_round_trip_ms=max_round_trip_ms,
+        )
+
     def try_read_telemetry(self, timeout_s: float = 0.0) -> MavlinkTelemetrySample | None:
         """Read one non-blocking PX4 telemetry sample when the link is bidirectional.
 
@@ -177,27 +400,60 @@ class MavlinkVisionBridge:
 
         if self._conn is None:
             return None
+        self._poll_timesync_recording(time.monotonic_ns())
+        message_types = ["HEARTBEAT", "ATTITUDE", "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT", "GPS_RAW_INT", "ALTITUDE", "SCALED_PRESSURE",
+                         "HIGHRES_IMU", "SCALED_IMU", "SCALED_IMU2", "SCALED_IMU3"]
+        if self._timesync_recording is not None:
+            message_types.append("TIMESYNC")
         message = self._conn.recv_match(
-            type=["ATTITUDE", "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT", "GPS_RAW_INT", "ALTITUDE", "SCALED_PRESSURE"],
+            type=message_types,
             blocking=timeout_s > 0.0,
             timeout=timeout_s,
         )
         if message is None:
             return None
         message_type = message.get_type()
+        if message_type == "TIMESYNC":
+            self._consume_timesync_response(message, time.monotonic_ns())
+            return None
         timestamp_us = int(time.time() * 1_000_000)
+        vehicle_timestamp_us, vehicle_time_domain = _message_vehicle_timestamp(message, message_type)
+        if message_type in {"HIGHRES_IMU", "SCALED_IMU", "SCALED_IMU2", "SCALED_IMU3"}:
+            highres = message_type == "HIGHRES_IMU"
+            def vector(suffix: str, scale: float) -> tuple[float, float, float] | None:
+                values = [_as_optional_float(getattr(message, axis + suffix, None)) for axis in "xyz"]
+                return tuple(value * scale for value in values) if all(value is not None for value in values) else None
+
+            return MavlinkTelemetrySample(
+                message_type=message_type, timestamp_us=timestamp_us, vehicle_timestamp_us=vehicle_timestamp_us,
+                vehicle_time_domain=vehicle_time_domain,
+                acceleration_m_s2=vector("acc", 1.0 if highres else 9.80665 / 1000),
+                angular_velocity_rad_s=vector("gyro", 1.0 if highres else 1.0 / 1000),
+                imu_sensor_id=(_as_optional_int(getattr(message, "id", None)) if highres else
+                               {"SCALED_IMU": 0, "SCALED_IMU2": 1, "SCALED_IMU3": 2}[message_type]),
+                imu_frame="body_frd" if highres else "sender_axes_unverified",
+                imu_fields_updated=_as_optional_int(getattr(message, "fields_updated", None)) if highres else None,
+                source_system=message.get_srcSystem() if hasattr(message, "get_srcSystem") else None,
+                source_component=message.get_srcComponent() if hasattr(message, "get_srcComponent") else None,
+            )
         if message_type == "ATTITUDE":
             return MavlinkTelemetrySample(
                 message_type=message_type,
                 timestamp_us=timestamp_us,
+                vehicle_timestamp_us=vehicle_timestamp_us,
+                vehicle_time_domain=vehicle_time_domain,
                 roll_rad=_as_optional_float(getattr(message, "roll", None)),
                 pitch_rad=_as_optional_float(getattr(message, "pitch", None)),
                 yaw_rad=_as_optional_float(getattr(message, "yaw", None)),
+                source_system=message.get_srcSystem() if hasattr(message, "get_srcSystem") else None,
+                source_component=message.get_srcComponent() if hasattr(message, "get_srcComponent") else None,
             )
         if message_type == "LOCAL_POSITION_NED":
             return MavlinkTelemetrySample(
                 message_type=message_type,
                 timestamp_us=timestamp_us,
+                vehicle_timestamp_us=vehicle_timestamp_us,
+                vehicle_time_domain=vehicle_time_domain,
                 local_north_m=_as_optional_float(getattr(message, "x", None)),
                 local_east_m=_as_optional_float(getattr(message, "y", None)),
                 local_down_m=_as_optional_float(getattr(message, "z", None)),
@@ -206,6 +462,8 @@ class MavlinkVisionBridge:
             return MavlinkTelemetrySample(
                 message_type=message_type,
                 timestamp_us=timestamp_us,
+                vehicle_timestamp_us=vehicle_timestamp_us,
+                vehicle_time_domain=vehicle_time_domain,
                 gps_lat=_scaled_int(getattr(message, "lat", None), 1e7),
                 gps_lon=_scaled_int(getattr(message, "lon", None), 1e7),
                 global_alt_m=_scaled_int(getattr(message, "alt", None), 1000.0),
@@ -215,6 +473,8 @@ class MavlinkVisionBridge:
             return MavlinkTelemetrySample(
                 message_type=message_type,
                 timestamp_us=timestamp_us,
+                vehicle_timestamp_us=vehicle_timestamp_us,
+                vehicle_time_domain=vehicle_time_domain,
                 gps_lat=_scaled_int(getattr(message, "lat", None), 1e7),
                 gps_lon=_scaled_int(getattr(message, "lon", None), 1e7),
                 gps_alt_m=_scaled_int(getattr(message, "alt", None), 1000.0),
@@ -229,6 +489,8 @@ class MavlinkVisionBridge:
             return MavlinkTelemetrySample(
                 message_type=message_type,
                 timestamp_us=timestamp_us,
+                vehicle_timestamp_us=vehicle_timestamp_us,
+                vehicle_time_domain=vehicle_time_domain,
                 pressure_altitude_m=_as_optional_float(getattr(message, "altitude_monotonic", None)),
                 relative_altitude_m=_as_optional_float(getattr(message, "altitude_relative", None)),
             )
@@ -236,9 +498,16 @@ class MavlinkVisionBridge:
             return MavlinkTelemetrySample(
                 message_type=message_type,
                 timestamp_us=timestamp_us,
+                vehicle_timestamp_us=vehicle_timestamp_us,
+                vehicle_time_domain=vehicle_time_domain,
                 pressure_hpa=_as_optional_float(getattr(message, "press_abs", None)),
             )
-        return MavlinkTelemetrySample(message_type=message_type, timestamp_us=timestamp_us)
+        return MavlinkTelemetrySample(
+            message_type=message_type,
+            timestamp_us=timestamp_us,
+            vehicle_timestamp_us=vehicle_timestamp_us,
+            vehicle_time_domain=vehicle_time_domain,
+        )
 
     def send_match_result(
         self,
@@ -317,6 +586,116 @@ class MavlinkVisionBridge:
                 "has_velocity_covariance": any(math.isfinite(value) for value in payload.velocity_covariance_urt),
             },
         )
+
+
+def summarize_timesync_exchanges(
+    exchanges: list[dict[str, Any]],
+    *,
+    requested_sample_count: int,
+    max_round_trip_ms: float,
+    min_accepted_sample_count: int = 3,
+    transport_error: str | None = None,
+) -> dict[str, Any]:
+    """Summarize raw TIMESYNC exchanges into immutable capture evidence."""
+
+    if requested_sample_count <= 0:
+        raise ValueError("requested_sample_count must be positive.")
+    if min_accepted_sample_count <= 0:
+        raise ValueError("min_accepted_sample_count must be positive.")
+    if max_round_trip_ms <= 0.0:
+        raise ValueError("max_round_trip_ms must be positive.")
+
+    accepted: list[dict[str, Any]] = []
+    rejection_counts: dict[str, int] = {}
+    normalized: list[dict[str, Any]] = []
+    for exchange in exchanges:
+        sent = exchange.get("host_sent_monotonic_ns")
+        received = exchange.get("host_received_monotonic_ns")
+        px4_timestamp = exchange.get("px4_timestamp_ns")
+        if not all(isinstance(value, int) and value > 0 for value in (sent, received, px4_timestamp)):
+            reason = str(exchange.get("reason") or "invalid_timesync_exchange")
+            rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
+            normalized.append({"status": "rejected", "reason": reason})
+            continue
+        if received < sent:
+            reason = "timesync_negative_round_trip"
+            rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
+            normalized.append({"status": "rejected", "reason": reason})
+            continue
+        round_trip_ms = (received - sent) / 1_000_000.0
+        midpoint_ns = (sent + received) // 2
+        remote_minus_host_midpoint_ns = px4_timestamp - midpoint_ns
+        entry = {
+            "status": "accepted" if round_trip_ms <= max_round_trip_ms else "rejected",
+            "host_sent_monotonic_ns": sent,
+            "host_received_monotonic_ns": received,
+            "px4_timestamp_ns": px4_timestamp,
+            "round_trip_ms": round(round_trip_ms, 3),
+            "px4_minus_host_midpoint_ns": remote_minus_host_midpoint_ns,
+            "source_system": exchange.get("source_system"),
+            "source_component": exchange.get("source_component"),
+            "response_target_system": exchange.get("response_target_system"),
+            "response_target_component": exchange.get("response_target_component"),
+        }
+        if round_trip_ms > max_round_trip_ms:
+            entry["reason"] = "timesync_round_trip_exceeds_limit"
+            rejection_counts[entry["reason"]] = rejection_counts.get(entry["reason"], 0) + 1
+        else:
+            accepted.append(entry)
+        normalized.append(entry)
+
+    round_trips = [float(entry["round_trip_ms"]) for entry in accepted]
+    offsets = [int(entry["px4_minus_host_midpoint_ns"]) for entry in accepted]
+    offset_median_ns = int(median(offsets)) if offsets else None
+    offset_max_deviation_ns = max(abs(value - offset_median_ns) for value in offsets) if offsets and offset_median_ns is not None else None
+    errors: list[str] = []
+    if transport_error:
+        errors.append(transport_error)
+    if len(accepted) < min_accepted_sample_count:
+        errors.append("insufficient_low_latency_timesync_samples")
+    return {
+        "schema_version": "vision_nav_mavlink_timesync_audit_v1",
+        "status": "available" if not errors else "unavailable",
+        "policy": "capture_timing_evidence_only",
+        "requirements": {
+            "requested_sample_count": requested_sample_count,
+            "min_accepted_sample_count": min_accepted_sample_count,
+            "max_round_trip_ms": max_round_trip_ms,
+        },
+        "observed_sample_count": len(exchanges),
+        "accepted_sample_count": len(accepted),
+        "rejected_sample_count": len(normalized) - len(accepted),
+        "rejection_counts": rejection_counts,
+        "round_trip_median_ms": round(float(median(round_trips)), 3) if round_trips else None,
+        "round_trip_max_ms": round(max(round_trips), 3) if round_trips else None,
+        "px4_minus_host_midpoint_median_ns": offset_median_ns,
+        "px4_minus_host_midpoint_max_deviation_ns": offset_max_deviation_ns,
+        "exchanges": normalized,
+        "errors": errors,
+    }
+
+
+def _message_vehicle_timestamp(message: Any, message_type: str) -> tuple[int | None, str | None]:
+    """Return MAVLink-native time without inventing a clock conversion.
+
+    PX4 commonly supplies ``time_boot_ms`` for attitude/local-state messages.
+    Some MAVLink messages expose ``time_usec`` whose epoch is explicitly
+    ambiguous. The magnitude tells us when it is Unix epoch time; otherwise we
+    preserve the ambiguity so downstream capture tooling can still retain the
+    evidence without treating it as synchronized wall time.
+    """
+
+    boot_ms = _as_optional_int(getattr(message, "time_boot_ms", None))
+    if boot_ms is not None and boot_ms >= 0:
+        return boot_ms * 1_000, "px4_boot_us"
+
+    time_usec = _as_optional_int(getattr(message, "time_usec", None))
+    if time_usec is None or time_usec < 0:
+        return None, None
+    if time_usec >= 100_000_000_000_000:
+        return time_usec, "unix_epoch_us"
+    return time_usec, f"{message_type.lower()}_boot_or_unknown_us"
+
 
 def _as_optional_float(value: Any) -> float | None:
     try:
@@ -454,37 +833,10 @@ def send_log_once(
     return result
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Send accepted vision-nav match log entries over MAVLink once.")
-    parser.add_argument("--log", required=True, help="matches.jsonl path.")
-    parser.add_argument("--endpoint", required=True, help="MAVLink endpoint such as udp:14550 or serial:/dev/ttyAMA0:921600.")
-    parser.add_argument("--ev-delay-ms", type=int, default=50)
-    parser.add_argument(
-        "--message-type",
-        choices=["vision_position_estimate", "odometry"],
-        default="odometry",
-        help="External-position MAVLink message to send.",
-    )
-    parser.add_argument("--rate-hz", type=float, default=0.0, help="Optional send rate. Default sends records as fast as possible.")
-    parser.add_argument("--repeat", type=int, default=1, help="Repeat the log this many times.")
-    return parser.parse_args()
-
-
 def main() -> None:
-    args = parse_args()
-    print(
-        json.dumps(
-            send_log_once(
-                args.log,
-                args.endpoint,
-                args.ev_delay_ms,
-                message_type=args.message_type,
-                rate_hz=args.rate_hz,
-                repeat=args.repeat,
-            ),
-            indent=2,
-            sort_keys=True,
-        )
+    raise SystemExit(
+        "Direct replay-to-PX4 sending is retired. Bind the versioned "
+        "VisionNavigationRuntime to Px4VisionBridge after the required safety validation."
     )
 
 

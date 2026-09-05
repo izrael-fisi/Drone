@@ -1,0 +1,11 @@
+# Isolated reference reproduction only. Never install into the Pi environment.
+# Matches the official legacy core stack; modern Torch/export parity is separate.
+torch==2.1.2
+torchvision==0.16.2
+numpy==1.26.4
+scipy==1.11.4
+pandas==2.1.4
+opencv-python==4.10.0.84
+Pillow==10.2.0
+imgaug==0.4.0
+PyYAML==6.0.3

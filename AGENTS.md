@@ -11,24 +11,45 @@ Build a GNSS-denied drone navigation stack with two active sections:
 2. **Ground-control / mission-planner desktop app** for map selection, mission
    planning, runtime setup, telemetry monitoring, and evidence review.
 
-The active navigation goal is vision + IMU/PX4-state localization against
-preloaded georeferenced maps. GPS is primary when healthy; terrain vision and
-dead reckoning are the fallback path when GPS is weak, jammed, or unavailable.
+The active navigation goal is vision-first localization against versioned,
+preloaded georeferenced maps. GPS is an independent primary telemetry source
+when healthy; the visual system must never silently become a metric global pose
+without map geometry, calibration, timestamp, covariance, and ambiguity gates.
+
+Read `docs/architecture.md`, `docs/interface-reference.md`,
+`docs/px4-integration.md`, and `docs/change-playbook.md` before changing the
+navigation path. Those documents supersede the older prototype architecture.
 
 ## What Is Out Of Scope
 
-- Do not reintroduce ROS 2, Gazebo, or PX4 SITL as active project scaffolding.
+- Do not reintroduce ROS 2 or Gazebo as active project scaffolding. The staged
+  validation ladder may call for PX4 SITL evidence in a future vehicle-integration
+  milestone, but no SITL framework belongs in routine setup or runtime paths.
 - Do not add LLM/MCP flight-control features.
-- Do not make neural matching the default runtime path. ORB/AKAZE classical CV
-  remains the Raspberry Pi-safe baseline; SuperPoint/LightGlue remains optional
-  higher-compute scaffolding.
+- `pi5_crossview_nav_v1` is the active vehicle profile: learned retrieval,
+  learned correspondence, and a distilled temporal student. ORB/AKAZE/SIFT are
+  frozen replay baselines only; do not add them to active map building, runtime,
+  mission bundles, or operator settings.
 - Do not auto-change PX4 parameters from the desktop app. Document and verify
   parameter guidance instead.
 
 ## Key Directories
 
-- `src/vision_nav/`: Python terrain vision runtime, bundle tools, matching,
-  estimator, MAVLink/status bridge, support/evidence tooling.
+- `src/vision_nav/vio/` and `research/native/openvins/`: opt-in ROS-free native
+  local VIO research replay. Pinned OpenVINS GPL code is not an approved product
+  dependency. KLT tracks local motion only; learned map matching is unchanged.
+  Native posterior covariance must not be relabeled as independent smoother
+  factor noise. No Pi service or PX4 publication is enabled by this adapter.
+
+- `src/vision_nav/neural/`: active learned runtime. New model-release,
+  retrieval, local-matching, temporal, geometry, and shadow-evidence behavior
+  belongs here.
+- `src/vision_nav/`: camera calibration/capture, MAVLink read-only telemetry,
+  PX4 boundary, training data, and support/evidence tooling.
+- `src/vision_nav/types.py`, `contracts.py`, `runtime/`, `estimation/`,
+  `mapping/`, and `px4/`: shared contracts and future promotion boundary.
+- Legacy root-level terrain matching modules remain replay/migration tools.
+  They must not gain learned-runtime or PX4 publication paths.
 - `scripts/pi/`: Raspberry Pi setup, validation, runtime, field capture, status
   bridge, and support-bundle wrappers.
 - `desktop-app/`: Tauri + React operator app.
@@ -104,8 +125,10 @@ See `docs/windows-11-codex-handoff.md` for the Windows setup path.
 - Treat Holybro X500 / Pixhawk tests as prop-off until explicitly cleared.
 - Bench workflows should collect evidence before enabling in-flight external
   vision control.
-- MAVLink external vision/odometry is the PX4-first path; ArduPilot adapters are
-  future optional work.
+- Only `vision_nav.px4.Px4VisionBridge` may cross the new runtime boundary.
+  It publishes nothing unless mode is `TRACKING`, the estimate is fresh and
+  finite, covariance is within policy, map/model/calibration compatibility is
+  confirmed, and transport health is known.
 - PX4 parameter snapshots in `config/px4/` are evidence, not blind restore files.
 
 ## Commit Hygiene

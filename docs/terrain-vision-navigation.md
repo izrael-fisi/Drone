@@ -1,5 +1,11 @@
 # Terrain Vision Navigation
 
+> **Legacy replay reference.** The active Pi path is
+> [`pi5_crossview_nav_v1`](vision-pipeline.md): versioned learned map/model
+> releases, MegaLoc, XFeat/LighterGlue, temporal PX4-attitude context, and
+> shadow-only geometry evidence. This document describes the earlier terrain
+> bundle workflow and must not be used to configure a new vehicle runtime.
+
 This repo supports an additive terrain navigation path for GNSS-denied testing
 with only:
 
@@ -175,5 +181,8 @@ The prototype estimator is conservative:
 - weak or stale visual scale reduces `scale_confidence`
 - rejected matches are logged but not sent as MAVLink vision measurements
 
-This produces measurement candidates for PX4 MAVLink external-vision bench
-tests; it does not reset flight state directly.
+This produces map-evaluation and replay candidates only. The legacy terrain
+loop does not publish MAVLink external vision. A future PX4 output must come
+from `VisionNavigationRuntime` through `Px4VisionBridge`, after the versioned
+frame/map/model compatibility and `TRACKING` gates documented in
+`architecture.md` and `px4-integration.md` pass.

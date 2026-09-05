@@ -22,9 +22,9 @@ The Raspberry Pi uses its onboard 256GB microSD for the first setup:
 ~/drone-data/
 ```
 
-Use the microSD for setup, camera checks, calibration images, small mission map
-bundles, and short runtime logs. Add a USB SSD later only for larger maps or
-longer logs.
+Use the microSD for setup, camera checks, calibration images, reference maps,
+short training captures, and short runtime logs. Add a USB SSD later only for
+larger map releases, longer captures, or retained research datasets.
 
 ## Pi Identity Needed By Codex Or The Desktop App
 
@@ -79,29 +79,36 @@ From the Mac:
 PI_USER=pi PI_HOST=raspberrypi.local ./scripts/mac/run_pi_first_checks.sh
 ```
 
-## Active Bench Commands
+## Active Prop-Off Path
 
-Validate the deployed terrain bundle:
-
-```bash
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
-./scripts/pi/validate_terrain_bundle.sh
-```
-
-Run a logging-only terrain capture:
+The first real-data path is camera/PX4 evidence, not legacy map matching. Keep
+the vehicle disarmed with propellers removed:
 
 ```bash
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
-VISION_NAV_COUNT=30 \
-./scripts/pi/run_terrain_nav_loop.sh
+cd ~/Drone
+./scripts/pi/capture_camera_bench.sh
+VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
+./scripts/pi/capture_mavlink_bench.sh
 ```
 
-Read runtime status:
+After measured intrinsics, camera-to-body transform, and a
+`ReferenceMapRelease` are available, use the single preparation gate:
 
 ```bash
-VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match \
-./scripts/pi/read_runtime_status.sh
+VISION_NAV_PROP_OFF_CONFIRMED=1 \
+VISION_NAV_REFERENCE_MAP=$HOME/drone-data/reference-maps/first-site/reference_map.json \
+VISION_NAV_CALIBRATION_ID=down-camera-v1 \
+VISION_NAV_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
+VISION_NAV_TRAINING_SESSION_ID=first-field-capture \
+./scripts/pi/prepare_first_training_capture.sh
 ```
+
+The printed recorder command creates the synchronized camera/PX4 evidence
+session. It does not arm the aircraft, modify PX4, or publish vision position.
+
+To run an approved learned model/map combination later, use
+`./scripts/pi/run_vision_nav_shadow.sh`; it remains shadow-only and reports
+`TRACKING`, `RECOVERING`, or `NO_GLOBAL_FIX`.
 
 Check Pixhawk/PX4 parameter export:
 
@@ -112,6 +119,7 @@ VISION_NAV_PX4_PARAMS=$HOME/px4.params ./scripts/pi/check_px4_params.sh
 Create a support bundle:
 
 ```bash
+VISION_NAV_TRAINING_CAPTURE_DIR=$HOME/drone-data/captures/first-field-capture \
 ./scripts/pi/create_support_bundle.sh
 ```
 

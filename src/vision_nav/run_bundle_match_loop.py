@@ -9,9 +9,7 @@ from pathlib import Path
 from vision_nav.build_map_bundle import build_map_bundle
 from vision_nav.bundle import load_manifest, manifest_features_path, manifest_orthophoto_path
 from vision_nav.capture_frame import capture_frame
-from vision_nav.external_position_health import ExternalPositionHealthConfig, ExternalPositionStreamHealth
 from vision_nav.match_frame_to_map import match_frame_to_map
-from vision_nav.mavlink_bridge import MavlinkVisionBridge
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,7 +45,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Build the bundle feature index before starting if it is missing.",
     )
-    parser.add_argument("--mavlink-endpoint", help="Optional MAVLink endpoint for accepted vision measurements.")
+    parser.add_argument(
+        "--mavlink-endpoint",
+        help="Deprecated compatibility option. Legacy matching never publishes PX4 vision observations.",
+    )
     parser.add_argument("--mavlink-ev-delay-ms", type=int, default=50)
     parser.add_argument("--mavlink-system-id", type=int, default=1)
     parser.add_argument("--mavlink-component-id", type=int, default=197)
@@ -57,7 +58,7 @@ def parse_args() -> argparse.Namespace:
         "--mavlink-message",
         choices=["vision_position_estimate", "odometry"],
         default="odometry",
-        help="MAVLink external-position message to send when --mavlink-endpoint is set.",
+        help="Deprecated compatibility option; no external-position message is sent.",
     )
     parser.add_argument("--external-position-min-rate-hz", type=float, default=1.0)
     parser.add_argument("--external-position-max-latency-ms", type=float, default=500.0)
@@ -103,26 +104,6 @@ def ensure_feature_index(bundle_arg: str, build_if_missing: bool) -> tuple[Path,
 def main() -> None:
     args = parse_args()
     _, map_path, features_path = ensure_feature_index(args.bundle, args.build_if_missing)
-    mavlink_bridge = None
-    external_position_health = None
-    if args.mavlink_endpoint:
-        mavlink_bridge = MavlinkVisionBridge(
-            args.mavlink_endpoint,
-            system_id=args.mavlink_system_id,
-            component_id=args.mavlink_component_id,
-            source_system=args.mavlink_source_system,
-            source_component=args.mavlink_source_component,
-            ev_delay_ms=args.mavlink_ev_delay_ms,
-        )
-        mavlink_bridge.connect()
-        external_position_health = ExternalPositionStreamHealth(
-            ExternalPositionHealthConfig(
-                min_rate_hz=args.external_position_min_rate_hz,
-                max_latency_ms=args.external_position_max_latency_ms,
-                max_horizontal_variance_m2=args.external_position_max_horizontal_var_m2,
-            )
-        )
-
     output_dir = Path(args.output_dir)
     frames_dir = output_dir / "frames"
     viz_dir = output_dir / "viz"
@@ -134,12 +115,7 @@ def main() -> None:
     sequence = 0
     print(f"Writing match log: {log_path}")
 
-    try:
-        log_file_context = log_path.open("a", encoding="utf-8")
-    except Exception:
-        if mavlink_bridge:
-            mavlink_bridge.close()
-        raise
+    log_file_context = log_path.open("a", encoding="utf-8")
 
     with log_file_context as log_file:
         try:
@@ -178,19 +154,13 @@ def main() -> None:
                 match_start = time.monotonic()
                 result = match_frame_to_map(match_args)
                 match_duration_s = time.monotonic() - match_start
-                mavlink_result = None
+                mavlink_result = {
+                    "sent": False,
+                    "reason": "legacy_bundle_loop_publication_disabled",
+                    "architecture": "vision_first_v2",
+                    "endpoint_configured": bool(args.mavlink_endpoint),
+                }
                 external_position_health_snapshot = None
-                if mavlink_bridge is not None:
-                    mavlink_result = mavlink_bridge.send_match_result(
-                        result,
-                        message_type=args.mavlink_message,
-                    ).to_dict()
-                    if external_position_health is not None:
-                        external_position_health_snapshot = external_position_health.update(
-                            result=result,
-                            mavlink_result=mavlink_result,
-                            message_type=args.mavlink_message,
-                        ).to_dict()
 
                 record = {
                     "sequence": sequence,
@@ -212,9 +182,6 @@ def main() -> None:
                     time.sleep(sleep_s)
         except KeyboardInterrupt:
             print("\nStopped by user.")
-        finally:
-            if mavlink_bridge:
-                mavlink_bridge.close()
 
 
 if __name__ == "__main__":

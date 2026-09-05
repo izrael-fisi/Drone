@@ -1,0 +1,43 @@
+# All coordinates are ENU metres in the offline map frame. Camera is rigidly calibrated to body.
+camera:
+  calibration_id: pi5-downward-rgb-v1
+  clock_domain: camera-hardware-monotonic
+  intrinsics: [960.0, 960.0, 640.0, 360.0] # fx, fy, cx, cy
+  image_size: [1280, 720]
+  body_T_camera: [0, 0, 0, 0, 0, 0, 1] # tx,ty,tz,qx,qy,qz,qw
+
+models:
+  global_retrieval: megaloc_pretrained_frozen
+  sparse_matching: xfeat_lighterglue
+  local_geometry: usac_magsac_pnp
+  temporal_student: pi5_crossview_nav_v1
+  dense_verification: cloud_teacher_only
+  semantic_prior: auxiliary_retrieval_only
+
+runtime:
+  vo_hz: 30
+  local_correlation_hz: 5
+  global_recovery_hz: 0.5
+  retrieval_top_k: 12
+  max_hypotheses: 6
+  min_inliers: 24
+  min_inlier_ratio: 0.30
+  min_accept_confidence: 0.72
+  min_hold_confidence: 0.45
+  max_covariance_trace_m2: 100.0
+  recovery_after_s: 1.5
+
+map:
+  release_manifest: data/map/release.json
+  tile_size_m: 256.0
+  pyramid_levels: [0.25, 0.5, 1.0] # metres / pixel
+  descriptor_dimension: 8448
+  index: data/map/index.jsonl
+
+px4:
+  transport: pymavlink_read_only # no actuator commands; learned pose publication remains disabled
+  publish_hz: 20
+  frame: LOCAL_NED
+  publish_only_when: TRACKING
+  max_estimate_age_s: 0.15
+  max_covariance_trace_m2: 100.0

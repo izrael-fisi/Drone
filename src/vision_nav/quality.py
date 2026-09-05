@@ -26,6 +26,21 @@ def frame_quality_metrics(gray_image: np.ndarray) -> dict[str, float]:
     }
 
 
+def edge_density_per_megapixel(gray_image: np.ndarray, *, low_threshold: int = 80, high_threshold: int = 160) -> float:
+    """Return Canny edge coverage without selecting a localization feature model.
+
+    This is only a camera-health signal. It deliberately does not create a
+    deployable descriptor or matcher dependency, so the learned navigation
+    pipeline remains the sole active localization path.
+    """
+
+    if gray_image.ndim != 2:
+        raise ValueError("Expected a grayscale image")
+    edges = cv2.Canny(gray_image, low_threshold, high_threshold)
+    megapixels = max(float(gray_image.size) / 1_000_000.0, 1e-9)
+    return float(np.count_nonzero(edges) / megapixels)
+
+
 def feature_density(feature_count: int, image_shape: tuple[int, int]) -> float:
     height, width = image_shape[:2]
     megapixels = max((width * height) / 1_000_000.0, 1e-9)

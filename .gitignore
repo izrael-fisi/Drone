@@ -3,15 +3,25 @@ __pycache__/
 *.egg-info/
 .DS_Store
 .venv/
+.venv-research/
+.venv-bearing-reference/
 venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+research/vendor/
+research/outputs/
+research/environment_report.json
 
 # Runtime data
 data/*
 logs/*
 !data/.gitkeep
+!data/map/
+!data/map/release.example.json
+!data/map/neural-release.example.json
+!data/models/
+!data/models/*.example.json
 !data/replay_cases/
 !data/replay_cases/**/*.md
 !data/replay_cases/**/*.json

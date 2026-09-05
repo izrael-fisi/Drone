@@ -1,0 +1,102 @@
+{
+  "release_id": "pi5-crossview-nav@1.0.0",
+  "profile_id": "pi5_crossview_nav_v1",
+  "semantic_version": "1.0.0",
+  "checkpoint_digest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "onnx_digest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "training_dataset_releases": ["univ-airlock-holybro@draft"],
+  "source_revision": "replace-with-immutable-training-revision",
+  "license_summary": "Internal research release. Verify upstream component licenses before field promotion.",
+  "redistribution_allowed": false,
+  "calibration_ids": ["down-camera-v1"],
+  "artifact_paths": {
+    "global_retriever": "models/megaloc.onnx",
+    "local_features": "models/xfeat.onnx",
+    "local_matcher": "models/lighterglue.onnx",
+    "temporal_student": "models/pi5_crossview_nav_v1.onnx"
+  },
+  "teacher_lineage": ["video2bev", "bearing-uav-reproduction", "roma-v2", "mast3r-slam", "vggt", "topicgeo"],
+  "artifact_interfaces": {
+    "global_retriever": {
+      "inputs": {
+        "image": {
+          "name": "image",
+          "rank": 4,
+          "shadow_source": "frame_rgb",
+          "preprocess": {
+            "image_size": [640, 384],
+            "color_space": "rgb",
+            "layout": "nchw",
+            "dtype": "float32",
+            "value_range": "zero_one"
+          }
+        }
+      },
+      "outputs": {"embedding": {"name": "embedding", "rank": 2, "shadow_output": "retrieval_embedding"}}
+    },
+    "local_features": {
+      "inputs": {
+        "image": {
+          "name": "image",
+          "rank": 4,
+          "shadow_source": "frame_rgb",
+          "preprocess": {
+            "image_size": [640, 384],
+            "color_space": "rgb",
+            "layout": "nchw",
+            "dtype": "float32",
+            "value_range": "zero_one"
+          }
+        }
+      },
+      "outputs": {
+        "keypoints": {"name": "keypoints", "rank": 3, "shadow_output": "local_keypoints"},
+        "descriptors": {"name": "descriptors", "rank": 3, "shadow_output": "local_descriptors"},
+        "scores": {
+          "name": "scores",
+          "rank": 2,
+          "shadow_output": "local_feature_scores",
+          "minimum_score": 0.0
+        }
+      }
+    },
+    "local_matcher": {
+      "inputs": {
+        "keypoints0": {"name": "keypoints0", "rank": 3, "shadow_source": "query_local_keypoints"},
+        "keypoints1": {"name": "keypoints1", "rank": 3, "shadow_source": "map_tile_keypoints"},
+        "descriptors0": {"name": "descriptors0", "rank": 3, "shadow_source": "query_local_descriptors"},
+        "descriptors1": {"name": "descriptors1", "rank": 3, "shadow_source": "map_tile_descriptors"}
+      },
+      "outputs": {
+        "matches": {"name": "matches", "rank": 3, "shadow_output": "match_indices", "shadow_encoding": "pairs_last_dim_2", "pair_order": "query_then_map"},
+        "scores": {"name": "scores", "rank": 2, "shadow_output": "match_scores", "shadow_encoding": "per_correspondence", "minimum_confidence": 0.2}
+      },
+      "geometry": {
+        "mode": "homography_restricted",
+        "query_image_size": [640, 384],
+        "min_inliers": 24,
+        "min_inlier_ratio": 0.3,
+        "max_reprojection_error_px": 4.0,
+        "min_grid_coverage": 0.25
+      }
+    },
+    "temporal_student": {
+      "inputs": {
+        "frame_window": {
+          "name": "frame_window", "rank": 5,
+          "shadow_source": "frame_window_rgb", "window_size": 4,
+          "preprocess": {"image_size": [640, 384], "color_space": "rgb", "layout": "nchw", "dtype": "float32", "value_range": "zero_one"}
+        },
+        "attitude_window": {
+          "name": "attitude_window", "rank": 3,
+          "shadow_source": "attitude_window_rpy", "window_size": 4
+        }
+      },
+      "outputs": {
+        "location_distribution": {"name": "location_distribution", "rank": 2},
+        "heading_distribution": {"name": "heading_distribution", "rank": 2},
+        "temporal_feature": {"name": "temporal_feature", "rank": 2}
+      }
+    }
+  }
+}

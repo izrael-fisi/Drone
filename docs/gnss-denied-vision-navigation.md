@@ -1,5 +1,11 @@
 # GNSS-Denied Vision Navigation
 
+> **Legacy architecture reference.** Follow
+> [Vision Pipeline](vision-pipeline.md) and
+> [First Learned Shadow Run](first-learned-shadow-run.md) for the active
+> learned vehicle path. This document is retained for historical/replay context
+> and must not be used as a runtime implementation guide.
+
 ## Goal
 
 Develop a low-cost onboard navigation system that estimates UAV position when

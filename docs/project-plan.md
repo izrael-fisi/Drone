@@ -11,13 +11,20 @@ ROS 2, Gazebo, and PX4 SITL are out of scope for the active plan.
 ## Section 1: Drone Code Operation
 
 Goal: run a stable Raspberry Pi companion-computer stack that can capture
-downward imagery, match it to a preloaded terrain map bundle, log estimator
-health, and send MAVLink external-vision measurements to Pixhawk only when
-explicitly enabled.
+downward imagery, evaluate it against a preloaded learned map release, and
+produce shadow-only evidence through the versioned vision-first runtime. The
+active runtime uses explicit frame/time/calibration, map/model-release,
+geometry, ambiguity, and temporal contracts. PX4 publication is deliberately
+withheld until a later validation program passes.
 
 ### Stable Scaffold
 
 - Keep Python package code under `src/vision_nav/`.
+- Put new localization behavior under `types.py`, `contracts.py`, `runtime/`,
+  `estimation/`, `mapping/`, and `px4/`.
+- Keep root-level terrain matching loops as map/replay evidence only; do not
+  add direct PX4 publication to them. The active vehicle runtime is
+  `src/vision_nav/neural/shadow_runtime.py`.
 - Keep Pi operator wrappers under `scripts/pi/`.
 - Keep camera and Pi runtime config under `config/`.
 - Keep local smoke/preflight scripts under `scripts/dev/`.
@@ -37,16 +44,20 @@ Acceptance criteria:
 - Bootstrap Raspberry Pi 5.
 - Verify camera tools and Python environment.
 - Run synthetic vision smoke test.
-- Validate selected mission terrain bundle.
-- Run bounded terrain runtime capture.
+- Validate the compatible learned ModelRelease, MapRelease, and measured
+  camera calibration.
+- Run a bounded learned shadow probe from a saved frame, then live camera plus
+  read-only Pixhawk attitude.
 - Read and download runtime status.
 - Create support bundle.
 
 Acceptance criteria:
 
 - `./scripts/pi/first_run_checks.sh` completes.
-- `./scripts/pi/validate_terrain_bundle.sh` passes for the selected bundle.
-- `./scripts/pi/run_terrain_nav_loop.sh` writes `terrain_matches.jsonl`.
+- `./scripts/pi/validate_neural_model.sh` and
+  `./scripts/pi/validate_neural_runtime.sh` pass for the selected releases.
+- `./scripts/pi/run_vision_nav_shadow.sh --once` writes `runtime_status.json`
+  and `decision_trace.jsonl`.
 - `./scripts/pi/read_runtime_status.sh` finds `runtime_status.json`.
 
 ### Pixhawk/MAVLink Bench Setup
@@ -56,29 +67,33 @@ Acceptance criteria:
 - Export PX4 parameters from the real flight controller.
 - Run `./scripts/pi/check_px4_params.sh` against the export.
 - Run a prop-off MAVLink telemetry check from the Pi.
-- Enable external-vision MAVLink output only for bench logging first.
+- Collect MAVLink telemetry for bench evidence; bind external-vision ODOMETRY
+  only after the versioned runtime passes its replay, HIL, and PX4 transport
+  validation gates.
 
 Acceptance criteria:
 
 - The Pi can read Pixhawk heartbeat/attitude/local-state telemetry.
 - PX4 parameter report is saved.
-- Runtime logs show external-position health and skip/send reasons.
+- Runtime logs show telemetry health and explicit publication-withheld reasons.
 - No motor spin is commanded by this project code.
 
 ### Camera And Map Data
 
 - Calibrate the downward camera.
 - Measure or document camera-to-body mounting direction and offsets.
-- Build a terrain bundle from the selected map source.
-- Validate georeference, GSD, tile count, feature count, checksums, and mission
-  GNSS-denied prep metadata.
+- Prepare a learned MapRelease from the selected georeferenced map source.
+- Validate georeference, GSD, tile count, learned retrieval index, learned
+  local-feature cache, checksums, and calibration compatibility.
 
 Acceptance criteria:
 
 - `config/camera/down_camera.yaml` exists for the installed camera/lens.
 - `config/camera/camera_to_body.yaml` reflects the mounted camera.
-- `bundle_health.json` passes or explains any degraded checks.
-- Field capture preflight can find the deployed mission bundle.
+- MapRelease validation passes, including artifact checksums and compatible
+  calibration ID.
+- Training capture validation can find the deployed camera calibration and
+  camera-to-body transform.
 
 ## Section 2: Ground Control / Mission Planner Desktop App
 

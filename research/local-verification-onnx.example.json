@@ -1,0 +1,7 @@
+{
+  "schema_version": "vision_nav_learned_local_reference_v1",
+  "backend": "onnx_cpu",
+  "px4_external_vision": "disabled",
+  "export_dir": "outputs/local-onnx-v1",
+  "elevation_spec": null
+}

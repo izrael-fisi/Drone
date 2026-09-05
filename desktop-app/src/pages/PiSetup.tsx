@@ -850,12 +850,12 @@ function fieldCollectionPlanCommand(remoteProject: string, remoteBundle: string,
 
 function featureMethodBenchmarkCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {
   const env = [
-    `VISION_NAV_FEATURE_BENCH_BUNDLE=${shellQuote(remoteBundle)}`,
-    `VISION_NAV_FEATURE_BENCH_CASE_NAME=${shellQuote(fieldCase.caseName || "feature-method-benchmark")}`,
-    `VISION_NAV_FEATURE_BENCH_EXPECTED=${shellQuote(fieldCase.expected)}`,
-    "VISION_NAV_FEATURE_BENCH_METHODS=orb,akaze,sift,neural",
+    `VISION_NAV_MAP_RELEASE=${shellQuote(remoteBundle)}`,
+    `VISION_NAV_FIELD_CASE_NAME=${shellQuote(fieldCase.caseName || "neural-runtime-validation")}`,
+    `VISION_NAV_FIELD_EXPECTED=${shellQuote(fieldCase.expected)}`,
+    "VISION_NAV_INFERENCE_PROVIDER=onnxruntime_cpu",
   ].join(" ");
-  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/run_feature_method_benchmark.sh`;
+  return `cd ${shellQuote(remoteProject)} && ${env} ./scripts/pi/validate_neural_runtime.sh`;
 }
 
 function autonomyEvidenceWorkflowCommand(remoteProject: string, remoteBundle: string, fieldCase: FieldCaseForm) {

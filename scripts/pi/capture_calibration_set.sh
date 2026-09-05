@@ -8,6 +8,10 @@ count="${CALIBRATION_COUNT:-20}"
 delay_s="${CALIBRATION_DELAY_S:-2}"
 width="${CALIBRATION_WIDTH:-1456}"
 height="${CALIBRATION_HEIGHT:-1088}"
+camera_backend="${CALIBRATION_CAMERA_BACKEND:-auto}"
+board_cols="${CALIBRATION_BOARD_COLS:-}"
+board_rows="${CALIBRATION_BOARD_ROWS:-}"
+square_size_m="${CALIBRATION_SQUARE_SIZE_M:-}"
 
 if [[ ! -x "$venv_python" ]]; then
   echo "Missing Python venv: $venv_python" >&2
@@ -15,21 +19,20 @@ if [[ ! -x "$venv_python" ]]; then
   exit 1
 fi
 
-mkdir -p "$out_dir"
+args=(
+  -m vision_nav.calibration_session
+  --output-dir "$out_dir"
+  --count "$count"
+  --delay-s "$delay_s"
+  --width "$width"
+  --height "$height"
+  --timeout-ms 1000
+  --camera-backend "$camera_backend"
+)
+if [[ -n "$board_cols" ]]; then args+=(--cols "$board_cols"); fi
+if [[ -n "$board_rows" ]]; then args+=(--rows "$board_rows"); fi
+if [[ -n "$square_size_m" ]]; then args+=(--square-size-m "$square_size_m"); fi
 
-echo "Capturing $count calibration images to $out_dir"
+echo "Capturing $count traceable calibration images to $out_dir"
 echo "Move/tilt the chessboard between captures. Press Ctrl+C to stop early."
-
-for i in $(seq -w 1 "$count"); do
-  output="$out_dir/calib_${i}.jpg"
-  echo "[$i/$count] $output"
-  PYTHONPATH="$repo_root/src" "$venv_python" -m vision_nav.capture_frame \
-    --output "$output" \
-    --width "$width" \
-    --height "$height" \
-    --timeout-ms 1000
-  sleep "$delay_s"
-done
-
-echo "Calibration images written to: $out_dir"
-
+PYTHONPATH="$repo_root/src" "$venv_python" "${args[@]}"

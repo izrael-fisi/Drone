@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/rpng/open_vins.git",
+  "commit": "69488123ed9362dd44b6f28e7f4680abbff1442b",
+  "role": "local_visual_inertial_frontend_evaluation",
+  "license": "GPL-3.0-or-later",
+  "distribution_approved": false,
+  "runtime_scope": "opt_in_native_research_replay",
+  "map_matching": "unchanged_learned_pipeline",
+  "local_tracking": "KLT",
+  "ros_required": false,
+  "px4_publication": "disabled",
+  "hardware_qualified": false
+}

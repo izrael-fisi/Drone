@@ -1,0 +1,95 @@
+{
+  "schema_version": "vision_nav_research_upstreams_v1",
+  "projects": [
+    {
+      "name": "bearinguav",
+      "role": "neighbor_conditioned_location_heading_reference",
+      "repository": "https://github.com/liukejia121/bearinguav.git",
+      "commit": "d16e558a14bd0a9142c6901793fe6a6813e4e954",
+      "runtime_scope": "cloud_teacher",
+      "license_status": "verify_before_distribution",
+      "license": "Apache-2.0 source; checkpoint and dataset terms not declared in inspected cards"
+    },
+    {
+      "name": "megaloc",
+      "role": "global_retrieval",
+      "repository": "https://github.com/gmberton/MegaLoc.git",
+      "commit": "5fe0dd697c4a70ba3e23607f6716ab3c606b16db",
+      "runtime_scope": "pi_export_source",
+      "license_status": "verified",
+      "license": "MIT"
+    },
+    {
+      "name": "xfeat",
+      "role": "local_features_and_lighterglue",
+      "repository": "https://github.com/verlab/accelerated_features.git",
+      "commit": "e92685f57f8318b18725c5c8c0bd28c7fe188d9a",
+      "runtime_scope": "pi_export_source",
+      "license_status": "verified",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "video2bev",
+      "role": "temporal_bev_teacher",
+      "repository": "https://github.com/HaoDot/Video2BEV-Open.git",
+      "commit": "8c80dcb00cc10a74bf6401e06143acffe1d58ebc",
+      "runtime_scope": "cloud_teacher",
+      "license_status": "verify_before_distribution",
+      "license": "verify before field redistribution"
+    },
+    {
+      "name": "roma",
+      "role": "dense_registration_teacher",
+      "repository": "https://github.com/Parskatt/RoMa.git",
+      "commit": "77f8d68803526dcddfd9b7a46bc76125bdc25f15",
+      "runtime_scope": "cloud_teacher",
+      "license_status": "verify_before_distribution",
+      "license": "verify before field redistribution"
+    },
+    {
+      "name": "mast3r_slam",
+      "role": "geometry_teacher",
+      "repository": "https://github.com/rmurai0610/MASt3R-SLAM.git",
+      "commit": "e6f4e3d474fad0e11f561482012be864ba8c3f17",
+      "runtime_scope": "cloud_teacher",
+      "license_status": "research_only",
+      "license": "verify before field redistribution"
+    },
+    {
+      "name": "vggt",
+      "role": "reconstruction_teacher",
+      "repository": "https://github.com/facebookresearch/vggt.git",
+      "commit": "a288dd0f14786c93483e45524328726ab7b1b4ce",
+      "runtime_scope": "cloud_teacher",
+      "license_status": "verify_before_distribution",
+      "license": "verify before field redistribution"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "video2bev_first_stage_v1",
+      "project": "video2bev",
+      "branch": "first-stage",
+      "commit": "0b5a7aabbaf451d041b0d2089eaad1b11b8fba57",
+      "entrypoint": "train.sh",
+      "data_contract": "official_dataset_layout"
+    },
+    {
+      "id": "video2bev_second_stage_v1",
+      "project": "video2bev",
+      "branch": "second-stage-training",
+      "commit": "d6737eb6ca3ead1bdfdc6f38b20347597ed5abce",
+      "entrypoint": "train.sh",
+      "data_contract": "official_dataset_layout",
+      "required_checkpoint_key": "first_stage_checkpoint"
+    },
+    {
+      "id": "xfeat_default_v1",
+      "project": "xfeat",
+      "branch": "main",
+      "commit": "d84a9e2a8615dc7ea408c71cac04c0dd85444a27",
+      "entrypoint": "modules/training/train.py",
+      "data_contract": "vision_nav_map_pairs"
+    }
+  ]
+}

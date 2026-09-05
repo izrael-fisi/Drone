@@ -1,0 +1,22 @@
+{
+  "schema_version": "vision_nav_local_feature_cache_v1",
+  "map_release_id": "field-area@1.0.0",
+  "model_release_id": "pi5-crossview-nav@1.0.0",
+  "tiles": [
+    {
+      "tile_id": "tile_000001",
+      "feature_uri": "../features/xfeat/tile_000001.npz",
+      "sha256": "replace-with-sha256-of-the-npz"
+    }
+  ],
+  "asset_requirements": {
+    "keypoints": "Float tensor shaped exactly as the active local_matcher expects for its map-tile keypoints input.",
+    "descriptors": "Float tensor shaped exactly as the active local_matcher expects for its map-tile descriptors input.",
+    "map_points_enu_m": "Optional N x 3 float array, index-aligned to keypoints. Required for pnp_3d candidate-pose geometry."
+  },
+  "notes": [
+    "feature_uri is resolved relative to this metadata file. The standard MapRelease layout stores metadata in index/ and feature NPZ files in ../features/xfeat/.",
+    "The cached features must come from the same local_features export declared in ModelRelease.",
+    "The cache is a diagnostic/local-matching artifact, never a direct position measurement."
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "vision_nav_onnx_parity_cases_v1",
+  "model_release_id": "replace-with-model-release-id",
+  "cases": [
+    {
+      "case_id": "global-retriever-reference-001",
+      "role": "global_retriever",
+      "inputs_npz": "tensors/global-retriever-inputs-001.npz",
+      "reference_outputs_npz": "tensors/global-retriever-outputs-001.npz"
+    }
+  ]
+}

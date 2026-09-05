@@ -1,0 +1,10 @@
+# Install official research repositories into a dedicated image or volume only.
+# Pin their source commits in ModelRelease.source_revision before a promotion.
+huggingface_hub>=0.25
+safetensors>=0.4
+onnx>=1.16
+onnxscript>=0.7
+onnxsim>=0.4
+onnxruntime-gpu>=1.18
+pycolmap>=3.10
+kornia>=0.7

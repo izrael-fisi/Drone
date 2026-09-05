@@ -17,6 +17,8 @@ class CameraCalibration:
     camera_matrix: np.ndarray
     distortion_coefficients: np.ndarray
     distortion_model: str
+    calibration_id: str | None = None
+    calibration_status: str = "unknown"
 
     @property
     def image_size(self) -> tuple[int, int]:
@@ -29,6 +31,8 @@ class CameraCalibration:
             "image_width": self.image_width,
             "image_height": self.image_height,
             "distortion_model": self.distortion_model,
+            "calibration_id": self.calibration_id,
+            "calibration_status": self.calibration_status,
         }
 
 
@@ -66,6 +70,8 @@ def load_camera_calibration(path: str | Path) -> CameraCalibration:
         camera_matrix=camera_matrix,
         distortion_coefficients=distortion,
         distortion_model=str(raw.get("distortion_model", "plumb_bob")),
+        calibration_id=str(raw["calibration_id"]) if raw.get("calibration_id") else None,
+        calibration_status=str(raw.get("calibration_status", "unknown")),
     )
 
 

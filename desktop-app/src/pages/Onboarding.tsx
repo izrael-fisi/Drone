@@ -144,7 +144,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       <div className="grid grid-cols-3 gap-3 mb-8">
         {[
           { icon: "map", label: "Satellite Maps", desc: "Download & manage flight regions" },
-          { icon: "cv", label: "Vision Pipeline", desc: "Classical or SuperPoint + LightGlue" },
+          { icon: "cv", label: "Vision Pipeline", desc: "Learned cross-view navigation profile" },
           { icon: "mod", label: "Module Setup", desc: "Install and test runtime modules" },
         ].map((f) => (
           <div key={f.label} className="bg-bg-surface rounded-lg p-3 text-center border border-border">

@@ -1,5 +1,6 @@
-"""Vision navigation prototype tools."""
+"""Vision navigation tools and canonical vision-first contracts."""
 
-__all__ = ["__version__"]
+from .types import NavEstimate, NavigationMode
+
+__all__ = ["NavEstimate", "NavigationMode", "__version__"]
 __version__ = "0.1.0"
-

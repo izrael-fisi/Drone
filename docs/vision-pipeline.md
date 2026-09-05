@@ -1,202 +1,143 @@
-# Vision Pipeline
+# Learned Vision Pipeline
 
-The active pipeline is visual map-relative localization with classical
-geometry. It is built for the Raspberry Pi and a downward camera.
-
-## Pipeline Shape
-
-```text
-downward camera frame
-  -> undistort / normalize
-  -> ORB or AKAZE feature extraction
-  -> terrain tile retrieval
-  -> descriptor matching
-  -> RANSAC homography verification
-  -> confidence/covariance estimate
-  -> runtime log/status
-  -> optional MAVLink ODOMETRY output
-```
-
-Do not trust any match that fails the confidence, inlier, reprojection, scale,
-or geometry sanity gates.
-
-## Desktop Configuration
-
-The Vision Pipeline page is the only editable configuration surface for:
-
-- pipeline mode
-- feature method
-- max features
-- matcher ratio
-- minimum matches
-- optional neural model/weight paths
-
-Mission Planner and Devices consume these defaults. They should not create
-duplicate pipeline selectors.
-
-## Low-Compute Path
-
-Use this on Raspberry Pi first:
-
-- `classical`
-- ORB or AKAZE
-- conservative RANSAC thresholds
-- bounded tile search
-- JSONL logs for review
-
-This is the default product path until field data proves another method is
-needed.
-
-## Higher-Compute Option
-
-The optional neural path keeps room for SuperPoint/LightGlue-style descriptors
-on higher-compute devices. It is not required for the first Holybro X500 V2
-prop-off tests.
-
-## Offline Map Preparation
-
-Offline map preparation happens in the desktop app or on the development
-machine, not during flight.
-
-Inputs:
-
-- orthophoto, satellite image, GeoTIFF, or uploaded map image
-- optional DEM/DSM
-- camera calibration
-- mission area bounds
-- selected Vision Pipeline defaults
-
-Terrain bundle layout:
+`pi5_crossview_nav_v1` is the single active vehicle profile. It is a learned,
+offline, GNSS-denied cross-view localization pipeline for a calibrated downward
+camera and PX4 attitude context.
 
 ```text
-mission_bundle/
-  manifest.json
-  manifest.stac.json
-  checksums.sha256
-  ortho/map.png
-  imagery/tiles/
-  index/tiles.sqlite
-  index/descriptors/
-  features/map_features.npz
-  calibration/down_camera.yaml
-  calibration/camera_to_body.yaml
-  config/terrain_nav.yaml
-  bundle_health.json
+calibrated UAV frame + PX4 attitude
+  -> temporal BEV and bearing student
+  -> MegaLoc global candidate retrieval
+  -> XFeat + LighterGlue local correspondence
+  -> robust 3D PnP or restricted planar geometry
+  -> persistent multi-hypothesis fusion
+  -> ENU pose, heading, covariance, or explicit NO_GLOBAL_FIX
+  -> shadow telemetry and decision trace
 ```
 
-See [Terrain Vision Navigation](terrain-vision-navigation.md).
+ORB, AKAZE, and SIFT are not vehicle-selectable, are not used to build a map,
+and are never used as an automatic fallback. They remain only as frozen replay
+baselines for model evaluation.
 
-## Build And Validate
+## Vehicle Runtime
 
-From a prepared map source:
+The Pi runs ONNX Runtime CPU by default. A Hailo AI HAT 2 provider is optional
+only after export parity and thermal testing. The Pi holds a bounded active tile
+window, runs global retrieval at recovery cadence, and uses learned local
+correspondence at keyframe cadence.
+
+The initial release is shadow-only. It records `TRACKING`, `RECOVERING`, or
+`NO_GLOBAL_FIX` but does not send `ODOMETRY` or external-vision data to PX4.
+
+## Required Releases
+
+Every field run requires these compatible immutable records:
+
+- `ModelRelease`: checkpoint and ONNX digests, training lineage, licenses,
+  supported calibration IDs, and artifact locations.
+- `MapRelease v2`: COG/STAC source, tile geometry, MegaLoc index, XFeat cache,
+  optional 3D-landmark/DEM provenance, checksums, and compatible calibration IDs.
+- camera calibration ID: must be present in both the model and map release.
+
+An incomplete candidate map is deliberately rejected at runtime. The desktop
+bundle builder creates candidate packaging only; research map production adds
+the learned indexes before activation.
+
+## Pi Commands
+
+After copying an approved model release and MapRelease v2 to the Pi:
 
 ```bash
-vision-nav-build-bundle-from-map-source \
-  --map-source ~/DroneVisionNav/maps/flight-region \
-  --bundle mission_bundle \
-  --write-checksums
-
-vision-nav-build-terrain-bundle --bundle mission_bundle --write-checksums
-vision-nav-validate-terrain-bundle --bundle mission_bundle
-vision-nav-map-health --bundle mission_bundle --json
+cp config/pi/vision-nav.env.example config/pi/vision-nav.env
+# Set VISION_NAV_MAP_RELEASE, VISION_NAV_MODEL_RELEASE, and VISION_NAV_CALIBRATION_ID.
+./scripts/pi/validate_neural_runtime.sh
+./scripts/pi/run_vision_nav_shadow.sh
 ```
 
-On the Pi:
+The runtime writes `runtime_status.json` and `decision_trace.jsonl` under
+`VISION_NAV_OUTPUT_DIR`. `runtime_status_v3` is broadcast to the configured
+ground-station UDP port and normalized by the desktop app for live monitoring.
+
+To test a real model export against one captured frame without giving it pose
+authority, set `VISION_NAV_SHADOW_FRAME` and run once. The model release must
+declare `shadow_source: frame_rgb` and an exact preprocessing contract for
+each stage that should execute. The trace records only tensor summaries and
+latency; it never saves model outputs or publishes PX4 odometry.
 
 ```bash
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
-./scripts/pi/validate_terrain_bundle.sh
+VISION_NAV_SHADOW_FRAME=/home/user/test-frame.jpg \
+VISION_NAV_CALIBRATION_FILE=/home/user/down_camera.yaml \
+VISION_NAV_STATUS_UDP_TARGET=192.168.1.157:17660 \
+./scripts/pi/run_vision_nav_shadow.sh --once
 ```
 
-## Frame Match Check
+For a Pi-attached camera, set `VISION_NAV_CAMERA_BACKEND=auto`. The runtime
+captures one frame per shadow tick under `VISION_NAV_OUTPUT_DIR/frames`.
+Any frame probe requires a measured calibration YAML whose ID and native frame
+resolution match the active model and camera. Placeholder calibration files are
+rejected before inference.
+Stages that need a map tile or temporal/attitude window are deliberately
+reported as skipped until their release-defined input adapters exist.
+
+See [First Learned Shadow Run](first-learned-shadow-run.md) for the exact
+release layout, validation steps, and evidence expected from the first real Pi
+model/map test.
+
+## Research And Map Production
+
+The cloud-only teacher program is under [`research/`](../research/README.md).
+It reproduces Video2BEV, Bearing-UAV, AirLock+, and TopicGeo-oriented training,
+with RoMa v2, VGGT, and MASt3R-SLAM used as teacher/map-production tools.
+
+After creating learned map artifacts, promote them with:
 
 ```bash
-vision-nav-match-terrain-frame \
-  --bundle mission_bundle \
-  --frame downward_frame.jpg \
-  --camera-calibration config/camera/down_camera.yaml
+vision-nav-compile-neural-map \
+  --model-release model_release.json \
+  --cog map.tif --stac-item item.json --tile-index tiles.sqlite \
+  --megaloc-index megaloc.faiss --megaloc-metadata megaloc_tiles.json \
+  --xfeat-index xfeat_tiles.sqlite --xfeat-metadata xfeat_tiles.json \
+  --map-id field-area --version 1.0.0 --crs EPSG:32610 \
+  --origin-enu 0 0 0 --gsd-m-per-px 0.15 --calibration-id down-camera-v1 \
+  --output map_release.json
 ```
 
-The result should report accepted/rejected/failed, confidence, inliers,
-reprojection error, tile id, and covariance where available.
+Promotion writes a SHA-256 entry for the COG, STAC item, tile index, MegaLoc
+index, and XFeat cache. `vision-nav-validate-neural-map-release` recomputes all
+local digests before a Pi runtime accepts the release. A missing or changed
+learned map artifact is therefore a hard compatibility failure, never a silent
+fallback to another map index.
 
-## Runtime Loop
+`megaloc_tiles.json` uses `vision_nav_retrieval_index_v1` and binds every
+FAISS ID to exactly one stable tile ID, its ENU center, and its scale. The Pi
+will not use an index whose map release, model release, vector count, or
+descriptor dimension disagrees with that metadata.
+Start from [`research/retrieval-index-template.json`](../research/retrieval-index-template.json)
+when exporting a learned map release.
 
-Logging-only first:
+`xfeat_tiles.json` uses `vision_nav_local_feature_cache_v1` to bind each
+retrievable tile to checksum-protected XFeat keypoints and descriptors. In
+shadow mode the Pi can pass the live XFeat output plus the top retrieved map
+tile into LighterGlue, while still treating its correspondence result as
+diagnostic evidence only. The model release must explicitly describe the
+match-index and score encoding before the runtime reports match counts. Start from
+[`research/local-feature-cache-template.json`](../research/local-feature-cache-template.json).
 
-```bash
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
-VISION_NAV_COUNT=30 \
-./scripts/pi/run_terrain_nav_loop.sh
-```
+When the local-matcher contract also declares `homography_restricted` geometry,
+the Pi verifies the scored pairs with USAC/MAGSAC and records inliers, residual,
+and image coverage. This only proves candidate-tile consistency; it is not a
+metric pose and cannot change the shadow runtime out of `NO_GLOBAL_FIX`.
 
-Read status:
+For a `pnp_3d` geometry contract, each XFeat cache asset additionally carries
+an index-aligned `map_points_enu_m` array built from versioned 3D map
+landmarks. The Pi then records a calibrated **camera-pose candidate** in the
+shadow trace after PnP/RANSAC. It is still not a body pose, not temporally
+fused, and not available to PX4.
 
-```bash
-VISION_NAV_RUNTIME_STATUS_ROOTS=$HOME/DroneTransfer/outgoing/terrain-match \
-./scripts/pi/read_runtime_status.sh
-```
+The learned model itself must also pass cloud-reference ONNX parity before the
+map can enter Pi shadow testing. The evaluator consumes logical NPZ input and
+reference-output cases, checks release-defined tensor bindings, and reports
+per-output numerical error. See [Research](../research/README.md#onnx-export-contract).
 
-Runtime output:
-
-```text
-~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl
-~/DroneTransfer/outgoing/terrain-match/runtime_status.json
-~/DroneTransfer/outgoing/terrain-match/frames/
-```
-
-Each JSONL record includes capture timing, match timing, status, confidence,
-inlier count, homography, geometry sanity metrics, frame quality, covariance,
-and georeferenced position when available.
-
-## MAVLink Output
-
-Enable only after logging-only runtime is healthy:
-
-```bash
-VISION_NAV_BUNDLE=$HOME/drone-data/map_bundles/mission_bundle \
-VISION_NAV_MAVLINK_ENDPOINT=/dev/ttyACM0 \
-VISION_NAV_MAVLINK_MESSAGE=odometry \
-VISION_NAV_COUNT=30 \
-./scripts/pi/run_terrain_nav_loop.sh
-```
-
-Rejected or failed matches must be logged but not sent as trusted external
-vision updates.
-
-## Replay And Gates
-
-Summarize logs:
-
-```bash
-vision-nav-summarize-match-log \
-  ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl
-```
-
-Evaluate a good-map case:
-
-```bash
-vision-nav-evaluate-replay-gates \
-  --case-name good-texture-bench \
-  --expected good_map \
-  --log ~/DroneTransfer/outgoing/terrain-match/terrain_matches.jsonl
-```
-
-Evaluate a wrong-map case:
-
-```bash
-vision-nav-evaluate-replay-gates \
-  --case-name wrong-map-bench \
-  --expected wrong_map \
-  --log ~/DroneTransfer/outgoing/terrain-replay/wrong_map_matches.jsonl
-```
-
-## Support Bundle
-
-After a bench run:
-
-```bash
-./scripts/pi/create_support_bundle.sh
-```
-
-Review the bundle in the desktop app before moving to any prop-on testing.
+See [Research](research.md) and [Architecture](architecture.md) for promotion
+gates, model provenance, and the PX4 boundary.

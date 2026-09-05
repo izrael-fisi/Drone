@@ -176,6 +176,7 @@ source ~/drone_vision_nav_venv/bin/activate
 vision-nav-calibrate-camera \
   --images "$HOME/DroneTransfer/outgoing/calibration/down_camera/*.jpg" \
   --output config/camera/down_camera.yaml \
+  --calibration-id down-camera-v1 \
   --camera-name down_global_shutter \
   --cols 9 \
   --rows 6 \
@@ -229,7 +230,12 @@ homography is available. Runtime and replay logs also include homography
 geometry metrics such as scale, rotation, anisotropy, and perspective so bad
 matches can be rejected before they become navigation candidates.
 
-## 7. Bench Runtime Loop
+## 7. Legacy Classical Bundle Runbook (Do Not Use For New Hardware)
+
+The commands below are retained only for migration/replay of historical terrain
+bundles. New Pi deployment, data capture, map production, and hardware tests
+use the learned shadow path in `docs/first-learned-shadow-run.md` and
+`scripts/pi/prepare_first_training_capture.sh` instead.
 
 Copy a mission bundle to the Pi:
 
