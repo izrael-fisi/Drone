@@ -4,6 +4,7 @@
 **Audience:** the next LLM, navigation engineer, training engineer or integrator.
 **Repository:** `https://github.com/izrael-fisi/Drone`.
 **Release status:** research/development; no flight-navigation release approved.
+**Implementation checkpoint:** `fe13385f19f550af38941421280c077a9e59917c`.
 
 This is the canonical transfer summary of implemented work and remaining work.
 It is not a replacement for the detailed contracts or evidence. Exact commands
@@ -239,7 +240,7 @@ development checkpoint, not a release tag. Work includes:
     Compact status is available independently of the full replay write and
     explicitly labels its evidence `pending` or `written`. Any source/time/fix
     mismatch or journal failure still withholds it. Actual status sampling at
-    20 Hz input remains zero in the final check, despite passing lifecycle and
+    20 Hz input remained zero at that checkpoint, despite passing lifecycle and
     numerical regression tests; this is not sustained-current qualification.
 16. Child transaction identity reuse: the worker encodes each owned request
     field once and reuses it for unbound/native/noise-bound hashes. Public
@@ -254,8 +255,9 @@ Items 11-12 and their regression tests are included in the final transfer
 supplement after the original `ce6b3088` documentation/merge checkpoint.
 No new training, Pi measurement, aircraft connection or PX4 publication was
 performed for that supplement. The modest cached-assessment benchmark does not
-resolve the zero-advancing-current-update finding. The next estimator task should
-use the diagnostics to investigate that limitation, not infer it is solved.
+resolve the then-observed zero-advancing-current-update finding. Later item 16
+establishes intermittent updates, not reliable availability. The next estimator
+task should investigate that remaining limitation, not infer it is solved.
 Item 13 follows `70d3c820`; its evidence and unchanged open requirement are in
 [owned transaction reuse](research-alignment-process.md#owned-transaction-reuse).
 Item 14 follows `2d84be05`; see [codec contract and observations](alignment-serialization.md#compact-worker-transport).
@@ -315,10 +317,20 @@ inference. Acceptance: a second machine reproduces capture validation and replay
 
 **Advancing-current estimator.** Design delayed correction plus correlated
 forward propagation, or an estimator-owned current-state update. Acceptance:
-positive current global updates while new VIO frames continue, bounded delays,
-honest covariance growth and safe reset/outage behavior. The most recent short
-20 Hz trials still had zero advancing current updates. Faster JSON does not
-solve this architectural availability condition.
+repeatable current global updates while new VIO frames continue, bounded delays,
+honest covariance growth and safe reset/outage behavior. At the current
+checkpoint, three compact-transport 60-frame trials produced 11, 6 and 4 distinct
+operator-visible poses, with observed gaps up to about 1.66 seconds including
+stream edges. These synthetic observations improve on earlier zero-update
+trials but do not establish sustained availability or physical accuracy.
+
+The next design investigation is estimator-owned correlated forward propagation
+of delayed map corrections, rather than repeatedly solving a complete snapshot
+that may already be superseded. No new native global-state augmentation has
+been implemented. Before choosing that approach, derive its cross-covariance
+with the full native state and prove frame, timing and reset behavior. The
+current exported pose window and separate IMU marginal must not be treated as
+independent inputs or assumed to supply every required cross-covariance.
 
 **Measured uncertainty.** Replace synthetic provider assumptions with calibrated
 pixel, surface, timing, intrinsic/extrinsic and inertial uncertainty, including

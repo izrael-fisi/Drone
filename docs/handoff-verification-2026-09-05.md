@@ -484,3 +484,18 @@ preflight stages (including 104 main checks), the desktop build and Rust
 Rust tests were not rerun for this Python-only update. No aircraft connection,
 PX4 output, installed-Pi execution, cloud allocation or training promotion was
 performed.
+
+### Documentation Transfer Refresh
+
+The documentation-only refresh after implementation checkpoint
+`fe13385f19f550af38941421280c077a9e59917c` adds a concise receiving-LLM checkpoint
+and corrects older zero-update summaries to distinguish them from the latest
+intermittent observations. It records correlated forward propagation as an open
+design investigation, not an implemented native estimator feature.
+
+For this refresh, `npm run build --prefix desktop-app`, `cargo check` in
+`desktop-app/src-tauri`, and `git diff --check` passed. The frontend retains its
+existing dynamic/static import and large-chunk warnings. No Python/native/model
+tests or Rust tests were rerun for these documentation-only edits; the results
+above describe the preceding implementation checkpoint. No runtime source,
+hardware configuration, model weights or aircraft behavior changed.

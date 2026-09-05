@@ -3,6 +3,24 @@
 Handoff date: **2026-09-05**. Repository: **izrael-fisi/Drone**, branch **main**.
 This file is independent of any particular assistant or conversation history.
 
+## Transfer Checkpoint
+
+The latest implementation checkpoint covered by this handoff is
+`fe13385f19f550af38941421280c077a9e59917c`. Subsequent documentation-only commits
+may update this handoff without changing that implementation. Inspect `git log`
+and `git status` on the receiving machine before starting work.
+
+**Done:** real learned inference, native local visual-inertial odometry,
+correlated delayed-map alignment, bounded worker transport, replay evidence and
+an existing map-first desktop app. **Not done:** dependable continuous global
+navigation, physically calibrated uncertainty, qualified Pi performance,
+field-trained accuracy or learned PX4 publication. This is not a flyable
+GNSS-denied navigation release.
+
+**Next:** validate stabilized camera/IMU captures, resolve continuous-current
+estimation, establish geographic training holdouts, then benchmark/train under
+an explicitly approved RunPod budget. Leave UI expansion secondary.
+
 ## Read In This Order
 
 1. [Technical handoff](docs/technical-handoff-2026-09-05.md): what the project
@@ -37,26 +55,32 @@ This file is independent of any particular assistant or conversation history.
 - Build, Rust and documented targeted checks passed in their recorded setups.
   The verification guide retains an exact-numerical-equality environment caveat,
   a corrected missing monitoring dependency and five open npm audit findings.
-- The transfer includes the latest bounded PnP assessment cache and per-stage
-  estimator timing diagnostics. These are research optimizations/observability,
-  not a fix for the advancing-current global-position gap. See the final transfer
-  supplement in the verification guide for checks against these exact changes.
-- Subsequent estimator updates include within-transaction validation reuse and
-  default private `msgpack_v1` transport (`.[estimation]` now requires msgpack).
-  JSON replay identities are unchanged. A single advancing update occurred in
-  one compact-link trial, but repeated trials remained at zero; sustained
-  current-state navigation is still an open requirement, not a completed feature.
-- The next update reuses exact canonical snapshot bytes, wakes refreshes when
-  new native data arrives and separates compact conditional status from full
-  replay writes. Status now identifies pending versus written evidence. The
-  stronger test samples the actual status reader, not just solve-completion
-  checks; that checkpoint's final 20 Hz observation exposed no advancing pose.
+- Estimator improvements include bounded PnP reuse, timing diagnostics, exact
+  canonical identity reuse, default private `msgpack_v1` transport and compact
+  status independent of full replay writes. Install `.[estimation]` for the
+  worker dependencies. Canonical JSON evidence and rejection gates are unchanged;
+  status distinguishes pending versus written evidence.
 - Latest child-side identity reuse produced intermittent operator-visible
   updates in three 60-frame runs (11, 6 and 4 distinct advancing poses), with
   exact replay and unchanged gates. Gaps remain substantial, so this is measured
   progress, not sustained-current or flight qualification. Read the latest
   verification section rather than treating earlier zero-update reports as the
   final observation.
+
+## Verification At The Implementation Checkpoint
+
+- 442 focused estimator/native tests and 84 learned/native integration tests
+  passed in the recorded Mac environments, with no skips.
+- All seven local preflight stages, including 104 main checks, passed.
+- Desktop frontend build and Rust `cargo check` passed. Rust tests were not
+  rerun for the latest Python-only change; older results remain historical.
+- These results depend on ignored native binaries and model exports. A clone
+  alone cannot reproduce every test. Follow the verification document's artifact
+  inventory and setup instructions; report missing artifacts rather than silently
+  accepting skipped integration tests.
+
+These are recorded results, not new executions on the receiving machine, Pi
+benchmarks, aircraft evidence or approval to enable flight-control output.
 
 ## First Session
 
