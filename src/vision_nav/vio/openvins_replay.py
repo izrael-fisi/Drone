@@ -259,7 +259,7 @@ def validate_capture(capture: Path):
     return manifest
 
 
-def verify_binary(binary: Path, *, pose_window=False, stream_input=False, passive_anchors=False, anchor_control=False):
+def verify_binary(binary: Path, *, pose_window=False, stream_input=False, passive_anchors=False, anchor_control=False, map_frame_control=False):
     native_build = json.loads(subprocess.check_output([str(binary.resolve()), "--version"], text=True, timeout=30))
     if (native_build.get("source_revision") != REVISION or native_build.get("ros_enabled") is not False
             or native_build.get("position_authority") is not False):
@@ -272,6 +272,8 @@ def verify_binary(binary: Path, *, pose_window=False, stream_input=False, passiv
         raise ValueError("Rebuild native adapter for passive anchor support")
     if anchor_control and native_build.get("anchor_control_schema") != "vision_nav_openvins_anchor_control_v1":
         raise ValueError("Rebuild native adapter for owned anchor controls")
+    if map_frame_control and native_build.get("map_frame_control_schema") != "vision_nav_openvins_map_frame_control_v1":
+        raise ValueError("Rebuild native adapter for conditional map-frame controls")
     return native_build
 
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Research-only OpenVINS integration. No vehicle or map publication interface.
+// Research-only OpenVINS integration. No vehicle publication interface.
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -7,6 +7,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <set>
 #include <vector>
 #include <nlohmann/json.hpp>
 #include <boost/version.hpp>
@@ -17,6 +18,7 @@
 #include "utils/print.h"
 #include "utils/sensor_data.h"
 #include "passive_anchors.h"
+#include "map_frame_control.h"
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -59,12 +61,14 @@ int main(int argc, char **argv) {
                       {"pose_window_schema", "vision_nav_openvins_pose_window_v1"},
                       {"passive_anchor_schema", "vision_nav_openvins_passive_anchor_schedule_v1"},
                       {"anchor_control_schema", "vision_nav_openvins_anchor_control_v1"},
+                      {"map_frame_control_schema", "vision_nav_openvins_map_frame_control_v1"},
                       {"position_authority", false}}).dump() << '\n';
     return 0;
   }
   bool export_window = false, stream_input = false, invalid_args = argc < 4;
   std::string anchor_schedule_path;
   std::string control_epoch, control_output;
+  std::string map_epoch, map_output;
   int control_capacity = 0;
   for (int i = 4; i < argc; ++i) {
     const std::string option(argv[i]);
@@ -81,15 +85,30 @@ int main(int argc, char **argv) {
       if (control_epoch.size() != 36 || control_epoch.find_first_not_of("0123456789abcdef-") != std::string::npos)
         invalid_args = true;
     }
+    else if (option == "--map-frame-control" && map_epoch.empty() && i+2 < argc) {
+      map_epoch = argv[++i]; map_output = argv[++i];
+      if (map_epoch.size() != 36 || map_epoch.find_first_not_of("0123456789abcdef-") != std::string::npos)
+        invalid_args = true;
+    }
     else invalid_args = true;
   }
   if (invalid_args || (!anchor_schedule_path.empty() && (!export_window || stream_input || control_capacity))
-      || (control_capacity && (!export_window || fs::path(control_output) == fs::path(argv[3])))) {
-    std::cerr << "Usage: vision-nav-openvins CONFIG.yaml EVENTS.jsonl NEW_OUTPUT.jsonl [--pose-window] [--stream-input] [--anchor-schedule FILE | --anchor-control CAPACITY EPOCH NEW_ACK_FILE]\n";
+      || (control_capacity && (!export_window || fs::path(control_output) == fs::path(argv[3])))
+      || (!map_epoch.empty() && (!export_window || fs::path(map_output) == fs::path(argv[3])
+          || fs::path(map_output) == fs::path(control_output) || (!control_epoch.empty() && control_epoch != map_epoch)))) {
+    std::cerr << "Usage: vision-nav-openvins CONFIG.yaml EVENTS.jsonl NEW_OUTPUT.jsonl [--pose-window] [--stream-input] [--anchor-schedule FILE | --anchor-control CAPACITY EPOCH NEW_ACK_FILE] [--map-frame-control EPOCH NEW_ACK_FILE]\n";
     return 2;
   }
   try {
     if (fs::exists(argv[3])) throw std::runtime_error("Refusing to overwrite evidence");
+    std::set<fs::path> output_paths;
+    std::vector<std::string> outputs{argv[3]};
+    if (control_capacity) outputs.push_back(control_output);
+    if (!map_epoch.empty()) outputs.push_back(map_output);
+    for (const auto &path : outputs) {
+      if (!output_paths.insert(fs::weakly_canonical(path)).second)
+        throw std::runtime_error("Evidence paths must not alias one another");
+    }
     auto parser = std::make_shared<ov_core::YamlParser>(argv[1]);
     ov_core::Printer::setPrintLevel("WARNING");
     ov_msckf::VioManagerOptions params;
@@ -107,6 +126,15 @@ int main(int argc, char **argv) {
     params.use_multi_threading_pubs = false;
     params.use_multi_threading_subs = false;
     auto vio = std::make_shared<ov_msckf::VioManager>(params);
+    std::unique_ptr<MapFrameControl> map_control;
+    std::ofstream map_out;
+    size_t map_ack_bytes = 0;
+    if (!map_epoch.empty()) {
+      if (fs::exists(map_output)) throw std::runtime_error("Refusing to overwrite map-frame acknowledgements");
+      map_out.open(map_output);
+      if (!map_out) throw std::runtime_error("Unable to open map-frame acknowledgements");
+      map_control = std::make_unique<MapFrameControl>(vio->get_state(), map_epoch);
+    }
     std::unique_ptr<PassivePoseAnchors> anchors;
     std::ofstream control_out;
     int64_t control_sequence = 0;
@@ -153,6 +181,22 @@ int main(int argc, char **argv) {
       if (line.size() > 65536) throw std::runtime_error("Replay event exceeds limit");
       json e = json::parse(line);
       std::string type = e.at("type").get<std::string>();
+      if (type == "map_frame_control") {
+        if (!map_control) throw std::runtime_error("Map-frame controls require explicit opt-in");
+        const auto state = vio->get_state();
+        const bool initialized = last_camera && vio->initialized()
+          && std::abs(state->_timestamp-double(last_camera-origin)/1e9) < 1e-6;
+        auto ack = map_control->command(e, last_camera, origin, line_number, initialized, camera_times, anchors.get());
+        ack["source_revision"] = OPENVINS_REVISION;
+        const auto encoded = ack.dump();
+        if (encoded.size() > 2*1024*1024-1) throw std::runtime_error("Map-frame acknowledgement exceeds bound");
+        if (encoded.size()+1 > 64*1024*1024-map_ack_bytes)
+          throw std::runtime_error("Map-frame acknowledgement journal exceeds 64 MiB");
+        map_out << encoded << '\n'; map_out.flush();
+        if (!map_out) throw std::runtime_error("Map-frame acknowledgement write failed");
+        map_ack_bytes += encoded.size()+1;
+        continue;
+      }
       if (type == "anchor_control") {
         // Same input owner/order as sensors, but never an IMU/camera update.
         if (!control_capacity || e.size() != 6 || e.at("schema_version") != "vision_nav_openvins_anchor_control_v1"
@@ -242,6 +286,7 @@ int main(int argc, char **argv) {
           {"local_state", initialized ? "LOCAL_ESTIMATE" : "INITIALIZING_OR_NO_UPDATE"},
           {"local_T_imu", nullptr}, {"state_covariance", nullptr}};
         if (anchors) record["passive_anchor_actions"] = applied_actions;
+        if (map_control) record["map_frame_projection"] = map_control->projection(ns, initialized);
         if (initialized) {
           ++initialized_frames;
           Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();

@@ -108,10 +108,13 @@ covariance path. Original snapshot/fix identities remain unchanged. See
 
 A separate [native correlated map-frame component](native-map-frame.md) provides
 an in-process full-state conditional initialization and current pose projection.
-It has no live input/output schema yet and is not connected to these pose-window
-or learned-query paths. It requires complete native-state error dependencies,
-not an inferred independent pose prior. Its existence does not relax any of the
-current observer's source, timing, covariance or shadow-publication gates.
+Its [opt-in recorded-stream controls](native-map-frame-controls.md) now expose
+`vision_nav_openvins_map_frame_control_v1`, an acknowledgement schema and
+`vision_nav_native_map_projection_v1` through the native process and Python
+replay worker. They are not bound to learned PnP completion or the physical
+camera adapter. They require complete native-state error dependencies, not an
+inferred independent pose prior. No current observer source, timing, covariance
+or shadow-publication gate is relaxed.
 
 For one map fix the default optimized solve now uses
 `solution_method=single_fix_closed_form` and

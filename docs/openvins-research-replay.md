@@ -3,8 +3,10 @@
 Status: September 5, 2026. An opt-in native OpenVINS adapter now runs monocular
 images and synchronized inertial measurements through a real visual-inertial
 frontend. It is separate from the learned UAV-to-map pipeline, the desktop app,
-and the Pi service. No aircraft commands, GPS measurements or map fixes enter
-this replay. No flight-control messages leave it.
+and the Pi service. By default no aircraft commands, GPS measurements or map
+fixes enter this replay. An explicit [map-frame control option](native-map-frame-controls.md)
+now accepts conditional research initialization, not learned release promotion.
+No flight-control messages leave either path.
 
 ## Why This Component
 
@@ -36,7 +38,7 @@ Python OpenCV wheel.
 On macOS with Homebrew:
 
 ```bash
-brew install cmake eigen opencv@4 boost ceres-solver nlohmann-json
+brew install cmake eigen opencv@4 boost ceres-solver nlohmann-json openssl@3
 git clone https://github.com/rpng/open_vins.git research/vendor/open_vins
 git -C research/vendor/open_vins checkout 69488123ed9362dd44b6f28e7f4680abbff1442b
 cmake -S research/native/openvins -B research/outputs/openvins-native-build \
@@ -53,7 +55,7 @@ select OpenCV 4 explicitly rather than changing global library links.
 
 On Ubuntu, the corresponding native packages are `build-essential`, `cmake`,
 `libeigen3-dev`, `libopencv-dev`, `libboost-filesystem-dev`, `libboost-thread-dev`,
-`libboost-date-time-dev`, `libceres-dev`, and `nlohmann-json3-dev`. Configure with
+`libboost-date-time-dev`, `libceres-dev`, `libssl-dev`, and `nlohmann-json3-dev`. Configure with
 the same CMake project and omit the Homebrew-specific OpenCV path. This Linux
 build and Pi ARM64 execution have **not** been verified in this pass.
 
@@ -61,6 +63,9 @@ The verified macOS build uses AppleClang 17, OpenCV 4.14, Eigen 5.0.1,
 Boost 1.92 and Ceres 2.2. An explicit `cassert` precompiled header supplies a
 transitive include removed in Eigen 5; the pinned upstream checkout is unmodified.
 No ROS, Gazebo, MAVSDK or simulator executable is built or launched.
+The map-frame snapshot byte identity uses OpenSSL Crypto; the current Mac
+control build found OpenSSL 3.6.4. This addition does not enable map controls
+unless explicitly requested.
 
 ## Run The Sensor Smoke Test
 

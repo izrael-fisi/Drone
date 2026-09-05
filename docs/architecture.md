@@ -36,6 +36,13 @@ work, start with the [technical handoff](technical-handoff-2026-09-05.md).
 > physical calibration, geographic holdout accuracy and full Pi load as explicit
 > release gates, separate from passing contract tests.
 
+> **Native propagation supplement:** An opt-in [native map-frame control path](native-map-frame-controls.md)
+> now carries a declared conditional map frame through real recorded image/IMU
+> processing and emits current conditional projections. It is distinct from the
+> existing learned observer. Its uncertainty is synthetic in current tests;
+> learned completion, physical camera capture, qualified covariance and operator
+> telemetry binding are not implemented by this supplement.
+
 ## Coordinate, clock, and calibration contract
 
 - The map world frame is East-North-Up (ENU), metres. Tiles are orthorectified and carry an immutable map version, epoch, CRS/ENU anchor, resolution and acquisition metadata.

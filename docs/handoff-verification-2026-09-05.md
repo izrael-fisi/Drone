@@ -4,6 +4,11 @@ Date: September 5, 2026. Read alongside the
 [technical handoff](technical-handoff-2026-09-05.md).
 These are local development checks, not aircraft or Pi acceptance evidence.
 
+For the latest transfer checkpoint, see
+[native map-frame stream controls](#native-map-frame-stream-controls-and-final-transfer).
+Earlier sections retain historical results, including failures and superseded
+binary hashes; they are not all measurements of the latest source.
+
 ## Verification Ledger
 
 | Check | Observed outcome | Scope |
@@ -122,7 +127,8 @@ Do not treat a browser preview as a Tauri SSH/camera/hardware integration test.
 
 Build the pinned native adapter as described in
 [ROS-free OpenVINS](openvins-research-replay.md). Requires CMake, C++ compiler,
-OpenCV 4, Eigen, Boost, Ceres and nlohmann-json. Do not vendor generated build
+OpenCV 4, Eigen, Boost, Ceres, nlohmann-json and OpenSSL development libraries.
+The latter supplies SHA-256 for native map-frame snapshots. Do not vendor generated build
 directories or binaries into Git.
 
 With the estimator environment activated:
@@ -547,3 +553,88 @@ Pi benchmark. It must not replace the earlier live runner's intermittent-output
 finding. Complete conditional-noise derivation, correlation with future visual
 innovations, delayed ownership, live status/export binding, successive fixes
 and field qualification remain open. No aircraft, Pi or cloud was contacted.
+
+### Native Map-Frame Stream Controls And Final Transfer
+
+The checkpoint following `aeacaddb71b88fca0a0fe601fd94c1bd5d541fff` adds the
+opt-in native/Python recorded-stream control interface, its tests and the
+updated technical handoff. See [control contract](native-map-frame-controls.md).
+It does not connect learned fixes to this interface or enable it on the installed
+Pi service. The default native sensor output remains unchanged.
+
+Final checks on the development Mac:
+
+| Check | Result | Scope |
+| --- | --- | --- |
+| Seven-file native/stream regression | **160 passed, no skips**, 120.15 s | Current source, actual pinned native executable, old-binary default-output compatibility, control ownership, malformed inputs, replay and expiry |
+| Three actual-model integration tests | **3 passed, no skips**, 29.83 s; 39 existing warnings | MegaLoc, XFeat/LighterGlue and project-student execution with native processing; default path, not learned map-control initialization |
+| Native CTest | **3 passed**, 0.22 s | Pose convention, passive covariance and correlated map-frame component |
+| Local preflight | **All seven stages passed**, including 104 main checks | Template/synthetic evidence, not new physical captures |
+| Desktop frontend build | Passed | Existing Tauri import and large-chunk warnings remain |
+| Rust check and tests | Passed; **40 tests passed**, none ignored | macOS build and local tests; no Windows/Pi qualification |
+| Diff whitespace check | Passed | No generated outputs included |
+
+Before the final map-versus-anchor status-counter refinement, the full five-file
+learned/native suite also passed **84 tests in 176.03 s**, no skips, with 39
+existing ONNX/Rasterio warnings. Its artifacts are under
+`research/outputs/native-map-control-learned-20260905-r1/`. The final three-model
+run above checks actual model execution after that refinement; it is not a claim
+that all 84 cases were rerun after it.
+
+Reproduce the final seven-file suite using the estimator environment and thread
+limits described earlier:
+
+```bash
+export VISION_NAV_OPENVINS_BINARY=research/outputs/openvins-native-build/vision-nav-openvins
+export VISION_NAV_OPENVINS_BASELINE_BINARY=research/outputs/openvins-before-passive-anchors-20260905/vision-nav-openvins
+python -m pytest -q -rs \
+  tests/test_native_map_frame_control.py tests/test_vio_stream_worker.py \
+  tests/test_live_anchor_control.py tests/test_native_snapshot_handoff.py \
+  tests/test_native_live_worker.py tests/test_openvins_replay.py \
+  tests/test_passive_anchor_replay.py
+```
+
+The baseline binary is a separately preserved local artifact, not a file in Git.
+Without it the optional previous-binary comparison skips; report that explicitly.
+Final native JUnit evidence is at
+`research/outputs/native-map-control-handoff-20260905-r1/results.xml`.
+The model rerun used the same export paths as earlier and these cases:
+
+```text
+tests/test_live_learned_session.py::test_actual_retrieval_local_and_student_with_native
+tests/test_concurrent_learned_replay.py::test_actual_onnx_student_and_native_process
+tests/test_inference_worker.py::test_actual_spawned_onnx_runs_without_loading_models_in_parent
+```
+
+Its JUnit evidence is at
+`research/outputs/native-map-control-handoff-models-20260905-r1/results.xml`.
+Both output directories are ignored; transfer them separately if needed.
+
+The final timed recorded-stream case sent 60 camera batches at nominal 20 Hz.
+A polling consumer observed **59 distinct advancing map-relative poses** while
+input remained open. Maximum observed gap including stream edges was
+**0.065423666 s** over **2.966972333 s**. The report is
+`research/outputs/native-map-control-handoff-20260905-r1/test_native_map_positions_are_0/map_stream_observation.json`.
+Earlier runs observed 59 poses with maximum gaps of approximately 70 ms and
+104 ms, illustrating host scheduling variation rather than a guaranteed rate.
+
+This test initializes before the timed producer starts and uses **synthetic
+conditional B/Q matrices and declared release identities**. It establishes
+post-initialization recorded-stream propagation, not learned-result handoff
+under uninterrupted input, physically calibrated covariance, desktop display,
+Pi throughput or field accuracy. It does not supersede the earlier learned
+observer's intermittent-current finding.
+
+Current binary SHA-256 values:
+
+- `vision-nav-openvins`:
+  `378d2c38311b574ca6cddb5849f1ef0b14b65bafdf822d6524899f7249184192`
+- `vision-nav-openvins-map-frame-test`:
+  `778fb5fcf4f4c7a9379dad20d5cc604e19cee295574478d697cd2a1dabba7677`
+
+The pinned upstream OpenVINS checkout remains clean at
+`69488123ed9362dd44b6f28e7f4680abbff1442b`. OpenSSL is now a native build
+dependency for snapshot integrity. No source dependencies, weights, credentials,
+native binaries or full generated reports are embedded in the handoff documents.
+No aircraft connection, PX4 output, installed-Pi run, paid cloud allocation or
+training promotion occurred in this checkpoint.

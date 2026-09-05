@@ -4,9 +4,10 @@
 **Audience:** the next LLM, navigation engineer, training engineer or integrator.
 **Repository:** `https://github.com/izrael-fisi/Drone`.
 **Release status:** research/development; no flight-navigation release approved.
-**Live-runtime checkpoint:** `fe13385f19f550af38941421280c077a9e59917c`.
-The later native map-frame component supplement is described below; it is not
-part of that checkpoint's end-to-end stream measurements.
+**Learned-observer checkpoint:** `fe13385f19f550af38941421280c077a9e59917c`.
+Later native map-frame component and recorded-stream control supplements are
+described below; they are not part of that checkpoint's learned-observer stream
+measurements.
 
 This is the canonical transfer summary of implemented work and remaining work.
 It is not a replacement for the detailed contracts or evidence. Exact commands
@@ -259,6 +260,15 @@ development checkpoint, not a release tag. Work includes:
     projections with an independent joint covariance reference. This component
     is not yet bound to learned observations, the live sensor runner or PX4.
     See [contract and remaining integration](native-map-frame.md).
+18. Native map-frame stream controls: an opt-in owner protocol now binds a
+    complete native snapshot by request ID and SHA-256, consumes one conditional
+    initialization attempt, and emits map-relative projections through recorded
+    image/IMU processing. It preserves local VIO, supports explicit clear/expiry,
+    records complete ordered replay evidence and rejects protocol/source faults.
+    It is exposed on `NativeVioStreamWorker`, not the physical camera adapter or
+    learned result coordinator. See [control contract](native-map-frame-controls.md).
+    Synthetic map conditionals in these tests do not qualify learned geometry,
+    future-innovation independence or flight navigation.
 
 Items 11-12 and their regression tests are included in the final transfer
 supplement after the original `ce6b3088` documentation/merge checkpoint.
@@ -338,12 +348,17 @@ delayed map corrections, rather than repeatedly solving a complete snapshot
 that may already be superseded. A [native map-frame component](native-map-frame.md)
 now implements full-state conditional augmentation, correlated native updates,
 current projection and retirement. It is tested directly against native EKF
-operations, **not connected to learned observations or the live sensor runner**.
+operations and now through opt-in recorded image/IMU stream controls, **not
+connected to learned observations or the physical live-camera adapter**.
 Deriving and qualifying its complete conditional uncertainty input, delayed
 transaction ownership and future-innovation correlation remain open. The current
 exported pose window and separate IMU marginal must not be treated as independent
 inputs or assumed to supply every required cross-covariance. This component does
 not supersede the measured live-availability limitation above.
+Post-initialization consumer availability in the new recorded-stream path is
+measured separately; the timed test initializes before starting its producer.
+It does not prove that a delayed learned fix can initialize under uninterrupted
+sensor/model load.
 
 **Measured uncertainty.** Replace synthetic provider assumptions with calibrated
 pixel, surface, timing, intrinsic/extrinsic and inertial uncertainty, including

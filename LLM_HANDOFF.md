@@ -5,9 +5,9 @@ This file is independent of any particular assistant or conversation history.
 
 ## Transfer Checkpoint
 
-The live-runtime implementation checkpoint covered by the stream measurements
-is `fe13385f19f550af38941421280c077a9e59917c`. Later commits include documentation
-and the separate native component described below. Inspect `git log` and
+The original learned-observer stream measurements are tied to
+`fe13385f19f550af38941421280c077a9e59917c`. Later commits include documentation
+and the native component/control path described below. Inspect `git log` and
 `git status` on the receiving machine before starting work.
 
 **Done:** real learned inference, native local visual-inertial odometry,
@@ -23,12 +23,20 @@ an explicitly approved RunPod budget. Leave UI expansion secondary.
 
 After that implementation checkpoint, a [native correlated map-frame
 component](docs/native-map-frame.md) was added as a forward-propagation building
-block. It is not bound to learned observations or the live runner. Do not confuse
+block. At that checkpoint it was not bound to the sensor runner. Do not confuse
 its synthetic native EKF projection checks with the earlier end-to-end stream
 availability measurements; live current-state integration remains unfinished.
 The component supplement passed three native CTest executables, 111 Python
 regressions, all seven preflight stages, the desktop build and Rust check. See
 [the exact verification scope](docs/handoff-verification-2026-09-05.md#native-map-frame-component).
+
+A subsequent [native stream-control path](docs/native-map-frame-controls.md)
+connects that component to recorded image/IMU processing and the Python replay
+worker. It does not enable it in physical camera capture, bind learned
+observations or grant navigation authority. Its timed post-initialization test
+uses declared synthetic map uncertainty, not trained-model localization.
+Read the latest verification supplement before relying on earlier binary hashes
+or claiming continuous learned navigation.
 
 ## Read In This Order
 
@@ -76,7 +84,17 @@ regressions, all seven preflight stages, the desktop build and Rust check. See
   verification section rather than treating earlier zero-update reports as the
   final observation.
 
-## Verification At The Implementation Checkpoint
+## Latest Transfer Verification
+
+The recorded-stream control checkpoint passed 160 native/stream tests, three
+actual-model integration tests, three native CTest executables, all seven local
+preflight stages, the desktop build, Rust check and 40 Rust tests. No tests
+skipped in those targeted runs. Read the
+[latest verification section](docs/handoff-verification-2026-09-05.md#native-map-frame-stream-controls-and-final-transfer)
+for exact scope, environments, remaining warnings and ignored artifacts.
+These are development-Mac results, not hardware or flight approval.
+
+## Earlier Learned-Observer Checkpoint
 
 - 442 focused estimator/native tests and 84 learned/native integration tests
   passed in the recorded Mac environments, with no skips.
@@ -103,3 +121,16 @@ rejection gates; never force a green status by suppressing missing evidence.
 Read current source before relying on an older plan. Several historical docs
 describe intended features rather than completed implementations. The dated
 technical handoff resolves the most important conflicts without deleting history.
+
+## Suggested First Message To The Receiving LLM
+
+Read `LLM_HANDOFF.md`, `docs/technical-handoff-2026-09-05.md`,
+`docs/handoff-verification-2026-09-05.md` and `AGENTS.md`, then inspect the current
+source and Git state. Explain what is implemented, what is only demonstrated
+with synthetic inputs, and which required local artifacts are missing. Propose
+one bounded next task with a testable acceptance criterion before changing the
+navigation architecture. Prioritize camera/IMU data quality, continuous learned
+estimation and training over desktop redesign. Preserve shadow-only operation,
+original measurement timestamps, joint covariance and all rejection gates.
+Do not connect to aircraft, provision paid cloud resources or assume historical
+credentials remain valid. Do not claim this is a flight-ready release.

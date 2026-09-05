@@ -1,10 +1,13 @@
 # Native Correlated Map Frame
 
-Status: September 5, 2026. **Native estimator component, not wired into the live
-sensor runner, Python observer, installed Pi service or PX4.** It is implemented
+Status: September 5, 2026. **Native estimator component with an opt-in recorded
+image/IMU stream interface**, not wired into the physical camera adapter, learned
+Python observer, installed Pi service or PX4. It is implemented
 in `research/native/openvins/correlated_map_frame.{h,cpp}` and tested against
 the pinned OpenVINS state helper. It does not replace the current conditional
 PnP/window alignment or establish sustained live navigation.
+See [stream controls](native-map-frame-controls.md) for the subsequent native
+owner/Python replay-worker integration and its narrower verification scope.
 
 ## Intent
 
@@ -98,7 +101,9 @@ It supports one map state, not multi-fix fusion or multi-location hypotheses.
 
 Every returned result has `global_pose_authority=false`,
 `covariance_calibrated=false`, and `px4_publication_enabled=false`.
-There is no transport, wire packet, live status schema or map activation action.
+The component itself has no transport or activation action. The separate
+research control interface adds native process requests and conditional records,
+not a MAVLink wire packet or navigation-authorized status schema.
 
 ## What Must Be Done Before Live Binding
 
