@@ -24,7 +24,8 @@ from test_vio_stream_worker import wait_for
 
 
 @pytest.mark.parametrize("wire_format", ["json_v1", "msgpack_v1"])
-def test_query_owned_before_slow_result_survives_normal_window_and_releases(arrival_inputs, tmp_path, wire_format):
+@pytest.mark.parametrize("stream_frames", [20, 60])
+def test_query_owned_before_slow_result_survives_normal_window_and_releases(arrival_inputs, tmp_path, wire_format, stream_frames):
     native = make_worker(arrival_inputs, tmp_path, anchor_capacity=4, record_images=True)
     source = SimpleNamespace(state="not_started", native=native)
     source.status = lambda: {"state": source.state}
@@ -94,8 +95,8 @@ def test_query_owned_before_slow_result_survives_normal_window_and_releases(arri
         # input for each estimator solve or increase the 500 ms freshness policy.
         stream_initial_posterior = observer.coordinator.status()["posterior_timestamp_ns"]
         stream_started = time.monotonic_ns()
-        streamed = list(range(index+27, min(index+47, len(arrival_inputs[-1]))))
-        assert len(streamed) >= 5
+        streamed = list(range(index+27, min(index+27+stream_frames, len(arrival_inputs[-1]))))
+        assert len(streamed) == stream_frames
         target = time.monotonic()
         status_samples = []
         for later in streamed:
@@ -146,6 +147,17 @@ def test_query_owned_before_slow_result_survives_normal_window_and_releases(arri
             stream_started <= r["refresh"]["checked_host_monotonic_ns"] < stream_finished]
         current_during_stream = [r for r in checked_during_stream
             if r["current_estimate"]["pose_timestamp_ns"] > stream_initial_posterior]
+        # Numerical replay remains independent of whether the live scheduling
+        # makes a pose observable. Verify every successful streaming decision.
+        from vision_nav.estimation.pnp_window_alignment import align
+        for update in current_during_stream:
+            assert align(update["replay_inputs"][-1])["alignment"] == update["current_estimate"]
+        by_sequence = {r["event_sequence"]: r for r in rows}
+        for sample in status_samples:
+            if sample["pose_timestamp_ns"] is not None:
+                event = by_sequence[sample["evidence"]["event_sequence"]]
+                assert event["current_estimate"]["pose_timestamp_ns"] == sample["pose_timestamp_ns"]
+                assert sample["evidence"]["state"] in {"pending", "written"}
         (tmp_path/"streaming-observation.json").write_text(json.dumps({
             "scope": "finite_native_synthetic_map_observation_not_Pi_or_flight_qualification",
             "wire_format": wire_format,

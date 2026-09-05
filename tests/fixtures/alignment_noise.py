@@ -31,6 +31,8 @@ def attempt_noise(request, config):
 
 def joint_noise(request, config):
     _fault(config, "noise")
+    if config.get("mutate_snapshot"):
+        request["native_record"]["timestamp_ns"] += 1
     blocks = [np.asarray(f["request"]["uncertainty"]["joint_measurement_covariance"]) for f in request["fixes"]]
     d = sum(len(c) for c in blocks)
     joint, offset = np.zeros((d, d)), 0

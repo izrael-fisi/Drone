@@ -418,3 +418,69 @@ preflight stages (including 104 main checks), the desktop frontend build and
 Rust `cargo check` passed. Existing frontend import/chunk warnings remain.
 Rust tests were not rerun for this Python-only update; the prior Rust test
 result is historical, not a new execution claim.
+
+### Child Transaction And Extended Stream Checks
+
+After `870e37a4`, request-field encoding reuse also runs inside the isolated
+estimator. Parent-side identity checks and full native/joint validation remain;
+no old covariance, receipt timestamp or native pose is substituted. See
+[the implementation contract](alignment-serialization.md#child-transaction-reuse).
+
+The first focused run passed 82 tests, including one-second native observations.
+The default compact link produced five distinct advancing poses returned by the
+actual status reader; the JSON reference produced zero. The stream test was
+then extended to 60 frames (three seconds) as well as the original 20 frames.
+Every successful streaming estimate must equal a direct numerical replay, and
+every visible status sample must resolve to its eventual journal event.
+
+Three separate 60-frame compact-link observations:
+
+| Local artifact suffix | Distinct advancing visible poses | Positive / total status samples | Longest gap between observed advancing samples, including stream edges |
+| --- | --- | --- | --- |
+| `child-canonical-long-20260905-r1` | 11 | 21 / 294 | 0.984 s |
+| `child-canonical-long-20260905-r2` | 6 | 11 / 279 | 1.657 s |
+| `child-canonical-long-20260905-r3` | 4 | 9 / 283 | 1.438 s |
+
+These gaps use host observation times, including leading/trailing intervals;
+they are not continuous-time outage measurements. The largest gap between
+successive *pose sensor timestamps* in the three runs was 1.45 s. The sample
+fractions are not a time-weighted availability estimate. Most positive samples
+were observed while the full evidence write was still pending. Finish drained
+successfully and each sample was linked back to written evidence.
+
+The final 15-file codec/estimator/native suite passed **442 tests in 67.32 s**,
+no skips. Its four native cases reported:
+
+| Codec | Frames at nominal 20 Hz | Distinct advancing operator-visible poses |
+| --- | --- | --- |
+| JSON | 20 | 0 |
+| MessagePack | 20 | 3 |
+| JSON | 60 | 0 |
+| MessagePack | 60 | 6 |
+
+The 60-frame compact case had 12 positive samples out of 287 and a 1.653 s
+maximum observed gap including edges. The original 500 ms receipt gate, exact
+native timestamps, covariance checks, single-inflight process and shutdown
+requirements were unchanged. New tests also cover fresh encoding per public
+call, shared/cross-correlated noise, Unicode and signed-zero identities, refusal
+of public cached-field inputs, and an actual child whose provider tries to
+mutate the original snapshot.
+
+All outputs are Git-ignored under `research/outputs/`, including
+`child-canonical-20260905-r1/`, the three long-run directories above, and
+`child-canonical-final-20260905-r1/`. Numeric timing is from a development Mac
+with actual native VIO and synthetic map/noise observations, not a Pi or
+physical drone. The improvement establishes intermittent operator-visible
+updates in these runs, **not reliable continuous navigation**. Global
+ambiguity, measured sensor/map noise, long-gap propagation, simultaneous Pi
+load, thermal limits, trained field accuracy and PX4 transport remain open.
+
+The full learned/native integration suite passed **84 tests in 174.82 s** with
+39 existing ONNX/Rasterio warnings and no skips. It used actual MegaLoc,
+XFeat/LighterGlue and project-student model execution; artifacts are under
+`research/outputs/child-canonical-learned-20260905-r1/`. All seven local
+preflight stages (including 104 main checks), the desktop build and Rust
+`cargo check` passed. The existing frontend import/chunk warnings remain.
+Rust tests were not rerun for this Python-only update. No aircraft connection,
+PX4 output, installed-Pi execution, cloud allocation or training promotion was
+performed.

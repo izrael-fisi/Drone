@@ -94,8 +94,8 @@ def _worker_main(connection, config):
         if not callable(getattr(provider, "attempt_noise", None)) or not callable(getattr(provider, "joint_noise", None)):
             raise ValueError("Provider requires attempt_noise(request, config) and joint_noise(request, config)")
         from .learned_pnp_binding import bind_uncertainty
-        from .pnp_window_alignment import align, PnPAssessmentCache
-        from .correlated_window import payload_digest
+        from .pnp_window_alignment import align, _align_owned, PnPAssessmentCache
+        from .canonical_identity import encode as canonical_encode, object_digest
         import gtsam  # Include solver import in the startup deadline, not the first fresh fix.
         from scipy import stats  # The consistency gate also has a nontrivial cold import.
         from threadpoolctl import threadpool_info, threadpool_limits
@@ -137,8 +137,12 @@ def _worker_main(connection, config):
                 if not isinstance(noise, dict):
                     raise ValueError("Provider must return an explicit joint uncertainty object")
                 noise_finished = time.monotonic_ns()
-                aligned = align({**request, "joint_uncertainty": noise}, assessment_cache=assessment_cache)
-                result = {"input_request_sha256": payload_digest(request),
+                # The provider received a copy. Hash each original field once
+                # for the unbound request, native identity and bound result.
+                encoded_fields = {key: canonical_encode(value) for key, value in request.items()}
+                aligned = _align_owned({**request, "joint_uncertainty": noise}, assessment_cache=assessment_cache,
+                    encoded_fields={**encoded_fields, "joint_uncertainty": canonical_encode(noise)})
+                result = {"input_request_sha256": object_digest(encoded_fields),
                     "joint_uncertainty": noise, "result": aligned,
                     "timing_ms": {"joint_noise": (noise_finished-began)/1e6,
                                   "alignment": (time.monotonic_ns()-noise_finished)/1e6}}

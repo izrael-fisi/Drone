@@ -12,6 +12,7 @@ import numpy as np
 
 from .correlated_window import CorrelatedWindowAligner, WindowAlignmentConfig, payload_digest
 from .bounded_json import dumps as bounded_dumps
+from .canonical_identity import encode as canonical_encode, object_digest
 from .reprojection_uncertainty import assess
 from vision_nav.vio.pose_window import JointPoseWindow, joint_covariance
 
@@ -78,6 +79,16 @@ def align(request, *, assessment_cache=None):
     true state, both pose residuals have the negative of their estimate error,
     so the covariance/cross-covariance signs are unchanged to first order.
     """
+    return _align_owned(request, assessment_cache=assessment_cache)
+
+
+def _align_owned(request, *, assessment_cache=None, encoded_fields=None):
+    """Internal transaction path; encoded fields must belong to this owned tree.
+
+    Public align never accepts cached identities. The isolated worker may reuse
+    its own immutable encodings after passing copies to external providers.
+    Native, map, calibration and full joint covariance validation still run.
+    """
     if assessment_cache is not None and type(assessment_cache) is not PnPAssessmentCache:
         raise TypeError("Expected a worker-owned PnPAssessmentCache")
     if request.get("schema_version") != "vision_nav_joint_pnp_alignment_request_v1":
@@ -91,7 +102,11 @@ def align(request, *, assessment_cache=None):
     items, noise = request["fixes"], request["joint_uncertainty"]
     if not isinstance(items, list) or not 1 <= len(items) <= min(16, len(window.timestamps_ns)):
         raise ValueError("Expected 1-16 PnP fixes within one retained VIO snapshot")
-    snapshot_sha256 = payload_digest(record)
+    if encoded_fields is None:
+        encoded_fields = {key: canonical_encode(value) for key, value in request.items()}
+    if set(encoded_fields) != set(request) or any(type(value) is not bytes for value in encoded_fields.values()):
+        raise ValueError("Encoded fields must describe this exact owned request")
+    snapshot_sha256 = hashlib.sha256(encoded_fields["native_record"]).hexdigest()
     pnp_digests = [payload_digest(item["request"]) for item in items]
     if (noise.get("snapshot_sha256") != snapshot_sha256
             or noise.get("pnp_request_sha256s") != pnp_digests):
@@ -121,7 +136,7 @@ def align(request, *, assessment_cache=None):
         sizes.append(5*len(item["request"]["attempt"]["matched_query_pixels"])+4)
     if len({r["scope"] for r in results}) != 1:
         raise ValueError("Cannot mix synthetic and unvalidated research uncertainty scopes")
-    base = {"schema_version": "vision_nav_joint_pnp_alignment_v1", "request_sha256": payload_digest(request),
+    base = {"schema_version": "vision_nav_joint_pnp_alignment_v1", "request_sha256": object_digest(encoded_fields),
             "implementation_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "position_authority": False, "navigation_mode": "NO_GLOBAL_FIX", "px4_external_vision": "disabled",
             "covariance_calibrated": False, "snapshot_policy": "replace_do_not_accumulate",

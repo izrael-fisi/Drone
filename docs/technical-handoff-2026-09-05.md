@@ -241,6 +241,14 @@ development checkpoint, not a release tag. Work includes:
     mismatch or journal failure still withholds it. Actual status sampling at
     20 Hz input remains zero in the final check, despite passing lifecycle and
     numerical regression tests; this is not sustained-current qualification.
+16. Child transaction identity reuse: the worker encodes each owned request
+    field once and reuses it for unbound/native/noise-bound hashes. Public
+    callers cannot supply cached fields. Three extended 60-frame native streams
+    produced 11, 6 and 4 distinct current poses visible to the status reader;
+    every streaming success retained exact numerical replay. Large gaps and
+    low sample availability remain, so the current-state requirement is still
+    unqualified. Full measured VIO/map uncertainty, Pi load and flight validation
+    are separate missing evidence, not established by these synthetic runs.
 
 Items 11-12 and their regression tests are included in the final transfer
 supplement after the original `ce6b3088` documentation/merge checkpoint.

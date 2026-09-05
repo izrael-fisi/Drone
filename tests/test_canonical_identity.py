@@ -10,6 +10,7 @@ from vision_nav.estimation.correlated_window import payload_digest
 from test_current_alignment_refresh import ready
 from test_delayed_alignment import later_record, push
 from test_joint_alignment_transaction import executor, refresh
+from test_pnp_window_alignment import fixture
 
 
 @pytest.mark.parametrize("value", [
@@ -88,3 +89,32 @@ def test_fragment_cache_is_retired_with_epoch():
     coordinator.invalidate("sensor_lost")
     assert coordinator._snapshot_encoded is None
     assert coordinator._prepared is None
+
+
+@pytest.mark.parametrize("shared,vio_cross", [(False, False), (False, True), (True, False), (True, True)])
+def test_public_alignment_encodes_native_once_per_transaction(monkeypatch, shared, vio_cross):
+    import vision_nav.estimation.pnp_window_alignment as module
+
+    request, _ = fixture(shared=shared, vio_cross=vio_cross)
+    request["extra_identity_context"] = {"escaped": "\u2603\n", "negative_zero": -0.0}
+    encoded_records = []
+    original = module.canonical_encode
+    def counted(value):
+        if value is request["native_record"]:
+            encoded_records.append(payload_digest(value))
+        return original(value)
+    monkeypatch.setattr(module, "canonical_encode", counted)
+    for _ in range(2):
+        result = module.align(request)
+        assert result["status"] == "research_alignment"
+        assert result["request_sha256"] == payload_digest(request)
+        assert result["alignment"]["snapshot_sha256"] == payload_digest(request["native_record"])
+    assert encoded_records == [payload_digest(request["native_record"])]*2
+
+
+def test_public_alignment_does_not_accept_external_precomputed_fields():
+    from vision_nav.estimation.pnp_window_alignment import align
+
+    request, _ = fixture()
+    with pytest.raises(TypeError):
+        align(request, encoded_fields={key: encode(value) for key, value in request.items()})

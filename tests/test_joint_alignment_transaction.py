@@ -184,6 +184,21 @@ def test_combined_worker_rejects_already_supplied_noise():
         assert engine.stop()
 
 
+def test_combined_provider_cannot_mutate_owned_request_or_rebind_cached_identity():
+    request, _ = fixture()
+    request.pop("joint_uncertainty")
+    before = deepcopy(request)
+    engine = ProcessAlignmentEngine(PROVIDER, provider_config={"mutate_snapshot": True})
+    try:
+        engine.start()
+        with pytest.raises(RuntimeError, match="Joint noise must bind"):
+            engine.align_with_noise(request)
+        assert request == before
+        assert engine.status()["state"] == "failed" and not engine.status()["process_alive"]
+    finally:
+        assert engine.stop()
+
+
 def test_cannot_supply_both_callbacks_or_non_callable_executor():
     coordinator, _, request, _ = ready()
     with pytest.raises(ValueError):

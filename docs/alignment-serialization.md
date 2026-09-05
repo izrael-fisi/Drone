@@ -26,6 +26,38 @@ trusting cached fragments. Tests cover Unicode/escaping, float extremes and
 signed zero, empty/nested fields, noise insertion, callback mutation, snapshot
 replacement during solving and epoch invalidation.
 
+### Child Transaction Reuse
+
+The isolated worker also reuses field encodings within each combined
+noise/alignment transaction. The unbound request, native snapshot and complete
+noise-bound request identities therefore do not require three independent
+serializations of the same large native matrix. The public `align` entry point
+always creates fresh encodings; it cannot accept caller-supplied cached fields.
+The private `_align_owned` path is used only with the worker's own request after
+external providers have received isolated copies. Every transaction still
+validates the native window, provenance, exact ordered noise identities, full
+joint covariance and estimator output. Parent-side request/noise/result hash
+checks and all freshness/epoch gates remain independent and unchanged.
+
+This is transaction reuse, not a cross-snapshot cache. The next posterior and
+next noise response get new encodings even if most values look similar.
+Provider input mutation is tested in a real child process: it cannot change the
+owned request or rebind its cached identity; mismatched noise terminates the
+worker without returning a current pose.
+
+A local `cProfile` check of the same recorded native/synthetic-map request used
+five warmups and 20 calls with an existing PnP assessment cache. Total profiled
+alignment time changed from 0.233 s to 0.184 s; JSON encoding time from 0.126 s
+to 0.080 s. Complete `payload_digest` calls changed from 80 to 40; there are
+more small key-encoding calls, not fewer total Python calls. These are two
+local instrumented samples, not statistical latency/Pi qualification.
+
+The stronger test now includes both 20- and 60-frame streams at nominal 20 Hz,
+sampling actual operator status. Every successful streaming estimate is replayed
+numerically, and every visible sample is linked to its written event sequence.
+See [the latest measurements](handoff-verification-2026-09-05.md#child-transaction-and-extended-stream-checks)
+for the positive but intermittent results and remaining gaps.
+
 **Latest transport:** The private estimator socket defaults to `msgpack_v1`.
 The JSON ownership and canonical identity helpers below are unchanged, and
 `json_v1` remains an explicit comparison option. See

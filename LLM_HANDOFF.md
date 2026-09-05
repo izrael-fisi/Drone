@@ -22,8 +22,9 @@ This file is independent of any particular assistant or conversation history.
   The current implementation is **shadow research, not flight-ready navigation**.
 - Native local VIO and real learned model execution exist. Continuous current
   global position, calibrated physical uncertainty, Pi performance and PX4
-  publication remain unqualified. Short 20 Hz experiments still produced zero
-  advancing current global updates, despite passing fail-closed tests.
+  publication remain unqualified. Current-state availability remains
+  intermittent; passing fail-closed tests is not proof of usable continuous
+  navigation. Earlier zero-update observations remain in the evidence ledger.
 - `pi5_crossview_nav_v1` is the target profile name, not a certified checkpoint.
   The current student is project-owned cross-attention, not a reproduced
   Video2BEV/Bearing-UAV model. ORB/AKAZE/SIFT remain frozen baselines only.
@@ -49,7 +50,13 @@ This file is independent of any particular assistant or conversation history.
   new native data arrives and separates compact conditional status from full
   replay writes. Status now identifies pending versus written evidence. The
   stronger test samples the actual status reader, not just solve-completion
-  checks; its final 20 Hz observation still exposed no advancing current pose.
+  checks; that checkpoint's final 20 Hz observation exposed no advancing pose.
+- Latest child-side identity reuse produced intermittent operator-visible
+  updates in three 60-frame runs (11, 6 and 4 distinct advancing poses), with
+  exact replay and unchanged gates. Gaps remain substantial, so this is measured
+  progress, not sustained-current or flight qualification. Read the latest
+  verification section rather than treating earlier zero-update reports as the
+  final observation.
 
 ## First Session
 

@@ -29,8 +29,10 @@ work, start with the [technical handoff](technical-handoff-2026-09-05.md).
 > **Latest review:** See [live availability and training priorities](current-navigation-assessment-2026-09-05.md#latest-review-live-availability-and-training-priorities).
 > The current map-conditioned student uses CNN encoders, spatial cross-attention
 > and weighted temporal pooling; the earlier CNN/GRU description above is
-> historical. A short native 20 Hz observation still produced no current global
-> updates during its streaming interval. Keep continuous-current estimation,
+> historical. Earlier native 20 Hz observations produced no current global
+> updates; later transaction optimizations produced intermittent operator-visible
+> updates, still with substantial gaps. See the [latest execution evidence](handoff-verification-2026-09-05.md#child-transaction-and-extended-stream-checks).
+> Keep continuous-current estimation,
 > physical calibration, geographic holdout accuracy and full Pi load as explicit
 > release gates, separate from passing contract tests.
 
