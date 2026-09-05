@@ -75,7 +75,7 @@ def _worker_main(connection, config):
         if not callable(getattr(provider, "attempt_noise", None)) or not callable(getattr(provider, "joint_noise", None)):
             raise ValueError("Provider requires attempt_noise(request, config) and joint_noise(request, config)")
         from .learned_pnp_binding import bind_uncertainty
-        from .pnp_window_alignment import align
+        from .pnp_window_alignment import align, PnPAssessmentCache
         from .correlated_window import payload_digest
         import gtsam  # Include solver import in the startup deadline, not the first fresh fix.
         from scipy import stats  # The consistency gate also has a nontrivial cold import.
@@ -84,6 +84,7 @@ def _worker_main(connection, config):
         numerical_limit = threadpool_limits(limits=config["numerical_threads"])
         pools = threadpool_info()
         versions = {name: importlib.metadata.version(name) for name in ("gtsam", "numpy", "scipy", "threadpoolctl")}
+        assessment_cache = PnPAssessmentCache()
         _verify(config)
         _send(connection, {"type": "ready", "worker_id": config["worker_id"],
                            "sources": config["sources"], "versions": versions,
@@ -93,16 +94,19 @@ def _worker_main(connection, config):
             if not 0 < size <= LIMIT:
                 raise ValueError("Alignment request exceeds limit")
             raw = _exact(connection, size)
+            decoded_started = time.monotonic_ns()
             message = json.loads(raw)
             operation, request = message["operation"], message["request"]
+            decoded_finished = time.monotonic_ns()
             _verify(config)
+            work_started = time.monotonic_ns()
             if operation == "bind":
                 noise = provider.attempt_noise(deepcopy(request["request_without_uncertainty"]), deepcopy(config["provider_config"]))
                 result = bind_uncertainty(request, noise)
             elif operation == "noise":
                 result = provider.joint_noise(deepcopy(request), deepcopy(config["provider_config"]))
             elif operation == "align":
-                result = align(request)
+                result = align(request, assessment_cache=assessment_cache)
             elif operation == "align_with_noise":
                 if "joint_uncertainty" in request:
                     raise ValueError("Combined alignment requires an unbound noise request")
@@ -111,17 +115,26 @@ def _worker_main(connection, config):
                 if not isinstance(noise, dict):
                     raise ValueError("Provider must return an explicit joint uncertainty object")
                 noise_finished = time.monotonic_ns()
-                aligned = align({**request, "joint_uncertainty": noise})
+                aligned = align({**request, "joint_uncertainty": noise}, assessment_cache=assessment_cache)
                 result = {"input_request_sha256": payload_digest(request),
                     "joint_uncertainty": noise, "result": aligned,
                     "timing_ms": {"joint_noise": (noise_finished-began)/1e6,
                                   "alignment": (time.monotonic_ns()-noise_finished)/1e6}}
             else:
                 raise ValueError("Unknown alignment operation")
+            work_finished = time.monotonic_ns()
             _verify(config)
+            verified_finished = time.monotonic_ns()
             _send(connection, {"type": "result", "worker_id": config["worker_id"],
                 "request_id": message["request_id"], "operation": operation,
-                "request_sha256": hashlib.sha256(raw).hexdigest(), "result": result})
+                "request_sha256": hashlib.sha256(raw).hexdigest(), "result": result,
+                "pnp_assessment_cache": assessment_cache.status(),
+                "child_timing_ms": {
+                    "request_decode": (decoded_finished-decoded_started)/1e6,
+                    "source_verification_before": (work_started-decoded_finished)/1e6,
+                    "operation": (work_finished-work_started)/1e6,
+                    "source_verification_after": (verified_finished-work_finished)/1e6,
+                }})
     except EOFError:
         pass
     except Exception as exc:
@@ -170,6 +183,7 @@ class ProcessAlignmentEngine:
         self._request = self._completed = 0
         self._last_operation = None
         self._numerical_threadpools = None
+        self._last_receive_profile = None
 
     def _check(self, deadline):
         if self._cancelled.is_set():
@@ -195,10 +209,19 @@ class ProcessAlignmentEngine:
         return bytes(output)
 
     def _response(self, deadline):
+        started = time.monotonic_ns()
         size = struct.unpack("!Q", self._read(8, deadline))[0]
         if not 0 < size <= LIMIT:
             raise ValueError("Alignment response exceeds limit")
-        response = json.loads(self._read(size, deadline))
+        raw = self._read(size, deadline)
+        received = time.monotonic_ns()
+        response = json.loads(raw)
+        decoded = time.monotonic_ns()
+        self._last_receive_profile = {
+            "response_bytes": size,
+            "receive_wait_ms": (received-started)/1e6,
+            "response_decode_ms": (decoded-received)/1e6,
+        }
         if response.get("worker_id") != self.worker_id:
             raise ValueError("Alignment worker identity mismatch")
         if response.get("type") == "error":
@@ -242,6 +265,7 @@ class ProcessAlignmentEngine:
             _verify(self._config)
             self._request += 1
             raw = _encode({"request_id": self._request, "operation": operation, "request": request})
+            encoded_at = time.monotonic()
             self._state = "processing"
             connection = self._socket
             pending = memoryview(struct.pack("!Q", len(raw))+raw)
@@ -256,7 +280,9 @@ class ProcessAlignmentEngine:
                     if not size:
                         raise EOFError("alignment_socket_closed")
                     pending = pending[size:]
+            sent_at = time.monotonic()
             response = self._response(deadline)
+            decoded_at = time.monotonic()
             if (response.get("type") != "result" or response.get("request_id") != self._request
                     or response.get("operation") != operation
                     or response.get("request_sha256") != hashlib.sha256(raw).hexdigest()
@@ -265,8 +291,19 @@ class ProcessAlignmentEngine:
             _verify(self._config)
             self._check(deadline)
             self._completed += 1
-            self._last_operation = {"operation": operation, "elapsed_ms": (time.monotonic()-began)*1000,
-                "request_bytes": len(raw), "scope": "parent_encode_ipc_child_work_decode_and_verification"}
+            finished_at = time.monotonic()
+            self._last_operation = {"operation": operation, "elapsed_ms": (finished_at-began)*1000,
+                "request_bytes": len(raw), "scope": "parent_encode_ipc_child_work_decode_and_verification",
+                "pnp_assessment_cache": response.get("pnp_assessment_cache"),
+                "transport_profile": {
+                    **self._last_receive_profile,
+                    "parent_verify_encode_ms": (encoded_at-began)*1000,
+                    "parent_send_ms": (sent_at-encoded_at)*1000,
+                    "parent_receive_response_ms": (decoded_at-sent_at)*1000,
+                    "parent_final_verify_ms": (finished_at-decoded_at)*1000,
+                    "child_timing_ms": response.get("child_timing_ms"),
+                    "scope": "host_elapsed_stages_overlap_child_work_not_sensor_latency",
+                }}
             self._state = "ready"
             return response["result"]
         except BaseException as exc:

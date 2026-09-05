@@ -100,6 +100,74 @@ from the concurrently running sensor/observer threads.
 
 ## Deadlines And Failures
 
+### Exact PnP Assessment Reuse
+
+The child now retains at most 16 successful conditional PnP assessments and
+2 MiB of serialized ASCII result payload, evicting least-recently used entries.
+This bounds retained payload, not total interpreter or process RSS. Oversized
+results still follow normal alignment validation but are not retained. Failed
+assessments are not cached. The cache dies with the child epoch and is never
+persisted or loaded from a caller-supplied artifact.
+
+The key is the complete PnP request digest, including geometry, original frame
+time, map/model/calibration identity and its measurement covariance. Cached
+serialized results are decoded into fresh objects, so consumer changes cannot
+alter a later result. Existing worker source checks still run before and after
+every operation. The direct `align(request)` reference remains uncached; only
+the owned worker enables this optimization by default.
+
+Every alignment still validates the current native snapshot, all joint input
+and cross-covariance blocks, provenance and consistency, and computes a new
+aligned pose. No VIO snapshot, map batch, current pose or publication decision
+is cached. A cache hit does not revive a retired query or relax freshness.
+`last_operation.pnp_assessment_cache` reports entries, payload bytes, limits,
+hits, misses, evictions and uncacheable results separately from numerical output.
+
+September 5 local evidence after the handoff commit:
+
+- 104 targeted cache/PnP/worker/current-refresh checks passed in 24.19 s.
+- The final cache-only suite, including zero-uncertainty withholding and arbitrary
+  provider rejection, passed 20 checks; all 104 main project checks also passed.
+- 164 additional native/estimator checks passed in 20.75 s with the real native
+  binary. Artifact: `research/outputs/pnp-cache-native-20260905-r1/`.
+- A 20-pair, alternating-order, in-process benchmark with two warmup pairs on
+  one saved native snapshot measured median 20.179 ms uncached and 18.945 ms
+  cached; P95 20.705 and 19.595 ms respectively. All results matched exactly.
+  One 13,974-byte assessment was retained, with 21 hits and one miss. The input
+  SHA-256 was `aa195fa1cf49e5c4ee12782ec6756494754190cf5a2a20a7b43df101c574f26e`,
+  from `handoff-estimator-20260905-r1/test_query_owned_before_slow_r0/alignment.jsonl`
+  under ignored `research/outputs/`, first `replay_inputs` request. Python 3.11,
+  NumPy 1.26.4/GTSAM 4.2.2, parent BLAS/OpenMP thread limits one, macOS arm64.
+- The actual advancing 20 Hz observation still counted **zero current global
+  updates**. Attempt processing durations were approximately 91-171 ms. This
+  improvement does not solve current-state availability or qualify Pi/flight
+  performance. Continue delayed-correction/forward-propagation work.
+
+### Per-Stage Timing Diagnostics
+
+`last_operation.transport_profile` adds response payload bytes and host elapsed
+stages for parent verification/encoding, socket send, response receive/decode,
+and final verification. These four parent stages partition `elapsed_ms`.
+`receive_wait_ms` includes header/body reads and waiting for the child;
+`response_decode_ms` covers JSON decoding only. Both are subdivisions of the
+parent response stage, not additional elapsed time.
+
+`child_timing_ms` records request JSON decoding, source verification before and
+after work, and the selected operation. It excludes initial socket request reads,
+final response-envelope construction, encoding and sending. Child timing overlaps
+the parent interval; do not add child times to the parent total. None of these
+fields measures exposure-to-current-pose latency or proves Pi performance.
+
+Successful process-backed observer refreshes retain an `estimator_operations`
+entry per execution alongside `replay_inputs`, bounded by refresh attempt limits.
+The in-process reference path has no process timings. Failed operations retain
+the existing failure/deadline behavior; diagnostic fields do not bypass checks
+or change numerical result hashes. Test coverage includes real child stage
+partitioning and observer replay parity. Representative bottleneck attribution
+under installed-Pi load remains future work.
+
+### Operation Limits
+
 - Startup defaults to 20 seconds, including provider and solver import.
 - Each bind, joint-noise and alignment request defaults to two seconds.
 - The live observer uses `align_with_noise` to evaluate the explicit joint-noise

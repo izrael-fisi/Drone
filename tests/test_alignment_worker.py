@@ -224,6 +224,10 @@ def test_observer_real_process_fuses_and_records_exact_replay():
         assert result["status"] == "research_current_alignment", result
         replay = align(result["replay_inputs"][-1])
         assert replay["alignment"] == result["current_estimate"]
+        operations = result["estimator_operations"]
+        assert len(operations) == len(result["replay_inputs"])
+        assert all(item["operation"] == "align_with_noise" for item in operations)
+        assert all(item["transport_profile"]["response_bytes"] > 0 for item in operations)
         assert observer.status()["provider_hard_timeout"]
     finally:
         assert observer.stop()

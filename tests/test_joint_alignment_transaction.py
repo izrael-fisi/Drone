@@ -44,6 +44,15 @@ def test_combined_real_child_matches_separate_operations_with_one_round_trip():
         assert engine.status()["completed_requests"] == 1
         last = engine.status()["last_operation"]
         assert last["operation"] == "align_with_noise" and last["request_bytes"] > 0 and last["elapsed_ms"] > 0
+        profile = last["transport_profile"]
+        assert profile["response_bytes"] > 0
+        stages = [profile[key] for key in (
+            "parent_verify_encode_ms", "parent_send_ms", "parent_receive_response_ms", "parent_final_verify_ms")]
+        assert all(0 <= value < float("inf") for value in stages)
+        assert sum(stages) == pytest.approx(last["elapsed_ms"])
+        assert 0 <= profile["receive_wait_ms"] + profile["response_decode_ms"] <= profile["parent_receive_response_ms"]
+        assert all(0 <= value < float("inf") for value in profile["child_timing_ms"].values())
+        assert profile["scope"] == "host_elapsed_stages_overlap_child_work_not_sensor_latency"
         assert combined["input_request_sha256"] == payload_digest(request)
         noise = engine.joint_noise(request)
         full = {**request, "joint_uncertainty": noise}

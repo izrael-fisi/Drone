@@ -213,6 +213,21 @@ development checkpoint, not a release tag. Work includes:
 10. Latest CPU work: bounded float-chunk JSON validation with unchanged hashes,
     default one-thread detected BLAS/OpenMP pools in the estimator child, and
     removal of one redundant internal draft copy. Public ownership remains intact.
+11. Subsequent worker-local PnP reuse: at most 16 successful assessments / 2 MiB
+    of serialized results, keyed by the complete original request. Every new
+    snapshot still requires joint uncertainty and alignment validation. Cache
+    reuse does not create a new measurement or qualify a current pose.
+12. Per-operation diagnostics: parent encode/transfer/decode/verification timing,
+    child decode/verification/operation timing, response sizes, cache counters
+    and per-attempt observer records. Child timings overlap parent waiting and
+    must not be added to parent totals or called sensor-to-pose latency.
+
+Items 11-12 and their regression tests are included in the final transfer
+supplement after the original `ce6b3088` documentation/merge checkpoint.
+No new training, Pi measurement, aircraft connection or PX4 publication was
+performed for that supplement. The modest cached-assessment benchmark does not
+resolve the zero-advancing-current-update finding. The next estimator task should
+use the diagnostics to investigate that limitation, not infer it is solved.
 
 The handoff also integrates GitHub main through `ee867d56`, preserving 22 newer
 commits covering map-first navigation, companion/GCS tools, map providers and

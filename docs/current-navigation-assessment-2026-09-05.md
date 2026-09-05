@@ -12,6 +12,12 @@ chunk validation, a bounded estimator-child numerical thread budget and reduced
 internal copying are implemented; none closes the zero-advancing-current-output
 finding. Preserve both failed and passing evidence when continuing this work.
 
+Subsequent [worker-scoped PnP reuse](research-alignment-process.md#exact-pnp-assessment-reuse)
+avoids re-assessing unchanged original fixes while recomputing each snapshot's
+joint alignment. Exact parity and a modest in-process improvement were measured;
+the real native 20 Hz observation still produced zero advancing current updates.
+It is not a replacement for the current-state architecture work below.
+
 ## Latest Review: Live Availability And Training Priorities
 
 Rechecked September 5, 2026 against the local sources, completed native test

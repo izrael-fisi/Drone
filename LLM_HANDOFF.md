@@ -36,6 +36,10 @@ This file is independent of any particular assistant or conversation history.
 - Build, Rust and documented targeted checks passed in their recorded setups.
   The verification guide retains an exact-numerical-equality environment caveat,
   a corrected missing monitoring dependency and five open npm audit findings.
+- The transfer includes the latest bounded PnP assessment cache and per-stage
+  estimator timing diagnostics. These are research optimizations/observability,
+  not a fix for the advancing-current global-position gap. See the final transfer
+  supplement in the verification guide for checks against these exact changes.
 
 ## First Session
 

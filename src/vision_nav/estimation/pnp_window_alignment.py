@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import OrderedDict
 import hashlib
 import json
 from pathlib import Path
@@ -10,17 +11,72 @@ from pathlib import Path
 import numpy as np
 
 from .correlated_window import CorrelatedWindowAligner, WindowAlignmentConfig, payload_digest
+from .bounded_json import dumps as bounded_dumps
 from .reprojection_uncertainty import assess
 from vision_nav.vio.pose_window import JointPoseWindow, joint_covariance
 
 
-def align(request):
-    """Recompute PnP sensitivities and propagate the complete declared input model.
+class PnPAssessmentCache:
+    """Worker-scoped memoization of exact, immutable PnP requests only.
+
+    Never caches VIO windows, joint cross-covariance, map batches or alignment.
+    The owning worker verifies implementation sources before and after each
+    operation. Serialized results prevent consumer mutation of retained values.
+    Limits bound retained ASCII payload, not Python/process RSS.
+    """
+
+    def __init__(self, *, max_entries=16, max_bytes=2*1024*1024):
+        if type(max_entries) is not int or not 1 <= max_entries <= 16:
+            raise ValueError("PnP cache requires 1..16 entries")
+        if type(max_bytes) is not int or not 1 <= max_bytes <= 2*1024*1024:
+            raise ValueError("PnP cache payload limit must be in 1..2097152 bytes")
+        self._max_entries, self._max_bytes = max_entries, max_bytes
+        self._entries = OrderedDict()
+        self._bytes = self._hits = self._misses = self._evictions = self._uncached = 0
+
+    def assess(self, request):
+        key = payload_digest(request)
+        if key in self._entries:
+            self._hits += 1
+            self._entries.move_to_end(key)
+            return json.loads(self._entries[key])
+        self._misses += 1
+        result = assess(request)
+        if result["status"] != "conditional_research_covariance":
+            self._uncached += 1
+            return result
+        try:
+            encoded = bounded_dumps(result, self._max_bytes)
+        except ValueError:
+            # Oversized valid results remain usable, without growing the cache.
+            self._uncached += 1
+            return result
+        while self._entries and (len(self._entries) >= self._max_entries
+                                 or self._bytes+len(encoded) > self._max_bytes):
+            _, old = self._entries.popitem(last=False)
+            self._bytes -= len(old)
+            self._evictions += 1
+        self._entries[key] = encoded
+        self._bytes += len(encoded)
+        return result
+
+    def status(self):
+        return {"scope": "exact_pnp_request_only_not_joint_vio_or_alignment",
+                "entries": len(self._entries), "payload_bytes": self._bytes,
+                "max_entries": self._max_entries, "max_payload_bytes": self._max_bytes,
+                "hits": self._hits, "misses": self._misses,
+                "evictions": self._evictions, "uncached": self._uncached}
+
+
+def align(request, *, assessment_cache=None):
+    """Propagate the complete declared input model, optionally reusing exact PnP.
 
     Inputs describe errors of estimated VIO poses and PnP measurements. At the
     true state, both pose residuals have the negative of their estimate error,
     so the covariance/cross-covariance signs are unchanged to first order.
     """
+    if assessment_cache is not None and type(assessment_cache) is not PnPAssessmentCache:
+        raise TypeError("Expected a worker-owned PnPAssessmentCache")
     if request.get("schema_version") != "vision_nav_joint_pnp_alignment_request_v1":
         raise ValueError("Unknown joint PnP alignment request")
     record = request["native_record"]
@@ -47,7 +103,7 @@ def align(request):
         identity = item.get("fix_id")
         if not isinstance(identity, str) or not identity.strip() or identity in ids:
             raise ValueError("Distinct nonempty map fix identities required")
-        result = assess(item["request"])
+        result = assess(item["request"]) if assessment_cache is None else assessment_cache.assess(item["request"])
         for key in ("map_release_id", "model_release_id", "calibration_id", "clock_id", "uncertainty_model_id"):
             if result[key] != getattr(config, key):
                 raise ValueError(f"PnP and VIO alignment provenance mismatch: {key}")

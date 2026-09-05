@@ -251,3 +251,52 @@ historical secret audit or security certification.
 No default-environment exact-equality test was disabled, and dependency audit
 findings remain open. This handoff preserves known limitations instead of
 claiming all-platform/flight qualification.
+
+## Final Transfer Supplement
+
+The transfer also includes the subsequent exact-request PnP cache, process
+timing diagnostics and observer trace fields, plus regression tests. They were
+local changes after the original `ce6b3088` handoff commit and are included in
+the follow-up transfer commit, rather than left only on the previous machine.
+Use Git history to identify that commit; no training/release promotion occurred.
+
+Checks repeated against these changes on September 5:
+
+| Check | Result |
+| --- | --- |
+| Cache, alignment, worker, native ownership/handoff and PX4 boundary suite below | **270 passed in 44.84 s**, no skips |
+| Main project check list | **104 passed** |
+| Local preflight | **All seven stages passed** |
+| Desktop frontend build | **Passed**, existing Tauri import and chunk-size warnings remain |
+| Rust `cargo check` | **Passed** |
+| Rust `cargo test` | **40 passed**, no ignored tests |
+
+Estimator command, with the same Python 3.11/NumPy 1.26.4/GTSAM 4.2.2
+environment and locally built native binary described above:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+PYTHONPATH=src \
+VISION_NAV_OPENVINS_BINARY=research/outputs/openvins-native-build/vision-nav-openvins \
+python -m pytest -q \
+  tests/test_pnp_assessment_cache.py tests/test_pnp_window_alignment.py \
+  tests/test_alignment_worker.py tests/test_current_alignment_refresh.py \
+  tests/test_joint_alignment_transaction.py tests/test_live_query_anchors.py \
+  tests/test_single_fix_propagation.py tests/test_window_marginalization.py \
+  tests/test_continuous_alignment.py tests/test_delayed_alignment.py \
+  tests/test_native_snapshot_handoff.py tests/test_px4_boundary.py
+```
+
+The real native, synthetic-map observation in this run still recorded **zero
+advancing current global updates** during 20 additional frames at 20 Hz. The
+500 ms receipt-age gate was unchanged. This is a known availability failure,
+not a passing flight-navigation result. The tests check rejection/ownership
+contracts and must not be described as proving usable current navigation.
+
+The ignored output is
+`research/outputs/handoff-final-estimator-20260905-r1/`; its
+`test_query_owned_before_slow_r0/streaming-observation.json` records that result.
+Per-operation timing is retained in the adjacent alignment trace. Timing
+diagnostics have tested structure/partitioning, but no representative Pi-load
+bottleneck study was completed. The earlier full learned-model suite, dependency
+audit caveats and all hardware/cloud limitations above still apply.

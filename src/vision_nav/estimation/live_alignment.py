@@ -234,6 +234,7 @@ class LiveAlignmentObserver:
 
     def _refresh(self, *, binding=None):
         inputs = []
+        estimator_operations = []
 
         def noise(request):
             joint = _owned(self.joint_noise(deepcopy(request)), 32*1024*1024)
@@ -242,6 +243,7 @@ class LiveAlignmentObserver:
 
         def execute(request):
             response = self.engine.align_with_noise(request)
+            estimator_operations.append(self.engine.status()["last_operation"])
             inputs.append({**request, "joint_uncertainty": response["joint_uncertainty"]})
             return response
 
@@ -257,7 +259,8 @@ class LiveAlignmentObserver:
         last_fix = max((f["request"]["context"]["timestamp_ns"] for f in inputs[-1]["fixes"]), default=None) if inputs else None
         age = estimate["pose_timestamp_ns"]-last_fix if estimate is not None and last_fix is not None else None
         event = self._event(result["status"], result["reason"], binding=binding, refresh=result,
-            replay_inputs=inputs, current_estimate=estimate, map_evidence_timestamp_ns=last_fix,
+            replay_inputs=inputs, estimator_operations=estimator_operations,
+            current_estimate=estimate, map_evidence_timestamp_ns=last_fix,
             map_evidence_age_at_pose_ns=age, position_source=("research_vio_between_fixes" if age else
                 "research_map_correction") if age is not None else "no_research_position")
         return _owned(event, 4*1024*1024)
