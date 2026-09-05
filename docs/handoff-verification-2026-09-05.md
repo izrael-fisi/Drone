@@ -499,3 +499,51 @@ existing dynamic/static import and large-chunk warnings. No Python/native/model
 tests or Rust tests were rerun for these documentation-only edits; the results
 above describe the preceding implementation checkpoint. No runtime source,
 hardware configuration, model weights or aircraft behavior changed.
+
+### Native Map-Frame Component
+
+Following the documentation transfer, the separate native
+`CorrelatedMapFrame` component and its CTest target were added. No changes were
+made to pinned upstream OpenVINS, the existing native replay executable's
+source, the Python sensor/observer path or aircraft output. See
+[component contract](native-map-frame.md) for requirements and limitations.
+
+Verification on the development Mac:
+
+- Full configured native build passed. The existing Boost/CMake policy warning
+  remains; it did not block compilation.
+- All **three CTest executables passed**, including the existing native pose
+  convention and passive-anchor tests. The new executable checks multiple
+  rejection, covariance, geometry and lifecycle cases, not just one assertion.
+- Native projection Jacobian versus actual PoseJPL perturbations: maximum
+  absolute difference `4.63713e-09`. Sixty synthetic native EKF updates returned
+  **60/60** advancing projections, with maximum full-joint covariance difference
+  `2.22045e-16` against an independent Joseph-form update reference. The local
+  state stayed equal to an unaugmented reference. A separate single-fix camera
+  geometry fixture also passed.
+- **111 Python tests passed in 11.61 s**, no skips, using the existing Python
+  3.11 estimator environment and native binary. Files: `test_openvins_replay.py`,
+  `test_single_fix_propagation.py`, `test_window_marginalization.py`, and
+  `test_px4_boundary.py`. Command uses the same one-thread numerical environment
+  as earlier checks, `PYTHONPATH=src`, and `VISION_NAV_OPENVINS_BINARY` pointing
+  to the pinned local executable. New local-only artifacts:
+  `research/outputs/native-map-frame-regression-20260905-r1/`.
+- All seven local preflight stages passed, including 104 main checks.
+- Desktop `npm run build --prefix desktop-app` and Rust `cargo check` passed.
+  Existing frontend import/chunk warnings remain. Rust tests and the full
+  learned-model suite were not rerun for this isolated native component.
+
+The new native test binary SHA-256 is
+`c064c6a5bc9a3e41217d338ee64f8c8b239ecb77c85682c00028f051de0377bb`.
+The existing sensor replay binary remains unchanged at
+`e89ddd42fbe01f5993cc32396ad8f6d54363bc910a199f52f01827450df2afcb`.
+Native build outputs and CTest logs remain ignored in Git; regenerate them using
+the documented pinned checkout and compiler dependencies.
+
+The 60-step test directly exercises native EKF methods with synthetic state and
+measurement inputs. It is **not a wall-clock streaming availability trial**,
+rendered-image VIO run, learned-result handoff, calibrated uncertainty test or
+Pi benchmark. It must not replace the earlier live runner's intermittent-output
+finding. Complete conditional-noise derivation, correlation with future visual
+innovations, delayed ownership, live status/export binding, successive fixes
+and field qualification remain open. No aircraft, Pi or cloud was contacted.

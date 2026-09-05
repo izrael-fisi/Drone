@@ -106,6 +106,13 @@ not imply native clone eviction or new independence. `covariance_solver` is
 covariance path. Original snapshot/fix identities remain unchanged. See
 [solver reduction and parity](joint-pnp-vio-alignment.md#smaller-correlated-solve).
 
+A separate [native correlated map-frame component](native-map-frame.md) provides
+an in-process full-state conditional initialization and current pose projection.
+It has no live input/output schema yet and is not connected to these pose-window
+or learned-query paths. It requires complete native-state error dependencies,
+not an inferred independent pose prior. Its existence does not relax any of the
+current observer's source, timing, covariance or shadow-publication gates.
+
 For one map fix the default optimized solve now uses
 `solution_method=single_fix_closed_form` and
 `covariance_solver=analytic_joint_se3_pushforward`; it propagates retained

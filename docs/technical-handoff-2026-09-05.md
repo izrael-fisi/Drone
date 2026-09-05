@@ -4,7 +4,9 @@
 **Audience:** the next LLM, navigation engineer, training engineer or integrator.
 **Repository:** `https://github.com/izrael-fisi/Drone`.
 **Release status:** research/development; no flight-navigation release approved.
-**Implementation checkpoint:** `fe13385f19f550af38941421280c077a9e59917c`.
+**Live-runtime checkpoint:** `fe13385f19f550af38941421280c077a9e59917c`.
+The later native map-frame component supplement is described below; it is not
+part of that checkpoint's end-to-end stream measurements.
 
 This is the canonical transfer summary of implemented work and remaining work.
 It is not a replacement for the detailed contracts or evidence. Exact commands
@@ -250,6 +252,13 @@ development checkpoint, not a release tag. Work includes:
     low sample availability remain, so the current-state requirement is still
     unqualified. Full measured VIO/map uncertainty, Pi load and flight validation
     are separate missing evidence, not established by these synthetic runs.
+17. Native correlated map-frame component: complete-state conditional
+    augmentation, native EKF correlation propagation, map-relative current
+    projection and expiry/reset/failure retirement. Three CTest executables and
+    111 Python regressions pass; direct synthetic native updates produce 60/60
+    projections with an independent joint covariance reference. This component
+    is not yet bound to learned observations, the live sensor runner or PX4.
+    See [contract and remaining integration](native-map-frame.md).
 
 Items 11-12 and their regression tests are included in the final transfer
 supplement after the original `ce6b3088` documentation/merge checkpoint.
@@ -324,13 +333,17 @@ operator-visible poses, with observed gaps up to about 1.66 seconds including
 stream edges. These synthetic observations improve on earlier zero-update
 trials but do not establish sustained availability or physical accuracy.
 
-The next design investigation is estimator-owned correlated forward propagation
-of delayed map corrections, rather than repeatedly solving a complete snapshot
-that may already be superseded. No new native global-state augmentation has
-been implemented. Before choosing that approach, derive its cross-covariance
-with the full native state and prove frame, timing and reset behavior. The
-current exported pose window and separate IMU marginal must not be treated as
-independent inputs or assumed to supply every required cross-covariance.
+The next integration is estimator-owned correlated forward propagation of
+delayed map corrections, rather than repeatedly solving a complete snapshot
+that may already be superseded. A [native map-frame component](native-map-frame.md)
+now implements full-state conditional augmentation, correlated native updates,
+current projection and retirement. It is tested directly against native EKF
+operations, **not connected to learned observations or the live sensor runner**.
+Deriving and qualifying its complete conditional uncertainty input, delayed
+transaction ownership and future-innovation correlation remain open. The current
+exported pose window and separate IMU marginal must not be treated as independent
+inputs or assumed to supply every required cross-covariance. This component does
+not supersede the measured live-availability limitation above.
 
 **Measured uncertainty.** Replace synthetic provider assumptions with calibrated
 pixel, surface, timing, intrinsic/extrinsic and inertial uncertainty, including

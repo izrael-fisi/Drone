@@ -5,10 +5,10 @@ This file is independent of any particular assistant or conversation history.
 
 ## Transfer Checkpoint
 
-The latest implementation checkpoint covered by this handoff is
-`fe13385f19f550af38941421280c077a9e59917c`. Subsequent documentation-only commits
-may update this handoff without changing that implementation. Inspect `git log`
-and `git status` on the receiving machine before starting work.
+The live-runtime implementation checkpoint covered by the stream measurements
+is `fe13385f19f550af38941421280c077a9e59917c`. Later commits include documentation
+and the separate native component described below. Inspect `git log` and
+`git status` on the receiving machine before starting work.
 
 **Done:** real learned inference, native local visual-inertial odometry,
 correlated delayed-map alignment, bounded worker transport, replay evidence and
@@ -20,6 +20,15 @@ GNSS-denied navigation release.
 **Next:** validate stabilized camera/IMU captures, resolve continuous-current
 estimation, establish geographic training holdouts, then benchmark/train under
 an explicitly approved RunPod budget. Leave UI expansion secondary.
+
+After that implementation checkpoint, a [native correlated map-frame
+component](docs/native-map-frame.md) was added as a forward-propagation building
+block. It is not bound to learned observations or the live runner. Do not confuse
+its synthetic native EKF projection checks with the earlier end-to-end stream
+availability measurements; live current-state integration remains unfinished.
+The component supplement passed three native CTest executables, 111 Python
+regressions, all seven preflight stages, the desktop build and Rust check. See
+[the exact verification scope](docs/handoff-verification-2026-09-05.md#native-map-frame-component).
 
 ## Read In This Order
 
