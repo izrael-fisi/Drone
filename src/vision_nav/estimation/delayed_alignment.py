@@ -266,18 +266,20 @@ class DelayedPnPAlignment:
                          for f in request["fixes"] if self.max_accepted_age is None
                          or self._jobs[f["fix_id"]]["accepted_host_monotonic_ns"] is None]
             self._solving = True
+        request_sha256 = None
         try:
             if joint_executor is not None:
                 response = joint_executor(deepcopy(request))
-                if not isinstance(response, dict) or response.get("input_request_sha256") != payload_digest(request):
+                if not isinstance(response, dict) or response.get("input_request_sha256") != draft["request_sha256"]:
                     raise ValueError("Combined alignment input identity mismatch")
                 joint_uncertainty = response["joint_uncertainty"]
             request["joint_uncertainty"] = _owned(joint_uncertainty, 32*1024*1024)
             if not isinstance(request["joint_uncertainty"], dict):
                 raise ValueError("Expected an explicit joint uncertainty object")
             if joint_executor is not None:
+                request_sha256 = payload_digest(request)
                 result = _owned(response["result"], 32*1024*1024)
-                if (not isinstance(result, dict) or result.get("request_sha256") != payload_digest(request)
+                if (not isinstance(result, dict) or result.get("request_sha256") != request_sha256
                         or result.get("schema_version") != "vision_nav_joint_pnp_alignment_v1"
                         or result.get("position_authority") is not False
                         or result.get("navigation_mode") != "NO_GLOBAL_FIX"
@@ -287,6 +289,7 @@ class DelayedPnPAlignment:
                 result = (self._solver or align)(request)
                 if payload_digest(request["native_record"]) != draft["native_record_sha256"]:
                     raise ValueError("Alignment callback changed the bound native snapshot")
+                request_sha256 = payload_digest(request)
             error = None
         except (ValueError, KeyError, TypeError, RuntimeError, OverflowError) as exc:
             result, error = None, f"{type(exc).__name__}: {exc}"[:256]
@@ -295,7 +298,7 @@ class DelayedPnPAlignment:
                 self._solving = False
         with self._lock:
             finished = self._now()
-            base = {"draft_id": draft_id, "request_sha256": payload_digest(request),
+            base = {"draft_id": draft_id, "request_sha256": request_sha256 or payload_digest(request),
                     "started_host_monotonic_ns": now, "finished_host_monotonic_ns": finished,
                     "sensor_clock_is_host_clock": False, "result": result,
                     "snapshot_policy": "replace_do_not_accumulate", "estimate_scope": "historical_snapshot_only"}

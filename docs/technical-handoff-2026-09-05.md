@@ -221,6 +221,11 @@ development checkpoint, not a release tag. Work includes:
     child decode/verification/operation timing, response sizes, cache counters
     and per-attempt observer records. Child timings overlap parent waiting and
     must not be added to parent totals or called sensor-to-pose latency.
+13. Owned transaction reuse: one native record validation/hash per PnP alignment
+    call, reused per-fix digests and private coordinator request identities.
+    External inputs still require full validation, and each new native snapshot
+    still requires its own correlated uncertainty model. This reduces measured
+    overhead but the advancing-stream trial still produced zero current updates.
 
 Items 11-12 and their regression tests are included in the final transfer
 supplement after the original `ce6b3088` documentation/merge checkpoint.
@@ -228,6 +233,8 @@ No new training, Pi measurement, aircraft connection or PX4 publication was
 performed for that supplement. The modest cached-assessment benchmark does not
 resolve the zero-advancing-current-update finding. The next estimator task should
 use the diagnostics to investigate that limitation, not infer it is solved.
+Item 13 follows `70d3c820`; its evidence and unchanged open requirement are in
+[owned transaction reuse](research-alignment-process.md#owned-transaction-reuse).
 
 The handoff also integrates GitHub main through `ee867d56`, preserving 22 newer
 commits covering map-first navigation, companion/GCS tools, map providers and

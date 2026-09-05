@@ -166,6 +166,46 @@ or change numerical result hashes. Test coverage includes real child stage
 partitioning and observer replay parity. Representative bottleneck attribution
 under installed-Pi load remains future work.
 
+### Owned Transaction Reuse
+
+The PnP-to-window solve now validates and hashes its native record once within
+the same operation. Its private `_solve_window` path receives that checked
+`JointPoseWindow` and digest; it still validates the map batch, full joint noise,
+cross-covariance and consistency. External `CorrelatedWindowAligner.solve`
+always parses and validates a new native record. This is not a cross-snapshot
+window cache, nor a caller-selectable "skip validation" option.
+
+The per-fix digest already checked against the explicit joint noise is reused
+for the worker's PnP assessment lookup. The delayed coordinator also reuses its
+private draft digest before adding noise and computes the completed request
+digest once. The external executor receives a copy, not the private draft.
+Public ownership, result/request binding, final-snapshot equality, expiry,
+source checks, covariance gates and shadow-only policy remain unchanged.
+
+September 5 evidence after `70d3c820`:
+
+- The same fixed request, SHA-256
+  `34bb4f1033d96ee67a0cb373b1dce22321aabdaa8ff8c307e524702c6824a1fd`,
+  was profiled for 20 warm-cache calls before and after the change. Cumulative
+  instrumented time decreased from 0.410 s to 0.234 s; digest calls decreased
+  from 160 to 80 and native window validations from 40 to 20. This is one
+  macOS process/snapshot under cProfile, not a Pi benchmark or a latency SLO.
+  Input: the first nonempty `replay_inputs` entry in the handoff-final
+  `test_query_owned_before_slow_r0/alignment.jsonl` trace.
+- 274 targeted estimator/native tests passed in 43.04 s. New tests compare
+  the internal path exactly against the external solver with shared-map and
+  VIO correlation, and reject a newly corrupted covariance after a cache hit.
+- The actual native 20 Hz observation again produced **zero advancing current
+  global updates**, with the same 500 ms receipt-age limit. Across 13 worker
+  operations, median round trip was 37.935 ms and median child operation
+  20.706 ms. Complete observer attempts still took approximately 74-136 ms.
+  Output: `research/outputs/owned-alignment-transaction-20260905-r1/`.
+
+This optimization is implemented but the current-state requirement remains
+unmet. The next architecture step is delayed correction with a genuinely current,
+correlated propagation path. Do not simply repeat full solves until the stream
+pauses, restamp historical estimates, or weaken freshness/cross-covariance gates.
+
 ### Operation Limits
 
 - Startup defaults to 20 seconds, including provider and solver import.

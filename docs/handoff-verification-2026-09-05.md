@@ -300,3 +300,19 @@ Per-operation timing is retained in the adjacent alignment trace. Timing
 diagnostics have tested structure/partitioning, but no representative Pi-load
 bottleneck study was completed. The earlier full learned-model suite, dependency
 audit caveats and all hardware/cloud limitations above still apply.
+
+### Subsequent Owned-Transaction Check
+
+After `70d3c820`, the same 12-file estimator/native suite listed above passed
+**274 tests in 43.04 s**, with no skips, after adding four transaction reuse
+tests. The real native binary, Python 3.11 environment and one-thread numerical
+pool settings were unchanged. Full solver equivalence, per-snapshot validation,
+cross-covariance and delayed identity/failure gates remain covered.
+
+Artifact directory: `research/outputs/owned-alignment-transaction-20260905-r1/`.
+Its 20 Hz observation still reports **zero advancing current global updates**.
+See [the measured scope](research-alignment-process.md#owned-transaction-reuse).
+No installed-Pi or aircraft test and no cloud training was performed.
+The local preflight (including all 104 main checks), desktop frontend build
+and Rust `cargo check` also passed again. Rust tests were not rerun for this
+Python-only follow-up; the preceding 40-test result is recorded above.

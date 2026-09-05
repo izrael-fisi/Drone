@@ -9,8 +9,10 @@ import pytest
 from vision_nav.estimation.alignment_worker import ProcessAlignmentEngine
 from vision_nav.estimation.bounded_json import dumps
 from vision_nav.estimation.correlated_window import payload_digest
+from vision_nav.estimation.correlated_window import CorrelatedWindowAligner, WindowAlignmentConfig
 from vision_nav.estimation.pnp_window_alignment import PnPAssessmentCache, align
 from vision_nav.estimation.reprojection_uncertainty import assess
+from vision_nav.vio.pose_window import JointPoseWindow
 from test_current_alignment_refresh import provider, ready
 from test_delayed_alignment import later_record, push
 from test_pnp_window_alignment import fixture
@@ -181,3 +183,33 @@ def test_real_worker_cache_is_observable_and_limited_to_child_epoch():
     finally:
         assert engine.stop()
     assert not engine.status()["process_alive"]
+
+
+@pytest.mark.parametrize("shared,vio_cross", [(False, False), (True, False), (True, True)])
+def test_transaction_validates_native_once_and_matches_external_solver(monkeypatch, shared, vio_cross):
+    request, _ = fixture(shared=shared, vio_cross=vio_cross)
+    original = JointPoseWindow.from_record
+    seen = []
+
+    def checked(record):
+        seen.append(payload_digest(record))
+        return original(record)
+
+    monkeypatch.setattr(JointPoseWindow, "from_record", staticmethod(checked))
+    result = align(request, assessment_cache=PnPAssessmentCache())
+    assert seen == [payload_digest(request["native_record"])]
+    external = CorrelatedWindowAligner(WindowAlignmentConfig(**request["config"])).solve(
+        request["native_record"], result["map_batch"])
+    assert result["alignment"] == external
+    assert seen == [payload_digest(request["native_record"])]*2
+
+
+def test_new_transaction_does_not_reuse_native_validation():
+    request, _ = fixture()
+    cache = PnPAssessmentCache()
+    assert align(request, assessment_cache=cache)["status"] == "research_alignment"
+    broken = deepcopy(request)
+    broken["native_record"]["pose_window"]["joint_covariance_native"][0][0] = -1.
+    broken["joint_uncertainty"]["snapshot_sha256"] = payload_digest(broken["native_record"])
+    with pytest.raises(ValueError, match="positive semidefinite"):
+        align(broken, assessment_cache=cache)

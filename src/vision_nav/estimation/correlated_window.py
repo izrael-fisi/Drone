@@ -67,9 +67,13 @@ class CorrelatedWindowAligner:
 
     def _prepare(self, record, batch):
         window = JointPoseWindow.from_record(record)
+        return self._prepare_window(window, payload_digest(record), batch)
+
+    def _prepare_window(self, window, snapshot_sha256, batch):
+        """Validate a map batch against an already checked, owned native window."""
         if batch.get("schema_version") != "vision_nav_correlated_map_batch_v1":
             raise ValueError("Unknown correlated map batch schema")
-        if batch.get("snapshot_sha256") != payload_digest(record):
+        if batch.get("snapshot_sha256") != snapshot_sha256:
             raise ValueError("Map batch is bound to a different VIO snapshot")
         for key in ("map_release_id", "model_release_id", "calibration_id", "clock_id", "uncertainty_model_id"):
             if batch.get(key) != getattr(self.config, key):
@@ -217,15 +221,21 @@ class CorrelatedWindowAligner:
             "map_common_left_covariance": self.config.map_common_left_covariance.tolist()}
 
     def solve(self, record, batch, *, marginalize_unused_poses=True):
+        window = JointPoseWindow.from_record(record)
+        return self._solve_window(window, payload_digest(record), batch,
+                                  marginalize_unused_poses=marginalize_unused_poses)
+
+    def _solve_window(self, window, snapshot_sha256, batch, *, marginalize_unused_poses=True):
+        """Internal transaction path; external records always enter through solve."""
         from scipy.stats import chi2
 
         if type(marginalize_unused_poses) is not bool:
             raise ValueError("Nuisance elimination must be explicitly boolean")
-        window, indices, measurements, cov = self._prepare(record, batch)
+        window, indices, measurements, cov = self._prepare_window(window, snapshot_sha256, batch)
         reduced, reduced_indices, principal, retained, omitted = self._reduce(
             window, indices, cov, marginalize_unused_poses)
         base = {"schema_version": "vision_nav_correlated_window_alignment_v1",
-                "snapshot_sha256": payload_digest(record), "map_batch_sha256": payload_digest(batch),
+                "snapshot_sha256": snapshot_sha256, "map_batch_sha256": payload_digest(batch),
                 "posterior_timestamp_ns": window.posterior_ns, "pose_timestamp_ns": window.timestamps_ns[-1],
                 "fix_ids": [f["fix_id"] for f in batch["fixes"]], "map_release_id": self.config.map_release_id,
                 "model_release_id": self.config.model_release_id, "calibration_id": self.config.calibration_id,

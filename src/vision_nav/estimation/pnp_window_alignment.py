@@ -35,7 +35,10 @@ class PnPAssessmentCache:
         self._bytes = self._hits = self._misses = self._evictions = self._uncached = 0
 
     def assess(self, request):
-        key = payload_digest(request)
+        return self._assess_owned(request, payload_digest(request))
+
+    def _assess_owned(self, request, key):
+        """Reuse the digest computed in this same private alignment transaction."""
         if key in self._entries:
             self._hits += 1
             self._entries.move_to_end(key)
@@ -88,8 +91,10 @@ def align(request, *, assessment_cache=None):
     items, noise = request["fixes"], request["joint_uncertainty"]
     if not isinstance(items, list) or not 1 <= len(items) <= min(16, len(window.timestamps_ns)):
         raise ValueError("Expected 1-16 PnP fixes within one retained VIO snapshot")
-    if (noise.get("snapshot_sha256") != payload_digest(record)
-            or noise.get("pnp_request_sha256s") != [payload_digest(item["request"]) for item in items]):
+    snapshot_sha256 = payload_digest(record)
+    pnp_digests = [payload_digest(item["request"]) for item in items]
+    if (noise.get("snapshot_sha256") != snapshot_sha256
+            or noise.get("pnp_request_sha256s") != pnp_digests):
         raise ValueError("Joint noise must bind the exact ordered VIO snapshot and PnP requests")
     expected = {"error_convention": "estimated_vio_right_pose_and_additive_pnp_inputs",
                 "measurement_order": "concatenated_pnp_request_input_vectors",
@@ -99,11 +104,11 @@ def align(request, *, assessment_cache=None):
             or not isinstance(noise.get("cross_covariance_model"), str) or not noise["cross_covariance_model"].strip()):
         raise ValueError("Explicit joint uncertainty ownership, order and correlation model required")
     results, sizes, ids, times = [], [], [], []
-    for item in items:
+    for item, pnp_digest in zip(items, pnp_digests):
         identity = item.get("fix_id")
         if not isinstance(identity, str) or not identity.strip() or identity in ids:
             raise ValueError("Distinct nonempty map fix identities required")
-        result = assess(item["request"]) if assessment_cache is None else assessment_cache.assess(item["request"])
+        result = assess(item["request"]) if assessment_cache is None else assessment_cache._assess_owned(item["request"], pnp_digest)
         for key in ("map_release_id", "model_release_id", "calibration_id", "clock_id", "uncertainty_model_id"):
             if result[key] != getattr(config, key):
                 raise ValueError(f"PnP and VIO alignment provenance mismatch: {key}")
@@ -142,7 +147,7 @@ def align(request, *, assessment_cache=None):
     joint_covariance(np.block([[window.covariance_right_local, cross], [cross.T, joint]]), v+d)
     q = joint_covariance(s @ joint @ s.T, 6*len(items))
     c = cross @ s.T
-    batch = {"schema_version": "vision_nav_correlated_map_batch_v1", "snapshot_sha256": payload_digest(record),
+    batch = {"schema_version": "vision_nav_correlated_map_batch_v1", "snapshot_sha256": snapshot_sha256,
              **{k: getattr(config, k) for k in ("map_release_id", "model_release_id", "calibration_id", "clock_id", "uncertainty_model_id")},
              "covariance_convention": "joint_right_local_pose_residuals",
              "common_map_error_independent_of_joint_residuals": True, "extrinsics_treated_as_fixed": True,
@@ -150,7 +155,7 @@ def align(request, *, assessment_cache=None):
              "fixes": [{"fix_id": identity, "timestamp_ns": r["timestamp_ns"], "map_T_camera": r["map_T_camera"]}
                        for identity, r in zip(ids, results)],
              "map_joint_covariance": q.tolist(), "vio_map_cross_covariance": c.tolist()}
-    aligned = CorrelatedWindowAligner(config).solve(record, batch)
+    aligned = CorrelatedWindowAligner(config)._solve_window(window, snapshot_sha256, batch)
     return {**base, "status": aligned["status"], "reason": aligned["reason"],
             "map_batch": batch, "alignment": aligned,
             "joint_input_dimensions": d, "input_order_fix_ids": ids,

@@ -18,6 +18,12 @@ joint alignment. Exact parity and a modest in-process improvement were measured;
 the real native 20 Hz observation still produced zero advancing current updates.
 It is not a replacement for the current-state architecture work below.
 
+The follow-up [owned transaction path](research-alignment-process.md#owned-transaction-reuse)
+removes repeated native validation and hashing within a single operation. Its
+274-test regression passed, but the advancing 20 Hz observation remained at zero
+current global updates. Continue the delayed-correction/current-propagation
+architecture work; this is not a navigation-readiness improvement claim.
+
 ## Latest Review: Live Availability And Training Priorities
 
 Rechecked September 5, 2026 against the local sources, completed native test
