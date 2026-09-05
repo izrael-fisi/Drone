@@ -115,18 +115,25 @@ def test_snapshot_digest_owned_once_and_new_snapshot_gets_new_identity(monkeypat
 
     coordinator, clock, request, _ = ready()
     original_digest, records = module.payload_digest, []
+    original_encode, encoded_records = module.canonical_encode, []
     def counted(value):
         if value.get("schema_version") == "vision_nav_openvins_local_v1":
             records.append(value["timestamp_ns"])
         return original_digest(value)
     monkeypatch.setattr(module, "payload_digest", counted)
+    def counted_encode(value):
+        if isinstance(value, dict) and value.get("schema_version") == "vision_nav_openvins_local_v1":
+            encoded_records.append(value["timestamp_ns"])
+        return original_encode(value)
+    monkeypatch.setattr(module, "canonical_encode", counted_encode)
     assert refresh(coordinator, provider(request))["current_estimate"]
     # Direct callbacks get one post-call mutation check; the private snapshot
     # and subsequent freshness comparisons do not re-encode the same record.
     assert records == [2*10**9]
     later = later_record()
     push(coordinator, clock, later)
-    assert records == [2*10**9, later["timestamp_ns"]]
+    assert records == [2*10**9]
+    assert encoded_records == [later["timestamp_ns"]]
     latest_hash = original_digest(later)
     # The native producer and public prepared draft do not alias the private record.
     later["pose_window"]["joint_covariance_native"][0][0] = -1
@@ -136,7 +143,8 @@ def test_snapshot_digest_owned_once_and_new_snapshot_gets_new_identity(monkeypat
     result = refresh(coordinator, provider(request))
     assert result["status"] == "research_current_alignment"
     assert result["refresh_attempts"][-1]["snapshot_sha256"] == latest_hash
-    assert records == [2*10**9, 3*10**9, 3*10**9]
+    assert records == [2*10**9, 3*10**9]
+    assert encoded_records == [3*10**9]
 
 
 def test_snapshot_digest_cannot_survive_invalid_epoch():

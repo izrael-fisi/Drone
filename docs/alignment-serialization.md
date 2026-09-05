@@ -1,5 +1,31 @@
 # Bounded Alignment Serialization
 
+## Immutable Canonical Fields
+
+The coordinator now retains canonical JSON bytes alongside its single owned,
+validated native snapshot. A prepared draft references those immutable bytes
+and the unchanged configuration, encoding its exact ordered fix set separately.
+The unbound request hash and noise-bound request hash are composed from these
+fields using the **same** sorted-key, compact-separator, ASCII-escaped JSON
+convention as `correlated_window.payload_digest`. This is not a new digest
+format, a weaker identity check, or reuse of a previous uncertainty model.
+
+`estimation/canonical_identity.py` is private composition of already-encoded
+values from the standard JSON encoder. It must not receive arbitrary raw JSON.
+Each new snapshot gets new bytes and identity; each new noise response is
+encoded afresh. An in-flight draft retains its original snapshot bytes even
+when sensor ingestion advances. The 2 MiB input limit bounds each retained
+snapshot encoding, not total process RSS. Config/draft/fix bounds still apply;
+there is no historical snapshot cache. Epoch invalidation discards the bytes.
+
+Public drafts remain JSON-shaped isolated copies and expose no encoded fields.
+External callbacks still receive copied requests. Combined responses must
+match both the complete original request hash and the exact noise-bound result
+hash. Direct solver callbacks retain full post-call mutation checks instead of
+trusting cached fragments. Tests cover Unicode/escaping, float extremes and
+signed zero, empty/nested fields, noise insertion, callback mutation, snapshot
+replacement during solving and epoch invalidation.
+
 **Latest transport:** The private estimator socket defaults to `msgpack_v1`.
 The JSON ownership and canonical identity helpers below are unchanged, and
 `json_v1` remains an explicit comparison option. See

@@ -129,6 +129,12 @@ learned trace records queued/superseded draft IDs; a separate checksummed
 `alignment-trace.jsonl` retains numerical inputs, snapshot estimates, original
 map-evidence timestamps/ages and withheld decisions. See
 [continuous research alignment](continuous-research-alignment.md).
+Continuous status now separates a 64 KiB conditional pose summary from its
+larger replay write. `latest_snapshot_evidence` links the current sample to
+`event_sequence` with state `pending` or `written`; pending is not durable
+evidence or publication authority. Existing snapshot/time/fix/health gates are
+rechecked by the status accessor, and any journal failure withholds output.
+No new telemetry or PX4 wire protocol is implied by this internal status field.
 Old live rows without provenance digests are not
 eligible for this binding.
 

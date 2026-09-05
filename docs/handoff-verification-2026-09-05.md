@@ -366,3 +366,55 @@ a consistent combined-call speedup nor qualify current-state availability or Pi
 performance. Results are local-only under
 `research/outputs/compact-codec-cli-20260905/{json,msgpack}.json`; workers exited
 cleanly. They are not included in the Git transfer.
+
+### Canonical Identity And Live Status Ownership
+
+After `8b592482`, the coordinator retains immutable canonical bytes for its
+latest snapshot and reuses them for exact request digests. It does not reuse an
+old noise model or bypass any response hash check. Native snapshot arrival also
+wakes the refresh worker with the configured start-to-start interval, preserving
+one solver caller. The compact conditional status record is now independent
+of the full replay write and identifies pending/written evidence. See
+[the status contract](continuous-research-alignment.md#evidence-and-status).
+
+The focused final run passed **434 tests in 52.15 s**, no skips, using the same
+Python 3.11 estimator environment and actual native binary. This is the preceding
+14-file codec/estimator command plus `tests/test_canonical_identity.py`.
+New tests preserve canonical hash equivalence under noise insertion, callback
+mutation and concurrent snapshot replacement. Controlled blocked-write tests
+verify that current status remains accessible before the write, becomes null
+when native time advances, and is invalidated on write failure. No numerical,
+freshness, retry or covariance requirement was relaxed.
+
+Local-only artifacts:
+
+- `research/outputs/fragment-live-20260905-r1/`: first canonical-byte trial;
+  three advancing solve-completion checks, no operator-status sampling yet.
+- `research/outputs/fragment-wakeup-20260905-r1/`: 21 checks passed; sampled
+  actual status as well as solve completion. JSON had zero and MessagePack one
+  advancing solve check, but both had zero advancing operator-visible poses.
+- `research/outputs/current-status-20260905-r1/`: 36 checks passed after compact
+  status ownership; both codecs had zero advancing solve/status observations.
+- `research/outputs/current-status-final-20260905-r1/`: final 434-test run;
+  both codecs again had zero advancing solve/status observations. JSON and
+  MessagePack made 88 and 94 status samples respectively during their streams.
+
+The stream has 20 frames at nominal 20 Hz with the original 500 ms native
+receipt gate and original sensor timestamps. The new polling adds real status
+reader work, so these are not isolated before/after latency benchmarks.
+`current_pose_timestamps_ns` records earlier solve checks, whereas
+`operator_status_advancing_pose_timestamps_ns` records what the status accessor
+actually returned. The distinction exposes a gap that earlier check-only
+reports could miss. Sustained current navigation remains unmet. No installed
+Pi run, aircraft connection, PX4 publication, cloud allocation or training
+promotion occurred.
+
+The full five-file learned/native suite also passed **84 tests in 175.44 s**,
+with 39 existing ONNX/Rasterio warnings and no skips, using the real MegaLoc,
+XFeat/LighterGlue and project-student exports in the Python 3.11 model
+environment. Its artifacts are under
+`research/outputs/current-status-learned-20260905-r1/`. All seven local
+preflight stages (including 104 main checks), the desktop frontend build and
+Rust `cargo check` passed. Existing frontend import/chunk warnings remain.
+Rust tests were not rerun for this Python-only update; the prior Rust test
+result is historical, not a new execution claim.

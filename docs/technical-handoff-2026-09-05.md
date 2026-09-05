@@ -233,6 +233,14 @@ development checkpoint, not a release tag. Work includes:
     msgpack; standalone capture without opt-in alignment does not require it.
     One initial compact trial produced a single advancing current update, but
     repeated trials did not sustain it. This does not qualify live navigation.
+15. Current-path scheduling and evidence ownership: exact canonical snapshot
+    bytes are reused for request identities without changing hashes; fresh
+    native snapshots wake the single solver caller without an extra idle wait.
+    Compact status is available independently of the full replay write and
+    explicitly labels its evidence `pending` or `written`. Any source/time/fix
+    mismatch or journal failure still withholds it. Actual status sampling at
+    20 Hz input remains zero in the final check, despite passing lifecycle and
+    numerical regression tests; this is not sustained-current qualification.
 
 Items 11-12 and their regression tests are included in the final transfer
 supplement after the original `ce6b3088` documentation/merge checkpoint.

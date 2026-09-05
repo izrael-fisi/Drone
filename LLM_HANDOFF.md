@@ -45,6 +45,11 @@ This file is independent of any particular assistant or conversation history.
   JSON replay identities are unchanged. A single advancing update occurred in
   one compact-link trial, but repeated trials remained at zero; sustained
   current-state navigation is still an open requirement, not a completed feature.
+- The next update reuses exact canonical snapshot bytes, wakes refreshes when
+  new native data arrives and separates compact conditional status from full
+  replay writes. Status now identifies pending versus written evidence. The
+  stronger test samples the actual status reader, not just solve-completion
+  checks; its final 20 Hz observation still exposed no advancing current pose.
 
 ## First Session
 

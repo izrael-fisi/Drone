@@ -97,9 +97,16 @@ def test_query_owned_before_slow_result_survives_normal_window_and_releases(arri
         streamed = list(range(index+27, min(index+47, len(arrival_inputs[-1]))))
         assert len(streamed) >= 5
         target = time.monotonic()
+        status_samples = []
         for later in streamed:
             target += .05
-            time.sleep(max(0., target-time.monotonic()))
+            while time.monotonic() < target:
+                live_status = observer.status()["continuous_refresh"]
+                available = live_status["latest_snapshot_estimate"]
+                status_samples.append({"checked_host_monotonic_ns": time.monotonic_ns(),
+                    "pose_timestamp_ns": available["pose_timestamp_ns"] if available else None,
+                    "evidence": live_status["latest_snapshot_evidence"]})
+                time.sleep(min(.005, max(0., target-time.monotonic())))
             offer(native, arrival_inputs, later)
         stream_finished = time.monotonic_ns()
         wait_for(lambda: native.status()["completed_batch_count"] == streamed[-1]+1)
@@ -150,6 +157,11 @@ def test_query_owned_before_slow_result_survives_normal_window_and_releases(arri
             "selection_policy": "checked_during_stream_and_pose_newer_than_stream_initial_posterior",
             "current_update_count_during_stream": len(current_during_stream),
             "current_pose_timestamps_ns": [r["current_estimate"]["pose_timestamp_ns"] for r in current_during_stream],
+            "operator_status_sample_count": len(status_samples),
+            "operator_status_advancing_pose_timestamps_ns": sorted({s["pose_timestamp_ns"] for s in status_samples
+                if s["pose_timestamp_ns"] is not None and s["pose_timestamp_ns"] > stream_initial_posterior}),
+            "operator_status_samples": status_samples,
+            "native_refresh_wakeups": status["counts"].get("native_refresh_wakeups", 0),
             "all_attempt_processing_ms": [r["processing_latency_ms"] for r in rows if r.get("replay_inputs")],
             "position_authority": False, "px4_external_vision": "disabled"}, indent=2)+"\n")
         assert all(not r["position_authority"] and r["px4_external_vision"] == "disabled" for r in rows)

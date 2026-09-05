@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from copy import deepcopy
 from dataclasses import asdict
+import hashlib
 import re
 import threading
 import time
@@ -12,6 +13,7 @@ import uuid
 
 from .correlated_window import WindowAlignmentConfig, payload_digest
 from .bounded_json import owned as _owned
+from .canonical_identity import encode as canonical_encode, object_digest
 from .pnp_window_alignment import align
 from .pose_smoother import timestamp
 from vision_nav.vio.pose_window import JointPoseWindow
@@ -33,6 +35,7 @@ class DelayedPnPAlignment:
         self._config = asdict(cfg)
         self._config["imu_T_camera"] = cfg.imu_T_camera.tolist()
         self._config["map_common_left_covariance"] = cfg.map_common_left_covariance.tolist()
+        self._config_encoded = canonical_encode(self._config)
         self.worker_run_id = str(uuid.UUID(worker_run_id))
         if type(capacity) is not int or not 1 <= capacity <= 16:
             raise ValueError("Expected 1..16 outstanding frame jobs")
@@ -47,6 +50,7 @@ class DelayedPnPAlignment:
         self._last_host = self._last_query = self._sequence = 0
         self._record = self._window = self._prepared = None
         self._snapshot_sha256 = None
+        self._snapshot_encoded = None
         self._received_ns = self._fault = None
         self._jobs, self._counts = {}, Counter()
         self._solving = False
@@ -74,6 +78,7 @@ class DelayedPnPAlignment:
         self._fault = reason
         self._record = self._window = self._prepared = None
         self._snapshot_sha256 = None
+        self._snapshot_encoded = None
         self._jobs.clear()
 
     def invalidate(self, reason):
@@ -138,13 +143,15 @@ class DelayedPnPAlignment:
                 window = JointPoseWindow.from_record(owned["record"])
                 if self._window and window.posterior_ns <= self._window.posterior_ns:
                     raise ValueError("Non-increasing VIO posterior; explicit reset required")
-                snapshot_sha256 = payload_digest(owned["record"])
+                snapshot_encoded = canonical_encode(owned["record"])
+                snapshot_sha256 = hashlib.sha256(snapshot_encoded).hexdigest()
             except (ValueError, KeyError, TypeError, OverflowError, RecursionError) as exc:
                 self._invalidate("invalid_vio_snapshot")
                 return self._event("withheld", "invalid_vio_snapshot", detail=str(exc)[:256])
             self._record, self._window, self._received_ns = owned["record"], window, received
             # The private owned record is only replaced, never mutated or exposed.
             self._snapshot_sha256 = snapshot_sha256
+            self._snapshot_encoded = snapshot_encoded
             retired = self._expire(now)
             return self._event("updated", "joint_snapshot_replaced", posterior_timestamp_ns=window.posterior_ns,
                                retired_queries=retired)
@@ -240,10 +247,15 @@ class DelayedPnPAlignment:
                 return self._event("withheld", "joint_input_dimension_exceeded")
             request = deepcopy({"schema_version": "vision_nav_joint_pnp_alignment_request_v1",
                                 "native_record": self._record, "config": self._config, "fixes": fixes})
+            # These bytes belong to this immutable draft, even when ingestion
+            # replaces the current native record during an external solve.
+            encoded_fields = {"schema_version": canonical_encode(request["schema_version"]),
+                              "native_record": self._snapshot_encoded,
+                              "config": self._config_encoded, "fixes": canonical_encode(fixes)}
             prepared = {"draft_id": str(uuid.uuid4()), "request": request,
-                        "request_sha256": payload_digest(request), "prepared_host_monotonic_ns": now,
+                        "request_sha256": object_digest(encoded_fields), "prepared_host_monotonic_ns": now,
                         "native_record_sha256": self._snapshot_sha256}
-            self._prepared = prepared
+            self._prepared = {**prepared, "encoded_fields": encoded_fields}
             # Internal refresh owns this draft until solve; only public callers
             # need another isolated copy of the already-private request.
             return self._event("prepared", "explicit_joint_uncertainty_required",
@@ -277,7 +289,8 @@ class DelayedPnPAlignment:
             if not isinstance(request["joint_uncertainty"], dict):
                 raise ValueError("Expected an explicit joint uncertainty object")
             if joint_executor is not None:
-                request_sha256 = payload_digest(request)
+                request_sha256 = object_digest({**draft["encoded_fields"],
+                                                "joint_uncertainty": canonical_encode(request["joint_uncertainty"])})
                 result = _owned(response["result"], 32*1024*1024)
                 if (not isinstance(result, dict) or result.get("request_sha256") != request_sha256
                         or result.get("schema_version") != "vision_nav_joint_pnp_alignment_v1"

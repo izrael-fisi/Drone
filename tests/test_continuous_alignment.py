@@ -3,6 +3,7 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+import threading
 import time
 
 import numpy as np
@@ -212,6 +213,66 @@ def test_journal_failure_is_terminal_not_silent_loss_of_evidence(setup, monkeypa
     assert "synthetic full evidence volume" in observer.status()["error"]
     assert current(observer) is None
     assert observer.stop()
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_compact_status_does_not_wait_for_full_replay_write(setup, fail):
+    source, observer, row, item, _ = setup()
+    wait_for(lambda: not observer.status()["continuous_refresh"]["busy"])
+    entered, release = threading.Event(), threading.Event()
+    stream = observer._updates_stream
+
+    class DelayedStream:
+        def tell(self):
+            return stream.tell()
+
+        def write(self, text):
+            if json.loads(text).get("current_estimate") is not None and not entered.is_set():
+                entered.set()
+                assert release.wait(5.)
+                if fail:
+                    raise OSError("synthetic delayed evidence failure")
+            return stream.write(text)
+
+        def flush(self):
+            return stream.flush()
+
+        def close(self):
+            return stream.close()
+
+    observer._updates_stream = DelayedStream()
+    observer.observe(item, row)
+    try:
+        assert entered.wait(5.)
+        status = observer.status()["continuous_refresh"]
+        assert status["latest_snapshot_estimate"]["pose_timestamp_ns"] == 2_000_000_000
+        pending = status["latest_snapshot_evidence"]
+        assert pending["state"] == "pending"
+        # A caller cannot modify the private status sample or its covariance.
+        status["latest_snapshot_estimate"]["map_T_imu"][0][3] += 100
+        assert status["latest_snapshot_estimate"] != current(observer)
+        source.push(later_record())
+        wait_for(lambda: observer.coordinator.status()["posterior_timestamp_ns"] == 3_000_000_000)
+        assert current(observer) is None
+        assert observer.status()["continuous_refresh"]["latest_snapshot_evidence"] is None
+        # Ensure the start-to-start rate limit has elapsed before releasing the
+        # old write. New sensor work should then bypass the idle wait.
+        time.sleep(.04)
+    finally:
+        release.set()
+    if fail:
+        wait_for(lambda: observer.status()["error"] is not None)
+        assert "synthetic delayed evidence failure" in observer.status()["error"]
+        assert current(observer) is None
+    else:
+        wait_for(lambda: (estimate := current(observer)) is not None and estimate["pose_timestamp_ns"] == 3_000_000_000)
+        wait_for(lambda: observer.status()["continuous_refresh"]["latest_snapshot_evidence"]["state"] == "written")
+        assert observer.status()["counts"]["native_refresh_wakeups"] >= 1
+        assert observer.finish()
+    assert observer.stop()
+    records = rows(observer)
+    assert [r["event_sequence"] for r in records] == list(range(1, len(records)+1))
+    assert any(r["event_sequence"] == pending["event_sequence"] for r in records) is not fail
 
 
 def test_continuous_mode_requires_owned_process_and_new_trace(tmp_path):

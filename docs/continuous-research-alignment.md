@@ -48,9 +48,13 @@ guarantee or a sensor synchronization qualification.
 New map evidence wakes the worker. Without new map evidence, it checks for
 changed VIO snapshots, stale receipt times or retired evidence at the configured
 interval. An unchanged, still-valid snapshot is not repeatedly solved or counted
-as new information. The interval is a wait between work cycles, not a guaranteed
-output frequency. Slow solves, new posteriors during solving, and retry/deadline
-limits can all produce explicit withheld results.
+as new information. A newly ingested posterior now wakes the worker without an
+extra full idle interval after a completed solve. Snapshot-triggered starts
+remain limited by the configured start-to-start interval; there is still only
+one solver caller, one latest native snapshot and one pending map draft. New map
+evidence and final drain retain their existing immediate wake behavior. This is
+not a guaranteed output frequency. Slow solves, new posteriors during solving,
+and retry/deadline limits can all produce explicit withheld results.
 
 ## Enable For A Finite Bench Session
 
@@ -103,10 +107,35 @@ Useful event fields:
 - `replay_inputs`: exact requests for `pnp_window_alignment.align`, including
   each attempted refresh's full joint uncertainty.
 
-Observer status retains a clearly historical `last_event`. Its separate
-`latest_snapshot_estimate` is null when the native pose, retained fix set,
-source health or receipt-age checks no longer agree, and after stop. A
-historical successful event is not evidence that the current system is healthy.
+Observer status retains a clearly historical, written `last_event`. Its separate
+`latest_snapshot_estimate` is a compact, isolated snapshot made available before
+copying/serializing/writing the complete numerical replay event. This prevents
+the diagnostic write itself from blocking access to an otherwise-current
+conditional pose. The compact record is limited to 64 KiB; full event/trace
+limits remain 4 MiB / 256 MiB. There is no new unbounded journal queue or writer
+thread, and the solver still cannot start its next cycle until that write ends.
+
+`latest_snapshot_evidence` identifies the event sequence and reports `pending`
+or `written`. Pending means the numerical result has passed its existing checks
+but the full replay write has not completed; it is **not durable evidence or
+navigation authority**. Written means write/flush returned, not a power-loss
+durability or `fsync` guarantee. Every journal row has the matching monotonic
+`event_sequence`. A byte-budget, encoding or write failure terminates the
+observer and withholds the compact result. Finish must still drain successfully.
+
+Both latest fields are null when the native pose, retained fix set, source
+health or receipt-age checks no longer agree, and after stop. All exact-current
+checks run again when status is read. Old results are not re-timestamped or
+promoted merely because their evidence write completes. Caller mutation cannot
+change the private estimate. A historical successful event is not evidence that
+the current system is healthy.
+
+The advancing-stream observation now samples this actual status accessor as
+well as completed solve checks. `operator_status_advancing_pose_timestamps_ns`
+must not be confused with `current_pose_timestamps_ns`: the latter records
+checks earlier in processing and can be nonempty even when no current pose was
+visible to the status reader. See the latest handoff verification for measured
+results; positive offline or stopped-stream solves are insufficient.
 
 ## Remaining Qualification
 

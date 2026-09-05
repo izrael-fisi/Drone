@@ -77,8 +77,10 @@ class LiveAlignmentObserver:
         self._condition = threading.Condition(self._lock)
         self._updates_thread = self._updates_stream = self._updates_path = None
         self._pending_draft = self._last_update = None
+        self._current_update = None
         self._last_submitted_ns = self._update_count = 0
         self._updates_busy = self._finishing = self._updates_finished = False
+        self._snapshot_generation = 0
 
     def _fail(self, reason):
         with self._lock:
@@ -153,6 +155,8 @@ class LiveAlignmentObserver:
                         self._seen_local = True
                         with self._lock:
                             self._counts["native_snapshots"] += 1
+                            self._snapshot_generation += 1
+                            self._condition.notify_all()
                 if source["state"] in {"complete", "completed_without_local_estimate"}:
                     with self._lock:
                         self._state = "source_complete"
@@ -263,7 +267,9 @@ class LiveAlignmentObserver:
             current_estimate=estimate, map_evidence_timestamp_ns=last_fix,
             map_evidence_age_at_pose_ns=age, position_source=("research_vio_between_fixes" if age else
                 "research_map_correction") if age is not None else "no_research_position")
-        return _owned(event, 4*1024*1024)
+        # Continuous mode owns these callback/process results until journaling.
+        # Do not copy its full replay payload before exposing the compact state.
+        return event if self.refresh_interval is not None else _owned(event, 4*1024*1024)
 
     def _enqueue(self, item, row):
         try:
@@ -300,9 +306,18 @@ class LiveAlignmentObserver:
             return self._event("withheld", "alignment_observer_failed", detail=self._fault)
 
     def _write_update(self, event, *, trigger, draft_id):
-        event = _owned({**event, "trigger": trigger, "draft_sha256": draft_id,
+        record = {**event, "trigger": trigger, "draft_sha256": draft_id,
             "recorded_host_monotonic_ns": time.monotonic_ns(),
-            "estimate_scope": "latest_snapshot_at_check_only"}, 4*1024*1024)
+            "estimate_scope": "latest_snapshot_at_check_only", "event_sequence": self._update_count+1}
+        summary = _owned({k: record.get(k) for k in ("status", "reason", "current_estimate",
+            "recorded_host_monotonic_ns", "estimate_scope", "map_evidence_timestamp_ns",
+            "map_evidence_age_at_pose_ns", "position_source", "processing_latency_ms", "event_sequence")}, 64*1024)
+        # Status checks native time, fix membership, receipt age and health again.
+        # Pending evidence is visible only as conditional research, never a
+        # durable flight record; a journal failure terminates the observer.
+        with self._condition:
+            self._current_update = {**summary, "evidence_state": "pending"}
+        event = _owned(record, 4*1024*1024)
         if self._stop.is_set():
             event.update(status="withheld", reason="alignment_observer_not_available", current_estimate=None)
         line = json.dumps(event, sort_keys=True, allow_nan=False)+"\n"
@@ -313,21 +328,31 @@ class LiveAlignmentObserver:
         self._updates_stream.flush()
         with self._condition:
             self._update_count += 1
-            self._last_update = {k: deepcopy(event.get(k)) for k in ("status", "reason", "current_estimate",
-                "recorded_host_monotonic_ns", "estimate_scope", "map_evidence_timestamp_ns",
-                "map_evidence_age_at_pose_ns", "position_source", "processing_latency_ms")}
+            if self._stop.is_set():
+                summary.update(status="withheld", reason="alignment_observer_not_available", current_estimate=None)
+            self._last_update = {**summary, "evidence_state": "written"}
+            self._current_update = self._last_update
 
     def _update_loop(self):
-        token, deadline = None, 0.
+        token, deadline, earliest_start, generation = None, 0., 0., 0
         try:
             while not self._stop.is_set():
                 with self._condition:
-                    while not self._pending_draft and not self._finishing and not self._stop.is_set() and time.monotonic() < deadline:
-                        self._condition.wait(max(0., deadline-time.monotonic()))
+                    while not self._pending_draft and not self._finishing and not self._stop.is_set():
+                        now = time.monotonic()
+                        changed = self._snapshot_generation != generation
+                        if now >= deadline or changed and now >= earliest_start:
+                            if changed and now < deadline:
+                                self._counts["native_refresh_wakeups"] += 1
+                            break
+                        wake_at = min(deadline, earliest_start) if changed else deadline
+                        self._condition.wait(max(0., wake_at-now))
                     if self._stop.is_set():
                         break
                     draft, self._pending_draft = self._pending_draft, None
                     self._updates_busy = True
+                    generation = self._snapshot_generation
+                    earliest_start = time.monotonic()+self.refresh_interval
                 began = time.perf_counter()
                 self._check_source()
                 if self.anchors:
@@ -421,14 +446,14 @@ class LiveAlignmentObserver:
         source_ok = (self.session.status()["state"] not in {"failed", "stopped", "shutdown_incomplete"}
                      and self.session.native.status()["status"] not in {"failed", "stopped", "shutdown_incomplete"})
         with self._lock:
-            estimate = self._last_update.get("current_estimate") if self._last_update else None
+            estimate = self._current_update.get("current_estimate") if self._current_update else None
             current = (estimate is not None and source_ok and not self._stop.is_set()
                 and (not self.anchors or not anchors.get("busy") and not anchors.get("error")
                     and native.get("native_returncode") is None and native.get("last_sensor_timestamp_ns") == snapshot["posterior_timestamp_ns"])
                 and (worker is None or worker["process_alive"] and not worker["error"])
                 and estimate["pose_timestamp_ns"] == snapshot["posterior_timestamp_ns"]
                 and sorted(estimate["fix_ids"]) == snapshot["ready_query_ids"]
-                and self._last_update["map_evidence_timestamp_ns"] == snapshot["latest_map_evidence_timestamp_ns"]
+                and self._current_update["map_evidence_timestamp_ns"] == snapshot["latest_map_evidence_timestamp_ns"]
                 and snapshot["ready_queries"] > 0 and snapshot["snapshot_received_host_monotonic_ns"] is not None
                 and time.monotonic_ns()-snapshot["snapshot_received_host_monotonic_ns"] <= self.max_age)
             return {"schema_version": "vision_nav_live_research_alignment_status_v1", "state": self._state,
@@ -447,6 +472,8 @@ class LiveAlignmentObserver:
                     "evidence_path": str(self._updates_path) if self._updates_path else None,
                     "last_event": deepcopy(self._last_update),
                     "latest_snapshot_estimate": deepcopy(estimate) if current else None,
+                    "latest_snapshot_evidence": {"event_sequence": self._current_update["event_sequence"],
+                        "state": self._current_update["evidence_state"]} if current else None,
                     "estimate_scope": "latest_snapshot_at_status_check_only"},
                 "provider_hard_timeout": self.engine is not None, "position_authority": False, "navigation_mode": "NO_GLOBAL_FIX",
                 "px4_external_vision": "disabled", "covariance_calibrated": False}
