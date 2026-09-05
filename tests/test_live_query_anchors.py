@@ -8,6 +8,7 @@ import time
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from vision_nav.estimation.alignment_worker import ProcessAlignmentEngine
 from vision_nav.estimation.correlated_window import CorrelatedWindowAligner, WindowAlignmentConfig
@@ -22,7 +23,8 @@ from test_window_marginalization import single_fix_covariance
 from test_vio_stream_worker import wait_for
 
 
-def test_query_owned_before_slow_result_survives_normal_window_and_releases(arrival_inputs, tmp_path):
+@pytest.mark.parametrize("wire_format", ["json_v1", "msgpack_v1"])
+def test_query_owned_before_slow_result_survives_normal_window_and_releases(arrival_inputs, tmp_path, wire_format):
     native = make_worker(arrival_inputs, tmp_path, anchor_capacity=4, record_images=True)
     source = SimpleNamespace(state="not_started", native=native)
     source.status = lambda: {"state": source.state}
@@ -30,7 +32,7 @@ def test_query_owned_before_slow_result_survives_normal_window_and_releases(arri
     config.update(calibration_id=native._profile["camera_calibration_id"], imu_T_camera=native._camera["T_imu_cam"])
     provenance = {"worker_run_id": native.worker_run_id, "map_release_id": config["map_release_id"],
         "calibration_id": config["calibration_id"], "model_sha256": "a"*64}
-    engine = ProcessAlignmentEngine(Path(__file__).parent/"fixtures/alignment_noise.py")
+    engine = ProcessAlignmentEngine(Path(__file__).parent/"fixtures/alignment_noise.py", wire_format=wire_format)
     observer = LiveAlignmentObserver(source, config, process_engine=engine, continuous_refresh_interval_s=.02,
         poll_interval_s=.005, retain_query_anchors=True)
     observer.start(provenance, evidence_path=tmp_path/"alignment.jsonl")
@@ -139,6 +141,7 @@ def test_query_owned_before_slow_result_survives_normal_window_and_releases(arri
             if r["current_estimate"]["pose_timestamp_ns"] > stream_initial_posterior]
         (tmp_path/"streaming-observation.json").write_text(json.dumps({
             "scope": "finite_native_synthetic_map_observation_not_Pi_or_flight_qualification",
+            "wire_format": wire_format,
             "source_cadence_hz": 20, "streamed_frames": len(streamed),
             "snapshot_receipt_age_limit_ns": observer.max_age,
             "stream_started_host_monotonic_ns": stream_started, "stream_finished_host_monotonic_ns": stream_finished,

@@ -3,7 +3,7 @@
 `ProcessAlignmentEngine` moves explicit uncertainty callbacks, conditional PnP
 linearization and GTSAM alignment into one spawned child. The existing parent
 observer retains native snapshot ownership, epoch invalidation, frame binding
-and final freshness checks. The child receives only bounded JSON requests, not
+and final freshness checks. The child receives only bounded JSON-shaped data, not
 a camera, serial link, sensor session, raw image or aircraft transport handle.
 
 This closes the unbounded callback/solver execution path for opt-in research
@@ -53,13 +53,14 @@ Add to the existing finite prop-off command:
 --alignment-noise-config /data/research/noise_model.json
 --alignment-startup-timeout-s 20
 --alignment-operation-timeout-s 2
+--alignment-wire-format msgpack_v1
 ```
 
 These paths are placeholders for an explicitly reviewed provider and its data,
 not supplied field-qualified models. The optional noise configuration defaults
 to `{}`. Without a provider the existing audit-only behavior is unchanged.
 The child uses the parent Python environment, which must include GTSAM, NumPy,
-SciPy, threadpoolctl and the provider's dependencies. Install the `estimation`
+SciPy, threadpoolctl, msgpack and the provider's dependencies. Install the `estimation`
 extra; there is no automatic dependency install when starting a worker.
 
 Python integration:
@@ -149,10 +150,10 @@ September 5 local evidence after the handoff commit:
 stages for parent verification/encoding, socket send, response receive/decode,
 and final verification. These four parent stages partition `elapsed_ms`.
 `receive_wait_ms` includes header/body reads and waiting for the child;
-`response_decode_ms` covers JSON decoding only. Both are subdivisions of the
+`response_decode_ms` covers the selected codec's decoding/validation. Both are subdivisions of the
 parent response stage, not additional elapsed time.
 
-`child_timing_ms` records request JSON decoding, source verification before and
+`child_timing_ms` records request decoding/validation, source verification before and
 after work, and the selected operation. It excludes initial socket request reads,
 final response-envelope construction, encoding and sending. Child timing overlaps
 the parent interval; do not add child times to the parent total. None of these
@@ -226,13 +227,14 @@ initial grace period. Terminate and kill each retain a one-second join bound.
 This shutdown allowance does not extend operation or snapshot freshness limits.
 
 The parent validates worker/request IDs, operation and exact request digest.
-Messages use length-bounded JSON, not pickle payloads, and are capped at 40 MiB.
+Messages use length-bounded MessagePack by default, or explicit `json_v1` for
+comparison, never pickle. Encoded messages are capped at 40 MiB.
 The smaller existing learned-trace budget still applies; a large replayable
 covariance result may exceed it and make the session incomplete.
 
 Operation deadlines include parent serialization/transfer/check time when
 deciding whether to accept a result. They are not hard real-time scheduling or
-memory guarantees for the host: bounded JSON encoding, source reads and process
+memory guarantees for the host: bounded encoding/decoding, source reads and process
 cleanup have overhead. Provider and GTSAM code can no longer hold the caller
 indefinitely because they execute in the killable child. Native acquisition
 continues independently, subject to its own queue and resource limits.

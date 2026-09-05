@@ -1,5 +1,10 @@
 # Bounded Alignment Serialization
 
+**Latest transport:** The private estimator socket defaults to `msgpack_v1`.
+The JSON ownership and canonical identity helpers below are unchanged, and
+`json_v1` remains an explicit comparison option. See
+[compact worker transport](#compact-worker-transport) for its bounds and evidence.
+
 The research alignment transport now avoids an unnecessary encode/decode/encode
 round trip. This is a CPU/allocation improvement to existing evidence ownership
 and process messages, not a new estimator, qualified latency budget or aircraft
@@ -123,3 +128,85 @@ unset. Outputs are under `research/outputs/alignment-json-model-regression-20260
 Existing ONNX/geospatial deprecation warnings remain. All 104 main project
 checks and `git diff --check` also passed. Desktop/Rust tests were not rerun;
 this pass did not change desktop code. No hardware or cloud resources were used.
+
+## Compact Worker Transport
+
+`estimation/bounded_msgpack.py` uses the MessagePack library for private process
+messages, with a checked subset of JSON-shaped values. It is not a new disk,
+map, dataset, telemetry or model-release format. Saved replay JSON and canonical
+JSON digests remain unchanged. See the official
+[MessagePack Python API](https://msgpack-python.readthedocs.io/en/latest/api.html)
+for float precision and unpacker limits, and the
+[format specification](https://github.com/msgpack/msgpack/blob/master/spec.md)
+for layout tags.
+
+- The default is `msgpack_v1`; `ProcessAlignmentEngine(wire_format="json_v1")`
+  retains the original wire codec for controlled comparisons. There is no
+  automatic fallback or mixed-codec negotiation. Startup confirms the selected
+  format before sensor opening.
+- Install `.[estimation]`, which now includes `msgpack>=1.1,<2`. The observed
+  local test version is 1.2.2. A missing dependency fails before worker creation;
+  the runtime does not install packages automatically.
+- Floats use 64-bit encoding. Tests preserve binary float bits, negative zero,
+  subnormals, maximal finite values and canonical JSON digests after decoding.
+  Byte strings, extension/timestamp objects, custom types, non-string/duplicate
+  map keys, nonfinite values, cycles and malformed/trailing data are rejected.
+- Limits are 40 MiB per encoded frame, depth 64, 1,048,576 array entries,
+  16,384 entries per map and 4,194,304 total tree nodes. Exact packed size is
+  checked before encoding, then checked again afterwards. A non-allocating
+  layout guard checks nesting, node counts, declared lengths, allowed format
+  tags and finite float exponent bits before the library builds containers.
+  The library decodes values/UTF-8 with additional container limits; the map
+  hook rejects invalid/duplicate keys. These are not total process RSS caps.
+- Integers are limited to signed 64-bit negatives / unsigned 64-bit positives.
+  Text must be valid UTF-8; lone surrogates and numeric subclasses are not part
+  of this private codec's input domain. The existing broader JSON reference
+  behavior remains available only through explicit `json_v1` selection.
+- Caller-owned inputs must not be mutated during encoding. The codec is not a
+  synchronization primitive. Decoding creates new containers; it never loads
+  executable Python objects or imports an application serializer.
+- Socket framing, single in-flight operation, source/epoch/request binding,
+  deadlines, kill/reap behavior, covariance and publication gates are retained.
+  A malformed compact response terminates the worker instead of falling back.
+  The private envelope hash covers the selected encoded packet bytes; only
+  canonical map/navigation/replay identities remain identical across codecs.
+
+The finite learned session accepts `--alignment-wire-format msgpack_v1` or
+`json_v1`. The benchmark tool accepts `--wire-format` with the same values:
+
+```bash
+python scripts/research/benchmark_joint_transaction.py \
+  --request /absolute/path/to/joint-benchmark-request.json \
+  --provider /absolute/path/to/reviewed_noise_provider.py \
+  --wire-format msgpack_v1 --iterations 20 \
+  --output research/outputs/compact-transaction/report.json
+```
+
+This opt-in research command does not connect to a sensor or aircraft. The
+provider must remain explicit; a synthetic fixture is not physical calibration.
+MessagePack can increase the size of zero-heavy float matrices compared with
+short JSON literals, even while reducing decimal encoding work. Do not infer
+uniform bandwidth or memory savings from the format name.
+
+### Live Observation, Not Qualification
+
+The first paired native test (`compact-alignment-20260905-r1`) measured median
+parent verification/encoding of 8.407 ms with JSON and 2.678 ms with MessagePack;
+median worker round trips were 40.372 and 33.963 ms. The tests used separate
+finite synthetic-map streams on the same Mac, not identical physical trajectories
+or isolated-system benchmarks. The compact run produced one advancing current
+update; JSON produced zero. This was not sustained behavior.
+
+A later paired run (`compact-alignment-20260905-r2`) and three explicit compact
+reruns (`compact-live-repeat-20260905-r1`, `-r2`, `-r3`) all recorded zero
+advancing compact-path updates. Each offered 20 more frames at 20 Hz, retained
+the 500 ms receipt-age gate, and preserved original pose timestamps. Outputs
+are in ignored `research/outputs/`; symlink aliases are not additional trials.
+The initial positive result therefore does **not** close the current-state gate.
+
+The next estimator architecture needs to separate immutable accepted map evidence
+from repeated current-state updates, avoid returning full replay requests on
+every hot-path response, and retain enough snapshot-specific joint information
+for correlated forward propagation. That is remaining work, not implemented by
+this codec. It must not infer independence, reuse a previous covariance for a
+new pose, or restamp an old solution. No Pi or aircraft qualification is claimed.

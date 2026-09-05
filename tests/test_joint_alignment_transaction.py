@@ -33,15 +33,17 @@ def refresh(coordinator, execute, **kwargs):
     return coordinator.refresh_current(joint_executor=execute, max_snapshot_age_ns=500_000_000, **kwargs)
 
 
-def test_combined_real_child_matches_separate_operations_with_one_round_trip():
+@pytest.mark.parametrize("wire_format", ["json_v1", "msgpack_v1"])
+def test_combined_real_child_matches_separate_operations_with_one_round_trip(wire_format):
     request, _ = fixture(shared=False, vio_cross=False)
     request.pop("joint_uncertainty")
     before = deepcopy(request)
-    engine = ProcessAlignmentEngine(PROVIDER, operation_timeout_s=5.)
+    engine = ProcessAlignmentEngine(PROVIDER, operation_timeout_s=5., wire_format=wire_format)
     try:
         engine.start()
         combined = engine.align_with_noise(request)
         assert engine.status()["completed_requests"] == 1
+        assert engine.status()["wire_format"] == wire_format
         last = engine.status()["last_operation"]
         assert last["operation"] == "align_with_noise" and last["request_bytes"] > 0 and last["elapsed_ms"] > 0
         profile = last["transport_profile"]

@@ -347,6 +347,8 @@ def main(argv=None):
                         help="JSON configuration for the explicit provider; included in evidence, no secrets")
     parser.add_argument("--alignment-startup-timeout-s", type=float, default=20.)
     parser.add_argument("--alignment-operation-timeout-s", type=float, default=2.)
+    parser.add_argument("--alignment-wire-format", choices=("msgpack_v1", "json_v1"), default="msgpack_v1",
+                        help="Private estimator IPC encoding; replay evidence and canonical hashes remain JSON")
     parser.add_argument("--alignment-refresh-interval-s", type=float,
                         help="Opt-in independent joint-snapshot refresh cadence; requires an isolated noise provider")
     parser.add_argument("--retain-query-anchors", action="store_true",
@@ -398,7 +400,8 @@ def main(argv=None):
                     parser.error("Alignment noise config exceeds 32 KiB")
                 provider_config = json.loads(args.alignment_noise_config.read_text())
             engine = ProcessAlignmentEngine(args.alignment_noise_provider, provider_config=provider_config,
-                startup_timeout_s=args.alignment_startup_timeout_s, operation_timeout_s=args.alignment_operation_timeout_s)
+                startup_timeout_s=args.alignment_startup_timeout_s, operation_timeout_s=args.alignment_operation_timeout_s,
+                wire_format=args.alignment_wire_format)
         observer = LiveAlignmentObserver(session, json.loads(args.alignment_config.read_text()), process_engine=engine,
             continuous_refresh_interval_s=args.alignment_refresh_interval_s,
             retain_query_anchors=args.retain_query_anchors,

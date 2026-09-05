@@ -59,7 +59,7 @@ def test_new_vio_poses_refresh_without_another_learned_frame(setup):
     first = current(observer)
     assert first["pose_timestamp_ns"] == 2*10**9
     source.push(later_record())
-    wait_for(lambda: current(observer) is not None and current(observer)["pose_timestamp_ns"] == 3*10**9)
+    wait_for(lambda: (estimate := current(observer)) is not None and estimate["pose_timestamp_ns"] == 3*10**9)
     second = current(observer)
     assert not np.allclose(first["map_T_imu"], second["map_T_imu"])
     assert observer.coordinator.status()["ready_queries"] == 1

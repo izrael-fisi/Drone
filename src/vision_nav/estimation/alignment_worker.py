@@ -21,10 +21,29 @@ from ..runtime.process_resources import OwnedProcessResources
 
 LIMIT = 40*1024*1024
 PROVIDER_LIMIT = 1024*1024
+DEFAULT_WIRE_FORMAT = "msgpack_v1"
 
 
 def _encode(value):
     return bounded_dumps(value, LIMIT).encode("ascii")
+
+
+def _serialize(value, wire_format):
+    if wire_format == "json_v1":
+        return _encode(value)
+    if wire_format != "msgpack_v1":
+        raise ValueError("Unknown estimator wire format")
+    from .bounded_msgpack import pack
+    return pack(value, LIMIT)
+
+
+def _decode(raw, wire_format=DEFAULT_WIRE_FORMAT):
+    if wire_format == "json_v1":
+        return json.loads(raw)
+    if wire_format != "msgpack_v1":
+        raise ValueError("Unknown estimator wire format")
+    from .bounded_msgpack import unpack
+    return unpack(raw, LIMIT)
 
 
 def _digest(path):
@@ -55,8 +74,8 @@ def _exact(connection, count):
     return bytes(chunks)
 
 
-def _send(connection, value):
-    data = _encode(value)
+def _send(connection, value, wire_format=DEFAULT_WIRE_FORMAT):
+    data = _serialize(value, wire_format)
     connection.sendall(struct.pack("!Q", len(data))+data)
 
 
@@ -83,19 +102,22 @@ def _worker_main(connection, config):
         import importlib.metadata
         numerical_limit = threadpool_limits(limits=config["numerical_threads"])
         pools = threadpool_info()
-        versions = {name: importlib.metadata.version(name) for name in ("gtsam", "numpy", "scipy", "threadpoolctl")}
+        names = ("gtsam", "numpy", "scipy", "threadpoolctl")
+        if config["wire_format"] == "msgpack_v1":
+            names += ("msgpack",)
+        versions = {name: importlib.metadata.version(name) for name in names}
         assessment_cache = PnPAssessmentCache()
         _verify(config)
         _send(connection, {"type": "ready", "worker_id": config["worker_id"],
                            "sources": config["sources"], "versions": versions,
-                           "numerical_threadpools": pools})
+                           "numerical_threadpools": pools, "wire_format": config["wire_format"]}, config["wire_format"])
         while True:
             size = struct.unpack("!Q", _exact(connection, 8))[0]
             if not 0 < size <= LIMIT:
                 raise ValueError("Alignment request exceeds limit")
             raw = _exact(connection, size)
             decoded_started = time.monotonic_ns()
-            message = json.loads(raw)
+            message = _decode(raw, config["wire_format"])
             operation, request = message["operation"], message["request"]
             decoded_finished = time.monotonic_ns()
             _verify(config)
@@ -134,13 +156,13 @@ def _worker_main(connection, config):
                     "source_verification_before": (work_started-decoded_finished)/1e6,
                     "operation": (work_finished-work_started)/1e6,
                     "source_verification_after": (verified_finished-work_finished)/1e6,
-                }})
+                }}, config["wire_format"])
     except EOFError:
         pass
     except Exception as exc:
         try:
             _send(connection, {"type": "error", "worker_id": config["worker_id"],
-                               "reason": f"{type(exc).__name__}:{exc}"[:2000]})
+                               "reason": f"{type(exc).__name__}:{exc}"[:2000]}, config["wire_format"])
         except OSError:
             pass
     finally:
@@ -153,24 +175,27 @@ class ProcessAlignmentEngine:
     """One synchronous caller; cancel/stop may interrupt it from another thread.
 
     The provider is explicit trusted local Python code, not sandboxed. It is
-    never imported in the parent. The child receives JSON only, no session,
+    never imported in the parent. The child receives JSON-shaped data only, no session,
     live frame objects, raw images, sensor endpoints or publication handles.
     """
 
     worker_entry = staticmethod(_worker_main)
 
-    def __init__(self, provider_path, *, provider_config=None, startup_timeout_s=20., operation_timeout_s=2., numerical_threads=1):
+    def __init__(self, provider_path, *, provider_config=None, startup_timeout_s=20., operation_timeout_s=2., numerical_threads=1,
+                 wire_format=DEFAULT_WIRE_FORMAT):
         for value, upper in ((startup_timeout_s, 120.), (operation_timeout_s, 30.)):
             if type(value) not in (int, float) or not math.isfinite(value) or not .05 <= value <= upper:
                 raise ValueError("Invalid estimator startup/operation deadline")
         if type(numerical_threads) is not int or not 1 <= numerical_threads <= 4:
             raise ValueError("Estimator numerical thread budget must be an integer in [1,4]")
+        if type(wire_format) is not str or wire_format not in ("json_v1", "msgpack_v1"):
+            raise ValueError("Expected json_v1 or msgpack_v1 estimator wire format")
         path = Path(provider_path).resolve(strict=True)
         if not path.is_file() or path.suffix != ".py" or path.stat().st_size > PROVIDER_LIMIT:
             raise ValueError("Expected a local Python noise provider of at most 1 MiB")
         self.worker_id = str(uuid.uuid4())
         self._config = {"worker_id": self.worker_id, "provider_path": str(path),
-            "numerical_threads": numerical_threads,
+            "numerical_threads": numerical_threads, "wire_format": wire_format,
             "provider_config": _owned(provider_config if provider_config is not None else {}, 32*1024),
             "sources": _sources() | {str(path): _digest(path)}}
         if not isinstance(self._config["provider_config"], dict):
@@ -215,7 +240,7 @@ class ProcessAlignmentEngine:
             raise ValueError("Alignment response exceeds limit")
         raw = self._read(size, deadline)
         received = time.monotonic_ns()
-        response = json.loads(raw)
+        response = _decode(raw, self._config["wire_format"])
         decoded = time.monotonic_ns()
         self._last_receive_profile = {
             "response_bytes": size,
@@ -232,6 +257,7 @@ class ProcessAlignmentEngine:
         if self._state != "not_started" or self._cancelled.is_set():
             raise RuntimeError("Alignment worker cannot restart")
         _verify(self._config)
+        _serialize({}, self._config["wire_format"])
         self._state = "starting"
         parent, child = socket.socketpair()
         self._socket = parent
@@ -244,7 +270,8 @@ class ProcessAlignmentEngine:
             self._pid = self._process.pid
             self._resources = OwnedProcessResources(self._pid, self.worker_id)
             response = self._response(time.monotonic()+self.startup_timeout)
-            if response.get("type") != "ready" or response.get("sources") != self._config["sources"]:
+            if (response.get("type") != "ready" or response.get("sources") != self._config["sources"]
+                    or response.get("wire_format") != self._config["wire_format"]):
                 raise ValueError("Alignment startup provenance mismatch")
             _verify(self._config)
             self._versions, self._state = response["versions"], "ready"
@@ -264,7 +291,7 @@ class ProcessAlignmentEngine:
             deadline = began+self.timeout
             _verify(self._config)
             self._request += 1
-            raw = _encode({"request_id": self._request, "operation": operation, "request": request})
+            raw = _serialize({"request_id": self._request, "operation": operation, "request": request}, self._config["wire_format"])
             encoded_at = time.monotonic()
             self._state = "processing"
             connection = self._socket
@@ -387,5 +414,6 @@ class ProcessAlignmentEngine:
                 "startup_timeout_s": self.startup_timeout, "operation_timeout_s": self.timeout,
                 "sources": deepcopy(self._config["sources"]), "provider_config": deepcopy(self._config["provider_config"]),
                 "versions": deepcopy(self._versions), "max_message_bytes": LIMIT, "inflight_limit": 1,
+                "wire_format": self._config["wire_format"], "evidence_and_identity_format": "canonical_json_unchanged",
                 "automatic_restart": False, "provider_hard_timeout": True, "position_authority": False,
                 "navigation_mode": "NO_GLOBAL_FIX", "px4_external_vision": "disabled"}

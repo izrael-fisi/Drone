@@ -226,6 +226,13 @@ development checkpoint, not a release tag. Work includes:
     External inputs still require full validation, and each new native snapshot
     still requires its own correlated uncertainty model. This reduces measured
     overhead but the advancing-stream trial still produced zero current updates.
+14. Private compact estimator transport: MessagePack with bounded JSON-shaped
+    values and exact float64 round trips, explicit `json_v1` comparison mode,
+    codec handshake and malformed-packet rejection. Canonical JSON identities
+    and stored evidence do not change. The `estimation` extra now includes
+    msgpack; standalone capture without opt-in alignment does not require it.
+    One initial compact trial produced a single advancing current update, but
+    repeated trials did not sustain it. This does not qualify live navigation.
 
 Items 11-12 and their regression tests are included in the final transfer
 supplement after the original `ce6b3088` documentation/merge checkpoint.
@@ -235,6 +242,7 @@ resolve the zero-advancing-current-update finding. The next estimator task shoul
 use the diagnostics to investigate that limitation, not infer it is solved.
 Item 13 follows `70d3c820`; its evidence and unchanged open requirement are in
 [owned transaction reuse](research-alignment-process.md#owned-transaction-reuse).
+Item 14 follows `2d84be05`; see [codec contract and observations](alignment-serialization.md#compact-worker-transport).
 
 The handoff also integrates GitHub main through `ee867d56`, preserving 22 newer
 commits covering map-first navigation, companion/GCS tools, map providers and

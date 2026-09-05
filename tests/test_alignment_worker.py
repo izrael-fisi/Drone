@@ -12,7 +12,7 @@ import time
 import numpy as np
 import pytest
 
-from vision_nav.estimation.alignment_worker import ProcessAlignmentEngine, LIMIT, _exact, _send
+from vision_nav.estimation.alignment_worker import ProcessAlignmentEngine, LIMIT, _exact, _send, _decode
 from vision_nav.estimation.learned_pnp_binding import prepare
 from vision_nav.estimation.live_alignment import LiveAlignmentObserver
 from vision_nav.estimation.pnp_window_alignment import align
@@ -79,18 +79,27 @@ def test_invalid_estimator_thread_budget_is_rejected(threads):
 
 
 def corrupt_worker(connection, config):
-    _send(connection, {"type": "ready", "worker_id": config["worker_id"], "sources": config["sources"], "versions": {}})
-    size = struct.unpack("!Q", _exact(connection, 8))[0]
-    request = json.loads(_exact(connection, size))
     kind = config["provider_config"]["corruption"]
+    _send(connection, {"type": "ready", "worker_id": config["worker_id"], "sources": config["sources"],
+        "versions": {}, "wire_format": "wrong" if kind == "codec" else config["wire_format"]}, config["wire_format"])
+    if kind == "codec":
+        connection.close()
+        return
+    size = struct.unpack("!Q", _exact(connection, 8))[0]
+    request = _decode(_exact(connection, size), config["wire_format"])
     if kind == "oversized":
         connection.sendall(struct.pack("!Q", LIMIT+1))
     elif kind == "hang":
         time.sleep(60)
+    elif kind in ("duplicate", "nan", "binary", "other_encoding"):
+        import msgpack
+        raw = {"duplicate": b"\x82\xa1a\x01\xa1a\x02", "nan": msgpack.packb(float("nan")),
+               "binary": msgpack.packb(b"x"), "other_encoding": b'{"type":"result"}'}[kind]
+        connection.sendall(struct.pack("!Q", len(raw))+raw)
     else:
         _send(connection, {"type": "result", "worker_id": "wrong" if kind == "worker" else config["worker_id"],
             "request_id": request["request_id"]+1 if kind == "request" else request["request_id"],
-            "operation": request["operation"], "request_sha256": "0"*64, "result": {}})
+            "operation": request["operation"], "request_sha256": "0"*64, "result": {}}, config["wire_format"])
     connection.close()
 
 
@@ -146,7 +155,7 @@ def test_startup_timeout_reaps_worker_before_sensors_start():
     assert engine.status()["state"] == "failed" and not engine.status()["process_alive"]
 
 
-@pytest.mark.parametrize("kind", ["worker", "request", "hash", "oversized", "hang"])
+@pytest.mark.parametrize("kind", ["worker", "request", "hash", "oversized", "hang", "duplicate", "nan", "binary", "other_encoding"])
 def test_protocol_faults_and_solver_timeout_withhold(kind):
     engine = ProcessAlignmentEngine(PROVIDER, provider_config={"corruption": kind}, operation_timeout_s=.2)
     engine.worker_entry = corrupt_worker
@@ -157,6 +166,28 @@ def test_protocol_faults_and_solver_timeout_withhold(kind):
         assert engine.status()["state"] == "failed" and not engine.status()["process_alive"]
     finally:
         assert engine.stop()
+
+
+def test_codec_mismatch_is_rejected_at_startup():
+    engine = ProcessAlignmentEngine(PROVIDER, provider_config={"corruption": "codec"})
+    engine.worker_entry = corrupt_worker
+    with pytest.raises(ValueError, match="startup provenance"):
+        engine.start()
+    assert not engine.status()["process_alive"]
+
+
+def test_missing_compact_dependency_fails_before_process_start(monkeypatch):
+    engine = ProcessAlignmentEngine(PROVIDER)
+    monkeypatch.setitem(sys.modules, "msgpack", None)
+    with pytest.raises(RuntimeError, match="install the estimation extra"):
+        engine.start()
+    assert engine.status()["pid"] is None and not engine.status()["process_alive"]
+
+
+@pytest.mark.parametrize("wire_format", [None, True, [], "pickle", "auto"])
+def test_unknown_wire_format_has_no_implicit_fallback(wire_format):
+    with pytest.raises(ValueError, match="wire format"):
+        ProcessAlignmentEngine(PROVIDER, wire_format=wire_format)
 
 
 def test_provider_changed_after_start_invalidates_worker(tmp_path):

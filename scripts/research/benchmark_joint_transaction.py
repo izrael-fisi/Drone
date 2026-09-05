@@ -55,6 +55,7 @@ def main(argv=None):
     parser.add_argument("--provider", type=Path, required=True, help="Explicit trusted local research-noise provider")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--iterations", type=int, default=20)
+    parser.add_argument("--wire-format", choices=("msgpack_v1", "json_v1"), default="msgpack_v1")
     args = parser.parse_args(argv)
     if args.output.exists() or not 3 <= args.iterations <= 100:
         parser.error("Output must be new and iterations in 3..100")
@@ -63,7 +64,7 @@ def main(argv=None):
     if len(raw) > 32*1024*1024:
         raise ValueError("Input request exceeds 32 MiB")
     script_digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    engine = ProcessAlignmentEngine(args.provider, operation_timeout_s=10.)
+    engine = ProcessAlignmentEngine(args.provider, operation_timeout_s=10., wire_format=args.wire_format)
     try:
         engine.start()
         result = measure(engine, json.loads(raw), args.iterations)

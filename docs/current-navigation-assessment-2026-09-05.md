@@ -24,6 +24,12 @@ removes repeated native validation and hashing within a single operation. Its
 current global updates. Continue the delayed-correction/current-propagation
 architecture work; this is not a navigation-readiness improvement claim.
 
+The [compact worker transport](alignment-serialization.md#compact-worker-transport)
+now preserves 64-bit values over a private MessagePack link while retaining JSON
+evidence/hashes and an explicit JSON comparison mode. One initial native trial
+produced a single advancing current update, but subsequent trials returned to
+zero. This is intermittent evidence, not reliable current-state availability.
+
 ## Latest Review: Live Availability And Training Priorities
 
 Rechecked September 5, 2026 against the local sources, completed native test

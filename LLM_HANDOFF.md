@@ -40,6 +40,11 @@ This file is independent of any particular assistant or conversation history.
   estimator timing diagnostics. These are research optimizations/observability,
   not a fix for the advancing-current global-position gap. See the final transfer
   supplement in the verification guide for checks against these exact changes.
+- Subsequent estimator updates include within-transaction validation reuse and
+  default private `msgpack_v1` transport (`.[estimation]` now requires msgpack).
+  JSON replay identities are unchanged. A single advancing update occurred in
+  one compact-link trial, but repeated trials remained at zero; sustained
+  current-state navigation is still an open requirement, not a completed feature.
 
 ## First Session
 

@@ -316,3 +316,53 @@ No installed-Pi or aircraft test and no cloud training was performed.
 The local preflight (including all 104 main checks), desktop frontend build
 and Rust `cargo check` also passed again. Rust tests were not rerun for this
 Python-only follow-up; the preceding 40-test result is recorded above.
+
+### Compact Estimator Transport
+
+After `2d84be05`, the private worker link defaults to `msgpack_v1` and retains
+explicit `json_v1` comparison support. Install the updated `.[estimation]`
+extra; local estimator/model checks used msgpack **1.2.2**. The JSON replay
+contracts and canonical identity hashes remain unchanged; wire-envelope hashes
+cover the selected encoded bytes. See [codec bounds](alignment-serialization.md#compact-worker-transport).
+
+| Check | Observed result |
+| --- | --- |
+| Initial broad codec/estimator run | **400 passed, 1 failed**; a live-status test read two different snapshots in one predicate and raised `TypeError` |
+| Same predicate changed to read once, subsequent broad run | **403 passed in 49.90 s**, no skips; no navigation/freshness assertion removed |
+| Five-file learned/native/model suite before final allocation guard | **84 passed in 175.51 s**, 39 existing warnings, no skips |
+| Final codec/estimator/native suite, including allocation guard | **419 passed in 49.86 s**, no skips |
+| Final finite-session integration plus actual retrieval/local/student/native test | **5 passed in 23.15 s**, 39 deselected, 13 existing warnings; this is a selected rerun, not another full 84-test run |
+| Local preflight | **All seven stages passed**, including all 104 main checks |
+| Desktop frontend build / Rust check | **Passed**; existing frontend import/chunk warnings remain; Rust tests not repeated for this Python-only change |
+
+The final estimator command is the 12-file command in the transfer supplement
+plus `tests/test_bounded_msgpack.py` and `tests/test_bounded_json.py`. The added
+coverage checks exact float64 bits and canonical hashes, format selection,
+missing-dependency startup, duplicate/invalid keys, unsupported types, malformed
+frames, and declared depth/node/length limits **before** allocating decoded
+containers. The existing covariance, freshness, source and teardown tests remain.
+
+Ignored outputs:
+
+- `research/outputs/compact-alignment-20260905-r2/`: the initial 400/1 run.
+- `research/outputs/compact-alignment-20260905-r3/`: the 403-test run.
+- `research/outputs/compact-learned-integration-20260905-r1/`: the 84-test run.
+- `research/outputs/compact-alignment-final-20260905-r1/`: final 419-test run.
+- `research/outputs/compact-learned-final-20260905-r1/`: final five selected cases.
+
+One initial compact-link trial produced one advancing current estimate, but
+later paired runs and three explicit repeat trials returned to zero. The final
+419-test run also recorded **zero for both codecs** in its 20 Hz observations.
+The current-state requirement therefore remains unmet; neither green tests nor
+an isolated positive update qualify sustained navigation. No installed-Pi run,
+aircraft output, cloud allocation or training promotion occurred.
+
+The final command-line transport smoke also completed with exact result/noise
+parity for both codecs. It used a saved native request and a **synthetic** noise
+provider, three measured pairs and two warmup pairs on this Mac. Separate versus
+combined median transaction times were 46.35 / 39.58 ms for JSON and
+31.00 / 32.82 ms for MessagePack. These small offline samples neither establish
+a consistent combined-call speedup nor qualify current-state availability or Pi
+performance. Results are local-only under
+`research/outputs/compact-codec-cli-20260905/{json,msgpack}.json`; workers exited
+cleanly. They are not included in the Git transfer.
