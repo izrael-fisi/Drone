@@ -1,5 +1,8 @@
 # Target Vision-First Architecture
 
+For the transfer snapshot, requirements, implementation boundaries and remaining
+work, start with the [technical handoff](technical-handoff-2026-09-05.md).
+
 > **Maturity note (2026-08-30):** This document is the target architecture and
 > contract, not a claim that every adapter is already flight-ready. See
 > [Architecture Reassessment](architecture-reassessment-2026-08.md) for the

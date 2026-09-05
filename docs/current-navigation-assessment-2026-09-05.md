@@ -4,6 +4,14 @@ Research checked: September 5, 2026. Scope: the current local working tree,
 including uncommitted research work, not a deployed or released aircraft build.
 This is a reassessment, not authorization to enable flight-control output.
 
+**Transfer update:** the [technical handoff](technical-handoff-2026-09-05.md)
+consolidates current requirements, source ownership and remaining work, including
+newer GitHub desktop/companion changes. The [verification ledger](handoff-verification-2026-09-05.md)
+records the final handoff checks separately from historical runs below. Numeric
+chunk validation, a bounded estimator-child numerical thread budget and reduced
+internal copying are implemented; none closes the zero-advancing-current-output
+finding. Preserve both failed and passing evidence when continuing this work.
+
 ## Latest Review: Live Availability And Training Priorities
 
 Rechecked September 5, 2026 against the local sources, completed native test

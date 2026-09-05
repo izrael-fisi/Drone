@@ -1,5 +1,12 @@
 # Learned Navigation Research Workspace
 
+**Current transfer status:** read the
+[technical handoff](../docs/technical-handoff-2026-09-05.md) and
+[verification/artifact inventory](../docs/handoff-verification-2026-09-05.md).
+Sections below include intended teacher workloads, not claims that every paper
+has been reproduced or a qualified Pi student trained. RunPod is prepared but
+not deployed by this research work.
+
 This directory is separate from the flight runtime. It trains cloud teachers,
 distills `pi5_crossview_nav_v1`, validates exported ONNX models, and produces
 the learned artifacts that a `MapRelease v2` requires.

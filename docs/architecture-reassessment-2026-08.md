@@ -1,6 +1,6 @@
 # Architecture Reassessment: Modern Vision-First Navigation
 
-**Date:** 2026-08-30  
+**Date:** 2026-08-30
 **Scope:** Raspberry Pi 5 companion runtime, PX4/Pixhawk integration, offline
 map production, and the Tauri ground-control app.
 

@@ -25,6 +25,34 @@ prepare maps and missions, configure the vision pipeline, connect to the
 Raspberry Pi, run hardware checks, and review support bundles from real bench
 or field runs.
 
+## Docker Runtime
+
+If the Windows host does not have Node/npm/pnpm on `PATH`, run the React
+operator UI through Docker Desktop:
+
+```powershell
+winget install Docker.DockerDesktop
+cd C:\Users\gmod4\OneDrive\Documents\DRONE\DroneRepo
+.\scripts\dev\desktop_docker.ps1 dev
+```
+
+Open `http://localhost:5173`.
+
+Useful actions:
+
+```powershell
+.\scripts\dev\desktop_docker.ps1 build
+.\scripts\dev\desktop_docker.ps1 preview
+.\scripts\dev\desktop_docker.ps1 shell
+.\scripts\dev\desktop_docker.ps1 down
+.\scripts\dev\desktop_docker.ps1 clean
+```
+
+This containerized runtime builds and serves the frontend and uses the browser
+fallback paths in `src/lib/tauri.ts`, including Edge API calls to the companion
+computer. It does not launch or package the native Tauri desktop window. Native
+Tauri still needs the Windows Rust/MSVC/WebView2 toolchain on the host.
+
 ## Active Pages
 
 - `/dashboard` and `/navigation-panel`: operator home, readiness, quick actions,
@@ -37,6 +65,8 @@ or field runs.
 - `/mission-bundle-builder`: alias into the Mission Planner bundle workflow.
 - `/devices` and `/vehicle-manager`: device profiles, Raspberry Pi SSH,
   runtime module setup, camera checks, MAVLink checks, bench/field workflows.
+- `/ground-control` and `/gcs`: QGroundControl, ArduPilot Mission Planner,
+  autopilot compatibility, install/display state, and GCS serial handoff.
 - `/pi-setup` and `/module-setup`: deep Raspberry Pi setup workflow.
 - `/camera-vision` and `/vision-pipeline`: editable vision feature/matcher
   defaults used by mission bundle builds.
@@ -47,15 +77,9 @@ or field runs.
 
 ## Operations UI Direction
 
-The desktop app uses Vozilla-style ground-control patterns as inspiration:
-page-aware title context, global command search, active-device status, recording
-readiness, map cursor readout, recentering, live position source, and visible
-diagnostics.
-
-The detailed comparison is in `docs/vozilla-ui-gap-analysis.md`. It lists the
-Vozilla features that this app does not yet have, including flight-log review,
-camera calibration UI, vehicle transform setup, map lifecycle states, lockdown
-mode, and a full MAVLink/system diagnostics drawer.
+The desktop app uses streamlined ground-control patterns: page-aware title
+context, global command search, active-device status, recording readiness, map
+cursor readout, recentering, live position source, and visible diagnostics.
 
 ## Module Setup
 
@@ -123,6 +147,7 @@ Mission Planner exports:
 
 - app mission JSON
 - QGroundControl-style `.plan`
+- ArduPilot Mission Planner `QGC WPL 110` `.waypoints`
 - `mission/mission_plan.json`
 - `mission/qgc.plan`
 - GNSS-denied prep metadata

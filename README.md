@@ -1,5 +1,11 @@
 # Drone GNSS-Denied Vision Navigation
 
+**Transferring to another LLM or development machine?** Start with
+[LLM_HANDOFF.md](LLM_HANDOFF.md), the
+[technical requirements and status](docs/technical-handoff-2026-09-05.md), and
+[verification/artifact inventory](docs/handoff-verification-2026-09-05.md).
+This is shadow research, not a flight-qualified GNSS-denied navigation release.
+
 This repository contains the two active parts of the GNSS-denied navigation
 project:
 
@@ -9,14 +15,16 @@ project:
 ROS 2, Gazebo, and PX4 SITL are no longer part of the active project scaffold.
 Hardware bench testing with the real Pixhawk/Holybro stack is the path forward.
 
-The canonical navigation architecture is a vision-first, fail-closed runtime:
+The target is a vision-first, fail-closed runtime. Current research combines:
 
 ```text
-versioned map release + calibrated camera frame
-  -> distilled temporal BEV / bearing features
-  -> MegaLoc retrieval -> XFeat + LighterGlue correspondence
-  -> robust geometry -> multi-hypothesis fusion
-  -> shadow telemetry with explicit no-fix state
+calibrated camera + synchronized raw IMU -> native local VIO
+camera windows + preloaded map -> MegaLoc -> cross-attention student
+  -> XFeat + LighterGlue -> surface-backed geometry
+  -> conditional delayed alignment research -> shadow evidence
+
+Still unqualified: continuous current global estimates, persistent global
+hypotheses, measured field uncertainty, Pi performance and aircraft output.
 ```
 
 The project goal is narrow:
@@ -30,7 +38,8 @@ The project goal is narrow:
 - Pixhawk/PX4 MAVLink integration as a status source after bench validation
 
 The active vehicle profile is `pi5_crossview_nav_v1`: MegaLoc, XFeat +
-LighterGlue, and a distilled temporal BEV/bearing student. ORB, AKAZE, and SIFT
+LighterGlue, and a project-owned map-conditioned temporal student. Distillation
+and field performance are not established by the profile name. ORB, AKAZE, and SIFT
 are frozen replay baselines only. They are not an active map builder, Pi runtime,
 desktop setting, mission-bundle format, or automatic fallback.
 
@@ -51,7 +60,7 @@ The active learned product program is documented in
 - Optional USB 3 SSD later for larger maps, image logs, and long test runs
 - Holybro X500 V2 kit with Pixhawk 6C-class flight controller
 - IMU/attitude telemetry from PX4 for vision-estimator context
-- Optional PX4 barometer telemetry for relative vertical confidence
+- Optional barometer telemetry in legacy tools; not qualified learned fusion
 
 ## Active Project Sections
 
@@ -79,6 +88,18 @@ The active learned product program is documented in
 - `docs/`: hardware-first setup, calibration, mission planning, and test plans
 - `transfer/`: local staging folder for Mac-to-Pi and Pi-to-Mac file movement
 
+Run the desktop UI without installing Node on Windows by using Docker Desktop:
+
+```powershell
+.\scripts\dev\desktop_docker.ps1 dev
+```
+
+Then open `http://localhost:5173`. Use `.\scripts\dev\desktop_docker.ps1 build`
+for a production frontend build, or `preview` to serve the built output at
+`http://localhost:4173`. The Docker runtime is for the React operator UI and
+browser fallback/Edge API workflows; the native Tauri window still requires the
+local Windows Tauri/Rust toolchain.
+
 Key docs:
 
 - [Stable Project Scaffold](docs/stable-project-scaffold.md)
@@ -93,6 +114,7 @@ Key docs:
 - [Desktop App](docs/desktop-app.md)
 - [Operator Handoff](docs/operator-handoff.md)
 - [First Learned Shadow Run](docs/first-learned-shadow-run.md)
+- [Cloud + GovCloud Readiness](docs/cloud/README.md)
 
 ## Quick Pi Setup
 
@@ -116,8 +138,20 @@ cd Drone
 Rebooting after bootstrap makes Docker group membership and camera/system
 services fully active.
 
+Enable the companion Edge API used by the desktop app:
+
+```bash
+cd ~/Drone
+./scripts/pi/install_vision_nav_service.sh
+sudo loginctl enable-linger $USER
+systemctl --user start drone-vision-nav-api.service
+systemctl --user start drone-vision-nav-status-bridge.service
+curl http://127.0.0.1:5000/health
+```
+
 After you copy an approved MapRelease v2 and ModelRelease to the Pi, validate
-the release chain and start learned shadow telemetry:
+the release chain and start learned shadow telemetry. Stop other serial-device
+owners before running a session that needs exclusive camera/MAVLink access:
 
 ```bash
 ./scripts/pi/validate_neural_runtime.sh

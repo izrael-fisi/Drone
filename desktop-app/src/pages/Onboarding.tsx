@@ -48,7 +48,7 @@ export function Onboarding() {
       await cmd.saveDevices(devices);
       addDevice(device);
     }
-    navigate("/dashboard");
+    navigate("/home");
   };
 
   return (
@@ -58,7 +58,7 @@ export function Onboarding() {
         className="absolute inset-0 opacity-[0.03]"
         style={{
           backgroundImage:
-            "linear-gradient(#06B6D4 1px, transparent 1px), linear-gradient(90deg, #06B6D4 1px, transparent 1px)",
+            "linear-gradient(#FF6600 1px, transparent 1px), linear-gradient(90deg, #FF6600 1px, transparent 1px)",
           backgroundSize: "40px 40px",
         }}
       />

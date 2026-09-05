@@ -1,0 +1,975 @@
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import os
+from pathlib import Path
+import shutil
+import socket
+import subprocess
+import time
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+from vision_nav.mavlink_bridge import _load_mavutil, parse_mavlink_endpoint
+
+
+API_SCHEMA_VERSION = "vision_nav_companion_api_v1"
+DEFAULT_STATUS_ROOTS = "$HOME/DroneTransfer/outgoing:$HOME/drone-data:$HOME/Drone"
+DEFAULT_SERVICE_UNITS = {
+    "api": "drone-vision-nav-api.service",
+    "terrain": "drone-vision-nav.service",
+    "status-bridge": "drone-vision-nav-status-bridge.service",
+}
+
+
+@dataclass(frozen=True)
+class CompanionApiConfig:
+    host: str
+    port: int
+    repo_root: Path
+    status_roots: list[Path]
+    default_mavlink_endpoint: str | None
+    default_serial_baud: int
+    allow_service_control: bool
+    service_units: dict[str, str]
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def split_roots(value: str) -> list[Path]:
+    roots: list[Path] = []
+    for item in value.split(os.pathsep):
+        expanded = os.path.expandvars(item.strip())
+        if expanded:
+            roots.append(Path(expanded).expanduser())
+    return roots
+
+
+def build_config(args: argparse.Namespace) -> CompanionApiConfig:
+    repo_root = Path(args.repo_root or os.environ.get("VISION_NAV_REPO_ROOT") or Path.cwd()).expanduser().resolve()
+    status_roots_value = args.status_roots or os.environ.get("VISION_NAV_RUNTIME_STATUS_ROOTS") or DEFAULT_STATUS_ROOTS
+    return CompanionApiConfig(
+        host=args.host,
+        port=args.port,
+        repo_root=repo_root,
+        status_roots=split_roots(status_roots_value),
+        default_mavlink_endpoint=args.default_mavlink_endpoint
+        or os.environ.get("VISION_NAV_API_MAVLINK_ENDPOINT")
+        or os.environ.get("VISION_NAV_MAVLINK_ENDPOINT"),
+        default_serial_baud=args.default_serial_baud,
+        allow_service_control=args.allow_service_control or env_bool("VISION_NAV_API_ALLOW_SERVICE_CONTROL"),
+        service_units=DEFAULT_SERVICE_UNITS,
+    )
+
+
+def run_command(command: list[str], *, timeout_s: float = 3.0) -> dict[str, Any]:
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+        return {
+            "ok": completed.returncode == 0,
+            "exit_code": completed.returncode,
+            "stdout": completed.stdout.strip(),
+            "stderr": completed.stderr.strip(),
+            "duration_s": round(time.monotonic() - started, 3),
+        }
+    except FileNotFoundError as exc:
+        return {
+            "ok": False,
+            "exit_code": None,
+            "stdout": "",
+            "stderr": str(exc),
+            "duration_s": round(time.monotonic() - started, 3),
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "exit_code": None,
+            "stdout": (exc.stdout or "").strip() if isinstance(exc.stdout, str) else "",
+            "stderr": f"Timed out after {timeout_s}s",
+            "duration_s": round(time.monotonic() - started, 3),
+        }
+
+
+def read_os_release() -> dict[str, str]:
+    path = Path("/etc/os-release")
+    if not path.exists():
+        return {}
+    result: dict[str, str] = {}
+    for line in path.read_text(errors="replace").splitlines():
+        if "=" not in line or line.startswith("#"):
+            continue
+        key, value = line.split("=", 1)
+        result[key] = value.strip().strip('"')
+    return result
+
+
+def hostname_ips() -> list[str]:
+    ips: set[str] = set()
+    hostname_i = run_command(["hostname", "-I"], timeout_s=1.5)
+    if hostname_i["ok"]:
+        ips.update(part for part in hostname_i["stdout"].split() if part)
+    try:
+        for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            address = item[4][0]
+            if address and not address.startswith("127."):
+                ips.add(address)
+    except OSError:
+        pass
+    return sorted(ips)
+
+
+def discover_serial_devices() -> list[dict[str, Any]]:
+    candidates: dict[str, dict[str, Any]] = {}
+    for pattern in ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/serial*", "/dev/ttyAMA*"):
+        for path in sorted(Path("/").glob(pattern.lstrip("/"))):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            resolved = None
+            if path.is_symlink():
+                try:
+                    resolved = str(path.resolve())
+                except OSError:
+                    resolved = None
+            candidates[str(path)] = {
+                "path": str(path),
+                "resolved_path": resolved,
+                "is_symlink": path.is_symlink(),
+                "mode": oct(stat.st_mode & 0o777),
+                "group_read_write": bool(stat.st_mode & 0o060),
+            }
+    return list(candidates.values())
+
+
+def service_status(unit: str) -> dict[str, Any]:
+    active = run_command(["systemctl", "--user", "is-active", unit], timeout_s=2.0)
+    enabled = run_command(["systemctl", "--user", "is-enabled", unit], timeout_s=2.0)
+    show = run_command(
+        [
+            "systemctl",
+            "--user",
+            "show",
+            unit,
+            "--property=LoadState,ActiveState,SubState,ExecMainPID,Result,FragmentPath",
+            "--no-page",
+        ],
+        timeout_s=2.0,
+    )
+    properties: dict[str, str] = {}
+    if show["stdout"]:
+        for line in show["stdout"].splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                properties[key] = value
+    return {
+        "unit": unit,
+        "active": active["stdout"] or ("inactive" if not active["ok"] else "unknown"),
+        "enabled": enabled["stdout"] or ("disabled" if not enabled["ok"] else "unknown"),
+        "properties": properties,
+        "errors": [item["stderr"] for item in (active, enabled, show) if item.get("stderr")],
+    }
+
+
+def service_snapshot(config: CompanionApiConfig) -> dict[str, Any]:
+    return {key: service_status(unit) for key, unit in config.service_units.items()}
+
+
+def control_service(config: CompanionApiConfig, service_id: str, action: str) -> tuple[HTTPStatus, dict[str, Any]]:
+    if not config.allow_service_control:
+        return (
+            HTTPStatus.FORBIDDEN,
+            {
+                "ok": False,
+                "error": "service_control_disabled",
+                "message": "Set VISION_NAV_API_ALLOW_SERVICE_CONTROL=1 to enable service start/stop/restart.",
+            },
+        )
+    if service_id not in config.service_units:
+        return HTTPStatus.NOT_FOUND, {"ok": False, "error": "unknown_service", "service": service_id}
+    if action not in {"start", "stop", "restart"}:
+        return HTTPStatus.NOT_FOUND, {"ok": False, "error": "unknown_service_action", "action": action}
+    unit = config.service_units[service_id]
+    result = run_command(["systemctl", "--user", action, unit], timeout_s=10.0)
+    return (
+        HTTPStatus.OK if result["ok"] else HTTPStatus.INTERNAL_SERVER_ERROR,
+        {
+            "ok": result["ok"],
+            "service": service_id,
+            "unit": unit,
+            "action": action,
+            "command": result,
+            "status": service_status(unit),
+        },
+    )
+
+
+def qgroundcontrol_status(config: CompanionApiConfig) -> dict[str, Any]:
+    executable_path = shutil.which("qgroundcontrol")
+    safe_wrapper_path = shutil.which("qgroundcontrol-safe")
+    appimage_candidates = [
+        Path("/opt/qgroundcontrol/QGroundControl-aarch64.AppImage"),
+        Path("/opt/qgroundcontrol/QGroundControl.AppImage"),
+        Path.home() / "Applications" / "QGroundControl-aarch64.AppImage",
+        Path.home() / "QGroundControl-aarch64.AppImage",
+    ]
+    appimage_path = next((path for path in appimage_candidates if path.exists()), None)
+    installed = bool(executable_path or appimage_path)
+    display = graphical_display_status()
+    processes = qgroundcontrol_processes()
+    serial_users = serial_endpoint_users(config)
+
+    return {
+        "ok": True,
+        "installed": installed,
+        "executable_path": executable_path,
+        "safe_wrapper_path": safe_wrapper_path,
+        "appimage_path": str(appimage_path) if appimage_path else None,
+        "display": display,
+        "running": bool(processes),
+        "processes": processes,
+        "serial_endpoint": config.default_mavlink_endpoint,
+        "serial_users": serial_users,
+        "launch_available": installed and display["available"],
+        "message": (
+            "QGroundControl is ready to launch."
+            if installed and display["available"]
+            else "QGroundControl is installed, but no graphical Pi session is visible to the API."
+            if installed
+            else "QGroundControl is not installed."
+        ),
+    }
+
+
+def qgroundcontrol_processes() -> list[str]:
+    matches: list[str] = []
+    for proc in Path("/proc").glob("[0-9]*"):
+        try:
+            comm = (proc / "comm").read_text(errors="replace").strip()
+            cmdline = (proc / "cmdline").read_bytes().replace(b"\x00", b" ").decode(errors="replace").strip()
+        except OSError:
+            continue
+        argv0 = Path(cmdline.split(" ", 1)[0]).name if cmdline else ""
+        names = {comm.lower(), argv0.lower()}
+        if {"qgroundcontrol", "qgroundcontrol-safe", "qgroundcontrol-aarch64.appimage"} & names:
+            matches.append(f"{proc.name} {cmdline or comm}")
+    return matches
+
+
+def mission_planner_processes() -> list[str]:
+    matches: list[str] = []
+    for proc in Path("/proc").glob("[0-9]*"):
+        try:
+            comm = (proc / "comm").read_text(errors="replace").strip()
+            cmdline = (proc / "cmdline").read_bytes().replace(b"\x00", b" ").decode(errors="replace").strip()
+        except OSError:
+            continue
+        lower = f"{comm} {cmdline}".lower()
+        if "missionplanner.exe" in lower or "mission planner" in lower or "missionplanner" in lower:
+            matches.append(f"{proc.name} {cmdline or comm}")
+    return matches
+
+
+def graphical_display_status() -> dict[str, Any]:
+    return {
+        "available": bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
+        "display": os.environ.get("DISPLAY"),
+        "wayland_display": os.environ.get("WAYLAND_DISPLAY"),
+        "session_type": os.environ.get("XDG_SESSION_TYPE"),
+    }
+
+
+def serial_endpoint_users(config: CompanionApiConfig) -> str:
+    if not config.default_mavlink_endpoint or not config.default_mavlink_endpoint.startswith("serial:"):
+        return ""
+    try:
+        serial_path = parse_mavlink_endpoint(config.default_mavlink_endpoint)[0]
+        serial_result = run_command(["fuser", "-v", serial_path], timeout_s=1.5)
+        return serial_result.get("stdout", "") or serial_result.get("stderr", "")
+    except Exception:
+        return ""
+
+
+def launch_qgroundcontrol(config: CompanionApiConfig, *, stop_status_bridge: bool = False) -> tuple[HTTPStatus, dict[str, Any]]:
+    status = qgroundcontrol_status(config)
+    if not status["installed"]:
+        return HTTPStatus.NOT_FOUND, {"ok": False, "launched": False, "error": "qgroundcontrol_not_installed", "status": status}
+    if not status["display"]["available"]:
+        return (
+            HTTPStatus.CONFLICT,
+            {
+                "ok": False,
+                "launched": False,
+                "error": "graphical_session_unavailable",
+                "message": "Launch QGroundControl from the Raspberry Pi desktop, or run the companion API inside a graphical session.",
+                "status": status,
+            },
+        )
+
+    service_result: dict[str, Any] | None = None
+    if stop_status_bridge:
+        service_result = run_command(
+            ["systemctl", "--user", "stop", config.service_units["status-bridge"]],
+            timeout_s=10.0,
+        )
+
+    executable = status.get("safe_wrapper_path") or status.get("executable_path") or status.get("appimage_path")
+    if not executable:
+        return HTTPStatus.NOT_FOUND, {"ok": False, "launched": False, "error": "qgroundcontrol_executable_missing", "status": status}
+
+    log_path = Path.home() / "DroneTransfer" / "outgoing" / "qgroundcontrol.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab", buffering=0) as log_file:
+        process = subprocess.Popen(
+            [str(executable)],
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    return (
+        HTTPStatus.OK,
+        {
+            "ok": True,
+            "launched": True,
+            "pid": process.pid,
+            "status": qgroundcontrol_status(config),
+            "log_path": str(log_path),
+            "status_bridge_stop": service_result,
+        },
+    )
+
+
+def mission_planner_status(config: CompanionApiConfig) -> dict[str, Any]:
+    executable_path = shutil.which("missionplanner") or shutil.which("MissionPlanner")
+    mono_path = shutil.which("mono")
+    install_candidates = [
+        Path("/opt/missionplanner/MissionPlanner.exe"),
+        Path("/opt/mission-planner/MissionPlanner.exe"),
+        Path.home() / "MissionPlanner" / "MissionPlanner.exe",
+        Path.home() / "missionplanner" / "MissionPlanner.exe",
+    ]
+    install_path = next((path for path in install_candidates if path.exists()), None)
+    installed = bool(executable_path or install_path)
+    display = graphical_display_status()
+    mono_ready = bool(mono_path)
+    launch_available = bool(executable_path and display["available"]) or bool(install_path and mono_ready and display["available"])
+
+    return {
+        "ok": True,
+        "installed": installed,
+        "executable_path": executable_path,
+        "mono_path": mono_path,
+        "install_path": str(install_path) if install_path else None,
+        "display": display,
+        "running": bool(mission_planner_processes()),
+        "processes": mission_planner_processes(),
+        "serial_endpoint": config.default_mavlink_endpoint,
+        "serial_users": serial_endpoint_users(config),
+        "launch_available": launch_available,
+        "compatibility": "mono-experimental" if installed else "not-installed",
+        "message": (
+            "Mission Planner is ready to launch through Mono."
+            if launch_available and install_path
+            else "Mission Planner wrapper is ready to launch."
+            if launch_available
+            else "Mission Planner is installed, but Mono is missing."
+            if installed and not mono_ready and not executable_path
+            else "Mission Planner is installed, but no graphical Pi session is visible to the API."
+            if installed
+            else "Mission Planner is not installed. Windows Mission Planner is still supported through plan/import compatibility."
+        ),
+    }
+
+
+def launch_mission_planner(config: CompanionApiConfig, *, stop_status_bridge: bool = False) -> tuple[HTTPStatus, dict[str, Any]]:
+    status = mission_planner_status(config)
+    if not status["installed"]:
+        return HTTPStatus.NOT_FOUND, {"ok": False, "launched": False, "error": "mission_planner_not_installed", "status": status}
+    if not status["display"]["available"]:
+        return (
+            HTTPStatus.CONFLICT,
+            {
+                "ok": False,
+                "launched": False,
+                "error": "graphical_session_unavailable",
+                "message": "Launch Mission Planner from a graphical Raspberry Pi session, or use native Windows Mission Planner on the desktop.",
+                "status": status,
+            },
+        )
+
+    service_result: dict[str, Any] | None = None
+    if stop_status_bridge:
+        service_result = run_command(
+            ["systemctl", "--user", "stop", config.service_units["status-bridge"]],
+            timeout_s=10.0,
+        )
+
+    command: list[str]
+    executable = status.get("executable_path")
+    install_path = status.get("install_path")
+    mono_path = status.get("mono_path")
+    if executable:
+        command = [str(executable)]
+    elif install_path and mono_path:
+        command = [str(mono_path), str(install_path)]
+    else:
+        return HTTPStatus.CONFLICT, {
+            "ok": False,
+            "launched": False,
+            "error": "mission_planner_launch_unavailable",
+            "message": "Mission Planner requires a wrapper or Mono plus MissionPlanner.exe.",
+            "status": status,
+        }
+
+    log_path = Path.home() / "DroneTransfer" / "outgoing" / "mission-planner.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab", buffering=0) as log_file:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    return (
+        HTTPStatus.OK,
+        {
+            "ok": True,
+            "launched": True,
+            "pid": process.pid,
+            "status": mission_planner_status(config),
+            "log_path": str(log_path),
+            "status_bridge_stop": service_result,
+        },
+    )
+
+
+def latest_runtime_status(config: CompanionApiConfig, *, max_bytes: int = 262_144) -> dict[str, Any]:
+    candidates: list[Path] = []
+    for root in config.status_roots:
+        if not root.exists():
+            continue
+        try:
+            candidates.extend(path for path in root.rglob("runtime_status.json") if path.is_file())
+        except OSError:
+            continue
+    if not candidates:
+        return {
+            "ok": True,
+            "status_found": False,
+            "roots": [str(root) for root in config.status_roots],
+            "status": None,
+        }
+    latest = max(candidates, key=lambda path: path.stat().st_mtime)
+    stat = latest.stat()
+    if stat.st_size > max_bytes:
+        return {
+            "ok": False,
+            "status_found": True,
+            "path": str(latest),
+            "size_bytes": stat.st_size,
+            "error": "runtime_status_too_large",
+        }
+    try:
+        status = json.loads(latest.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status_found": True,
+            "path": str(latest),
+            "size_bytes": stat.st_size,
+            "error": "invalid_runtime_status_json",
+            "message": str(exc),
+        }
+    return {
+        "ok": True,
+        "status_found": True,
+        "path": str(latest),
+        "size_bytes": stat.st_size,
+        "modified_unix_ms": int(stat.st_mtime * 1000),
+        "status": status,
+    }
+
+
+def normalize_mavlink_endpoint(endpoint: str, *, default_serial_baud: int) -> str:
+    value = endpoint.strip()
+    if not value:
+        raise ValueError("MAVLink endpoint is empty")
+    if value.startswith("/dev/"):
+        return f"serial:{value}:{default_serial_baud}"
+    return value
+
+
+def probe_mavlink_heartbeat(endpoint: str, *, timeout_s: float = 4.0, default_serial_baud: int = 921600) -> dict[str, Any]:
+    started = time.monotonic()
+    normalized_endpoint = normalize_mavlink_endpoint(endpoint, default_serial_baud=default_serial_baud)
+    try:
+        mavutil = _load_mavutil()
+        connection_string, baud = parse_mavlink_endpoint(normalized_endpoint)
+        kwargs: dict[str, Any] = {"source_system": 255, "source_component": 0}
+        if baud is not None:
+            kwargs["baud"] = baud
+        connection = mavutil.mavlink_connection(connection_string, **kwargs)
+        try:
+            message = connection.wait_heartbeat(timeout=max(timeout_s, 0.1))
+            if message is None:
+                return {
+                    "ok": False,
+                    "connected": False,
+                    "endpoint": normalized_endpoint,
+                    "status": "timeout",
+                    "message": f"No MAVLink heartbeat within {timeout_s}s",
+                    "duration_s": round(time.monotonic() - started, 3),
+                }
+            return {
+                "ok": True,
+                "connected": True,
+                "endpoint": normalized_endpoint,
+                "status": "heartbeat",
+                "target_system": getattr(connection, "target_system", None),
+                "target_component": getattr(connection, "target_component", None),
+                "duration_s": round(time.monotonic() - started, 3),
+                "heartbeat": {
+                    "type": getattr(message, "type", None),
+                    "autopilot": getattr(message, "autopilot", None),
+                    "base_mode": getattr(message, "base_mode", None),
+                    "system_status": getattr(message, "system_status", None),
+                    "mavlink_version": getattr(message, "mavlink_version", None),
+                },
+            }
+        finally:
+            connection.close()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "connected": False,
+            "endpoint": normalized_endpoint,
+            "status": "error",
+            "message": str(exc),
+            "duration_s": round(time.monotonic() - started, 3),
+        }
+
+
+def probe_mavlink_position(
+    endpoint: str,
+    *,
+    timeout_s: float = 2.0,
+    default_serial_baud: int = 921600,
+    autopilot_hint: str | None = None,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    normalized_endpoint = normalize_mavlink_endpoint(endpoint, default_serial_baud=default_serial_baud)
+    try:
+        mavutil = _load_mavutil()
+        connection_string, baud = parse_mavlink_endpoint(normalized_endpoint)
+        kwargs: dict[str, Any] = {"source_system": 255, "source_component": 0}
+        if baud is not None:
+            kwargs["baud"] = baud
+        connection = mavutil.mavlink_connection(connection_string, **kwargs)
+        heartbeat_autopilot: int | None = None
+        try:
+            deadline = time.monotonic() + max(timeout_s, 0.1)
+            while time.monotonic() < deadline:
+                remaining = max(0.05, deadline - time.monotonic())
+                message = connection.recv_match(
+                    type=["HEARTBEAT", "GLOBAL_POSITION_INT", "GPS_RAW_INT", "GPS2_RAW"],
+                    blocking=True,
+                    timeout=min(remaining, 0.35),
+                )
+                if message is None:
+                    continue
+                message_type = message.get_type()
+                if message_type == "HEARTBEAT":
+                    heartbeat_autopilot = getattr(message, "autopilot", heartbeat_autopilot)
+                    continue
+                packet = mavlink_position_packet(
+                    message,
+                    endpoint=normalized_endpoint,
+                    autopilot_hint=autopilot_hint,
+                    heartbeat_autopilot=heartbeat_autopilot,
+                    duration_s=round(time.monotonic() - started, 3),
+                )
+                if packet is not None:
+                    return packet
+            return {
+                "ok": False,
+                "schema_version": "vision_nav_position_update_v2",
+                "timestamp_utc": utc_now(),
+                "status": "unavailable",
+                "source": "none",
+                "source_state": "no_position",
+                "endpoint": normalized_endpoint,
+                "message": f"No MAVLink position message within {timeout_s}s",
+                "duration_s": round(time.monotonic() - started, 3),
+                "autopilot": autopilot_name(heartbeat_autopilot, autopilot_hint),
+            }
+        finally:
+            connection.close()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "schema_version": "vision_nav_position_update_v2",
+            "timestamp_utc": utc_now(),
+            "status": "unavailable",
+            "source": "none",
+            "source_state": "no_position",
+            "endpoint": normalized_endpoint,
+            "message": str(exc),
+            "duration_s": round(time.monotonic() - started, 3),
+            "autopilot": autopilot_hint or "unknown",
+        }
+
+
+def mavlink_position_packet(
+    message: Any,
+    *,
+    endpoint: str,
+    autopilot_hint: str | None,
+    heartbeat_autopilot: int | None,
+    duration_s: float,
+) -> dict[str, Any] | None:
+    message_type = message.get_type()
+    lat = scaled_mavlink_int(getattr(message, "lat", None), 1e7)
+    lon = scaled_mavlink_int(getattr(message, "lon", None), 1e7)
+    if lat is None or lon is None:
+        return None
+
+    fix_type = optional_int(getattr(message, "fix_type", None))
+    satellites_visible = optional_int(getattr(message, "satellites_visible", None))
+    altitude_m = scaled_mavlink_int(getattr(message, "alt", None), 1000.0)
+    h_acc_m = scaled_mavlink_int(getattr(message, "h_acc", None), 1000.0)
+    v_acc_m = scaled_mavlink_int(getattr(message, "v_acc", None), 1000.0)
+    eph_m = scaled_mavlink_int(getattr(message, "eph", None), 100.0)
+    epv_m = scaled_mavlink_int(getattr(message, "epv", None), 100.0)
+    if message_type == "GLOBAL_POSITION_INT":
+        fix_healthy = True
+        status = "accepted"
+    else:
+        fix_healthy = fix_type is not None and fix_type >= 3
+        status = "accepted" if fix_healthy else "degraded"
+
+    return {
+        "ok": True,
+        "schema_version": "vision_nav_position_update_v2",
+        "timestamp_utc": utc_now(),
+        "status": status,
+        "source": "gps" if fix_healthy else "gps_degraded",
+        "source_state": "gps_primary" if fix_healthy else "gps_degraded",
+        "lat_lon": {"lat": lat, "lon": lon},
+        "altitude_m": altitude_m,
+        "gps_health": {
+            "healthy": fix_healthy,
+            "reason": message_type.lower(),
+            "fix_type": fix_type,
+            "satellites_visible": satellites_visible,
+            "eph_m": eph_m,
+            "h_acc_m": h_acc_m,
+            "v_acc_m": v_acc_m,
+        },
+        "mavlink": {
+            "endpoint": endpoint,
+            "message_type": message_type,
+            "autopilot": autopilot_name(heartbeat_autopilot, autopilot_hint),
+            "duration_s": duration_s,
+        },
+    }
+
+
+def autopilot_name(heartbeat_autopilot: int | None, autopilot_hint: str | None = None) -> str:
+    hint = (autopilot_hint or "").strip().lower()
+    if hint in {"ardupilot", "px4"}:
+        return hint
+    if heartbeat_autopilot is None:
+        return hint or "unknown"
+    try:
+        mavutil = _load_mavutil()
+        name = mavutil.mavlink.enums["MAV_AUTOPILOT"][int(heartbeat_autopilot)].name.lower()
+        if "ardupilotmega" in name:
+            return "ardupilot"
+        if "px4" in name:
+            return "px4"
+        return name.replace("mav_autopilot_", "")
+    except Exception:
+        return hint or str(heartbeat_autopilot)
+
+
+def optional_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def scaled_mavlink_int(value: Any, scale: float) -> float | None:
+    try:
+        if value is None:
+            return None
+        number = float(value)
+        if abs(number) >= 2147483647:
+            return None
+        return number / scale
+    except (TypeError, ValueError):
+        return None
+
+
+def device_snapshot(config: CompanionApiConfig) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "schema_version": API_SCHEMA_VERSION,
+        "timestamp_utc": utc_now(),
+        "hostname": socket.gethostname(),
+        "fqdn": socket.getfqdn(),
+        "ips": hostname_ips(),
+        "user": os.environ.get("USER") or os.environ.get("USERNAME"),
+        "home": str(Path.home()),
+        "repo_root": str(config.repo_root),
+        "default_mavlink_endpoint": config.default_mavlink_endpoint,
+        "default_serial_baud": config.default_serial_baud,
+        "serial_devices": discover_serial_devices(),
+        "os": read_os_release(),
+        "services": service_snapshot(config),
+    }
+
+
+class CompanionApiHandler(BaseHTTPRequestHandler):
+    server_version = "VisionNavCompanionAPI/0.1"
+
+    @property
+    def config(self) -> CompanionApiConfig:
+        return self.server.config  # type: ignore[attr-defined]
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        print(f"{self.address_string()} - {fmt % args}")
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.send_cors_headers()
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        path = parsed.path.rstrip("/") or "/"
+        if path in {"/", "/health", "/api/v1/health"}:
+            self.send_json(
+                {
+                    "ok": True,
+                    "schema_version": API_SCHEMA_VERSION,
+                    "service": "vision_nav_companion_api",
+                    "timestamp_utc": utc_now(),
+                }
+            )
+            return
+        if path == "/api/v1/device":
+            self.send_json(device_snapshot(self.config))
+            return
+        if path == "/api/v1/status":
+            self.send_json(latest_runtime_status(self.config))
+            return
+        if path == "/api/v1/services":
+            self.send_json({"ok": True, "services": service_snapshot(self.config)})
+            return
+        if path == "/api/v1/qgroundcontrol":
+            self.send_json(qgroundcontrol_status(self.config))
+            return
+        if path == "/api/v1/mission-planner":
+            self.send_json(mission_planner_status(self.config))
+            return
+        if path == "/api/v1/mavlink/heartbeat":
+            endpoint = first_query_value(query, "endpoint") or self.config.default_mavlink_endpoint
+            timeout_s = parse_float(first_query_value(query, "timeout_s"), default=4.0)
+            if not endpoint:
+                self.send_json({"ok": False, "error": "missing_mavlink_endpoint"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(
+                probe_mavlink_heartbeat(
+                    endpoint,
+                    timeout_s=timeout_s,
+                    default_serial_baud=self.config.default_serial_baud,
+                )
+            )
+            return
+        if path == "/api/v1/mavlink/position":
+            endpoint = first_query_value(query, "endpoint") or self.config.default_mavlink_endpoint
+            timeout_s = parse_float(first_query_value(query, "timeout_s"), default=2.0)
+            autopilot_hint = first_query_value(query, "autopilot")
+            if not endpoint:
+                self.send_json({"ok": False, "error": "missing_mavlink_endpoint"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(
+                probe_mavlink_position(
+                    endpoint,
+                    timeout_s=timeout_s,
+                    default_serial_baud=self.config.default_serial_baud,
+                    autopilot_hint=autopilot_hint,
+                )
+            )
+            return
+        self.send_json({"ok": False, "error": "not_found", "path": path}, status=HTTPStatus.NOT_FOUND)
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        if path == "/api/v1/mavlink/heartbeat":
+            payload = self.read_json_body()
+            endpoint = str(payload.get("endpoint") or self.config.default_mavlink_endpoint or "")
+            timeout_s = parse_float(payload.get("timeout_s"), default=4.0)
+            if not endpoint:
+                self.send_json({"ok": False, "error": "missing_mavlink_endpoint"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(
+                probe_mavlink_heartbeat(
+                    endpoint,
+                    timeout_s=timeout_s,
+                    default_serial_baud=self.config.default_serial_baud,
+                )
+            )
+            return
+        if path == "/api/v1/mavlink/position":
+            payload = self.read_json_body()
+            endpoint = str(payload.get("endpoint") or self.config.default_mavlink_endpoint or "")
+            timeout_s = parse_float(payload.get("timeout_s"), default=2.0)
+            autopilot_hint = str(payload.get("autopilot") or "")
+            if not endpoint:
+                self.send_json({"ok": False, "error": "missing_mavlink_endpoint"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(
+                probe_mavlink_position(
+                    endpoint,
+                    timeout_s=timeout_s,
+                    default_serial_baud=self.config.default_serial_baud,
+                    autopilot_hint=autopilot_hint,
+                )
+            )
+            return
+        if path == "/api/v1/qgroundcontrol/launch":
+            payload = self.read_json_body()
+            status, body = launch_qgroundcontrol(
+                self.config,
+                stop_status_bridge=bool(payload.get("stop_status_bridge")),
+            )
+            self.send_json(body, status=status)
+            return
+        if path == "/api/v1/mission-planner/launch":
+            payload = self.read_json_body()
+            status, body = launch_mission_planner(
+                self.config,
+                stop_status_bridge=bool(payload.get("stop_status_bridge")),
+            )
+            self.send_json(body, status=status)
+            return
+        prefix = "/api/v1/services/"
+        if path.startswith(prefix):
+            parts = path[len(prefix) :].split("/")
+            if len(parts) == 2:
+                status, body = control_service(self.config, parts[0], parts[1])
+                self.send_json(body, status=status)
+                return
+        self.send_json({"ok": False, "error": "not_found", "path": path}, status=HTTPStatus.NOT_FOUND)
+
+    def read_json_body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            return {}
+        if length > 65_536:
+            raise ValueError("JSON body too large")
+        raw = self.rfile.read(length)
+        try:
+            value = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def send_cors_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Max-Age", "600")
+
+    def send_json(self, body: dict[str, Any], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+        data = json.dumps(body, indent=2, sort_keys=True).encode("utf-8")
+        self.send_response(status)
+        self.send_cors_headers()
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+class CompanionApiServer(ThreadingHTTPServer):
+    def __init__(self, server_address: tuple[str, int], config: CompanionApiConfig) -> None:
+        super().__init__(server_address, CompanionApiHandler)
+        self.config = config
+
+
+def first_query_value(query: dict[str, list[str]], key: str) -> str | None:
+    values = query.get(key)
+    return values[0] if values else None
+
+
+def parse_float(value: Any, *, default: float) -> float:
+    try:
+        if value is None:
+            return default
+        if isinstance(value, list):
+            value = value[0] if value else default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the Drone Vision companion-computer HTTP API.")
+    parser.add_argument("--host", default=os.environ.get("VISION_NAV_API_HOST", "0.0.0.0"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("VISION_NAV_API_PORT", "5000")))
+    parser.add_argument("--repo-root", help="Repository root used in device status metadata.")
+    parser.add_argument("--status-roots", help="Colon-separated roots searched for runtime_status.json.")
+    parser.add_argument("--default-mavlink-endpoint", help="Default MAVLink endpoint for heartbeat probes.")
+    parser.add_argument("--default-serial-baud", type=int, default=int(os.environ.get("VISION_NAV_API_SERIAL_BAUD", "921600")))
+    parser.add_argument("--allow-service-control", action="store_true", help="Allow service start/stop/restart endpoints.")
+    return parser.parse_args()
+
+
+def main() -> None:
+    config = build_config(parse_args())
+    server = CompanionApiServer((config.host, config.port), config)
+    print(f"Drone Vision companion API listening on http://{config.host}:{config.port}")
+    print(f"Status roots: {', '.join(str(root) for root in config.status_roots)}")
+    if config.default_mavlink_endpoint:
+        print(f"Default MAVLink endpoint: {config.default_mavlink_endpoint}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping companion API.")
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

@@ -85,7 +85,7 @@ export function DefenseSection({
   className?: string;
 }) {
   return (
-    <section className={cn("glass-panel rounded-none p-3", className)}>
+    <section className={cn("glass-panel rounded-lg p-3", className)}>
       <h2 className="font-label-caps text-label-caps mb-3 flex items-center gap-2 border-b border-border pb-2 text-slate-300">
         {icon}
         {title}

@@ -1,0 +1,253 @@
+# Handoff Verification And Reproduction
+
+Date: September 5, 2026. Read alongside the
+[technical handoff](technical-handoff-2026-09-05.md).
+These are local development checks, not aircraft or Pi acceptance evidence.
+
+## Verification Ledger
+
+| Check | Observed outcome | Scope |
+| --- | --- | --- |
+| Main `tests/run_unit_tests.py` | 104 checks passed | Explicit project check list, not all pytest files |
+| `scripts/dev/local_preflight.sh` after GitHub integration | Passed all seven stages | Syntax/imports, main checks, synthetic replay and field-template structure; no new field data |
+| Estimator/native targeted suite, default parent thread environment | **292 passed, 1 failed**, 53.51 s | Cross-process versus parent exact numerical equality failed in `test_combined_real_child_matches_separate_operations_with_one_round_trip` |
+| Same 293-test suite, parent BLAS/OpenMP startup limits set to one | **293 passed**, 44.68 s | Real local native binary enabled; numerical environment is part of reproduction |
+| Companion API tests after GitHub integration | **7 passed**, 0.21 s | Mocked/local contracts; no Pi/service/GCS connection |
+| Frontend build before GitHub integration | Passed | Existing Tauri import/chunk-size warnings |
+| Rust check before and after GitHub integration | Passed | macOS arm64, not Windows/Pi execution |
+| Rust tests after GitHub integration | **40 passed**, no failures/ignored tests | Before merge, 33 passed; added upstream tests preserved |
+| Frontend merge validation | Initial TypeScript errors found in old per-device classical defaults; corrected during integration | Final build outcome recorded below |
+| `npm ci` / `npm audit` after GitHub integration | Install passed; audit reports **5 vulnerable packages: 3 high, 2 moderate** | Not automatically upgraded during handoff |
+| Learned/live/native five-file regression | **80 passed, 4 failed**, 39 warnings, 173.06 s; no skips | All failures were native resource-sample assertions in concurrent replay; `psutil` was absent from this separate model environment |
+| Four concurrent replay cases rerun with `psutil` 7.2.2 installed | **4 passed**, 13 warnings, 42.88 s; no skips | Same native/model artifacts and assertions, no source/test relaxation; the other 80 cases were not rerun in this invocation |
+
+Completed frontend and learned/native rerun results are recorded in the final
+verification section below. Do not infer all-platform outcomes from these tests.
+
+### Numerical Failure Must Not Be Hidden
+
+The estimator child now limits detected startup BLAS/OpenMP pools to one thread
+by default. The failing assertion compares complete Python result dictionaries
+between combined child, separate child and parent solves, including floating
+covariance values. With the parent unconstrained, that exact-equality assertion
+failed. Constraining parent numerical pools before Python startup passed the
+same full suite. This establishes environment sensitivity, not a universal
+bitwise reproducibility guarantee or a quantified cross-platform error bound.
+
+No assertion was removed or tolerance widened for this handoff. Investigate
+the magnitude and acceptable numerical parity across platforms before deciding
+whether the test should use a justified tolerance. Hash/identity and safety
+decision checks must remain exact. Thread limits apply to detected native pools,
+not all process threads or libraries loaded later.
+
+### Important Negative Evidence
+
+- Short synthetic native streams offered 20 further frames at 20 Hz, queue
+  capacity two and a 500 ms snapshot receipt-age limit. Recent trials completed
+  without overflow but still counted **zero advancing current global updates**.
+- Faster JSON/private copying and one-thread numerical pools reduce some costs;
+  they do not establish guaranteed progress under the exact-latest snapshot gate.
+- Some older trials overflowed the bounded native queue. Subsequent short
+  passes do not prove sustained overload cannot occur.
+- Template coverage showing eight field conditions is schema/placeholder
+  validation, not eight measured flight datasets.
+- Historical model/native regression: 130 passed, no skips, after the orderly
+  anchor-close fix. Historical timing and synthetic accuracy must not be presented
+  as final-state Pi or X500 measurements.
+
+## Portable Development Setup
+
+Clone and record the exact revision:
+
+```bash
+git clone https://github.com/izrael-fisi/Drone.git
+cd Drone
+git status --short
+git log -5 --oneline
+```
+
+Use Python **3.11** for the estimator/research starting environment. The package
+metadata permits older versions, but the GTSAM/NumPy/native stack has narrower
+tested combinations. Do not install every research extra into the Pi runtime.
+
+On macOS/Linux, a starting estimator environment is:
+
+```bash
+python3.11 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e '.[estimation,geo,mavlink,map-production,runtime-metrics]' pytest
+python tests/run_unit_tests.py
+```
+
+These commands resolve packages from `pyproject.toml`; they are **not a complete
+reproducible lock**. Save installed versions and run compatibility checks. GTSAM
+4.2.2 requires the selected NumPy 1.x environment here; the estimation extra
+caps NumPy below 2 and OpenCV below 4.12. Do not silently override those caps.
+Native C++ OpenCV is separate from the Python wheel.
+
+Main checks can conditionally omit functionality when optional packages are
+absent. For the full learned/model tests, provide Torch, ONNX, ONNX Runtime,
+Pillow and their compatible export dependencies in a **separate** environment
+and follow [local ONNX](learned-local-onnx.md),
+[retrieval](learned-retrieval-replay.md), and
+[map-conditioned student](map-conditioned-student.md). A generic environment
+is not the pinned Bearing-UAV reference environment.
+
+On Windows, use Python 3.11's `py -3.11 -m venv .venv` and
+`.\.venv\Scripts\python.exe` equivalents. Tauri needs Rust/MSVC, Visual Studio
+C++ tools and the Windows webview prerequisites. Follow
+[Windows handoff](windows-11-codex-handoff.md), but do not assume its older
+prototype Python 3.12 example qualifies the current estimator. For native VIO,
+use the documented Linux/macOS build path until Windows portability is verified.
+There is no requirement to add ROS/Gazebo for native compilation.
+
+### Core Commands
+
+```bash
+python tests/run_unit_tests.py
+VISION_NAV_PYTHON="$VIRTUAL_ENV/bin/python" ./scripts/dev/local_preflight.sh
+npm ci --prefix desktop-app
+npm run build --prefix desktop-app
+cargo check --manifest-path desktop-app/src-tauri/Cargo.toml
+cargo test --manifest-path desktop-app/src-tauri/Cargo.toml
+python -m pytest tests/test_companion_api.py -q
+```
+
+The local preflight uses subordinate shell scripts; ensure the chosen environment
+is activated/on PATH as well as setting `VISION_NAV_PYTHON`.
+Do not treat a browser preview as a Tauri SSH/camera/hardware integration test.
+
+### Native Estimator Suite
+
+Build the pinned native adapter as described in
+[ROS-free OpenVINS](openvins-research-replay.md). Requires CMake, C++ compiler,
+OpenCV 4, Eigen, Boost, Ceres and nlohmann-json. Do not vendor generated build
+directories or binaries into Git.
+
+With the estimator environment activated:
+
+```bash
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1
+export PYTHONPATH=src
+export VISION_NAV_OPENVINS_BINARY=research/outputs/openvins-native-build/vision-nav-openvins
+python -m pytest -q \
+  tests/test_bounded_json.py tests/test_alignment_json_benchmark.py \
+  tests/test_alignment_worker.py tests/test_current_alignment_refresh.py \
+  tests/test_delayed_alignment.py tests/test_continuous_alignment.py \
+  tests/test_joint_alignment_transaction.py tests/test_joint_transaction_benchmark.py \
+  tests/test_single_fix_propagation.py tests/test_window_marginalization.py \
+  tests/test_native_snapshot_handoff.py tests/test_live_query_anchors.py \
+  tests/test_px4_boundary.py
+```
+
+Set these environment variables before interpreter startup, including on
+Windows via `$env:VARIABLE = "value"`. A missing native artifact can cause skips;
+inspect the summary. Do not edit hash-bound source while workers are running.
+
+### Actual Learned Model Suite
+
+Use a verified export/model environment, set the same native binary/thread
+variables above, and point to actual parity-checked exports:
+
+```bash
+export VISION_NAV_RETRIEVAL_EXPORT=/absolute/path/to/megaloc-export
+export VISION_NAV_LOCAL_EXPORT=/absolute/path/to/xfeat-lighterglue-export
+python -m pytest -q \
+  tests/test_live_learned_session.py tests/test_live_alignment_observer.py \
+  tests/test_concurrent_learned_replay.py tests/test_inference_worker.py \
+  tests/test_query_anchors.py
+```
+
+These tests use actual engines with synthetic fixtures. They do not train a
+field model or establish aerial-to-map navigation accuracy. Missing dependencies,
+upstream sources or exports must be reported, not counted as equivalent passes.
+Install `.[runtime-metrics]` (the declared `psutil>=7,<8` dependency) in this
+environment too. Merely having it in the separate estimator environment does
+not enable native-process measurements in the model suite.
+
+### RunPod
+
+Use [RunPod Bearing-UAV training](runpod-bearinguav-training.md). It contains
+authentication checks, an isolated Python 3.11 reference setup, hash-pinned
+Linux lock, CUDA probes, one-epoch training and resume/cleanup guidance.
+Credentials are machine-local and not in Git. Confirm cost, duration, storage
+and cleanup before provisioning. No RunPod job or resource is required merely
+to read or build this repository.
+
+## Artifacts Not In Git
+
+Transfer or reproduce these separately before expecting full research replay:
+
+| Artifact | Required transfer metadata |
+| --- | --- |
+| Captures and independent reference | Session manifest, frame/raw-IMU/attitude logs, clock audit, checksums, site/split membership, permissions |
+| Calibration | Measured intrinsics/extrinsics, image geometry, clock/noise evidence, installed hardware identity |
+| Maps/surfaces | Reference and deployment manifests, imagery/COG/STAC, CRS/origin/vertical datum, surface masks, tile/index/cache files and licenses |
+| Model releases | Original checkpoint, source revision/license, preprocessing, ONNX export, parity cases, model card and hashes |
+| Native binary | Platform/toolchain/build manifest and clean pinned OpenVINS source; rebuild for a different architecture |
+| Experiments | Raw trace, reports, environment/package versions, training optimizer/RNG state, dataset membership and artifact lineage |
+| Credentials | Reauthenticate locally; never copy secrets into repository documents, fixtures or support bundles |
+
+The previous machine's ignored local evidence includes:
+
+- `research/outputs/openvins-native-build/vision-nav-openvins`
+  with observed SHA-256
+  `e89ddd42fbe01f5993cc32396ad8f6d54363bc910a199f52f01827450df2afcb`;
+  source revision `69488123ed9362dd44b6f28e7f4680abbff1442b`.
+- `research/outputs/megaloc-onnx-cpu-20260905-r2/` and
+  `research/outputs/local-onnx-cpu-20260905-r2/`.
+- `research/outputs/handoff-estimator-20260905-r1/` and
+  `research/outputs/current-refresh-regression-20260905-r1/` for the passing
+  constrained-parent run and preceding failing default-parent run.
+- `research/outputs/current-refresh-bounded-20260905-r1/` and `-r2/` for
+  short streaming observations, not qualification results.
+- `research/outputs/handoff-learned-20260905-r1/` for the 80-pass/four-failure
+  model run. Native metric records explicitly report `psutil_not_installed`;
+  all four failing cases reached 160 completed native batches without a worker
+  error before failing the sample-count assertion.
+- `research/outputs/handoff-learned-metrics-20260905-r2/` for the four passing
+  concurrent replay reruns with `psutil` 7.2.2 installed in the model environment.
+- `research/outputs/alignment-numeric-chunks-20260905-r1.json` for serialization
+  measurements against a frozen former incremental serializer, not Pi speedups.
+- `/tmp/drone-estimator-tests`, `/tmp/drone-bearing-modern` and
+  `/tmp/drone-nav-geo-tests` were local test environments only. They are not
+  portable or durable installations and must not appear in production settings.
+
+Before moving artifacts, generate/verify a file checksum manifest, verify
+licensing and remove secrets. Do not weaken export source-hash checks to reuse
+an incompatible artifact; re-export and verify parity under the new source.
+
+## Security And Verification Limitations
+
+The handoff dependency audit reports high findings in `browserslist`, `nanoid`
+and `postcss`, and moderate findings in `react-router`/`react-router-dom`.
+These are package audit results, not a demonstrated exploit of this app.
+Review and update deliberately; no automatic major dependency upgrade was made.
+
+No UI walkthrough, Windows native build, installed Pi run, physical X500 test,
+remote Proxigo authentication/API test, RunPod GPU job or PX4 wire publication
+was performed during this handoff. Build/test success does not cover those gaps.
+The Git candidate scan found no private-key/token-pattern matches or generated
+model/archive payloads in the new research files; this is not a complete
+historical secret audit or security certification.
+
+## Final Verification
+
+- Final merged frontend: **build passed** after resolving per-device classical
+  defaults and required status props in the new map shell. No algorithms or
+  navigation gates were changed by that merge fix. Vite still warns about mixed
+  static/dynamic Tauri imports and large application/MapLibre chunks.
+- Final merged Rust: `cargo check` passed and `cargo test` passed **40 tests**.
+- Learned concurrent replay rerun after installing the existing declared
+  `psutil` dependency: **4 passed in 42.88 s**, 13 existing warnings, no skips.
+  The larger preceding run had 80 other passes; it was not repeated in full.
+- Local checks used Node 24.3.0 and Rust 1.96.0 on macOS arm64. Estimator/model
+  suites used Python 3.11/NumPy 1.26.4/GTSAM 4.2.2; the main/preflight environment
+  used Python 3.13. These are environment observations, not a portable lock.
+
+No default-environment exact-equality test was disabled, and dependency audit
+findings remain open. This handoff preserves known limitations instead of
+claiming all-platform/flight qualification.

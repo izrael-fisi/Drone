@@ -372,7 +372,7 @@ function TerrainProfilePreview({ profile }: { profile?: BundleTerrainProfile }) 
   const minAgl = profile?.estimated_agl_m?.min;
 
   return (
-    <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
+    <div className="rounded-lg border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
       <div className="flex items-center justify-between gap-2 text-[11px]">
         <span className="text-emerald-300/60">Terrain profile preview</span>
         <span className="font-mono text-emerald-300/80">
@@ -399,8 +399,8 @@ function TerrainProfilePreview({ profile }: { profile?: BundleTerrainProfile }) 
         />
       </svg>
       <div className="flex justify-between text-[10px] text-emerald-300/60">
-        <span><span className="inline-block h-2 w-2 rounded-none bg-amber-300/90 mr-1" />Terrain</span>
-        <span><span className="inline-block h-2 w-2 rounded-none bg-cyan-300/90 mr-1" />Flight</span>
+        <span><span className="inline-block h-2 w-2 rounded-lg bg-amber-300/90 mr-1" />Terrain</span>
+        <span><span className="inline-block h-2 w-2 rounded-lg bg-cyan-300/90 mr-1" />Flight</span>
         <span>{typeof relief === "number" ? `relief ${relief.toFixed(1)} m` : `${Math.round(Math.max(...allY) - Math.min(...allY))} m span`}</span>
       </div>
     </div>
@@ -807,6 +807,32 @@ function buildQgcPlan(plan: MissionPlanPayload) {
   };
 }
 
+function buildMissionPlannerWaypoints(plan: MissionPlanPayload) {
+  const rows = plan.mission.items.map((item, index) => {
+    const command = qgcCommandForItem(item.type);
+    const frame = 3; // MAV_FRAME_GLOBAL_RELATIVE_ALT
+    const current = index === 0 ? 1 : 0;
+    const params = [
+      Number(item.holdSec || 0).toFixed(6),
+      "0.000000",
+      "0.000000",
+      "0.000000",
+    ];
+    return [
+      index,
+      current,
+      frame,
+      command,
+      ...params,
+      item.lat.toFixed(7),
+      item.lon.toFixed(7),
+      Number(item.altitudeM || plan.mission.altitude_m).toFixed(3),
+      1,
+    ].join("\t");
+  });
+  return ["QGC WPL 110", ...rows, ""].join("\n");
+}
+
 function normalizeGnssDeniedReadiness(value: unknown): GnssDeniedReadiness {
   const source = value && typeof value === "object" ? value as Partial<GnssDeniedReadiness> : {};
   const pointOrNull = (point: unknown): PlanPoint | null => {
@@ -870,6 +896,46 @@ function normalizeTerrainPlanningMetadata(value: unknown): TerrainPlanningMetada
 }
 
 function parseImportedPlan(text: string): ImportedMissionPlanPayload {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("QGC WPL")) {
+    const missionItems = trimmed
+      .split(/\r?\n/)
+      .slice(1)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.split(/\s+/))
+      .filter((parts) => parts.length >= 12)
+      .map((parts) => {
+        const command = Number(parts[3]);
+        const lat = Number(parts[8]);
+        const lon = Number(parts[9]);
+        const altitudeM = Number(parts[10]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        return {
+          id: generateId(),
+          type: command === 22 ? "takeoff" : command === 21 ? "land" : "waypoint",
+          lat,
+          lon,
+          altitudeM: Number.isFinite(altitudeM) ? altitudeM : DEFAULT_MISSION_DEFAULTS.altitudeM,
+          speedMps: DEFAULT_MISSION_DEFAULTS.speedMps,
+          holdSec: Number(parts[4] ?? 0) || 0,
+        } satisfies MissionItem;
+      })
+      .filter((item): item is MissionItem => Boolean(item));
+
+    return {
+      mission: {
+        altitude_m: missionItems[0]?.altitudeM ?? DEFAULT_MISSION_DEFAULTS.altitudeM,
+        speed_mps: DEFAULT_MISSION_DEFAULTS.speedMps,
+        items: missionItems,
+      },
+      geofence: { polygon: [] },
+      rally_points: [],
+      gnss_denied: DEFAULT_GNSS_DENIED_READINESS,
+      terrain_planning: normalizeTerrainPlanningMetadata(undefined),
+    };
+  }
+
   const parsed = JSON.parse(text);
   if (parsed?.mission?.items && Array.isArray(parsed.mission.items)) {
     return {
@@ -1011,7 +1077,7 @@ function MapReadoutControl({
             event.stopPropagation();
             recenter();
           }}
-          className="rounded-none border border-border bg-bg-card px-2 py-1 font-mono text-[11px] text-slate-300 hover:border-cyan-500/40 hover:text-cyan-300"
+          className="rounded-lg border border-border bg-bg-card px-2 py-1 font-mono text-[11px] text-slate-300 hover:border-cyan-500/40 hover:text-cyan-300"
         >
           Recenter
         </button>
@@ -1109,7 +1175,8 @@ function MissionMap({
       <FitSelectedRegion regionId={region?.id} bounds={bounds} center={center} />
       <TileLayer
         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-        maxZoom={19}
+        maxZoom={23}
+        maxNativeZoom={23}
       />
       {mosaicUrl && bounds && <ImageOverlay key={mosaicUrl} url={mosaicUrl} bounds={bounds} opacity={1} />}
       <MapInteractionLayer onAddPoint={onAddPoint} onCursorMove={setCursorPoint} />
@@ -1117,7 +1184,7 @@ function MissionMap({
       {missionPath.length > 1 && (
         <Polyline
           positions={missionPath.map((waypoint) => [waypoint.lat, waypoint.lon])}
-          pathOptions={{ color: "#06B6D4", weight: 3 }}
+          pathOptions={{ color: "#FF6600", weight: 3 }}
         />
       )}
       {fencePoints.length > 2 && (
@@ -1385,6 +1452,7 @@ export function MissionPlanner() {
   const qgcPlan = useMemo(() => buildQgcPlan(planPayload), [planPayload]);
   const missionPlanJson = useMemo(() => JSON.stringify(planPayload, null, 2), [planPayload]);
   const qgcPlanJson = useMemo(() => JSON.stringify(qgcPlan, null, 2), [qgcPlan]);
+  const missionPlannerWaypoints = useMemo(() => buildMissionPlannerWaypoints(planPayload), [planPayload]);
   const planFingerprint = useMemo(
     () => JSON.stringify({
       mission: planPayload,
@@ -1643,11 +1711,22 @@ export function MissionPlanner() {
     setPlanMessage(`Exported mission plan to ${path}`);
   };
 
+  const exportMissionPlannerWaypoints = async () => {
+    const path = await saveDialog({
+      title: "Export Mission Planner waypoints",
+      defaultPath: selectedRegion ? `${selectedRegion.name.replace(/\s+/g, "_")}.waypoints` : "drone_mission.waypoints",
+      filters: [{ name: "Mission Planner Waypoints", extensions: ["waypoints", "txt"] }],
+    });
+    if (!path) return;
+    await writeTextFile(path, missionPlannerWaypoints);
+    setPlanMessage(`Exported Mission Planner waypoints to ${path}`);
+  };
+
   const importMissionPlan = async () => {
     const path = await open({
       multiple: false,
       title: "Import mission plan",
-      filters: [{ name: "Mission Plan", extensions: ["plan", "json"] }],
+      filters: [{ name: "Mission Plan", extensions: ["plan", "json", "waypoints", "txt"] }],
     });
     if (!path || typeof path !== "string") return;
     try {
@@ -2109,7 +2188,7 @@ export function MissionPlanner() {
             </div>
             <button
               type="button"
-              onClick={() => navigate("/camera-vision")}
+              onClick={() => navigate("/system/vision")}
               className="border border-border bg-bg-surface/90 px-3 py-2 text-left backdrop-blur-sm hover:border-cyan-500/40"
             >
               <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">Vision</div>
@@ -2119,7 +2198,7 @@ export function MissionPlanner() {
 
           {!selectedRegion && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="rounded-none border border-border bg-bg-surface/90 px-4 py-3 text-center shadow-lg">
+              <div className="rounded-lg border border-border bg-bg-surface/90 px-4 py-3 text-center shadow-lg">
                 <MapIcon size={18} className="text-cyan-400 mx-auto mb-2" />
                 <div className="text-sm font-medium text-slate-200">Select a map source</div>
                 <div className="text-xs text-slate-500 mt-1">Choose one from the Map Source panel.</div>
@@ -2162,7 +2241,7 @@ export function MissionPlanner() {
                   key={layer}
                   onClick={() => setActiveLayer(layer)}
                   className={cn(
-                    "rounded-none border px-2 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors",
+                    "rounded-lg border px-2 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors",
                     activeLayer === layer ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-300" : "border-border text-slate-400",
                   )}
                   title={meta.hint}
@@ -2173,13 +2252,16 @@ export function MissionPlanner() {
             })}
           </div>
 
-          <div className="rounded-none border border-border bg-bg-surface p-3 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
               <button onClick={importMissionPlan} className="btn-secondary justify-center text-xs py-1.5">
                 <FileInput size={13} /> Import
               </button>
               <button onClick={exportMissionPlan} className="btn-secondary justify-center text-xs py-1.5">
                 <Download size={13} /> Export .plan
+              </button>
+              <button onClick={exportMissionPlannerWaypoints} className="btn-secondary justify-center text-xs py-1.5">
+                <Download size={13} /> Export WPL
               </button>
             </div>
             {planMessage && <p className="text-[11px] text-emerald-400">{planMessage}</p>}
@@ -2257,7 +2339,7 @@ export function MissionPlanner() {
                       if (e.key === "Enter" || e.key === " ") setSelectedMissionItemId(item.id);
                     }}
                     className={cn(
-                      "w-full rounded-none border px-2 py-2 text-left transition-colors cursor-pointer",
+                      "w-full rounded-lg border px-2 py-2 text-left transition-colors cursor-pointer",
                       selectedMissionItemId === item.id ? "border-cyan-500/40 bg-cyan-500/5" : "border-border hover:border-border-strong",
                     )}
                   >
@@ -2305,7 +2387,7 @@ export function MissionPlanner() {
               </div>
 
               {selectedMissionItem && (
-                <div className="rounded-none border border-border bg-bg-surface p-3 space-y-3">
+                <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-3">
                   <div className="text-xs font-medium text-slate-300">Selected item</div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -2331,7 +2413,7 @@ export function MissionPlanner() {
           )}
 
           {activeLayer !== "mission" && (
-            <div className="rounded-none border border-border bg-bg-surface p-3 space-y-3">
+            <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium text-slate-200">{LAYER_META[activeLayer].label}</div>
@@ -2354,7 +2436,7 @@ export function MissionPlanner() {
             </div>
           )}
 
-          <div className="rounded-none border border-border bg-bg-surface p-3 space-y-2">
+          <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-2">
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div>
                 <span className="block text-slate-500">Items</span>
@@ -2381,7 +2463,7 @@ export function MissionPlanner() {
             </div>
           </div>
 
-          <div className="rounded-none border border-border bg-bg-surface p-3 space-y-2">
+          <div className="rounded-lg border border-border bg-bg-surface p-3 space-y-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs font-medium text-slate-300">Mission state</span>
               <span className={missionPlanStateClass(missionPlanStateStatus)}>
@@ -2394,7 +2476,7 @@ export function MissionPlanner() {
               </span>
             </div>
             <p className="text-[11px] text-slate-500">{missionPlanState.detail}</p>
-            <div className="flex items-center justify-between gap-3 rounded-none border border-border/70 bg-bg-card px-2 py-1.5">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-bg-card px-2 py-1.5">
               <span className="text-[11px] text-slate-500">Plan file</span>
               <span className={planFileDirty ? "badge-yellow" : planFilePath ? "badge-green" : "badge-yellow"}>
                 {planFileDirty || !planFilePath ? <AlertTriangle size={11} /> : <CheckCircle2 size={11} />}
@@ -2437,7 +2519,7 @@ export function MissionPlanner() {
                       setBundleResult(null);
                     }}
                     className={cn(
-                      "w-full text-left rounded-none border p-3 transition-colors",
+                      "w-full text-left rounded-lg border p-3 transition-colors",
                       selectedRegionId === region.id
                         ? "border-cyan-500/40 bg-cyan-500/5"
                         : "border-border hover:border-border-strong",
@@ -2487,7 +2569,7 @@ export function MissionPlanner() {
                 <span className="text-slate-200 font-medium">Shadow-only</span>
               </div>
             </div>
-            <Link to="/vision-pipeline" className="btn-secondary justify-center text-xs py-1.5">
+            <Link to="/system/vision" className="btn-secondary justify-center text-xs py-1.5">
               Open Vision Pipeline Settings
             </Link>
             <p className="text-[11px] text-slate-500">
@@ -2511,7 +2593,7 @@ export function MissionPlanner() {
                 </span>
               ))}
             </div>
-            <div className="flex items-center justify-between rounded-none border border-border px-3 py-2">
+            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
               <div>
                 <div className="text-sm text-slate-200">Satellite source disabled</div>
                 <div className="text-[11px] text-slate-500">
@@ -2521,24 +2603,24 @@ export function MissionPlanner() {
               <button
                 onClick={() => updateGnssDeniedReadiness({ satellite_source_disabled: !gnssDeniedReadiness.satellite_source_disabled })}
                 className={cn(
-                  "w-11 h-6 rounded-none border transition-colors relative",
+                  "w-11 h-6 rounded-lg border transition-colors relative",
                   gnssDeniedReadiness.satellite_source_disabled ? "bg-cyan-500/20 border-cyan-500/50" : "bg-bg-elevated border-border",
                 )}
               >
                 <span
                   className={cn(
-                    "absolute top-0.5 h-5 w-5 rounded-none bg-slate-300 transition-transform",
+                    "absolute top-0.5 h-5 w-5 rounded-lg bg-slate-300 transition-transform",
                     gnssDeniedReadiness.satellite_source_disabled ? "translate-x-5" : "translate-x-0.5",
                   )}
                 />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="rounded-none border border-border bg-bg-card px-2 py-1.5">
+              <div className="rounded-lg border border-border bg-bg-card px-2 py-1.5">
                 <span className="block text-slate-500">Map reset</span>
                 <span className="font-mono text-slate-300">{planPointLabel(gnssDeniedReadiness.map_position_reset)}</span>
               </div>
-              <div className="rounded-none border border-border bg-bg-card px-2 py-1.5">
+              <div className="rounded-lg border border-border bg-bg-card px-2 py-1.5">
                 <span className="block text-slate-500">Home reset</span>
                 <span className="font-mono text-slate-300">{planPointLabel(gnssDeniedReadiness.home_position)}</span>
               </div>
@@ -2588,7 +2670,7 @@ export function MissionPlanner() {
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
               <ScanSearch size={14} className="text-cyan-400" /> Terrain Planning
             </h3>
-            <div className="flex items-start justify-between gap-3 rounded-none border border-border bg-bg-surface px-3 py-2">
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-bg-surface px-3 py-2">
               <div className="min-w-0">
                 <div className="text-sm text-slate-200">Offline map cache</div>
                 <div className="text-[11px] text-slate-500 font-mono truncate">
@@ -2643,15 +2725,15 @@ export function MissionPlanner() {
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2 text-[11px]">
-              <div className="rounded-none border border-border bg-bg-surface px-2 py-1.5">
+              <div className="rounded-lg border border-border bg-bg-surface px-2 py-1.5">
                 <span className="block text-slate-500">Distance</span>
                 <span className="text-slate-200 font-medium">{(terrainPlanningMetadata.route_segmentation.mission_distance_m / 1000).toFixed(2)} km</span>
               </div>
-              <div className="rounded-none border border-border bg-bg-surface px-2 py-1.5">
+              <div className="rounded-lg border border-border bg-bg-surface px-2 py-1.5">
                 <span className="block text-slate-500">Segments</span>
                 <span className="text-slate-200 font-medium">{terrainPlanningMetadata.route_segmentation.estimated_segment_count || "n/a"}</span>
               </div>
-              <div className="rounded-none border border-border bg-bg-surface px-2 py-1.5">
+              <div className="rounded-lg border border-border bg-bg-surface px-2 py-1.5">
                 <span className="block text-slate-500">Profile</span>
                 <span className="text-slate-200 font-medium">{terrainProfileLabel(bundleResult?.geospatial_health?.terrain_profile)}</span>
               </div>
@@ -2666,7 +2748,7 @@ export function MissionPlanner() {
                   </span>
                 </div>
                 {terrainPlanningMetadata.route_segmentation.segments.slice(0, 4).map((segment) => (
-                  <div key={segment.id} className="flex items-center justify-between gap-2 rounded-none border border-border/70 bg-bg-card px-2 py-1 text-[11px]">
+                  <div key={segment.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-bg-card px-2 py-1 text-[11px]">
                     <span className="font-mono text-slate-400">S{segment.sequence}</span>
                     <span className="truncate text-slate-500">
                       {segment.start.interpolated ? "split" : `item ${(segment.start.mission_item_index ?? 0) + 1}`}
@@ -2685,7 +2767,7 @@ export function MissionPlanner() {
             )}
             <div className="space-y-1">
               {terrainChecks.map((check) => (
-                <div key={check.label} className="flex items-center justify-between gap-3 rounded-none border border-border/70 bg-bg-card px-2 py-1.5 text-[11px]">
+                <div key={check.label} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-bg-card px-2 py-1.5 text-[11px]">
                   <span className="text-slate-500">{check.label}</span>
                   <span className="text-slate-300 font-mono">{check.value}</span>
                   <span className={terrainConstraintClass(check.status)}>
@@ -2761,8 +2843,8 @@ export function MissionPlanner() {
                       <span className="truncate font-mono">{file}</span>
                       <span>{pct.toFixed(0)}%</span>
                     </div>
-                    <div className="h-1.5 bg-bg-elevated rounded-none overflow-hidden">
-                      <div className="h-full bg-cyan-500 rounded-none transition-all" style={{ width: `${pct}%` }} />
+                    <div className="h-1.5 bg-bg-elevated rounded-lg overflow-hidden">
+                      <div className="h-full bg-cyan-500 rounded-lg transition-all" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 ))}
@@ -2776,7 +2858,7 @@ export function MissionPlanner() {
             <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
               <RadioTower size={14} className="text-cyan-400" /> Runtime And MAVLink
             </h3>
-            <div className="flex items-center justify-between rounded-none border border-border px-3 py-2">
+            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
               <div>
                 <div className="text-sm text-slate-200">Send MAVLink vision messages</div>
                 <div className="text-[11px] text-slate-500 font-mono">{activeDevice.mavlink_endpoint || "No endpoint configured"}</div>
@@ -2785,13 +2867,13 @@ export function MissionPlanner() {
               <button
                 onClick={() => setEnableMavlink((v) => !v)}
                 className={cn(
-                  "w-11 h-6 rounded-none border transition-colors relative",
+                  "w-11 h-6 rounded-lg border transition-colors relative",
                   enableMavlink ? "bg-cyan-500/20 border-cyan-500/50" : "bg-bg-elevated border-border",
                 )}
               >
                 <span
                   className={cn(
-                    "absolute top-0.5 h-5 w-5 rounded-none bg-slate-300 transition-transform",
+                    "absolute top-0.5 h-5 w-5 rounded-lg bg-slate-300 transition-transform",
                     enableMavlink ? "translate-x-5" : "translate-x-0.5",
                   )}
                 />
@@ -2846,7 +2928,7 @@ export function MissionPlanner() {
           </div>
 
           {bundleResult && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-none px-3 py-2 text-emerald-400 text-sm space-y-1">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 text-emerald-400 text-sm space-y-1">
               <div className="flex items-center gap-2">
                 <CheckCircle2 size={15} /> Bundle ready: <span className="font-mono text-xs truncate">{bundleResult.bundle_dir}</span>
               </div>
@@ -2900,7 +2982,7 @@ export function MissionPlanner() {
                 </div>
               )}
               <div className="grid grid-cols-3 gap-2 pt-1 text-[11px]">
-                <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
+                <div className="rounded-lg border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-emerald-300/60">Checksums</span>
                     <span className={checksumBadgeClass(bundleResult.geospatial_health?.checksums?.status)}>
@@ -2916,7 +2998,7 @@ export function MissionPlanner() {
                       : ""}
                   </div>
                 </div>
-                <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
+                <div className="rounded-lg border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-emerald-300/60">Source</span>
                     <span className="font-mono text-emerald-300/80 truncate">
@@ -2930,7 +3012,7 @@ export function MissionPlanner() {
                       || "map source"}
                   </div>
                 </div>
-                <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
+                <div className="rounded-lg border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-emerald-300/60">Terrain profile</span>
                     <span className="font-mono text-emerald-300/80 truncate">
@@ -2947,7 +3029,7 @@ export function MissionPlanner() {
               </div>
               <TerrainProfilePreview profile={bundleResult.geospatial_health?.terrain_profile} />
               {bundleResult.geospatial_health?.map_quality?.heatmap?.cells?.length ? (
-                <div className="rounded-none border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
+                <div className="rounded-lg border border-emerald-500/15 bg-bg-base/40 px-2 py-1.5 space-y-1.5">
                   <div className="flex items-center justify-between gap-2 text-[11px]">
                     <span className="text-emerald-300/60">Map quality heatmap</span>
                     <span className="font-mono text-emerald-300/80">
@@ -2963,16 +3045,16 @@ export function MissionPlanner() {
                     {bundleResult.geospatial_health.map_quality.heatmap.cells.map((cell) => (
                       <div
                         key={cell.tile_id ?? `${cell.row}-${cell.col}`}
-                        className={cn("h-2 rounded-none", qualityCellClass(cell.quality))}
+                        className={cn("h-2 rounded-lg", qualityCellClass(cell.quality))}
                         title={`${cell.tile_id ?? "tile"}: ${formatHealthLabel(cell.quality)} ${Math.round(cell.feature_density_per_mpx ?? 0)} features/Mpx`}
                       />
                     ))}
                   </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-emerald-300/60">
-                    <span><span className="inline-block h-2 w-2 rounded-none bg-red-400/80 mr-1" />Low</span>
-                    <span><span className="inline-block h-2 w-2 rounded-none bg-amber-300/80 mr-1" />Fair</span>
-                    <span><span className="inline-block h-2 w-2 rounded-none bg-cyan-300/80 mr-1" />Good</span>
-                    <span><span className="inline-block h-2 w-2 rounded-none bg-emerald-300/80 mr-1" />Dense</span>
+                    <span><span className="inline-block h-2 w-2 rounded-lg bg-red-400/80 mr-1" />Low</span>
+                    <span><span className="inline-block h-2 w-2 rounded-lg bg-amber-300/80 mr-1" />Fair</span>
+                    <span><span className="inline-block h-2 w-2 rounded-lg bg-cyan-300/80 mr-1" />Good</span>
+                    <span><span className="inline-block h-2 w-2 rounded-lg bg-emerald-300/80 mr-1" />Dense</span>
                     {bundleResult.geospatial_health.map_quality.heatmap.omitted_tile_count
                       ? <span>{bundleResult.geospatial_health.map_quality.heatmap.omitted_tile_count} hidden</span>
                       : null}
@@ -3015,7 +3097,7 @@ export function MissionPlanner() {
           )}
 
           {error && (
-            <div className="rounded-none border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 whitespace-pre-wrap">
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300 whitespace-pre-wrap">
               {error}
             </div>
           )}

@@ -355,6 +355,102 @@ Export PX4 parameters from QGroundControl to `~/px4.params`, then:
 VISION_NAV_PX4_PARAMS=$HOME/px4.params ./scripts/pi/check_px4_params.sh
 ```
 
+## Companion Edge API
+
+The desktop app expects the Pi to expose a lightweight companion API on port
+`5000`. The API reports device identity, service state, latest
+`runtime_status.json`, available serial devices, and MAVLink heartbeat probes.
+
+Install and enable the user services:
+
+```bash
+cd ~/Drone
+./scripts/pi/install_vision_nav_service.sh
+sudo loginctl enable-linger $USER
+systemctl --user start drone-vision-nav-api.service
+systemctl --user start drone-vision-nav-status-bridge.service
+```
+
+Check from the Pi:
+
+```bash
+curl http://127.0.0.1:5000/health
+curl http://127.0.0.1:5000/api/v1/device
+curl -X POST http://127.0.0.1:5000/api/v1/mavlink/heartbeat \
+  -H 'Content-Type: application/json' \
+  -d '{"endpoint":"serial:/dev/ttyACM0:921600","timeout_s":4}'
+```
+
+From the desktop, use `http://<pi-ip>:5000`. Keep service control disabled
+unless the Pi is on a trusted private network:
+
+```bash
+# Optional, trusted LAN only:
+VISION_NAV_API_ALLOW_SERVICE_CONTROL=1 systemctl --user restart drone-vision-nav-api.service
+```
+
+Docker alternative:
+
+```bash
+cd ~/Drone
+VISION_NAV_API_MAVLINK_ENDPOINT=serial:/dev/ttyACM0:921600 \
+  ./scripts/pi/start_companion_api_docker.sh
+```
+
+## QGroundControl On The Pi
+
+Install the ARM64 QGroundControl AppImage on the companion computer when you
+want local Pixhawk setup, parameter inspection, and log access from a Pi desktop
+session:
+
+```bash
+cd ~/Drone
+./scripts/pi/install_qgroundcontrol.sh
+qgroundcontrol --appimage-help
+```
+
+The installer writes:
+
+- `/opt/qgroundcontrol/QGroundControl-aarch64.AppImage`
+- `/usr/local/bin/qgroundcontrol`
+- `/usr/local/bin/qgroundcontrol-safe`
+
+The desktop app reads `/api/v1/qgroundcontrol` from the companion Edge API to
+show whether QGroundControl is installed, whether a graphical Pi session is
+visible, and whether QGroundControl is already running. The app launch action
+uses `/api/v1/qgroundcontrol/launch`; it refuses cleanly when the API has no
+`DISPLAY` or `WAYLAND_DISPLAY`.
+
+QGroundControl and the telemetry status bridge cannot both own a direct serial
+Pixhawk endpoint at the same time. When launching QGroundControl through the app,
+the launcher requests that `drone-vision-nav-status-bridge.service` stop first
+so QGroundControl can use the Pixhawk link.
+
+## ArduPilot Mission Planner Compatibility
+
+Mission Planner is the primary ArduPilot ground-control application. Native
+Windows Mission Planner remains the recommended path for full ArduPilot setup.
+For a Raspberry Pi desktop session, the repo includes an optional Mono-based
+installer:
+
+```bash
+cd ~/Drone
+./scripts/pi/install_mission_planner.sh
+missionplanner-safe
+```
+
+The installer writes:
+
+- `/opt/missionplanner/MissionPlanner.exe`
+- `/usr/local/bin/missionplanner`
+- `/usr/local/bin/missionplanner-safe`
+
+The companion Edge API exposes `/api/v1/mission-planner` and
+`/api/v1/mission-planner/launch`. The desktop app groups QGroundControl and
+Mission Planner under the left-nav **Ground Control** pane, where operators can
+select PX4 or ArduPilot compatibility, check install/display state, and launch a
+GCS after stopping the status bridge to release the serial MAVLink endpoint.
+
 ## Learned Shadow Runtime
 
 The active Pi runtime consumes a versioned `MapRelease`, `ModelRelease`, and

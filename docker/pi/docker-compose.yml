@@ -23,3 +23,44 @@ services:
       - /run/udev:/run/udev:ro
     working_dir: /workspace
     command: ["python", "-m", "vision_nav.match_frame_to_map", "--help"]
+  vision-nav-api:
+    image: drone-vision-nav:pi
+    build:
+      context: ../..
+      dockerfile: docker/pi/Dockerfile
+    network_mode: host
+    privileged: true
+    environment:
+      PYTHONUNBUFFERED: "1"
+      VISION_NAV_API_HOST: "0.0.0.0"
+      VISION_NAV_API_PORT: "5000"
+      VISION_NAV_RUNTIME_STATUS_ROOTS: "/transfer/outgoing:/data:/workspace"
+      VISION_NAV_API_MAVLINK_ENDPOINT: "${VISION_NAV_API_MAVLINK_ENDPOINT:-}"
+      VISION_NAV_API_SERIAL_BAUD: "${VISION_NAV_API_SERIAL_BAUD:-921600}"
+      VISION_NAV_API_ALLOW_SERVICE_CONTROL: "${VISION_NAV_API_ALLOW_SERVICE_CONTROL:-0}"
+    env_file:
+      - ../../config/pi/vision-nav.env.example
+    volumes:
+      - ../../data:/data
+      - ../../logs:/logs
+      - ../../map_bundles:/maps
+      - ../../config:/config:ro
+      - ../../transfer:/transfer
+      - ../..:/workspace
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+    working_dir: /workspace
+    command:
+      [
+        "python",
+        "-m",
+        "vision_nav.companion_api",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5000",
+        "--repo-root",
+        "/workspace",
+        "--status-roots",
+        "/transfer/outgoing:/data:/workspace"
+      ]

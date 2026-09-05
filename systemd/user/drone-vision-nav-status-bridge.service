@@ -1,0 +1,16 @@
+[Unit]
+Description=Drone Vision MAVLink Status Bridge
+Documentation=%h/Drone/docs/raspberry-pi-setup.md
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Drone
+EnvironmentFile=-%h/Drone/config/pi/vision-nav.env
+ExecStart=%h/Drone/scripts/pi/run_status_bridge.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=60
+
+[Install]
+WantedBy=default.target

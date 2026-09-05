@@ -2,6 +2,12 @@
 
 Use this guide when moving active development to a Windows 11 desktop.
 
+For current scope, maturity and research dependencies, read the
+[LLM handoff](../LLM_HANDOFF.md) first. The older setup below covers desktop and
+prototype tools; native VIO/estimation research has separate Python 3.11 and
+native-library requirements in the [verification guide](handoff-verification-2026-09-05.md).
+Git does not include trained weights, maps, captured data or native binaries.
+
 ## Clone
 
 Open PowerShell:

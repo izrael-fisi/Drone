@@ -23,9 +23,13 @@ export function mergeDiscoveryHistory(
 ) {
   const byKey = new Map<string, PiDiscoveryCandidate>();
   for (const candidate of [...incoming, ...previous]) {
-    const key = `${candidate.host}:${candidate.port}`;
+    const key = `${(candidate.resolved_ip || candidate.host).toLowerCase()}:${candidate.port}`;
     const existing = byKey.get(key);
-    if (!existing || candidate.last_seen_unix_ms > existing.last_seen_unix_ms || candidate.ssh_open) {
+    if (
+      !existing
+      || candidate.ssh_open && !existing.ssh_open
+      || candidate.last_seen_unix_ms > existing.last_seen_unix_ms
+    ) {
       byKey.set(key, candidate);
     }
   }

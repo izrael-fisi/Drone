@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 venv_python="${VISION_NAV_PYTHON:-$HOME/drone_vision_nav_venv/bin/python}"
 model_release="${VISION_NAV_MODEL_RELEASE:-$HOME/drone-data/model_releases/pi5_crossview_nav_v1/model_release.json}"
-artifact_root="${VISION_NAV_MODEL_ARTIFACT_ROOT:-$(dirname "$model_release")}" 
+artifact_root="${VISION_NAV_MODEL_ARTIFACT_ROOT:-$(dirname "$model_release")}"
 
 if [[ ! -x "$venv_python" ]]; then
   echo "Missing Python venv: $venv_python" >&2

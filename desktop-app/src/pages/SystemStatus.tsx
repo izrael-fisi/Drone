@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { Activity, AlertTriangle, Cpu, Database, Map, Radio, RefreshCw, Server } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { loadPipelineConfig } from "../lib/pipelineConfig";
 import { useAppStore } from "../lib/store";
 import { cmd } from "../lib/tauri";
@@ -52,6 +52,7 @@ function serviceBadge(ok: boolean, degraded = false) {
 
 export function SystemStatus() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { activeDeviceId, devices, regions } = useAppStore();
   const activeDevice = devices.find((device) => device.id === activeDeviceId);
   const downloadedRegions = regions.filter((region) => region.last_downloaded);
@@ -60,10 +61,14 @@ export function SystemStatus() {
   const [position, setPosition] = useState<DronePositionUpdate | null>(null);
   const [telemetryMessage, setTelemetryMessage] = useState("Waiting for position packets");
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<StatusTab>("diagnostics");
+  const [activeTab, setActiveTab] = useState<StatusTab>(location.pathname.startsWith("/mavlink") ? "mavlink" : "diagnostics");
   const [terminalInput, setTerminalInput] = useState("");
   const [manualLogs, setManualLogs] = useState<Array<{ message: string; tone: LogTone }>>([]);
   const port = Number(localStorage.getItem("vision_nav_position_udp_port") || 17660);
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/mavlink")) setActiveTab("mavlink");
+  }, [location.pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,9 +119,9 @@ export function SystemStatus() {
       return;
     }
     if (command.includes("map")) navigate("/maps");
-    if (command.includes("mission")) navigate("/mission-planner");
-    if (command.includes("device") || command.includes("vehicle")) navigate("/vehicle-manager");
-    if (command.includes("vision") || command.includes("pipeline")) navigate("/camera-vision");
+    if (command.includes("mission")) navigate("/maps/planner");
+    if (command.includes("device") || command.includes("vehicle")) navigate("/system");
+    if (command.includes("vision") || command.includes("pipeline")) navigate("/system/vision");
     const message =
       command === "status"
         ? `System status: ${activeDevice ? activeDevice.name : "no active device"}, ${downloadedRegions.length} maps, telemetry ${sourceLabel(position)}.`
@@ -300,10 +305,10 @@ export function SystemStatus() {
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <Shortcut label="Device" icon={<Server size={13} />} onClick={() => navigate("/vehicle-manager")} />
-                <Shortcut label="Vision" icon={<Cpu size={13} />} onClick={() => navigate("/camera-vision")} />
+                <Shortcut label="Device" icon={<Server size={13} />} onClick={() => navigate("/system")} />
+                <Shortcut label="Vision" icon={<Cpu size={13} />} onClick={() => navigate("/system/vision")} />
                 <Shortcut label="Maps" icon={<Map size={13} />} onClick={() => navigate("/maps")} />
-                <Shortcut label="Mission" icon={<Radio size={13} />} onClick={() => navigate("/mission-planner")} />
+                <Shortcut label="Mission" icon={<Radio size={13} />} onClick={() => navigate("/maps/planner")} />
               </div>
 
               <div className="rounded border border-amber-500/25 bg-amber-500/5 p-3 text-xs text-amber-100/80">

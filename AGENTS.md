@@ -3,6 +3,13 @@
 This file is the first-stop context for Codex or another coding agent after
 cloning the repo, especially on a Windows 11 development machine.
 
+For a conversation-independent transfer, first read `LLM_HANDOFF.md`,
+`docs/technical-handoff-2026-09-05.md`, and
+`docs/handoff-verification-2026-09-05.md`. They distinguish implementation from
+targets, document test limitations and list artifacts excluded from Git.
+Immediate priority is camera/capture, current-state estimation and training;
+desktop expansion can wait. No learned aircraft transport is enabled.
+
 ## Project Goal
 
 Build a GNSS-denied drone navigation stack with two active sections:
@@ -36,7 +43,7 @@ navigation path. Those documents supersede the older prototype architecture.
 ## Key Directories
 
 - `src/vision_nav/vio/` and `research/native/openvins/`: opt-in ROS-free native
-  local VIO research replay. Pinned OpenVINS GPL code is not an approved product
+  local VIO research replay and finite live experiments. Pinned OpenVINS GPL code is not an approved product
   dependency. KLT tracks local motion only; learned map matching is unchanged.
   Native posterior covariance must not be relabeled as independent smoother
   factor noise. No Pi service or PX4 publication is enabled by this adapter.
@@ -53,6 +60,10 @@ navigation path. Those documents supersede the older prototype architecture.
 - `scripts/pi/`: Raspberry Pi setup, validation, runtime, field capture, status
   bridge, and support-bundle wrappers.
 - `desktop-app/`: Tauri + React operator app.
+- The currently routed map-first app is mainly `src/App.tsx`,
+  `src/components/Layout.tsx`, and `src/pages/Dashboard.tsx` inside desktop-app.
+  Many older page routes now open shared docks. Trace imports/routes before
+  editing an old page; do not recreate duplicate controls or classical defaults.
 - `desktop-app/export-preview/`: source files for the Windows browser-preview
   zip package.
 - `docs/`: operator, hardware, PX4, desktop app, and Windows handoff docs.
@@ -138,3 +149,6 @@ See `docs/windows-11-codex-handoff.md` for the Windows setup path.
   node modules, and Rust targets out of Git.
 - Before pushing, run at least `npm run build` for the desktop app and
   `cargo check` in `desktop-app/src-tauri`.
+- Freeze source edits while hash-bound native/model worker tests run. Report
+  missing artifacts and skipped tests explicitly; green contract tests do not
+  prove current global output, Pi performance, model accuracy or flight readiness.
