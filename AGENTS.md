@@ -61,9 +61,15 @@ navigation path. Those documents supersede the older prototype architecture.
   bridge, and support-bundle wrappers.
 - `desktop-app/`: Tauri + React operator app.
 - The currently routed map-first app is mainly `src/App.tsx`,
-  `src/components/Layout.tsx`, and `src/pages/Dashboard.tsx` inside desktop-app.
-  Many older page routes now open shared docks. Trace imports/routes before
+  `src/platform/` (Proxigo shell: product registry, entitlements, dock,
+  command palette, account/settings), `src/products/macula-vps/` (VPS panels
+  and bottom dock), `src/products/airspace-weather/` (second product), `src/platform/api/`
+  (backend connection, discovery, Rust-routed HTTP) and
+  `src/pages/Dashboard.tsx` (shared map; VPS tools show only in the VPS view)
+  inside desktop-app. Many
+  older page routes now open shared docks. Trace imports/routes before
   editing an old page; do not recreate duplicate controls or classical defaults.
+  New products register a `ProductModule`; see `docs/desktop-platform.md`.
 - `desktop-app/export-preview/`: source files for the Windows browser-preview
   zip package.
 - `docs/`: operator, hardware, PX4, desktop app, and Windows handoff docs.

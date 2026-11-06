@@ -13,6 +13,11 @@ import { cmd } from "../lib/tauri";
 import { proxigo } from "../lib/proxigo";
 import type { DownloadProgress, DronePositionUpdate, MapProvider, MapProviderId, MapUsageEstimate, Profile, Region, SavedMission } from "../lib/types";
 import { cn, formatDate, formatMegabytes } from "../lib/utils";
+import { useActiveProduct, useEntitlements, useMapLayersInView, usePlatformContext } from "../platform/hooks";
+import { usePlatformMapStore } from "../platform/mapStore";
+import { productById } from "../platform/registry";
+import type { PlatformMapClick, PlatformMapLayer } from "../platform/types";
+import { MACULA_VPS_ID } from "../products/macula-vps";
 
 function regionCenter(region?: Region): [number, number] {
   if (!region) return [37.775, -122.418];
@@ -610,6 +615,18 @@ export function Dashboard() {
   const { profile, setProfile, devices, regions, activeDeviceId, addRegion, proxigoSession, setProxigoSession, cloudAccount, setCloudAccount, setLastUsageEvent } = useAppStore();
   const { rightDockOpen, resetRightDock, pushRightDock, mapSearchTarget, selectedMissionId, setSelectedMissionId, setLivePosition, setMapSearchTarget } = useShellStore();
   const activeDevice = devices.find((device) => device.id === activeDeviceId);
+  // The shared map shows the active product's tools and layers only. VPS map
+  // tooling (map cuts, missions, connection HUD, aircraft) is part of the
+  // Macula VPS view; the Overview and other products see VPS data only
+  // through its published platform layers.
+  const activeProduct = useActiveProduct();
+  const { entitled } = useEntitlements();
+  const platformCtx = usePlatformContext();
+  const vpsView = activeProduct?.id === MACULA_VPS_ID;
+  const viewLayers = useMapLayersInView();
+  const productMapCursor = usePlatformMapStore((state) => state.cursor);
+  const setPlatformMapApi = usePlatformMapStore((state) => state.setApi);
+  const ProductMapOverlay = activeProduct?.MapOverlay;
   const readyMaps = regions.filter((region) => region.last_downloaded);
   const [selectedMap, setSelectedMap] = useState<MapSelectionValue>("world");
   const selectedRegion = selectedMap !== "world" ? regions.find((region) => region.id === selectedMap) : undefined;
@@ -840,6 +857,28 @@ export function Dashboard() {
       cancelled = true;
     };
   }, [apiKeys, borderCutShape, cutEstimateBounds, cutEstimateReady, cutEstimateZoom, multiLayerMap, orderedBorderPoints, selectedReadyProviderIds]);
+
+  const mapViewportRef = useRef(mapViewport);
+  mapViewportRef.current = mapViewport;
+  useEffect(() => {
+    setPlatformMapApi(mapApi
+      ? { focus: mapApi.focus, fitPoints: mapApi.fitPoints, getView: () => mapViewportRef.current }
+      : null);
+  }, [mapApi, setPlatformMapApi]);
+  useEffect(() => () => setPlatformMapApi(null), [setPlatformMapApi]);
+
+  const handlePlatformMapClick = useCallback((click: PlatformMapClick) => {
+    if (activeProduct) {
+      const ownHit = click.hit && viewLayers.some((layer) => layer.id === click.hit?.layerId && layer.productId === activeProduct.id);
+      activeProduct.onMapClick?.(ownHit ? click : { position: click.position }, platformCtx);
+      return;
+    }
+    // Overview: a click on a product's point opens it in that product.
+    if (!click.hit) return;
+    const layer = viewLayers.find((item) => item.id === click.hit?.layerId);
+    const owner = layer ? productById(layer.productId) : undefined;
+    if (owner && entitled.has(owner.id)) owner.onMapClick?.(click, platformCtx);
+  }, [activeProduct, entitled, platformCtx, viewLayers]);
 
   const openMapsPanel = () => {
     resetRightDock();
@@ -1254,24 +1293,27 @@ export function Dashboard() {
         <OperatorMap
           center={normalizeMapCenter(mapCenter)}
           zoom={mapZoom}
-          mapPolygon={mapPolygon}
-          borderPoints={!missionMode ? orderedBorderPoints : []}
-          waypoints={!missionMode ? waypoints : []}
-          missionMode={missionMode}
-          activeMissionOverlays={activeMissionOverlays}
-          currentPosition={showAircraftMarker ? currentPosition : null}
+          mapPolygon={vpsView ? mapPolygon : []}
+          borderPoints={vpsView && !missionMode ? orderedBorderPoints : []}
+          waypoints={vpsView && !missionMode ? waypoints : []}
+          missionMode={vpsView && missionMode}
+          activeMissionOverlays={vpsView ? activeMissionOverlays : []}
+          currentPosition={vpsView && showAircraftMarker ? currentPosition : null}
           positionState={positionState}
-          mode={toolMode}
+          mode={vpsView ? toolMode : "idle"}
+          idleCursor={productMapCursor}
           setMapApi={setMapApi}
           onViewportChange={setMapViewport}
           onDrawBox={handleDrawBox}
           onDrawPoint={handleDrawPoint}
+          onMapClick={handlePlatformMapClick}
+          platformLayers={viewLayers}
         />
       </div>
 
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-bg-base/45 via-transparent to-bg-base/50" />
 
-      <MapRightControls
+      {vpsView && <MapRightControls
         regions={regions}
         activeMap={activeMap}
         selectedMap={selectedMap}
@@ -1321,7 +1363,7 @@ export function Dashboard() {
         onToggleMissionSelection={toggleMissionSelection}
         onSelectAllMissions={() => setSelectedMissionIds(missionsForActiveMap.map((mission) => mission.id))}
         onClearMissionSelection={() => setSelectedMissionIds([])}
-      />
+      />}
       <MapZoomControls
         onZoomIn={() => mapApi?.zoomIn()}
         onZoomOut={() => mapApi?.zoomOut()}
@@ -1329,7 +1371,13 @@ export function Dashboard() {
         zoomReady={Boolean(mapApi)}
       />
 
-      <section className={cn("pointer-events-none absolute top-3 z-[1100] w-[320px] rounded-lg border border-border bg-bg-base/92 p-3 shadow-2xl backdrop-blur-sm transition-[left] duration-200", hudLeftClass)}>
+      {ProductMapOverlay && !vpsView && (
+        <div className={cn("pointer-events-none absolute top-3 z-[1100] transition-[left] duration-200", hudLeftClass)}>
+          <ProductMapOverlay ctx={platformCtx} />
+        </div>
+      )}
+
+      {vpsView && <section className={cn("pointer-events-none absolute top-3 z-[1100] w-[320px] rounded-lg border border-border bg-bg-base/92 p-3 shadow-2xl backdrop-blur-sm transition-[left] duration-200", hudLeftClass)}>
         <div className="flex items-center gap-2">
           <span className={cn("ops-led", activeDevice ? "ops-led-ready" : "ops-led-offline")} />
           <Activity size={13} className={activeDevice ? "text-status-ready" : "text-slate-500"} />
@@ -1352,7 +1400,7 @@ export function Dashboard() {
             tone={positionState}
           />
         </div>
-      </section>
+      </section>}
     </div>
   );
 }
@@ -1372,6 +1420,12 @@ type OperatorMapProps = {
   onViewportChange: (viewport: MapViewport) => void;
   onDrawBox: (points: [number, number][]) => void;
   onDrawPoint: (point: [number, number]) => void;
+  /** Clicks while no VPS draw tool is active, with any platform point hit. */
+  onMapClick: (click: PlatformMapClick) => void;
+  /** Cursor requested by the active product while no VPS draw tool is active. */
+  idleCursor: string | null;
+  /** Overlays contributed by licensed product modules (see src/platform). */
+  platformLayers: PlatformMapLayer[];
 };
 
 function OperatorMap(props: OperatorMapProps) {
@@ -1403,6 +1457,9 @@ function OperatorLeafletMap({
   onViewportChange,
   onDrawBox,
   onDrawPoint,
+  onMapClick,
+  idleCursor,
+  platformLayers,
 }: OperatorMapProps) {
   return (
     <MapContainer
@@ -1418,7 +1475,7 @@ function OperatorLeafletMap({
       zoomControl={false}
     >
       <LeafletViewportController center={center} zoom={zoom} setMapApi={setMapApi} onViewportChange={onViewportChange} />
-      <LeafletDrawController mode={mode} onPoint={onDrawPoint} onBox={onDrawBox} />
+      <LeafletDrawController mode={mode} onPoint={onDrawPoint} onBox={onDrawBox} onIdleClick={onMapClick} idleCursor={idleCursor} />
       <TileLayer
         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         maxZoom={MAP_MAX_ZOOM}
@@ -1439,6 +1496,7 @@ function OperatorLeafletMap({
       {mapPolygon.length > 0 && (
         <Polygon positions={mapPolygon} pathOptions={{ color: "#FF6600", fillColor: "#FF6600", fillOpacity: 0.08, weight: 2 }} />
       )}
+      <LeafletPlatformLayers layers={platformLayers} onPointClick={mode === "idle" ? onMapClick : undefined} />
       {missionMode && activeMissionOverlays.map((mission, index) => (
         <LeafletMissionOverlay key={mission.id} mission={mission} index={index} />
       ))}
@@ -1461,6 +1519,75 @@ function OperatorLeafletMap({
         />
       )}
     </MapContainer>
+  );
+}
+
+function LeafletPlatformLayers({
+  layers,
+  onPointClick,
+}: {
+  layers: PlatformMapLayer[];
+  onPointClick?: (click: PlatformMapClick) => void;
+}) {
+  return (
+    <>
+      {layers.flatMap((layer) =>
+        layer.features.map((feature) => {
+          const key = `${layer.id}:${feature.id}`;
+          const color = feature.color ?? layer.color;
+          const tooltip = feature.label ? <Tooltip sticky>{`${feature.label} - ${layer.label}`}</Tooltip> : null;
+          if (feature.kind === "point") {
+            return (
+              <CircleMarker
+                key={key}
+                center={feature.position}
+                radius={7}
+                bubblingMouseEvents={!onPointClick}
+                pathOptions={{ color: "#0B0C0D", fillColor: color, fillOpacity: 0.9, weight: 2 }}
+                eventHandlers={onPointClick ? {
+                  click: () => onPointClick({ position: feature.position, hit: { layerId: layer.id, featureId: feature.id } }),
+                } : undefined}
+              >
+                {tooltip}
+              </CircleMarker>
+            );
+          }
+          if (feature.kind === "line") {
+            return (
+              <Polyline key={key} positions={feature.positions} pathOptions={{ color, weight: 2, opacity: 0.9 }}>
+                {tooltip}
+              </Polyline>
+            );
+          }
+          return (
+            <Polygon key={key} positions={feature.positions} pathOptions={{ color, fillColor: color, fillOpacity: 0.06, weight: 1.5, dashArray: "4 4" }}>
+              {tooltip}
+            </Polygon>
+          );
+        }),
+      )}
+    </>
+  );
+}
+
+function platformLayerCollection(layers: PlatformMapLayer[]): MapGeoJsonCollection {
+  return collection(
+    layers.flatMap((layer) =>
+      layer.features.map((feature) => {
+        const id = `${layer.id}:${feature.id}`;
+        const properties = {
+          kind: `platform-${feature.kind}`,
+          tint: feature.color ?? layer.color,
+          label: feature.label ?? null,
+          layer: layer.label,
+          layerId: layer.id,
+          featureId: feature.id,
+        };
+        if (feature.kind === "point") return pointFeature(id, feature.position, properties);
+        if (feature.kind === "line") return lineFeature(id, feature.positions, properties);
+        return polygonFeature(id, feature.positions, properties);
+      }),
+    ),
   );
 }
 
@@ -1533,10 +1660,14 @@ function LeafletDrawController({
   mode,
   onPoint,
   onBox,
+  onIdleClick,
+  idleCursor,
 }: {
   mode: MapToolMode;
   onPoint: (point: [number, number]) => void;
   onBox: (points: [number, number][]) => void;
+  onIdleClick: (click: PlatformMapClick) => void;
+  idleCursor: string | null;
 }) {
   const boxStartRef = useRef<L.LatLng | null>(null);
   const boxPreviewRef = useRef<L.Rectangle | null>(null);
@@ -1551,7 +1682,11 @@ function LeafletDrawController({
 
   const map = useMapEvents({
     click(event) {
-      if (mode === "idle" || mode === "box") return;
+      if (mode === "idle") {
+        onIdleClick({ position: [event.latlng.lat, event.latlng.lng] });
+        return;
+      }
+      if (mode === "box") return;
       onPoint([event.latlng.lat, event.latlng.lng]);
     },
     mousedown(event) {
@@ -1596,7 +1731,7 @@ function LeafletDrawController({
   });
   useEffect(() => {
     const container = map.getContainer();
-    container.style.cursor = mode === "idle" ? "" : "crosshair";
+    container.style.cursor = mode === "idle" ? idleCursor ?? "" : "crosshair";
     return () => {
       container.style.cursor = "";
       boxDragCleanupRef.current?.();
@@ -1605,7 +1740,7 @@ function LeafletDrawController({
       clearBoxPreview(map);
       boxStartRef.current = null;
     };
-  }, [map, mode]);
+  }, [idleCursor, map, mode]);
   return null;
 }
 
@@ -1712,7 +1847,10 @@ function OperatorMapLibreMap({
   onViewportChange,
   onDrawBox,
   onDrawPoint,
+  onMapClick,
+  idleCursor,
   onRendererFailure,
+  platformLayers,
 }: OperatorMapProps & {
   onRendererFailure: () => void;
 }) {
@@ -1746,8 +1884,10 @@ function OperatorMapLibreMap({
       ? collection([pointFeature("aircraft", currentPosition, { kind: "aircraft", role: "aircraft", state: positionState })])
       : EMPTY_GEOJSON;
 
-    return { activeMap, drawAreas, drawLines, drawPoints, missions, aircraft };
-  }, [activeMissionOverlays, borderPoints, currentPosition, mapPolygon, positionState, waypoints]);
+    const platform = platformLayerCollection(platformLayers);
+
+    return { activeMap, drawAreas, drawLines, drawPoints, missions, aircraft, platform };
+  }, [activeMissionOverlays, borderPoints, currentPosition, mapPolygon, platformLayers, positionState, waypoints]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -1871,6 +2011,7 @@ function OperatorMapLibreMap({
     setMapSourceData(map, "mission-lines", overlayData.missions.lines);
     setMapSourceData(map, "mission-points", overlayData.missions.points);
     setMapSourceData(map, "aircraft", overlayData.aircraft);
+    setMapSourceData(map, "platform-features", overlayData.platform);
   }, [overlayData, ready]);
 
   useEffect(() => {
@@ -1907,7 +2048,21 @@ function OperatorMapLibreMap({
     };
 
     const clickHandler = (event: MapMouseEvent) => {
-      if (mode === "idle" || mode === "box") return;
+      if (mode === "idle") {
+        const position: [number, number] = [wrapMapLatitude(event.lngLat.lat), wrapMapLongitude(event.lngLat.lng)];
+        const hit = map.getLayer("platform-points")
+          ? map.queryRenderedFeatures(event.point, { layers: ["platform-points"] })[0]
+          : undefined;
+        const layerId = hit?.properties?.layerId;
+        const featureId = hit?.properties?.featureId;
+        onMapClick(
+          typeof layerId === "string" && typeof featureId === "string"
+            ? { position, hit: { layerId, featureId } }
+            : { position },
+        );
+        return;
+      }
+      if (mode === "box") return;
       onDrawPoint([wrapMapLatitude(event.lngLat.lat), wrapMapLongitude(event.lngLat.lng)]);
     };
     const mouseDownHandler = (event: MapMouseEvent) => {
@@ -1941,16 +2096,27 @@ function OperatorMapLibreMap({
         document.removeEventListener("mouseup", mouseUpHandler);
       };
     };
+    const baseCursor = mode === "idle" ? idleCursor ?? "" : "crosshair";
+    const pointEnter = () => {
+      if (mode === "idle" && !idleCursor) map.getCanvas().style.cursor = "pointer";
+    };
+    const pointLeave = () => {
+      map.getCanvas().style.cursor = baseCursor;
+    };
     map.on("click", clickHandler);
     map.on("mousedown", mouseDownHandler);
-    map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair";
+    map.on("mouseenter", "platform-points", pointEnter);
+    map.on("mouseleave", "platform-points", pointLeave);
+    map.getCanvas().style.cursor = baseCursor;
     return () => {
       map.off("click", clickHandler);
       map.off("mousedown", mouseDownHandler);
+      map.off("mouseenter", "platform-points", pointEnter);
+      map.off("mouseleave", "platform-points", pointLeave);
       map.getCanvas().style.cursor = "";
       cleanupBoxDrag();
     };
-  }, [mode, onDrawBox, onDrawPoint]);
+  }, [idleCursor, mode, onDrawBox, onDrawPoint, onMapClick]);
 
   return <div ref={containerRef} className="mission-map h-full w-full" />;
 }
@@ -1960,7 +2126,7 @@ function setMapSourceData(map: MapLibreMap, sourceId: string, data: MapGeoJsonCo
 }
 
 function addOperatorMapLayers(map: MapLibreMap) {
-  const sourceIds = ["active-map", "draw-areas", "draw-lines", "draw-points", "box-preview-area", "box-preview-line", "mission-areas", "mission-lines", "mission-points", "aircraft"];
+  const sourceIds = ["active-map", "draw-areas", "draw-lines", "draw-points", "box-preview-area", "box-preview-line", "mission-areas", "mission-lines", "mission-points", "aircraft", "platform-features"];
   sourceIds.forEach((sourceId) => {
     if (!map.getSource(sourceId)) {
       map.addSource(sourceId, { type: "geojson", data: EMPTY_GEOJSON });
@@ -1978,6 +2144,38 @@ function addOperatorMapLayers(map: MapLibreMap) {
     type: "line",
     source: "active-map",
     paint: { "line-color": "#FF6600", "line-width": 2 },
+  });
+  map.addLayer({
+    id: "platform-area-fill",
+    type: "fill",
+    source: "platform-features",
+    filter: ["==", ["geometry-type"], "Polygon"],
+    paint: { "fill-color": ["coalesce", ["get", "tint"], "#94A3B8"], "fill-opacity": 0.06 },
+  });
+  map.addLayer({
+    id: "platform-lines",
+    type: "line",
+    source: "platform-features",
+    filter: ["any", ["==", ["geometry-type"], "Polygon"], ["==", ["geometry-type"], "LineString"]],
+    paint: {
+      "line-color": ["coalesce", ["get", "tint"], "#94A3B8"],
+      "line-width": 1.5,
+      "line-opacity": 0.9,
+      "line-dasharray": ["case", ["==", ["geometry-type"], "Polygon"], ["literal", [2, 2]], ["literal", [1, 0]]],
+    },
+  });
+  map.addLayer({
+    id: "platform-points",
+    type: "circle",
+    source: "platform-features",
+    filter: ["==", ["geometry-type"], "Point"],
+    paint: {
+      "circle-radius": 7,
+      "circle-color": ["coalesce", ["get", "tint"], "#94A3B8"],
+      "circle-opacity": 0.9,
+      "circle-stroke-color": "#0B0C0D",
+      "circle-stroke-width": 2,
+    },
   });
   map.addLayer({
     id: "draw-area-fill",

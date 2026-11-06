@@ -1,6 +1,12 @@
-const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) ?? "";
-const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ?? "";
-const PROXIGO_API_URL = (import.meta.env.VITE_PROXIGO_API_URL as string) ?? "https://proxigo.us";
+import { requireDiscovery } from "../platform/api/backend";
+import { ApiError, requestJson } from "../platform/api/http";
+
+/**
+ * Proxigo account API. Server addresses and the auth provider come from the
+ * active backend connection (Proxigo Cloud or a self-hosted server, see
+ * src/platform/api/backend.ts); all requests go through the platform HTTP
+ * layer.
+ */
 
 export interface ProxigoSession {
   access_token: string;
@@ -42,6 +48,12 @@ export interface CloudAccount {
   km2_remaining: number;
   modules: Array<{ serial: string; nickname: string | null; status: string }>;
   org: OrgContext | null;
+  /**
+   * Platform product entitlement keys for the user's organization (e.g.
+   * "macula_vps"). Absent on accounts that predate multi-product licensing;
+   * see src/platform/entitlements.ts for the fallback.
+   */
+  entitled_products?: string[] | null;
 }
 
 export async function setMemberAllowance(
@@ -49,18 +61,7 @@ export async function setMemberAllowance(
   userId: string,
   km2Allowance: number | null
 ): Promise<void> {
-  const res = await fetch(`${(import.meta.env.VITE_PROXIGO_API_URL as string) ?? "https://proxigo.us"}/api/org`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({ user_id: userId, km2_allowance: km2Allowance }),
-  });
-  if (!res.ok) {
-    const d = await res.json();
-    throw new Error(d.error ?? "Failed to update allowance");
-  }
+  await apiCall<unknown>(session, "PATCH", "/api/org", { user_id: userId, km2_allowance: km2Allowance }, "Failed to update allowance");
 }
 
 export interface OrgMapRegion {
@@ -85,22 +86,53 @@ export interface UsageSummary {
   km2_remaining: number;
 }
 
-async function supabasePost(path: string, body: unknown): Promise<Response> {
-  return fetch(`${SUPABASE_URL}${path}`, {
+type ErrorBody = { error?: string; error_description?: string; message?: string; msg?: string } | null;
+
+function errorText(data: unknown, fallback: string) {
+  const body = (data && typeof data === "object" ? data : null) as ErrorBody;
+  return body?.error_description ?? body?.error ?? body?.message ?? body?.msg ?? fallback;
+}
+
+async function authPost(path: string, body: unknown) {
+  const discovery = requireDiscovery();
+  if (discovery.auth.kind !== "supabase") {
+    throw new ApiError(
+      `${discovery.name} uses single sign-on (OIDC), which this version of the desktop app does not support yet.`,
+      "config",
+    );
+  }
+  return requestJson<Record<string, any>>({
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify(body),
+    url: `${discovery.auth.url}${path}`,
+    headers: { apikey: discovery.auth.anonKey },
+    body,
+    backendTls: true,
   });
 }
 
-function apiHeaders(accessToken: string): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${accessToken}`,
-  };
+/**
+ * Call the Proxigo API. Non-2xx responses throw an error whose message
+ * includes "(HTTP <status>)" so `withSession` can detect 401s.
+ */
+async function apiCall<T>(
+  session: ProxigoSession,
+  method: "GET" | "POST" | "PATCH" | "DELETE",
+  path: string,
+  body: unknown,
+  fallbackError: string,
+): Promise<T> {
+  const { apiBaseUrl } = requireDiscovery();
+  const response = await requestJson<T>({
+    method,
+    url: `${apiBaseUrl}${path}`,
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    body,
+    backendTls: true,
+  });
+  if (!response.ok) {
+    throw new ApiError(`${errorText(response.data, fallbackError)} (HTTP ${response.status})`, "http", response.status);
+  }
+  return response.data;
 }
 
 function sessionFromData(data: Record<string, any>): ProxigoSession {
@@ -115,21 +147,17 @@ function sessionFromData(data: Record<string, any>): ProxigoSession {
 
 export const proxigo = {
   async login(email: string, password: string): Promise<ProxigoSession> {
-    const res = await supabasePost("/auth/v1/token?grant_type=password", { email, password });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error_description ?? data.message ?? "Login failed");
-    }
-    return sessionFromData(data);
+    const res = await authPost("/auth/v1/token?grant_type=password", { email, password });
+    if (!res.ok) throw new ApiError(errorText(res.data, "Login failed"), "http", res.status);
+    return sessionFromData(res.data);
   },
 
   async refreshSession(session: ProxigoSession): Promise<ProxigoSession> {
-    const res = await supabasePost("/auth/v1/token?grant_type=refresh_token", {
+    const res = await authPost("/auth/v1/token?grant_type=refresh_token", {
       refresh_token: session.refresh_token,
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error("Session refresh failed — please log in again.");
-    return sessionFromData(data);
+    if (!res.ok) throw new ApiError("Session refresh failed — please log in again.", "http", res.status);
+    return sessionFromData(res.data);
   },
 
   isExpired(session: ProxigoSession): boolean {
@@ -167,55 +195,30 @@ export const proxigo = {
   },
 
   async getAccount(session: ProxigoSession): Promise<CloudAccount> {
-    const res = await fetch(`${PROXIGO_API_URL}/api/account`, {
-      headers: apiHeaders(session.access_token),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Failed to fetch account");
-    return data as CloudAccount;
+    return apiCall<CloudAccount>(session, "GET", "/api/account", undefined, "Failed to fetch account");
   },
 
   async getUsage(session: ProxigoSession): Promise<UsageSummary> {
-    const res = await fetch(`${PROXIGO_API_URL}/api/usage`, {
-      headers: apiHeaders(session.access_token),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Failed to fetch usage");
-    return data as UsageSummary;
+    return apiCall<UsageSummary>(session, "GET", "/api/usage", undefined, "Failed to fetch usage");
   },
 
   async getOrgMaps(session: ProxigoSession): Promise<OrgMapRegion[]> {
-    const res = await fetch(`${PROXIGO_API_URL}/api/org/maps`, {
-      headers: apiHeaders(session.access_token),
-    });
-    if (!res.ok) return [];
-    return res.json();
+    try {
+      return (await apiCall<OrgMapRegion[]>(session, "GET", "/api/org/maps", undefined, "Failed to fetch org maps")) ?? [];
+    } catch {
+      return [];
+    }
   },
 
   async publishOrgMap(
     session: ProxigoSession,
     region: { name: string; lat_min: number; lat_max: number; lon_min: number; lon_max: number; zoom: number; source?: string; location_label?: string }
   ): Promise<OrgMapRegion> {
-    const res = await fetch(`${PROXIGO_API_URL}/api/org/maps`, {
-      method: "POST",
-      headers: apiHeaders(session.access_token),
-      body: JSON.stringify(region),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Failed to publish map");
-    return data;
+    return apiCall<OrgMapRegion>(session, "POST", "/api/org/maps", region, "Failed to publish map");
   },
 
   async removeOrgMap(session: ProxigoSession, id: string): Promise<void> {
-    const res = await fetch(`${PROXIGO_API_URL}/api/org/maps`, {
-      method: "DELETE",
-      headers: apiHeaders(session.access_token),
-      body: JSON.stringify({ id }),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error ?? "Failed to remove org map");
-    }
+    await apiCall<unknown>(session, "DELETE", "/api/org/maps", { id }, "Failed to remove org map");
   },
 
   async reportMapDownload(
@@ -226,22 +229,15 @@ export const proxigo = {
     bbox?: { lat_min: number; lat_max: number; lon_min: number; lon_max: number },
     locationLabel?: string
   ): Promise<{ ok: boolean; total_km2_this_month: number }> {
-    const res = await fetch(`${PROXIGO_API_URL}/api/usage`, {
-      method: "POST",
-      headers: apiHeaders(session.access_token),
-      body: JSON.stringify({
-        km2,
-        module_serial:  moduleSerial,
-        session_id:     sessionId,
-        location_label: locationLabel,
-        lat_min:        bbox?.lat_min,
-        lat_max:        bbox?.lat_max,
-        lon_min:        bbox?.lon_min,
-        lon_max:        bbox?.lon_max,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Failed to report usage");
-    return data;
+    return apiCall(session, "POST", "/api/usage", {
+      km2,
+      module_serial:  moduleSerial,
+      session_id:     sessionId,
+      location_label: locationLabel,
+      lat_min:        bbox?.lat_min,
+      lat_max:        bbox?.lat_max,
+      lon_min:        bbox?.lon_min,
+      lon_max:        bbox?.lon_max,
+    }, "Failed to report usage");
   },
 };

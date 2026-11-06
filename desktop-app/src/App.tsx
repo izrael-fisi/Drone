@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { Layout } from "./components/Layout";
 import { cmd } from "./lib/tauri";
 import { useAppStore } from "./lib/store";
 import { useShellStore, type BottomDockTabId, type RightDockRoute } from "./lib/shellStore";
 import { Dashboard } from "./pages/Dashboard";
 import { Onboarding } from "./pages/Onboarding";
+import { PlatformShell } from "./platform/shell/PlatformShell";
 import { Settings } from "./pages/Settings";
 import { proxigo, type ProxigoSession } from "./lib/proxigo";
 import type { Profile } from "./lib/types";
+import { useBackendStore } from "./platform/api/backend";
+import { ServerPicker } from "./platform/shell/ServerPicker";
 
 export default function App() {
   const { profile, setProfile, setDevices, setRegions, setProxigoSession, setCloudAccount, proxigoSession, cloudAccount } = useAppStore();
@@ -56,7 +58,9 @@ export default function App() {
   }, [cloudAccount?.modules, profile?.proxigo_module_serial, profile, setProfile]);
 
   useEffect(() => {
-    Promise.all([cmd.loadProfile(), cmd.loadDevices(), cmd.loadRegions()])
+    // The backend connection (cloud or self-hosted) must be known before a
+    // saved session can be refreshed.
+    Promise.all([cmd.loadProfile(), cmd.loadDevices(), cmd.loadRegions(), useBackendStore.getState().load()])
       .then(async ([p, d, r]) => {
         setProfile(p);
         setDevices(d);
@@ -125,8 +129,9 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/onboarding" element={<Onboarding />} />
-        <Route element={<Layout />}>
+        <Route element={<PlatformShell />}>
           <Route path="/home" element={<Dashboard />} />
+          <Route path="/overview" element={<OpenHomeSurface rightDock="overview" />} />
           <Route path="/dashboard" element={<OpenHomeSurface />} />
           <Route path="/navigation-panel" element={<OpenHomeSurface />} />
           <Route path="/flights" element={<OpenHomeSurface rightDock="flights" />} />
@@ -212,9 +217,12 @@ function ProxigoLoginScreen({
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const backendConnected = useBackendStore((state) => state.status === "ready" && state.discovery?.auth.kind === "supabase");
+  const [serverPending, setServerPending] = useState(false);
+  const backendReady = backendConnected && !serverPending;
 
   const handleLogin = async () => {
-    if (!email.trim() || !password) return;
+    if (!email.trim() || !password || !backendReady) return;
     setLoading(true);
     setError(null);
     try {
@@ -263,6 +271,7 @@ function ProxigoLoginScreen({
         </div>
 
         <div className="card space-y-4">
+          <ServerPicker onPendingChange={setServerPending} />
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
               Email
@@ -299,7 +308,7 @@ function ProxigoLoginScreen({
 
           <button
             onClick={handleLogin}
-            disabled={loading || !email.trim() || !password}
+            disabled={loading || !backendReady || !email.trim() || !password}
             className="btn-primary w-full justify-center"
           >
             {loading ? (

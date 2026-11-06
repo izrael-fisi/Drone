@@ -13,7 +13,8 @@ The desktop app connects to `proxigo.us` to track map download usage and enforce
 | `src/App.tsx` | Session restore on startup + proactive token refresh |
 | `src/pages/Dashboard.tsx` | `saveBorderCut()` — the real download handler; calls `reportMapDownload` after each tile download |
 | `src/pages/Maps.tsx` | **Dead code** — exports a `Maps` component that is never imported or rendered. Do not add download logic here. |
-| `src/components/Layout.tsx` | AccountPanel — shows quota, refresh button, test button |
+| `src/platform/shell/AccountPanel.tsx` | AccountPanel — shows quota, refresh button, test button |
+| `src/platform/entitlements.ts` | Maps `CloudAccount.entitled_products` to the product modules shown in the shell |
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Drone Vision Nav",
+  "productName": "Proxigo",
   "version": "0.1.0",
   "identifier": "com.izrael-fisi.drone-vision-nav",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Drone Vision Nav",
+        "title": "Proxigo",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,

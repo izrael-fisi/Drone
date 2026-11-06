@@ -1,6 +1,7 @@
 mod commands;
 
 use commands::{
+    backend::{backend_get_connection, backend_set_connection, http_request},
     config_cmd::{
         delete_support_bundle, extract_support_bundle_artifact,
         list_autonomy_evidence_workflow_reports, list_autonomy_readiness_reports,
@@ -39,6 +40,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            backend_get_connection,
+            backend_set_connection,
+            http_request,
             load_profile,
             save_profile,
             load_devices,

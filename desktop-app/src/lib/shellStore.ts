@@ -1,19 +1,12 @@
 import { create } from "zustand";
 import type { DronePositionUpdate } from "./types";
 
-export type RightDockRoute =
-  | "root"
-  | "maps"
-  | "missions"
-  | "vehicle"
-  | "ground-control"
-  | "camera"
-  | "calibration"
-  | "flights"
-  | "settings"
-  | "mav"
-  | "diagnostics-settings"
-  | "account";
+/**
+ * Dock route ids are registered by the platform shell and product modules
+ * (see src/platform/registry.ts), so they are plain strings here.
+ */
+export type RightDockRoute = string;
+/** Macula VPS bottom-dock tabs; other products register their own tab ids. */
 export type BottomDockTabId = "system-status" | "diagnostics" | "parameters" | "messages" | "ekf-init" | "console";
 
 export interface MapSearchTarget {
@@ -30,7 +23,7 @@ interface ShellState {
   rightDockStack: RightDockRoute[];
   rightDockDirection: "forward" | "back";
   bottomDockOpen: boolean;
-  bottomDockTab: BottomDockTabId;
+  bottomDockTab: string;
   mapSearchTarget: MapSearchTarget | null;
   selectedMissionId: string | null;
   livePosition: DronePositionUpdate | null;
@@ -40,7 +33,7 @@ interface ShellState {
   popRightDockTo: (depth: number) => void;
   resetRightDock: () => void;
   setBottomDockOpen: (open: boolean) => void;
-  setBottomDockTab: (tab: BottomDockTabId) => void;
+  setBottomDockTab: (tab: string) => void;
   setMapSearchTarget: (target: MapSearchTarget | null) => void;
   setSelectedMissionId: (id: string | null) => void;
   setLivePosition: (position: DronePositionUpdate | null) => void;

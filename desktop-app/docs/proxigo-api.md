@@ -9,6 +9,38 @@ The Drone desktop app communicates with `proxigo.us` (Next.js + Supabase) to:
 
 All communication is HTTPS. The desktop app uses **Bearer JWT authentication** — no cookies, no sessions, no browser.
 
+The app can also connect to a **self-hosted Proxigo server** (on-prem or a
+private cloud) instead of `proxigo.us`. Such a server must serve the discovery
+document below and the same `/api/...` endpoints. Requests are made from the
+app's Rust side, so self-hosted servers need no CORS headers.
+
+---
+
+## Discovery (self-hosted servers)
+
+`GET {server}/.well-known/proxigo` (no auth):
+
+```json
+{
+  "name": "ACME Proxigo",
+  "api_version": "1",
+  "api_base_url": "https://proxigo.acme.local",
+  "auth": { "kind": "supabase", "url": "https://auth.acme.local", "anon_key": "<publishable key>" },
+  "products": ["macula_vps", "airspace_weather"]
+}
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `name` | no | Shown on the sign-in screen and in Account. Defaults to the host name. |
+| `api_version` | no | API contract version, currently `"1"`. |
+| `api_base_url` | no | Root for `/api/...` paths. Defaults to the server address. |
+| `auth` | yes | `{"kind":"supabase","url","anon_key"}` (supported now), or `{"kind":"oidc","issuer","client_id"}` (accepted, sign-in not implemented yet) |
+| `products` | no | Product entitlement keys licensed for the whole installation. Used when `/api/account` has no `entitled_products`. |
+
+Proxigo Cloud has no discovery request. The app builds the same settings from
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_PROXIGO_API_URL`.
+
 ---
 
 ## Authentication Flow
@@ -24,7 +56,7 @@ Desktop App                         Supabase Auth                 ProxigoWebsite
      │    expires_in, user: {id, email} } │                              │
      │ ◄───────────────────────────────── │                              │
      │                                    │                              │
-     │  Tokens saved to profile.json      │                              │
+     │  Tokens saved to OS credential store│                             │
      │                                    │                              │
      │  GET /api/account                  │                              │
      │  Authorization: Bearer <JWT>       │                              │
@@ -86,9 +118,17 @@ Authorization: Bearer <supabase_access_token>
   "km2_remaining": 357.5,
   "modules": [
     { "serial": "MAC-ABCD-1234-WXYZ", "nickname": "Drone 1", "status": "active" }
-  ]
+  ],
+  "entitled_products": ["macula_vps"]
 }
 ```
+
+`entitled_products` (**proposed, not yet served by the API**) lists the
+platform product entitlement keys licensed to the user's organization. The
+desktop shell shows only those product modules. When the field is absent the
+app treats the account as a legacy Macula VPS customer (`["macula_vps"]`).
+The desktop gate is presentation only: each product's API must enforce the
+same entitlement server-side. See `docs/desktop-platform.md` in the repo root.
 
 **Rate limit:** 30 requests / IP / minute
 
@@ -279,13 +319,19 @@ Both buttons use the same `withSession` auto-refresh wrapper, so they work even 
 | File | Purpose |
 |------|---------|
 | `src/lib/proxigo.ts` | All API calls: login, refresh, getAccount, reportMapDownload, `withSession` wrapper |
+| `src/platform/api/backend.ts` | Active server (cloud / self-hosted), discovery, offline discovery cache |
+| `src/platform/api/http.ts` | HTTP layer; routes requests through Rust `http_request` |
+| `src/platform/shell/ServerPicker.tsx` | Server picker on the sign-in screen |
 | `src/lib/types.ts` | `Profile` interface with `proxigo_*` token fields |
 | `src/lib/store.ts` | Zustand store: `proxigoSession`, `cloudAccount` |
 | `src/App.tsx` | Session restore on startup, proactive refresh chain, login gate |
 | `src/pages/Dashboard.tsx` | `saveBorderCut()` — real download handler; usage reporting with `withSession` lives here |
 | `src/pages/Maps.tsx` | **Dead code** — never imported or rendered; do not add download/usage logic here |
-| `src/components/Layout.tsx` | AccountPanel: login form, usage HUD, Test/Refresh buttons |
-| `src-tauri/src/commands/profile.rs` | Rust: persists `proxigo_*` fields in `profile.json` |
+| `src/platform/shell/AccountPanel.tsx` | AccountPanel: login form, usage HUD, Test/Refresh buttons |
+| `src/platform/entitlements.ts` | Product entitlements from `GET /api/account` → `entitled_products` |
+| `src-tauri/src/commands/profile.rs` | Rust: persists `proxigo_*` fields; access/refresh tokens go to the OS credential store, not `profile.json` |
+| `src-tauri/src/commands/backend.rs` | Rust: backend connection (`backend.json`), private CA, `http_request` |
+| `src-tauri/src/commands/secrets.rs` | Rust: OS credential store access (`keyring`) |
 
 ### ProxigoWebsite (`ProxigoWebsite/`)
 | File | Purpose |

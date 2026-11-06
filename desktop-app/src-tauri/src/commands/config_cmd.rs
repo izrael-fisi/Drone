@@ -5719,10 +5719,14 @@ mod tests {
         list_field_evidence_reports, list_field_evidence_templates, list_field_log_capture_reports,
         list_px4_prereq_reports, list_px4_receiver_reports, list_rosbag_export_validation_reports,
         list_threshold_tuning_reports, read_support_bundle_details,
-        run_local_autonomy_readiness_audit_inner, run_local_px4_sitl_prereq_setup_inner,
-        run_local_px4_sitl_receiver_capture_inner, run_local_rosbag2_cli_review_inner,
         support_bundle_diagnostic_from_json, support_summary_from_manifest,
     };
+    #[cfg(unix)]
+    use super::{
+        run_local_autonomy_readiness_audit_inner, run_local_px4_sitl_prereq_setup_inner,
+        run_local_px4_sitl_receiver_capture_inner, run_local_rosbag2_cli_review_inner,
+    };
+    #[cfg_attr(not(unix), allow(unused_imports))] // fs is only used by the unix-only wrapper tests
     use std::fs::{self, File};
     use std::io::Write;
     use std::path::Path;
@@ -5737,6 +5741,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // runs bash wrapper scripts
     fn runs_local_autonomy_readiness_audit_wrapper() {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -5767,6 +5772,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // runs bash wrapper scripts
     fn runs_local_rosbag2_cli_review_wrapper_with_download_paths() {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -5799,6 +5805,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // runs bash wrapper scripts
     fn runs_local_px4_sitl_receiver_capture_wrapper_with_download_paths() {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -5828,6 +5835,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // runs bash wrapper scripts
     fn runs_local_px4_sitl_prereq_setup_wrapper_as_dry_run() {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -7549,7 +7557,7 @@ mod tests {
             Some("/tmp/autonomy_evidence_workflow.logs.tar.gz")
         );
         assert!(reports[0].workflow_logs_local_path.as_deref().is_some_and(
-            |path| path.ends_with("replay-cases/autonomy_evidence_workflow.logs.tar.gz")
+            |path| Path::new(path).ends_with("replay-cases/autonomy_evidence_workflow.logs.tar.gz")
         ));
         assert_eq!(
             reports[0].workflow_validation_path.as_deref(),
@@ -7559,7 +7567,7 @@ mod tests {
             .workflow_validation_local_path
             .as_deref()
             .is_some_and(
-                |path| path.ends_with("replay-cases/autonomy_evidence_workflow.validation.json")
+                |path| Path::new(path).ends_with("replay-cases/autonomy_evidence_workflow.validation.json")
             ));
         let validation = reports[0]
             .workflow_validation_summary
@@ -7695,7 +7703,7 @@ mod tests {
         assert!(reports[0]
             .support_bundle_local_path
             .as_deref()
-            .is_some_and(|path| path.ends_with("support-bundles/support.zip")));
+            .is_some_and(|path| Path::new(path).ends_with("support-bundles/support.zip")));
         assert_eq!(
             reports[0].field_evidence_report_path.as_deref(),
             Some("/tmp/field_evidence_report.json")
@@ -7703,7 +7711,7 @@ mod tests {
         assert!(reports[0]
             .field_evidence_report_local_path
             .as_deref()
-            .is_some_and(|path| path.ends_with("replay-cases/field_evidence_report.json")));
+            .is_some_and(|path| Path::new(path).ends_with("replay-cases/field_evidence_report.json")));
         assert_eq!(
             reports[0].feature_method_report_path.as_deref(),
             Some("/tmp/feature_method_benchmark.json")
@@ -7712,7 +7720,7 @@ mod tests {
             .feature_method_report_local_path
             .as_deref()
             .is_some_and(
-                |path| path.ends_with("feature-method-bench/feature_method_benchmark.json")
+                |path| Path::new(path).ends_with("feature-method-bench/feature_method_benchmark.json")
             ));
         assert_eq!(
             reports[0].threshold_report_path.as_deref(),
@@ -7721,7 +7729,7 @@ mod tests {
         assert!(reports[0]
             .threshold_report_local_path
             .as_deref()
-            .is_some_and(|path| path.ends_with("replay-cases/threshold_tuning_report.json")));
+            .is_some_and(|path| Path::new(path).ends_with("replay-cases/threshold_tuning_report.json")));
         assert_eq!(
             reports[0].rosbag_validation_path.as_deref(),
             Some("/tmp/rosbag-jsonl-validation.json")
@@ -7729,7 +7737,7 @@ mod tests {
         assert!(reports[0]
             .rosbag_validation_local_path
             .as_deref()
-            .is_some_and(|path| path.ends_with("terrain-match/rosbag-jsonl-validation.json")));
+            .is_some_and(|path| Path::new(path).ends_with("terrain-match/rosbag-jsonl-validation.json")));
         assert_eq!(
             reports[0].readiness_report_path.as_deref(),
             Some("/tmp/autonomy_readiness_report.json")
@@ -7741,7 +7749,7 @@ mod tests {
         assert!(reports[0]
             .handoff_local_path
             .as_deref()
-            .is_some_and(|path| path.ends_with("replay-cases/autonomy_readiness_report.md")));
+            .is_some_and(|path| Path::new(path).ends_with("replay-cases/autonomy_readiness_report.md")));
         assert_eq!(
             reports[0].evidence_package_path.as_deref(),
             Some("/tmp/autonomy_readiness_report.evidence.zip")
@@ -7750,7 +7758,7 @@ mod tests {
             .evidence_package_local_path
             .as_deref()
             .is_some_and(
-                |path| path.ends_with("replay-cases/autonomy_readiness_report.evidence.zip")
+                |path| Path::new(path).ends_with("replay-cases/autonomy_readiness_report.evidence.zip")
             ));
         assert_eq!(
             reports[0].px4_receiver_report_path.as_deref(),
@@ -7759,7 +7767,7 @@ mod tests {
         assert!(reports[0]
             .px4_receiver_report_local_path
             .as_deref()
-            .is_some_and(|path| path.ends_with("px4-sitl-evidence/receiver_evidence.json")));
+            .is_some_and(|path| Path::new(path).ends_with("px4-sitl-evidence/receiver_evidence.json")));
         assert_eq!(
             reports[0].px4_prereq_report_path.as_deref(),
             Some("/tmp/px4_sitl_capture_prereqs.json")
@@ -7767,7 +7775,7 @@ mod tests {
         assert!(reports[0]
             .px4_prereq_report_local_path
             .as_deref()
-            .is_some_and(|path| path.ends_with("px4-sitl-evidence/px4_sitl_capture_prereqs.json")));
+            .is_some_and(|path| Path::new(path).ends_with("px4-sitl-evidence/px4_sitl_capture_prereqs.json")));
     }
 
     #[test]
