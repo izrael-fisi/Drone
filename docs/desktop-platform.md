@@ -14,7 +14,7 @@ sees everything they license on one global dashboard.
 App.tsx                    Proxigo sign-in gate, legacy route aliases
 └─ platform/shell/PlatformShell.tsx
    ├─ title bar            Proxigo brand + ProductSwitcher (Overview | products)
-   ├─ <Outlet/>            pages/Dashboard.tsx: shared global map
+   ├─ <Outlet/>            platform/map/GlobalMap.tsx: shared global map
    ├─ PlatformDock         rail + stacked panels
    │    Overview rail:     product launchers
    │    Product rail:      the active product's panels
@@ -108,10 +108,29 @@ is a UI gate only.** Each product's backend must enforce access itself.
 
 ## Global map
 
-`pages/Dashboard.tsx` hosts the shared map. It reads `usePlatformMapLayers()`
-and draws the visible layers in both renderers: the Leaflet fallback, and
-MapLibre via the `platform-features` source and the `platform-*` layers.
-Macula VPS publishes a "VPS map coverage" layer covering its completed maps.
+`src/platform/map/GlobalMap.tsx` is the shared map. It knows no product:
+
+- It draws the layers in view (`useMapLayersInView()`) in both renderers:
+  Leaflet as the fallback, MapLibre through the `platform-features` source and
+  the `platform-*` layers. A feature can set its own `color` and `style`
+  (fill, opacity, width, dashed, radius, halo, permanent label).
+- `activeOnly` layers (working state such as drafts or a live vehicle) are
+  drawn only while their product is active. They never appear in the Overview
+  or as layer toggles.
+- A product enables a drawing tool with `usePlatformMapStore().setTool`
+  (`point` clicks or `box` drags). While a tool is set, clicks go to the tool,
+  not to `onMapClick`. `setHome(points)` sets what Recenter fits.
+- It renders the active product's `MapOverlay` with `ctx` and a
+  `leftInsetClass` that keeps HUDs clear of the dock.
+- `ProductModule.useBackground(entitled)` runs for every product whatever is in
+  view (Macula VPS telemetry polling).
+
+Macula VPS: `src/products/macula-vps/map/`. It contains `VpsMapTools` (map
+picker, map-cut and mission tools, connection HUD) and `store.ts` (tool state
+that survives switching products, including an in-progress map install).
+`layers.ts` holds the active map outline, drafts, missions and aircraft as
+`activeOnly` layers, and `telemetry.ts` holds the background position polling.
+It also publishes the "VPS map coverage" layer of its completed maps.
 
 ## Product separation
 
@@ -122,11 +141,11 @@ Each product is a separate view of the same global map:
   (platform views use `PLATFORM_ACCENT`).
 - The map shows the active product's own layers plus its `relatedLayerIds`.
   The Overview shows every visible layer from every licensed product.
-- Macula VPS map tooling in `pages/Dashboard.tsx` (map selector, map-cut and
-  mission tools, connection/position HUD, active-map outline, drawings, mission
-  overlays, aircraft marker) renders only in the Macula VPS view. VPS telemetry
-  polling keeps running in the background so switching views mid-flight loses
-  nothing.
+- Macula VPS map tooling (map selector, map-cut and mission tools,
+  connection/position HUD, active-map outline, drawings, mission overlays,
+  aircraft marker) is the VPS `MapOverlay` plus `activeOnly` layers, so it
+  appears only in the Macula VPS view. VPS telemetry polling keeps running in
+  the background, so switching views mid-flight loses nothing.
 - Airspace & Weather declares `macula-vps.map-coverage` as related: its view
   shows where VPS maps exist, and the briefing says whether the location is
   inside VPS coverage. The VPS view shows no airspace or weather data.
@@ -178,6 +197,9 @@ screen has a server picker.
   save/load and migrates tokens left by older versions. If the credential
   store is unavailable they stay in the file. Changing server clears the old
   server's tokens.
+- Device SSH passwords and key passphrases are stored the same way
+  (`device:<id>:ssh-secret`), not in `devices.json`. Older plain-text entries
+  are migrated on load.
 - Discovery may list `products` to license a whole self-hosted installation.
   This applies when the account itself has no `entitled_products`.
 - Products call their own endpoints with `requestJson` from
@@ -202,18 +224,10 @@ WebSocket/SSE.
 
 ## Known follow-ups
 
-- `pages/Dashboard.tsx` still contains the VPS map tooling, gated on the
-  Macula VPS view. Move it into `src/products/macula-vps/` behind the
-  `MapOverlay` / `onMapClick` contract so the map host is product-agnostic.
 - OIDC sign-in (system browser + PKCE + loopback redirect) for Cognito and
   customer identity providers.
 - Route third-party data (airspace, weather) through the Proxigo backend for
   caching, rate limiting and air-gapped installs.
 - `CloudAccount.entitled_products` must be implemented in the Proxigo API.
-- Pages under `src/pages/` that no route imports (`Devices`, `PiSetup`,
-  `MissionPlanner`, `Maps`, `FlightReview`, `MissionBundleBuilder`,
-  `SystemStatus`, `TerrainPlanning`, `VisionPipeline`) are legacy VPS code.
-  Move whatever is still needed into `src/products/macula-vps/` and delete the
-  rest.
 - `pages/Settings.tsx` (full-page settings) is still VPS-oriented and should
   become platform settings plus per-product sections.

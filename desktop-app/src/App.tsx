@@ -3,8 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { cmd } from "./lib/tauri";
 import { useAppStore } from "./lib/store";
 import { useShellStore, type BottomDockTabId, type RightDockRoute } from "./lib/shellStore";
-import { Dashboard } from "./pages/Dashboard";
 import { Onboarding } from "./pages/Onboarding";
+import { GlobalMap } from "./platform/map/GlobalMap";
 import { PlatformShell } from "./platform/shell/PlatformShell";
 import { Settings } from "./pages/Settings";
 import { proxigo, type ProxigoSession } from "./lib/proxigo";
@@ -130,7 +130,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/onboarding" element={<Onboarding />} />
         <Route element={<PlatformShell />}>
-          <Route path="/home" element={<Dashboard />} />
+          <Route path="/home" element={<GlobalMap />} />
           <Route path="/overview" element={<OpenHomeSurface rightDock="overview" />} />
           <Route path="/dashboard" element={<OpenHomeSurface />} />
           <Route path="/navigation-panel" element={<OpenHomeSurface />} />

@@ -325,8 +325,7 @@ Both buttons use the same `withSession` auto-refresh wrapper, so they work even 
 | `src/lib/types.ts` | `Profile` interface with `proxigo_*` token fields |
 | `src/lib/store.ts` | Zustand store: `proxigoSession`, `cloudAccount` |
 | `src/App.tsx` | Session restore on startup, proactive refresh chain, login gate |
-| `src/pages/Dashboard.tsx` | `saveBorderCut()` — real download handler; usage reporting with `withSession` lives here |
-| `src/pages/Maps.tsx` | **Dead code** — never imported or rendered; do not add download/usage logic here |
+| `src/products/macula-vps/map/VpsMapTools.tsx` | `saveBorderCut()` — real download handler; usage reporting with `withSession` lives here |
 | `src/platform/shell/AccountPanel.tsx` | AccountPanel: login form, usage HUD, Test/Refresh buttons |
 | `src/platform/entitlements.ts` | Product entitlements from `GET /api/account` → `entitled_products` |
 | `src-tauri/src/commands/profile.rs` | Rust: persists `proxigo_*` fields; access/refresh tokens go to the OS credential store, not `profile.json` |

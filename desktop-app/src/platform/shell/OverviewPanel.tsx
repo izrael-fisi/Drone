@@ -33,7 +33,7 @@ export function OverviewPanel() {
   const { entitled, source } = useEntitlements();
   const statuses = useProductStatuses();
   const switchProduct = useSwitchProduct();
-  const layers = usePlatformMapLayers();
+  const layers = usePlatformMapLayers().filter((layer) => !layer.activeOnly);
   const setLayerVisible = usePlatformStore((state) => state.setLayerVisible);
 
   const available = PRODUCT_MODULES.filter((product) => entitled.has(product.id));

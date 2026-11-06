@@ -65,7 +65,8 @@ navigation path. Those documents supersede the older prototype architecture.
   command palette, account/settings), `src/products/macula-vps/` (VPS panels
   and bottom dock), `src/products/airspace-weather/` (second product), `src/platform/api/`
   (backend connection, discovery, Rust-routed HTTP) and
-  `src/pages/Dashboard.tsx` (shared map; VPS tools show only in the VPS view)
+  `src/platform/map/GlobalMap.tsx` (shared, product-agnostic map; VPS map
+  tools live in `src/products/macula-vps/map/`)
   inside desktop-app. Many
   older page routes now open shared docks. Trace imports/routes before
   editing an old page; do not recreate duplicate controls or classical defaults.
@@ -111,6 +112,7 @@ Desktop frontend:
 cd desktop-app
 npm ci
 npm run build
+npm test
 ```
 
 Tauri/Rust backend:

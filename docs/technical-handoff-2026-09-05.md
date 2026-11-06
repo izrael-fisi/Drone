@@ -290,7 +290,8 @@ are retained; removed classical flight-loop entrypoints are not reinstated.
 ## 7. Desktop And Companion Integration Reality
 
 The **current routed operator UI** is primarily `desktop-app/src/App.tsx`,
-`components/Layout.tsx` and `pages/Dashboard.tsx`. Many former routes redirect
+`platform/` (Proxigo shell and `map/GlobalMap.tsx`) and `products/` (see
+`docs/desktop-platform.md`). Many former routes redirect
 to `/home` and open a dock. `/maps`, `/mission-planner`, `/vision-pipeline`,
 `/system-status` and `/flight-review` no longer necessarily render their older
 same-named page files. Inspect route and import usage before editing them.

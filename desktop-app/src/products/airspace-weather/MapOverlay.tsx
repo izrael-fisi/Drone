@@ -1,5 +1,6 @@
 import { CloudSun, Loader2, MousePointerClick } from "lucide-react";
 import { useEffect } from "react";
+import { cn } from "../../lib/utils";
 import { usePlatformMapStore } from "../../platform/mapStore";
 import type { ProductMapOverlayProps } from "../../platform/types";
 import { ACCENT, PANEL_BRIEFING } from "./constants";
@@ -7,7 +8,7 @@ import { formatPoint, LevelBadge } from "./shared";
 import { useAirspaceStore, useAssessment } from "./store";
 
 /** Airspace & Weather HUD on the shared map: go/no-go and key numbers for the briefing point. */
-export function AirspaceMapOverlay({ ctx }: ProductMapOverlayProps) {
+export function AirspaceMapOverlay({ ctx, leftInsetClass }: ProductMapOverlayProps) {
   const point = useAirspaceStore((state) => state.point);
   const weather = useAirspaceStore((state) => state.weather.data?.now);
   const assessment = useAssessment();
@@ -24,7 +25,7 @@ export function AirspaceMapOverlay({ ctx }: ProductMapOverlayProps) {
 
   return (
     <section
-      className="pointer-events-auto w-[300px] rounded-lg border bg-bg-base/92 p-3 shadow-2xl backdrop-blur-sm"
+      className={cn("absolute top-3 z-[1100] w-[300px] rounded-lg border bg-bg-base/92 p-3 shadow-2xl backdrop-blur-sm transition-[left] duration-200", leftInsetClass)}
       style={{ borderColor: `${ACCENT}59` }}
     >
       <div className="flex items-center gap-2">

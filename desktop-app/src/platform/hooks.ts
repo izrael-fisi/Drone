@@ -52,7 +52,10 @@ export function usePlatformMapLayers(): Array<PlatformMapLayer & { visible: bool
       perProduct
         .flat()
         .filter((layer) => entitled.has(layer.productId))
-        .map((layer) => ({ ...layer, visible: layerVisibility[layer.id] ?? layer.defaultVisible ?? true })),
+        .map((layer) => ({
+          ...layer,
+          visible: layer.activeOnly ? true : layerVisibility[layer.id] ?? layer.defaultVisible ?? true,
+        })),
     [entitled, layerVisibility, ...perProduct],
   );
 }
@@ -70,6 +73,7 @@ export function useMapLayersInView(): PlatformMapLayer[] {
       layers.filter(
         (layer) =>
           layer.visible &&
+          (layer.activeOnly ? layer.productId === activeProduct?.id : true) &&
           (!activeProduct ||
             layer.productId === activeProduct.id ||
             Boolean(activeProduct.relatedLayerIds?.includes(layer.id))),

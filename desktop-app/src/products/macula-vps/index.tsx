@@ -21,6 +21,9 @@ import type {
   ProductStatusSummary,
 } from "../../platform/types";
 import { BOTTOM_TABS, BottomDock } from "./BottomDock";
+import { useVpsWorkingLayers } from "./map/layers";
+import { useVpsTelemetry } from "./map/telemetry";
+import { VpsMapTools } from "./map/VpsMapTools";
 import { useMaculaRuntimeModel } from "./model";
 import { CalibrationPanel, CameraPanel } from "./panels/CameraPanels";
 import { DeviceSettingsPanel } from "./panels/DeviceSettingsPanel";
@@ -69,7 +72,8 @@ function useMaculaStatus(): ProductStatusSummary {
 
 function useMaculaMapLayers(): PlatformMapLayer[] {
   const model = useMaculaRuntimeModel();
-  return useMemo(() => {
+  const working = useVpsWorkingLayers(MACULA_VPS_ID);
+  const coverage = useMemo<PlatformMapLayer>(() => {
     const features: PlatformMapFeature[] = model.completedMaps
       .filter(({ bounds }) =>
         [bounds.latMin, bounds.latMax, bounds.lonMin, bounds.lonMax].every(Number.isFinite) &&
@@ -87,17 +91,16 @@ function useMaculaMapLayers(): PlatformMapLayer[] {
           [map.bounds.latMin, map.bounds.lonMin],
         ],
       }));
-    return [
-      {
-        id: "macula-vps.map-coverage",
-        productId: MACULA_VPS_ID,
-        label: "VPS map coverage",
-        color: ACCENT,
-        features,
-        defaultVisible: true,
-      },
-    ];
+    return {
+      id: "macula-vps.map-coverage",
+      productId: MACULA_VPS_ID,
+      label: "VPS map coverage",
+      color: ACCENT,
+      features,
+      defaultVisible: true,
+    };
   }, [model.completedMaps]);
+  return useMemo(() => [coverage, ...working], [coverage, working]);
 }
 
 function useMaculaCommands(): ProductCommand[] {
@@ -235,6 +238,8 @@ export const maculaVpsProduct: ProductModule = {
     defaultTabId: "system-status",
     Component: MaculaBottomDock,
   },
+  MapOverlay: VpsMapTools,
+  useBackground: useVpsTelemetry,
   useStatus: useMaculaStatus,
   useMapLayers: useMaculaMapLayers,
   useCommands: useMaculaCommands,

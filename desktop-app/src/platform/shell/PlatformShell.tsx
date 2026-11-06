@@ -6,7 +6,7 @@ import { useShellStore } from "../../lib/shellStore";
 import { cn } from "../../lib/utils";
 import { useActiveProduct, useEntitlements, usePlatformContext } from "../hooks";
 import { usePlatformStore } from "../platformStore";
-import { productForBottomTab, productForPanel } from "../registry";
+import { PRODUCT_MODULES, productForBottomTab, productForPanel } from "../registry";
 import { CommandPalette, SpotlightSearchButton } from "./CommandPalette";
 import { PlatformDock } from "./PlatformDock";
 import { ProductSwitcher } from "./ProductSwitcher";
@@ -36,6 +36,9 @@ export function PlatformShell() {
   const { entitled } = useEntitlements();
   const setActiveProduct = usePlatformStore((state) => state.setActiveProduct);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Background work (e.g. VPS telemetry) runs whatever product is in view.
+  for (const product of PRODUCT_MODULES) product.useBackground?.(entitled.has(product.id));
 
   const ProductBottomDock = activeProduct?.bottomDock?.Component;
   const bottomChromeOffset = ProductBottomDock ? (bottomDockOpen ? 292 : 68) : 16;

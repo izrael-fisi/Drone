@@ -11,8 +11,7 @@ The desktop app connects to `proxigo.us` to track map download usage and enforce
 | `src/lib/proxigo.ts` | All API calls, session types, `withSession` helper |
 | `src/lib/store.ts` | Zustand store — `proxigoSession`, `cloudAccount`, `lastUsageEvent` |
 | `src/App.tsx` | Session restore on startup + proactive token refresh |
-| `src/pages/Dashboard.tsx` | `saveBorderCut()` — the real download handler; calls `reportMapDownload` after each tile download |
-| `src/pages/Maps.tsx` | **Dead code** — exports a `Maps` component that is never imported or rendered. Do not add download logic here. |
+| `src/products/macula-vps/map/VpsMapTools.tsx` | `saveBorderCut()` — the real download handler; calls `reportMapDownload` after each tile download |
 | `src/platform/shell/AccountPanel.tsx` | AccountPanel — shows quota, refresh button, test button |
 | `src/platform/entitlements.ts` | Maps `CloudAccount.entitled_products` to the product modules shown in the shell |
 
@@ -20,7 +19,7 @@ The desktop app connects to `proxigo.us` to track map download usage and enforce
 
 ## How usage reporting works
 
-1. User draws a bounding box and clicks **Download** (in `Dashboard.tsx → saveBorderCut()`).
+1. User draws a bounding box and clicks **Download** (in `VpsMapTools.tsx → saveBorderCut()`).
 2. Tauri downloads tiles to disk via `cmd.downloadMapRegion()`.
 3. `saveBorderCut` immediately calls `proxigo.reportMapDownload()` via the `withSession` wrapper.
 4. On success, `cloudAccount` in the store is updated with the confirmed total from the API response — this makes the Account tab show the new number instantly without waiting for a full `/api/account` refresh.

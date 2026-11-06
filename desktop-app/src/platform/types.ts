@@ -56,15 +56,42 @@ export interface ProductPanel {
 
 export type LatLon = [number, number];
 
+/** Optional per-feature drawing overrides; unset fields use the defaults. */
+export interface PlatformFeatureStyle {
+  /** Point/area fill; defaults to the feature color. */
+  fillColor?: string;
+  fillOpacity?: number;
+  /** Outline (points, areas) or line width in px. */
+  width?: number;
+  dashed?: boolean;
+  /** Point radius in px. */
+  radius?: number;
+  /** Soft ring around a point, e.g. a live vehicle. */
+  halo?: boolean;
+  /** Show the label permanently next to a point (Leaflet renderer). */
+  permanentLabel?: boolean;
+}
+
 /** `color` overrides the layer color for one feature (e.g. by category). */
 export type PlatformMapFeature =
-  | { id: string; kind: "point"; position: LatLon; label?: string; color?: string }
-  | { id: string; kind: "line" | "area"; positions: LatLon[]; label?: string; color?: string };
+  | { id: string; kind: "point"; position: LatLon; label?: string; color?: string; style?: PlatformFeatureStyle }
+  | { id: string; kind: "line" | "area"; positions: LatLon[]; label?: string; color?: string; style?: PlatformFeatureStyle };
 
 /** A click on the shared map, with the product point feature under it if any. */
 export interface PlatformMapClick {
   position: LatLon;
   hit?: { layerId: string; featureId: string };
+}
+
+/** A drawing tool a product enables on the shared map while it is active. */
+export interface PlatformMapTool {
+  /** "point": each click adds a point. "box": drag a rectangle. */
+  mode: "point" | "box";
+  /** Preview color for box drags. */
+  color?: string;
+  onPoint?: (point: LatLon) => void;
+  /** Rectangle corners, clockwise from south-west. */
+  onBox?: (corners: LatLon[]) => void;
 }
 
 /** Camera controls for the shared map, available to products. */
@@ -78,6 +105,8 @@ export interface PlatformMapApi {
 /** Props for a product's on-map tools, rendered only while the product is active. */
 export interface ProductMapOverlayProps {
   ctx: PlatformContext;
+  /** Tailwind `left-*` class that keeps top-left HUDs clear of the dock. */
+  leftInsetClass: string;
 }
 
 /** Renderer-agnostic overlay a product draws on the shared global map. */
@@ -89,6 +118,11 @@ export interface PlatformMapLayer {
   color: string;
   features: PlatformMapFeature[];
   defaultVisible?: boolean;
+  /**
+   * Working state (drafts, live vehicle): drawn only while the owning product
+   * is active, never in the Overview, and not offered as a layer toggle.
+   */
+  activeOnly?: boolean;
 }
 
 export interface ProductBottomDockProps {
@@ -151,4 +185,9 @@ export interface ProductModule {
   useStatus?: () => ProductStatusSummary;
   useMapLayers?: () => PlatformMapLayer[];
   useCommands?: () => ProductCommand[];
+  /**
+   * Always-mounted work that must continue while another product is in view
+   * (e.g. live telemetry). Must do nothing when `entitled` is false.
+   */
+  useBackground?: (entitled: boolean) => void;
 }
