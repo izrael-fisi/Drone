@@ -1,4 +1,4 @@
-import { Activity, Loader2, Search, Server } from "lucide-react";
+import { PulseIcon as Activity, CircleNotchIcon as Loader2, MagnifyingGlassIcon as Search, HardDrivesIcon as Server } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { candidateHost, candidateName, discoveryStatusSummary, loadDiscoveryHistory, mergeDiscoveryHistory, saveDiscoveryHistory } from "../../../lib/discovery";
 import type { BottomDockTabId } from "../../../lib/shellStore";
@@ -277,7 +277,7 @@ export function DeviceSettingsPanel({
                 {newDeviceMode === "automatic" ? discoverySummary.label : "Add companion compute credentials"}
               </div>
             </div>
-            <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-orange-200">
+            <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] font-semibold capitalize text-orange-200">
               Pi
             </span>
           </div>
@@ -313,7 +313,7 @@ export function DeviceSettingsPanel({
                   <Activity size={15} className={discoverySummary.status === "ready" ? "text-status-ready" : "text-orange-300"} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-xs font-semibold text-slate-200">{discoverySummary.label}</div>
-                    <div className="truncate text-[10px] text-slate-500">{discoverySummary.detail}</div>
+                    <div className="truncate text-[11px] text-slate-500">{discoverySummary.detail}</div>
                   </div>
                 </div>
                 <button
@@ -341,7 +341,7 @@ export function DeviceSettingsPanel({
                         <Server size={14} className={candidate.ssh_open ? "text-status-ready" : "text-slate-500"} />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-xs font-semibold text-slate-200">{candidateName(candidate)}</div>
-                          <div className="truncate font-mono text-[10px] text-slate-500">
+                          <div className="truncate font-mono text-[11px] text-slate-500">
                             {candidateHost(candidate)}:{candidate.port} / {candidate.ssh_open ? "ssh open" : "ssh closed"}
                           </div>
                         </div>
@@ -416,7 +416,7 @@ export function DeviceSettingsPanel({
             className="h-8 w-full rounded-md border border-border bg-bg-card px-3 text-left text-xs font-medium text-slate-300 transition-colors hover:border-orange-500/35 hover:bg-white/[0.04] hover:text-slate-100"
           >
             Password
-            <span className="float-right font-mono text-[10px] text-slate-600">{password ? "set" : "unset"}</span>
+            <span className="float-right text-[11px] text-slate-500">{password ? "set" : "unset"}</span>
           </button>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useShellStore } from "../lib/shellStore";
 import { useAppStore } from "../lib/store";
 import { useBackendStore } from "./api/backend";
+import { useProjectLayers } from "./projects/layers";
 import { resolveEntitlements, type EntitlementResolution } from "./entitlements";
 import { OVERVIEW_ID, usePlatformStore } from "./platformStore";
 import { PRODUCT_MODULES, productById, productForBottomTab, productForPanel } from "./registry";
@@ -47,16 +48,14 @@ export function usePlatformMapLayers(): Array<PlatformMapLayer & { visible: bool
   const { entitled } = useEntitlements();
   const layerVisibility = usePlatformStore((state) => state.layerVisibility);
   const perProduct = PRODUCT_MODULES.map((product) => product.useMapLayers?.() ?? []);
+  const platformLayers = useProjectLayers();
   return useMemo(
     () =>
-      perProduct
-        .flat()
-        .filter((layer) => entitled.has(layer.productId))
-        .map((layer) => ({
-          ...layer,
-          visible: layer.activeOnly ? true : layerVisibility[layer.id] ?? layer.defaultVisible ?? true,
-        })),
-    [entitled, layerVisibility, ...perProduct],
+      [...platformLayers, ...perProduct.flat().filter((layer) => entitled.has(layer.productId))].map((layer) => ({
+        ...layer,
+        visible: layer.activeOnly || layer.internal ? true : layerVisibility[layer.id] ?? layer.defaultVisible ?? true,
+      })),
+    [entitled, layerVisibility, platformLayers, ...perProduct],
   );
 }
 
@@ -73,10 +72,11 @@ export function useMapLayersInView(): PlatformMapLayer[] {
       layers.filter(
         (layer) =>
           layer.visible &&
+          (layer.global ||
           (layer.activeOnly ? layer.productId === activeProduct?.id : true) &&
           (!activeProduct ||
             layer.productId === activeProduct.id ||
-            Boolean(activeProduct.relatedLayerIds?.includes(layer.id))),
+            Boolean(activeProduct.relatedLayerIds?.includes(layer.id)))),
       ),
     [activeProduct, layers],
   );

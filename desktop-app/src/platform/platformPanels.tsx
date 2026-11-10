@@ -1,4 +1,7 @@
-import { Globe2, Settings as SettingsIcon, UserRound } from "lucide-react";
+import { GlobeHemisphereWestIcon as Globe2, GearSixIcon as SettingsIcon, MapPinAreaIcon, StackIcon, UserCircleIcon as UserRound } from "@phosphor-icons/react";
+import { LAYERS_PANEL_ID, PROJECTS_PANEL_ID } from "./projects/constants";
+import { ProjectsPanel } from "./projects/ProjectsPanel";
+import { LayersPanel } from "./shell/LayersPanel";
 import { OVERVIEW_ID } from "./platformStore";
 import { PRODUCT_MODULES } from "./registry";
 import { AccountPanel } from "./shell/AccountPanel";
@@ -16,10 +19,24 @@ export const PLATFORM_PANELS: readonly ProductPanel[] = [
     Component: OverviewPanel,
   },
   {
+    id: PROJECTS_PANEL_ID,
+    label: "Projects",
+    Icon: MapPinAreaIcon,
+    command: { label: "Projects", detail: "Site layouts: cameras, sensors, geofences, keep-out zones", keywords: "site place camera sensor geofence keep out layout" },
+    Component: ProjectsPanel,
+  },
+  {
+    id: LAYERS_PANEL_ID,
+    label: "Layers",
+    Icon: StackIcon,
+    command: { label: "Map layers", detail: "Show or hide map layers", keywords: "visibility overlay" },
+    Component: LayersPanel,
+  },
+  {
     id: "settings",
     label: "Settings",
     Icon: SettingsIcon,
-    command: { label: "General Settings", detail: "Theme, profile, imagery keys" },
+    command: { label: "General settings", detail: "Theme, profile, imagery keys" },
     Component: GeneralSettingsPanel,
   },
   {

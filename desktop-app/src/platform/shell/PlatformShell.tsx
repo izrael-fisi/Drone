@@ -1,6 +1,6 @@
-import { Minus, Square, X } from "lucide-react";
+import { MinusIcon as Minus, SquareIcon as Square, XIcon as X } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { DroneLogo } from "../../App";
 import { useShellStore } from "../../lib/shellStore";
 import { cn } from "../../lib/utils";
@@ -8,6 +8,7 @@ import { useActiveProduct, useEntitlements, usePlatformContext } from "../hooks"
 import { usePlatformStore } from "../platformStore";
 import { PRODUCT_MODULES, productForBottomTab, productForPanel } from "../registry";
 import { CommandPalette, SpotlightSearchButton } from "./CommandPalette";
+import { DOCK_WIDTH_CLASS, dockMode } from "./layout";
 import { PlatformDock } from "./PlatformDock";
 import { ProductSwitcher } from "./ProductSwitcher";
 import { PLATFORM_ACCENT } from "../ui";
@@ -29,9 +30,8 @@ export function PlatformShell() {
     setBottomDockTab,
   } = useShellStore();
   const navigate = useNavigate();
-  const location = useLocation();
-  const settingsMode = location.pathname.startsWith("/settings");
   const ctx = usePlatformContext();
+  const sidebarCollapsed = usePlatformStore((state) => state.sidebarCollapsed);
   const activeProduct = useActiveProduct();
   const { entitled } = useEntitlements();
   const setActiveProduct = usePlatformStore((state) => state.setActiveProduct);
@@ -99,7 +99,7 @@ export function PlatformShell() {
             className="flex h-full min-w-0 items-center gap-2 px-2"
           >
             <DroneLogo size={18} />
-            <span className="font-sans text-[11px] font-semibold uppercase tracking-[0.08em] text-white/80">Proxigo</span>
+            <span className="text-[13px] font-semibold tracking-[-0.01em] text-white/90">Proxigo</span>
           </button>
           <span className="mx-1 h-4 w-px bg-white/10" />
           <ProductSwitcher />
@@ -130,16 +130,16 @@ export function PlatformShell() {
             </div>
           </main>
 
-          {!settingsMode && (
+          {(
             <div
-              className={cn("absolute left-3 z-[1300] transition-[width] duration-200", rightDockOpen ? "w-[416px]" : "w-14")}
+              className={cn("absolute left-3 z-[1300] transition-[width] duration-200", DOCK_WIDTH_CLASS[dockMode(rightDockOpen, sidebarCollapsed)])}
               style={{ top: 16, bottom: bottomChromeOffset }}
             >
               <PlatformDock ctx={ctx} />
             </div>
           )}
 
-          {!settingsMode && ProductBottomDock && (
+          {ProductBottomDock && (
             <ProductBottomDock
               open={bottomDockOpen}
               tab={bottomDockTab}
@@ -148,7 +148,7 @@ export function PlatformShell() {
             />
           )}
 
-          {!settingsMode && (
+          {(
             <SpotlightSearchButton
               open={commandPaletteOpen}
               bottomOffset={bottomChromeOffset}

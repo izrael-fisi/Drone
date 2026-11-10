@@ -12,7 +12,6 @@ export type PipelineConfig = {
   maxFeatures: 0;
 };
 
-export const PIPELINE_CONFIG_KEY = "drone_vision_pipeline_config";
 
 export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
   pipeline: "pi5_crossview_nav_v1",
@@ -25,24 +24,3 @@ export const DEFAULT_PIPELINE_CONFIG: PipelineConfig = {
   maxFeatures: 0,
 };
 
-export function loadPipelineConfig(): PipelineConfig {
-  try {
-    const raw = localStorage.getItem(PIPELINE_CONFIG_KEY);
-    if (!raw) return DEFAULT_PIPELINE_CONFIG;
-    const saved = JSON.parse(raw) as Partial<PipelineConfig>;
-    // Prior installations stored selectable classical methods. Intentionally ignore them.
-    return {
-      ...DEFAULT_PIPELINE_CONFIG,
-      modelReleaseId: typeof saved.modelReleaseId === "string" ? saved.modelReleaseId : DEFAULT_PIPELINE_CONFIG.modelReleaseId,
-      mapReleaseId: typeof saved.mapReleaseId === "string" ? saved.mapReleaseId : DEFAULT_PIPELINE_CONFIG.mapReleaseId,
-      calibrationId: typeof saved.calibrationId === "string" ? saved.calibrationId : DEFAULT_PIPELINE_CONFIG.calibrationId,
-      inferenceProvider: saved.inferenceProvider === "hailo_ai_hat_optional" ? "hailo_ai_hat_optional" : "onnxruntime_cpu",
-    };
-  } catch {
-    return DEFAULT_PIPELINE_CONFIG;
-  }
-}
-
-export function savePipelineConfig(config: PipelineConfig) {
-  localStorage.setItem(PIPELINE_CONFIG_KEY, JSON.stringify(config));
-}

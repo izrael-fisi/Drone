@@ -1,4 +1,4 @@
-import { LocateFixed, Minus, Plus, type LucideIcon } from "lucide-react";
+import { GpsFixIcon as LocateFixed, MinusIcon as Minus, PlusIcon as Plus, type Icon as IconType } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -7,7 +7,13 @@ import { CircleMarker, MapContainer, Pane, Polygon, Polyline, TileLayer, Tooltip
 import { useShellStore } from "../../lib/shellStore";
 import { useActiveProduct, useEntitlements, useMapLayersInView, usePlatformContext } from "../hooks";
 import { usePlatformMapStore } from "../mapStore";
+import { usePlatformStore } from "../platformStore";
+import { PROJECTS_PANEL_ID } from "../projects/constants";
+import { PROJECTS_LAYER_ID } from "../projects/layers";
+import { PlacingBar } from "../projects/PlacingBar";
+import { useProjectsStore } from "../projects/store";
 import { productById } from "../registry";
+import { dockMode, HUD_LEFT_CLASS } from "../shell/layout";
 import type { LatLon, PlatformMapClick, PlatformMapLayer, PlatformMapTool } from "../types";
 import {
   clampMapZoom,
@@ -19,6 +25,7 @@ import {
   mapLibreSource,
   MAP_MAX_ZOOM,
   MAP_MIN_ZOOM,
+  IMAGERY_NATIVE_MAX_ZOOM,
   normalizeMapCenter,
   PLACEHOLDER_ORG_COUNTRY_CENTER,
   PLACEHOLDER_ORG_COUNTRY_ZOOM,
@@ -54,16 +61,29 @@ export function GlobalMap() {
   const home = usePlatformMapStore((state) => state.home);
   const setPlatformMapApi = usePlatformMapStore((state) => state.setApi);
   const [mapApi, setMapApi] = useState<MapApi | null>(null);
-  const [viewport, setViewport] = useState<MapViewport>({ center: PLACEHOLDER_ORG_COUNTRY_CENTER, zoom: PLACEHOLDER_ORG_COUNTRY_ZOOM });
+  const sidebarCollapsed = usePlatformStore((state) => state.sidebarCollapsed);
+  const setMapView = usePlatformStore((state) => state.setMapView);
+  const placing = useProjectsStore((state) => state.placing);
+
+  // Open where the operator left off; first launch shows the whole country.
+  const [initialView] = useState(() => usePlatformStore.getState().mapView ?? { center: PLACEHOLDER_ORG_COUNTRY_CENTER, zoom: PLACEHOLDER_ORG_COUNTRY_ZOOM });
+  const [viewport, setViewport] = useState<MapViewport>(initialView);
   const viewportRef = useRef(viewport);
   viewportRef.current = viewport;
 
+  // Remember the view a moment after the map settles.
+  useEffect(() => {
+    const timer = setTimeout(() => setMapView({ center: viewport.center, zoom: viewport.zoom }), 600);
+    return () => clearTimeout(timer);
+  }, [setMapView, viewport]);
+
+  useEffect(() => {
+    if (!useProjectsStore.getState().loaded) void useProjectsStore.getState().load();
+  }, []);
+
   // Move only when a new search target arrives; clearing it must not jump back
   // to the default view (products clear it before fitting their own area).
-  const [target, setTarget] = useState<{ center: LatLon; zoom: number }>({
-    center: PLACEHOLDER_ORG_COUNTRY_CENTER,
-    zoom: PLACEHOLDER_ORG_COUNTRY_ZOOM,
-  });
+  const [target, setTarget] = useState<{ center: LatLon; zoom: number }>(initialView);
   useEffect(() => {
     if (mapSearchTarget) setTarget({ center: [mapSearchTarget.lat, mapSearchTarget.lon], zoom: mapSearchTarget.zoom ?? 14 });
   }, [mapSearchTarget]);
@@ -76,6 +96,12 @@ export function GlobalMap() {
   useEffect(() => () => setPlatformMapApi(null), [setPlatformMapApi]);
 
   const handleClick = useCallback((click: PlatformMapClick) => {
+    // Placed site items open in Projects from any view.
+    if (click.hit?.layerId === PROJECTS_LAYER_ID) {
+      useProjectsStore.getState().selectItem(click.hit.featureId);
+      ctx.openPanel(PROJECTS_PANEL_ID);
+      return;
+    }
     if (activeProduct) {
       const ownHit = click.hit && layers.some((layer) => layer.id === click.hit?.layerId && layer.productId === activeProduct.id);
       activeProduct.onMapClick?.(ownHit ? click : { position: click.position }, ctx);
@@ -88,8 +114,14 @@ export function GlobalMap() {
     if (owner && entitled.has(owner.id)) owner.onMapClick?.(click, ctx);
   }, [activeProduct, ctx, entitled, layers]);
 
+  // Placing a site item takes over the map tool from the active product.
+  const projectsTool = useMemo<PlatformMapTool | null>(
+    () => (placing ? { mode: "point", onPoint: (point) => useProjectsStore.getState().addPlacingPoint(point) } : null),
+    [placing],
+  );
+
   const ProductMapOverlay = activeProduct?.MapOverlay;
-  const leftInsetClass = rightDockOpen ? "left-[444px]" : "left-20";
+  const leftInsetClass = HUD_LEFT_CLASS[dockMode(rightDockOpen, sidebarCollapsed)];
 
   return (
     <div className="ops-screen-bg relative h-full min-h-[calc(100vh-127px)] overflow-hidden animate-fade-in">
@@ -98,7 +130,7 @@ export function GlobalMap() {
           center={center}
           zoom={zoom}
           layers={layers}
-          tool={tool}
+          tool={projectsTool ?? tool}
           idleCursor={cursor}
           setMapApi={setMapApi}
           onViewportChange={setViewport}
@@ -106,7 +138,8 @@ export function GlobalMap() {
         />
       </div>
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-bg-base/45 via-transparent to-bg-base/50" />
-      {ProductMapOverlay && <ProductMapOverlay ctx={ctx} leftInsetClass={leftInsetClass} />}
+      {ProductMapOverlay && !placing && <ProductMapOverlay ctx={ctx} leftInsetClass={leftInsetClass} />}
+      <PlacingBar />
       <MapZoomControls
         onZoomIn={() => mapApi?.zoomIn()}
         onZoomOut={() => mapApi?.zoomOut()}
@@ -171,6 +204,7 @@ function LeafletView({ center, zoom, layers, tool, idleCursor, setMapApi, onView
       <TileLayer
         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         maxZoom={MAP_MAX_ZOOM}
+        maxNativeZoom={IMAGERY_NATIVE_MAX_ZOOM}
         updateWhenIdle
         updateWhenZooming={false}
         keepBuffer={2}
@@ -384,6 +418,8 @@ function LeafletToolController({
   useEffect(() => {
     const container = map.getContainer();
     container.style.cursor = cursorFor(tool, idleCursor);
+    if (tool) map.doubleClickZoom.disable();
+    else map.doubleClickZoom.enable();
     return () => {
       container.style.cursor = "";
       boxDragCleanupRef.current?.();
@@ -632,6 +668,9 @@ function MapLibreView({
     const pointLeave = () => {
       map.getCanvas().style.cursor = baseCursor;
     };
+    // While placing, clicks add points; a double-click must not also zoom.
+    if (tool) map.doubleClickZoom.disable();
+    else map.doubleClickZoom.enable();
     map.on("click", clickHandler);
     map.on("mousedown", mouseDownHandler);
     map.on("mouseenter", "platform-points", pointEnter);
@@ -733,7 +772,7 @@ function MapZoomControls({
   zoomReady: boolean;
 }) {
   return (
-    <div className="absolute bottom-20 right-4 z-[1080] flex w-11 flex-col overflow-hidden rounded-lg border border-white/10 bg-bg-base/45 opacity-55 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-opacity hover:opacity-95">
+    <div className="absolute bottom-20 right-4 z-[1080] flex w-11 flex-col overflow-hidden rounded-xl border border-white/10 bg-[rgba(13,14,16,0.62)] shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl">
       <MapControlButton Icon={Plus} label="Zoom in" disabled={!zoomReady} onClick={onZoomIn} />
       <MapControlButton Icon={Minus} label="Zoom out" disabled={!zoomReady} onClick={onZoomOut} />
       <MapControlButton Icon={LocateFixed} label="Recenter" disabled={!zoomReady} onClick={onRecenter} />
@@ -741,13 +780,13 @@ function MapZoomControls({
   );
 }
 
-export function MapControlButton({
+function MapControlButton({
   Icon,
   label,
   disabled,
   onClick,
 }: {
-  Icon: LucideIcon;
+  Icon: IconType;
   label: string;
   disabled: boolean;
   onClick: () => void;

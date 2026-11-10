@@ -1,16 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ArrowRight,
-  ArrowLeft,
-  Check,
-  Server,
-  HardDrive,
-  Eye,
-  EyeOff,
-  Loader2,
-  Wifi,
-} from "lucide-react";
+import { ArrowRightIcon as ArrowRight, ArrowLeftIcon as ArrowLeft, CheckIcon as Check, HardDrivesIcon as Server, HardDriveIcon as HardDrive, EyeIcon as Eye, EyeSlashIcon as EyeOff, CircleNotchIcon as Loader2, WifiHighIcon as Wifi } from "@phosphor-icons/react";
 import { DroneLogo } from "../App";
 import { cmd } from "../lib/tauri";
 import { useAppStore } from "../lib/store";
@@ -67,7 +57,7 @@ export function Onboarding() {
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <DroneLogo size={48} />
-          <h1 className="mt-4 text-2xl font-bold text-slate-100">Drone Vision Nav</h1>
+          <h1 className="mt-4 text-2xl font-semibold text-slate-100">Drone Vision Nav</h1>
           <p className="text-slate-400 text-sm mt-1">GNSS-denied vision navigation for PX4 drones</p>
         </div>
 
@@ -78,7 +68,7 @@ export function Onboarding() {
               <div key={s} className="flex items-center gap-2">
                 <div
                   className={cn(
-                    "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors",
+                    "w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-colors",
                     s === step
                       ? "bg-cyan-500 text-white"
                       : stepIdx > STEPS.indexOf(s)
@@ -148,9 +138,9 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
           { icon: "mod", label: "Module Setup", desc: "Install and test runtime modules" },
         ].map((f) => (
           <div key={f.label} className="bg-bg-surface rounded-lg p-3 text-center border border-border">
-            <div className="text-xs font-mono text-cyan-400 mb-1 uppercase">{f.icon}</div>
+            <div className="text-xs text-cyan-400 mb-1">{f.icon}</div>
             <div className="text-xs font-medium text-slate-200 mb-0.5">{f.label}</div>
-            <div className="text-[10px] text-slate-500">{f.desc}</div>
+            <div className="text-[11px] text-slate-500">{f.desc}</div>
           </div>
         ))}
       </div>

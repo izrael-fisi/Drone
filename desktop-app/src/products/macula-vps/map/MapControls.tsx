@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Download, Layers, Map as MapIcon, Pencil, Route, Save, Scissors, Undo2, X } from "lucide-react";
+import { CheckIcon as Check, CaretDownIcon as ChevronDown, DownloadSimpleIcon as Download, StackIcon as Layers, MapTrifoldIcon as MapIcon, PencilSimpleIcon as Pencil, PathIcon as Route, FloppyDiskIcon as Save, ScissorsIcon as Scissors, ArrowUUpLeftIcon as Undo2, XIcon as X } from "@phosphor-icons/react";
 import type { MapProvider, MapProviderId, MapUsageEstimate, Region, SavedMission } from "../../../lib/types";
 import { cn, formatMegabytes } from "../../../lib/utils";
 import { MAP_MAX_ZOOM } from "../../../platform/map/geo";
@@ -141,7 +141,7 @@ export function MapRightControls({
       <div className="rounded-lg border border-white/10 bg-[#07090b]/90 p-2 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl">
         <div className="mb-2 flex items-center gap-2 px-1">
           <Layers size={14} className="text-cyan-400" />
-          <span className="font-data-mono text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          <span className="text-[11px] font-semibold text-slate-500">
             Map
           </span>
           <span className="ml-auto truncate text-[11px] text-slate-500">
@@ -157,7 +157,7 @@ export function MapRightControls({
           >
             <MapIcon size={13} className="text-orange-300" />
             <span className="min-w-0 flex-1 truncate">{selectedLabel}</span>
-            <span className="text-[10px] uppercase tracking-[0.08em] text-slate-600">
+            <span className="text-[11px] text-slate-600">
               {selectedMap === "world" ? "Base" : "Upload"}
             </span>
           </button>
@@ -177,7 +177,7 @@ export function MapRightControls({
                 <MapIcon size={13} />
                 World Map
               </button>
-              <div className="border-t border-white/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">
+              <div className="border-t border-white/10 px-3 py-1.5 text-[11px] font-semibold text-slate-600">
                 Uploaded Maps
               </div>
               {regions.length === 0 ? (
@@ -270,7 +270,7 @@ export function MapRightControls({
               </span>
             </div>
             {drawingMessage && (
-              <div className="mt-2 rounded border border-orange-500/25 bg-orange-500/10 px-2 py-1.5 text-[10px] text-orange-200">
+              <div className="mt-2 rounded border border-orange-500/25 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-200">
                 {drawingMessage}
               </div>
             )}
@@ -338,7 +338,7 @@ export function MapRightControls({
           }}
           disabled={missionModeDisabled}
           className={cn(
-            "flex h-9 w-full items-center justify-center rounded-md border px-3 text-xs font-bold uppercase tracking-[0.12em] transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+            "flex h-9 w-full items-center justify-center rounded-md border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45",
             missionMode
               ? "border-orange-500 bg-orange-500 text-black shadow-[0_10px_32px_rgba(255,102,0,0.24)]"
               : missionCreateRequired
@@ -365,7 +365,7 @@ export function MapRightControls({
             {missionCreateOpen && (
               <div className="space-y-2 border-t border-white/10 p-2">
                 {editingMissionName && (
-                  <div className="rounded border border-orange-500/25 bg-orange-500/10 px-2 py-1.5 text-[10px] text-orange-100">
+                  <div className="rounded border border-orange-500/25 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-100">
                     Editing {editingMissionName}. Select another saved map before saving to move it.
                   </div>
                 )}
@@ -423,7 +423,7 @@ export function MapRightControls({
                 ? `${selectedCount} mission${selectedCount === 1 ? "" : "s"} selected`
                 : "Select missions"}
             </span>
-            <span className="text-[10px] uppercase tracking-[0.08em] text-slate-600">
+            <span className="text-[11px] text-slate-600">
               Filter
             </span>
           </button>
@@ -475,7 +475,7 @@ export function MapRightControls({
                           <span className={cn("h-3 w-3 rounded-sm border", selected ? "border-orange-500 bg-orange-500" : "border-white/20 bg-white/[0.03]")} />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate">{mission.name}</span>
-                            <span className="block truncate text-[10px] text-slate-600">{mission.map_label ?? "World Map"}</span>
+                            <span className="block truncate text-[11px] text-slate-600">{mission.map_label ?? "World Map"}</span>
                           </span>
                         </button>
                         <button
@@ -519,7 +519,7 @@ export function MapRightControls({
 }
 
 
-export function CutInstallProgressMeter({ progress }: { progress: CutInstallProgress }) {
+function CutInstallProgressMeter({ progress }: { progress: CutInstallProgress }) {
   const percent = Math.max(0, Math.min(100, progress.percent));
   const toneClass = progress.tone === "success"
     ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
@@ -530,7 +530,7 @@ export function CutInstallProgressMeter({ progress }: { progress: CutInstallProg
 
   return (
     <div className={cn("mt-2 rounded-md border px-2 py-2", toneClass)}>
-      <div className="flex items-center justify-between gap-2 text-[10px]">
+      <div className="flex items-center justify-between gap-2 text-[11px]">
         <span className="truncate">{progress.label}</span>
         <span className="shrink-0 font-data-mono">
           {progress.current != null && progress.total != null
@@ -548,7 +548,7 @@ export function CutInstallProgressMeter({ progress }: { progress: CutInstallProg
   );
 }
 
-export function MapCutEstimateCard({
+function MapCutEstimateCard({
   estimate,
   loading,
   error,
@@ -601,11 +601,11 @@ export function MapCutEstimateCard({
         onClick={() => setResolutionOpen((current) => !current)}
         className="mb-2 flex w-full items-center justify-between gap-2 rounded border border-white/10 bg-black/25 px-2 py-1.5 text-left transition-colors hover:border-orange-500/35"
       >
-        <span className="font-data-mono text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+        <span className="text-[11px] font-semibold text-slate-500">
           Download Resolution
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 font-data-mono text-[10px] uppercase text-orange-200">
+          <span className="rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[11px] capitalize text-orange-200">
             {zoomLabel}
           </span>
           <ChevronDown size={13} className={cn("text-slate-500 transition-transform", resolutionOpen && "rotate-180")} />
@@ -613,7 +613,7 @@ export function MapCutEstimateCard({
       </button>
       {resolutionOpen && (
         <div className="mb-2 rounded border border-white/10 bg-black/30 px-2 py-2">
-          <label className="flex items-center justify-between text-[10px] text-slate-500">
+          <label className="flex items-center justify-between text-[11px] text-slate-500">
             <span>Tile zoom</span>
             <span className="font-data-mono text-orange-200">Z{zoom}</span>
           </label>
@@ -626,7 +626,7 @@ export function MapCutEstimateCard({
             onChange={(event) => onZoomChange(Number(event.target.value))}
             className="mt-2 w-full accent-orange-500"
           />
-          <div className="mt-1 flex justify-between text-[9px] text-slate-600">
+          <div className="mt-1 flex justify-between text-[11px] text-slate-600">
             <span>faster</span>
             <span>higher detail</span>
           </div>
@@ -638,11 +638,11 @@ export function MapCutEstimateCard({
           onClick={() => setProvidersOpen((current) => !current)}
           className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left transition-colors hover:bg-white/[0.035]"
         >
-          <span className="font-data-mono text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          <span className="text-[11px] font-semibold text-slate-500">
             Map Providers
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="font-data-mono text-[10px] text-slate-600">
+            <span className="font-data-mono text-[11px] text-slate-600">
               {selectedProviderIds.length || 0} selected
             </span>
             <ChevronDown size={13} className={cn("text-slate-500 transition-transform", providersOpen && "rotate-180")} />
@@ -658,7 +658,7 @@ export function MapCutEstimateCard({
                 <label
                   key={provider.id}
                   className={cn(
-                    "flex items-center gap-2 rounded border px-2 py-1.5 text-[10px]",
+                    "flex items-center gap-2 rounded border px-2 py-1.5 text-[11px]",
                     selected
                       ? "border-orange-500/35 bg-orange-500/10 text-orange-100"
                       : readyProvider
@@ -680,12 +680,12 @@ export function MapCutEstimateCard({
                 </label>
               );
             }) : (
-              <div className="rounded border border-white/10 bg-white/[0.025] px-2 py-1.5 text-[10px] text-slate-600">
+              <div className="rounded border border-white/10 bg-white/[0.025] px-2 py-1.5 text-[11px] text-slate-600">
                 No download providers available.
               </div>
             )}
             {providers.length > 0 && selectedProviderIds.length === 0 && (
-              <div className="rounded border border-orange-500/25 bg-orange-500/10 px-2 py-1.5 text-[10px] text-orange-200">
+              <div className="rounded border border-orange-500/25 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-200">
                 Select at least one ready provider to calculate the download estimate.
               </div>
             )}
@@ -693,11 +693,11 @@ export function MapCutEstimateCard({
         )}
       </div>
       {!ready ? (
-        <div className="rounded border border-white/10 bg-black/35 px-2 py-2 text-[10px] text-slate-500">
+        <div className="rounded border border-white/10 bg-black/35 px-2 py-2 text-[11px] text-slate-500">
           {cutShape === "box" ? "Drag a box to calculate size." : "Place at least 3 boundary points to calculate size."}
         </div>
       ) : error ? (
-        <div className="rounded border border-red-500/25 bg-red-500/10 px-2 py-2 text-[10px] text-red-200">
+        <div className="rounded border border-red-500/25 bg-red-500/10 px-2 py-2 text-[11px] text-red-200">
           Estimate unavailable: {error}
         </div>
       ) : (
@@ -707,7 +707,7 @@ export function MapCutEstimateCard({
             onClick={() => setEstimateOpen((current) => !current)}
             className="mb-2 flex w-full items-center justify-between rounded border border-white/10 bg-black/25 px-2 py-1.5 text-left transition-colors hover:border-orange-500/35"
           >
-            <span className="font-data-mono text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+            <span className="text-[11px] font-semibold text-slate-500">
               Download Estimate
             </span>
             <ChevronDown size={13} className={cn("text-slate-500 transition-transform", estimateOpen && "rotate-180")} />
@@ -724,12 +724,12 @@ export function MapCutEstimateCard({
                   draggable={false}
                 />
                 <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] bg-[length:32px_32px]" />
-                <div className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 font-data-mono text-[9px] text-slate-200">
+                <div className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 font-data-mono text-[11px] text-slate-200">
                   Preview {resolutionLabel}
                 </div>
               </div>
             ) : (
-              <div className="flex aspect-video items-center justify-center px-3 text-center text-[10px] text-slate-600">
+              <div className="flex aspect-video items-center justify-center px-3 text-center text-[11px] text-slate-600">
                 Draw a cut to preview selected tile resolution.
               </div>
             )}
@@ -741,7 +741,7 @@ export function MapCutEstimateCard({
             <EstimateMetric label="Resolution" value={resolutionLabel} />
           </div>
           <div className="mt-2 rounded border border-white/10 bg-black/30 px-2 py-2">
-            <div className="mb-1 flex items-center justify-between text-[10px]">
+            <div className="mb-1 flex items-center justify-between text-[11px]">
               <span className="text-slate-500">Disk size</span>
               <span className="font-data-mono text-slate-300">{estimate ? formatMegabytes(estimate.estimated_disk_mb) : loading ? "calculating" : "n/a"}</span>
             </div>
@@ -752,7 +752,7 @@ export function MapCutEstimateCard({
               />
             </div>
           </div>
-          <label className="mt-2 flex items-start gap-2 rounded border border-white/10 bg-black/30 px-2 py-2 text-[10px] text-slate-300">
+          <label className="mt-2 flex items-start gap-2 rounded border border-white/10 bg-black/30 px-2 py-2 text-[11px] text-slate-300">
             <input
               type="checkbox"
               checked={multiLayerMap}
@@ -767,7 +767,7 @@ export function MapCutEstimateCard({
             </span>
           </label>
           {mapLimitWarnings.length > 0 && (
-            <label className="mt-2 flex items-start gap-2 rounded border border-orange-500/25 bg-orange-500/10 px-2 py-2 text-[10px] text-orange-100">
+            <label className="mt-2 flex items-start gap-2 rounded border border-orange-500/25 bg-orange-500/10 px-2 py-2 text-[11px] text-orange-100">
               <input
                 type="checkbox"
                 checked={mapLimitOverride}
@@ -784,7 +784,7 @@ export function MapCutEstimateCard({
           )}
           <div className="mt-2 space-y-1">
             {(estimate?.provider_breakdown.length ? estimate.provider_breakdown : []).map((provider) => (
-              <div key={provider.provider_id} className="grid grid-cols-[54px_1fr_52px] items-center gap-2 text-[10px]">
+              <div key={provider.provider_id} className="grid grid-cols-[54px_1fr_52px] items-center gap-2 text-[11px]">
                 <span className="truncate text-slate-500">{providerShortLabel(provider.provider_id)}</span>
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
                   <div
@@ -798,7 +798,7 @@ export function MapCutEstimateCard({
               </div>
             ))}
             {loading && !estimate && (
-              <div className="rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-slate-500">
+              <div className="rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] text-slate-500">
                 Calculating provider coverage and tile footprint...
               </div>
             )}
@@ -811,16 +811,16 @@ export function MapCutEstimateCard({
   );
 }
 
-export function EstimateMetric({ label, value, active = false }: { label: string; value: string; active?: boolean }) {
+function EstimateMetric({ label, value, active = false }: { label: string; value: string; active?: boolean }) {
   return (
     <div className="rounded border border-white/10 bg-black/30 px-2 py-1.5">
-      <div className="text-[10px] text-slate-500">{label}</div>
+      <div className="text-[11px] text-slate-500">{label}</div>
       <div className={cn("mt-0.5 truncate font-data-mono text-[11px]", active ? "text-orange-200" : "text-slate-300")}>{value}</div>
     </div>
   );
 }
 
-export function ToolButton({
+function ToolButton({
   Icon,
   label,
   active,
@@ -866,14 +866,14 @@ export function HudRow({
   tone: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-bg-card/80 px-3 py-2">
+    <div className="rounded-lg bg-white/[0.035]/80 px-3 py-2">
       <div className="flex items-center gap-2">
         <span className={cn("ops-led", ledClass(tone))} />
         <Icon size={13} className={toneClass(tone)} />
-        <span className="font-data-mono text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+        <span className="text-[11px] font-semibold text-slate-500">{label}</span>
       </div>
       <div className={cn("mt-1 truncate font-data-mono text-sm font-semibold", toneClass(tone))}>{value}</div>
-      <div className="truncate font-data-mono text-[10px] text-slate-500">{detail}</div>
+      <div className="truncate font-data-mono text-[11px] text-slate-500">{detail}</div>
     </div>
   );
 }

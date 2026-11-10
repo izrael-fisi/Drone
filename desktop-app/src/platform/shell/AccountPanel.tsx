@@ -1,4 +1,4 @@
-import { Loader2, Server, UserRound } from "lucide-react";
+import { CircleNotchIcon as Loader2, HardDrivesIcon as Server, UserCircleIcon as UserRound } from "@phosphor-icons/react";
 import { useBackendStore } from "../api/backend";
 import { useEffect, useState } from "react";
 import { useAppStore } from "../../lib/store";
@@ -247,11 +247,11 @@ export function AccountPanel() {
               <div className="min-w-0">
                 <span className="block truncate text-xs font-semibold text-emerald-300">{cloudAccount.email}</span>
                 {orgCtx && (
-                  <span className="block text-[10px] text-slate-400">{orgCtx.org_name} · {orgCtx.role}</span>
+                  <span className="block text-[11px] text-slate-400">{orgCtx.org_name} · {orgCtx.role}</span>
                 )}
               </div>
               {(orgCtx || cloudAccount.plan) && (
-                <span className="shrink-0 rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-300">
+                <span className="shrink-0 rounded border border-orange-500/30 bg-orange-500/10 px-1.5 py-0.5 text-[11px] font-medium text-orange-300">
                   {orgCtx
                     ? (planLabel[orgCtx.org_plan] ?? orgCtx.org_plan)
                     : (planLabel[cloudAccount.plan!] ?? cloudAccount.plan)}
@@ -262,10 +262,10 @@ export function AccountPanel() {
             {/* Quota numbers — always show if there's usage or a limit */}
             {(displayKm2Limit > 0 || displayKm2Used > 0) && (
               <div className="space-y-0.5">
-                <div className="flex justify-between text-[10px]">
+                <div className="flex justify-between text-[11px]">
                   <span className="text-slate-400">{orgCtx ? "Org pool this month" : "Quota this month"}</span>
                 </div>
-                <div className="flex gap-3 text-xs font-mono">
+                <div className="flex gap-3 text-xs tabular-nums">
                   <span><span className="text-slate-100">{displayKm2Used.toFixed(2)}</span> <span className="text-slate-500">km² used</span></span>
                   {displayKm2Limit > 0 && (<>
                     <span className="text-slate-600">/</span>
@@ -274,7 +274,7 @@ export function AccountPanel() {
                   </>)}
                 </div>
                 {orgCtx?.my_km2_allowance != null && (
-                  <div className="text-[10px] text-slate-500">
+                  <div className="text-[11px] text-slate-500">
                     Your allowance: {orgCtx.my_km2_used.toFixed(2)} / {orgCtx.my_km2_allowance} km²
                   </div>
                 )}
@@ -282,7 +282,7 @@ export function AccountPanel() {
             )}
 
             {cloudAccount.modules.length > 0 && (
-              <div className="text-[10px] text-slate-400">
+              <div className="text-[11px] text-slate-400">
                 {cloudAccount.modules.length} module{cloudAccount.modules.length !== 1 ? "s" : ""}
                 {" · "}{cloudAccount.modules.filter((m) => m.status === "active").length} active
               </div>
@@ -293,12 +293,12 @@ export function AccountPanel() {
           {orgCtx?.role === "admin" && orgCtx.members && orgCtx.members.length > 0 && (
             <>
               <SectionLabel>Team Usage</SectionLabel>
-              <div className="rounded-lg border border-border bg-bg-card overflow-hidden">
+              <div className="rounded-lg bg-white/[0.035] overflow-hidden">
                 {orgCtx.members.map((member, i) => (
                   <div
                     key={member.user_id}
                     className={cn(
-                      "px-3 py-2 text-[10px]",
+                      "px-3 py-2 text-[11px]",
                       i > 0 && "border-t border-border"
                     )}
                   >
@@ -323,7 +323,7 @@ export function AccountPanel() {
           {/* Active module selector */}
           <div>
             <label className="block rounded-md border border-border bg-bg-card px-3 py-2">
-              <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              <span className="block text-[11px] font-semibold text-slate-500">
                 Active Module
               </span>
               {cloudAccount.modules.length > 0 ? (
@@ -355,7 +355,7 @@ export function AccountPanel() {
             disabled={cloudLoading}
           />
           {lastRefreshResult && (
-            <div className={`rounded px-2.5 py-2 text-[10px] break-all ${lastRefreshResult.startsWith("✓") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+            <div className={`rounded px-2.5 py-2 text-[11px] break-all ${lastRefreshResult.startsWith("✓") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
               {lastRefreshResult}
             </div>
           )}
@@ -366,17 +366,17 @@ export function AccountPanel() {
             disabled={apiTestLoading || !profile?.proxigo_module_serial}
           />
           {apiTestResult && (
-            <div className={`rounded px-2.5 py-2 text-[10px] break-all ${apiTestResult.startsWith("✓") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+            <div className={`rounded px-2.5 py-2 text-[11px] break-all ${apiTestResult.startsWith("✓") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
               {apiTestResult}
             </div>
           )}
 
           {/* Last usage event from actual map downloads — persists across tab switches */}
           {lastUsageEvent && (
-            <div className={`rounded px-2.5 py-2 text-[10px] break-all space-y-0.5 ${lastUsageEvent.status === "ok" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+            <div className={`rounded px-2.5 py-2 text-[11px] break-all space-y-0.5 ${lastUsageEvent.status === "ok" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
               <div className="font-semibold">{lastUsageEvent.status === "ok" ? "Last download recorded" : "Last download failed"}</div>
               <div className="opacity-80">{lastUsageEvent.message}</div>
-              <div className="text-[9px] opacity-50">{new Date(lastUsageEvent.timestamp).toLocaleTimeString()}</div>
+              <div className="text-[11px] opacity-50">{new Date(lastUsageEvent.timestamp).toLocaleTimeString()}</div>
             </div>
           )}
 
@@ -385,7 +385,7 @@ export function AccountPanel() {
       ) : (
         <>
           <div className="rounded-lg border border-white/10 bg-bg-card p-3 space-y-2">
-            <p className="text-[10px] text-slate-400">
+            <p className="text-[11px] text-slate-400">
               Sign in to your proxigo.us account to track map download usage and manage your subscription.
             </p>
             <CompactField
@@ -402,7 +402,7 @@ export function AccountPanel() {
               secret
             />
             {cloudError && (
-              <div className="rounded border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-[10px] text-red-400">
+              <div className="rounded border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-400">
                 {cloudError}
               </div>
             )}

@@ -4,6 +4,7 @@ pub mod discovery;
 pub mod drone;
 pub mod edge_api;
 pub mod profile;
+pub mod projects;
 pub mod satellite;
 pub mod secrets;
 pub mod ssh;

@@ -1,14 +1,4 @@
-import {
-  Activity,
-  Archive,
-  Camera,
-  Crosshair,
-  Map as MapIcon,
-  Radio,
-  Route as RouteIcon,
-  Server,
-  SlidersHorizontal,
-} from "lucide-react";
+import { PulseIcon as Activity, ArchiveIcon as Archive, CameraIcon as Camera, CrosshairIcon as Crosshair, MapTrifoldIcon as MapIcon, BroadcastIcon as Radio, PathIcon as RouteIcon, HardDrivesIcon as Server, SlidersHorizontalIcon as SlidersHorizontal } from "@phosphor-icons/react";
 import { useMemo } from "react";
 import type { BottomDockTabId } from "../../lib/shellStore";
 import { useAppStore } from "../../lib/store";
@@ -34,7 +24,7 @@ import { MapsPanel } from "./panels/MapsPanel";
 import { MavSettingsPanel } from "./panels/MavSettingsPanel";
 import { MissionPanel } from "./panels/MissionPanel";
 
-export const MACULA_VPS_ID = "macula-vps";
+const MACULA_VPS_ID = "macula-vps";
 const ACCENT = "#FF6600";
 
 function MaculaBottomDock({ open, tab, onOpenChange, onTabChange }: ProductBottomDockProps) {
@@ -120,10 +110,10 @@ function useMaculaCommands(): ProductCommand[] {
     }));
 
     const settings: ProductCommand[] = [
-      { id: "macula-settings-device", label: "Device Settings", detail: "Connection, recording, device mode, SSH", group: "Settings", Icon: Server, run: (ctx) => ctx.openPanel("vehicle") },
-      { id: "macula-settings-gcs", label: "Ground Control Settings", detail: "QGC, Mission Planner, ArduPilot compatibility", group: "Settings", Icon: Radio, run: (ctx) => ctx.openPanel("ground-control") },
-      { id: "macula-settings-mav", label: "MAV Settings", detail: "MAVProxy and VPS parameters", group: "Settings", Icon: Radio, run: (ctx) => ctx.openPanel("mav") },
-      { id: "macula-settings-diagnostics", label: "Diagnostics Settings", detail: "Remote support and security scan", group: "Settings", Icon: Activity, run: (ctx) => ctx.openPanel("diagnostics-settings") },
+      { id: "macula-settings-device", label: "Device settings", detail: "Connection, recording, device mode, SSH", group: "Settings", Icon: Server, run: (ctx) => ctx.openPanel("vehicle") },
+      { id: "macula-settings-gcs", label: "Ground control settings", detail: "QGC, Mission Planner, ArduPilot compatibility", group: "Settings", Icon: Radio, run: (ctx) => ctx.openPanel("ground-control") },
+      { id: "macula-settings-mav", label: "MAV settings", detail: "MAVProxy and VPS parameters", group: "Settings", Icon: Radio, run: (ctx) => ctx.openPanel("mav") },
+      { id: "macula-settings-diagnostics", label: "Diagnostics settings", detail: "Remote support and security scan", group: "Settings", Icon: Activity, run: (ctx) => ctx.openPanel("diagnostics-settings") },
     ];
 
     const maps = regions.slice(0, 10).map<ProductCommand>((region) => ({
@@ -169,7 +159,7 @@ export const maculaVpsProduct: ProductModule = {
       id: "maps",
       label: "Maps",
       Icon: MapIcon,
-      command: { label: "Manage Maps", detail: "Map library, active map, edge cache" },
+      command: { label: "Manage maps", detail: "Map library, active map, edge cache" },
       Component: ({ ctx }) => {
         const model = useMaculaRuntimeModel();
         const regions = useAppStore((state) => state.regions);
@@ -187,21 +177,21 @@ export const maculaVpsProduct: ProductModule = {
       id: "vehicle",
       label: "Device",
       Icon: Server,
-      command: { label: "Manage Vehicles", detail: "Vehicle config and runtime state" },
+      command: { label: "Manage vehicles", detail: "Vehicle config and runtime state" },
       Component: ({ ctx }) => <DeviceSettingsPanel model={useMaculaRuntimeModel()} setBottomDockTab={ctx.openBottomTab} />,
     },
     {
       id: "ground-control",
-      label: "Ground Control",
+      label: "Ground control",
       Icon: Radio,
-      command: { label: "Ground Control", detail: "QGroundControl, Mission Planner, ArduPilot compatibility" },
+      command: { label: "Ground control", detail: "QGroundControl, Mission Planner, ArduPilot compatibility" },
       Component: ({ ctx }) => <GroundControlPanel model={useMaculaRuntimeModel()} setBottomDockTab={ctx.openBottomTab} />,
     },
     {
       id: "camera",
       label: "Camera",
       Icon: Camera,
-      command: { label: "Manage Cameras", detail: "Camera config and vision pipeline" },
+      command: { label: "Manage cameras", detail: "Camera config and vision pipeline" },
       Component: ({ ctx }) => <CameraPanel model={useMaculaRuntimeModel()} pushRightDock={ctx.pushPanel} />,
     },
     {
@@ -217,12 +207,12 @@ export const maculaVpsProduct: ProductModule = {
       id: "flights",
       label: "Flights",
       Icon: Archive,
-      command: { label: "View All Flights", detail: "Recordings, sync, playback evidence" },
+      command: { label: "View all flights", detail: "Recordings, sync, playback evidence" },
       Component: () => <FlightsPanel model={useMaculaRuntimeModel()} />,
     },
     {
       id: "mav",
-      label: "MAV Settings",
+      label: "MAV settings",
       Icon: SlidersHorizontal,
       Component: ({ ctx }) => <MavSettingsPanel model={useMaculaRuntimeModel()} setBottomDockTab={ctx.openBottomTab} />,
     },

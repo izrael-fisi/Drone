@@ -69,7 +69,7 @@ function cloudDiscovery(): BackendDiscovery {
   };
 }
 
-export function parseDiscovery(doc: DiscoveryDocument, baseUrl: string): BackendDiscovery {
+function parseDiscovery(doc: DiscoveryDocument, baseUrl: string): BackendDiscovery {
   const auth = doc.auth ?? {};
   let parsedAuth: BackendAuth;
   if (auth.kind === "supabase" && auth.url && auth.anon_key) {

@@ -49,7 +49,7 @@ function encodeBody(body: unknown, headers: Record<string, string>): string | un
   return JSON.stringify(body);
 }
 
-export async function httpRequest(request: HttpRequest): Promise<HttpResponse> {
+async function httpRequest(request: HttpRequest): Promise<HttpResponse> {
   const method = request.method ?? "GET";
   const headers = { Accept: "application/json", ...request.headers };
   const body = encodeBody(request.body, headers);
@@ -95,7 +95,7 @@ export async function httpRequest(request: HttpRequest): Promise<HttpResponse> {
 }
 
 /** Parse a JSON response body, with a readable error when the server sent HTML or text. */
-export function parseJson<T>(response: HttpResponse): T {
+function parseJson<T>(response: HttpResponse): T {
   if (!response.body) return null as T;
   try {
     return JSON.parse(response.body) as T;
@@ -115,7 +115,7 @@ export async function requestJson<T>(request: HttpRequest): Promise<{ status: nu
   return { status: response.status, ok: response.ok, data: parseJson<T>(response) };
 }
 
-export function hostOf(url: string) {
+function hostOf(url: string) {
   try {
     return new URL(url).host;
   } catch {

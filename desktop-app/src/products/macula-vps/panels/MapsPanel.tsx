@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeftRight, Download, Loader2, Pencil, Search, Trash2 } from "lucide-react";
+import { WarningIcon as AlertTriangle, ArrowsLeftRightIcon as ArrowLeftRight, DownloadSimpleIcon as Download, CircleNotchIcon as Loader2, PencilSimpleIcon as Pencil, MagnifyingGlassIcon as Search, TrashIcon as Trash2 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useAppStore } from "../../../lib/store";
 import { cmd } from "../../../lib/tauri";
@@ -12,7 +12,7 @@ export type MapScope = "all" | "local" | "organization";
 
 
 
-export function MapLibraryCountButton({
+function MapLibraryCountButton({
   label,
   value,
   active,
@@ -34,9 +34,9 @@ export function MapLibraryCountButton({
           : "border-white/10 bg-bg-card text-slate-300 hover:border-orange-500/35 hover:bg-white/[0.045]",
       )}
     >
-      <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</span>
-      <span className="mt-1 block font-mono text-xl font-semibold text-slate-100">{value}</span>
-      <span className="mt-0.5 block truncate text-[10px] text-slate-600">click to browse</span>
+      <span className="block text-[11px] font-semibold text-slate-500">{label}</span>
+      <span className="mt-1 block text-xl font-semibold tabular-nums text-slate-100">{value}</span>
+      <span className="mt-0.5 block truncate text-[11px] text-slate-600">click to browse</span>
     </button>
   );
 }
@@ -158,7 +158,7 @@ export function MapsPanel({ model, regions, onDownloadOrgMap }: { model: Operato
           {/* Local maps */}
           {(openLibrary === "local" || openLibrary === "organization" ? false : true) || openLibrary === "local" ? (
             <div>
-              <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-600">Local</div>
+              <div className="px-1 pb-1 text-[11px] font-semibold text-slate-600">Local</div>
               <div className="max-h-48 overflow-y-auto">
                 {localMaps.filter(r => !query || r.name.toLowerCase().includes(query.toLowerCase())).length === 0 ? (
                   <EmptyLine text="No local maps" />
@@ -169,17 +169,17 @@ export function MapsPanel({ model, regions, onDownloadOrgMap }: { model: Operato
                     <div key={region.id} className="border-b border-white/5 last:border-b-0">
                       {isPendingDelete ? (
                         <div className="px-2 py-2 space-y-1.5 rounded bg-zinc-800/60">
-                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-red-300">
+                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-red-300">
                             <AlertTriangle size={11} className="shrink-0" />
                             Delete &ldquo;{region.name}&rdquo; from your local library?
                           </div>
                           <div className="flex gap-1.5">
                             <button type="button" onClick={() => confirmDelete(region)}
-                              className="flex-1 rounded bg-red-500/20 px-2 py-1 text-[10px] font-medium text-red-300 hover:bg-red-500/30 transition-colors">
+                              className="flex-1 rounded bg-red-500/20 px-2 py-1 text-[11px] font-medium text-red-300 hover:bg-red-500/30 transition-colors">
                               Delete
                             </button>
                             <button type="button" onClick={() => setPendingDeleteId(null)}
-                              className="flex-1 rounded bg-white/5 px-2 py-1 text-[10px] text-slate-400 hover:bg-white/10 transition-colors">
+                              className="flex-1 rounded bg-white/5 px-2 py-1 text-[11px] text-slate-400 hover:bg-white/10 transition-colors">
                               Cancel
                             </button>
                           </div>
@@ -188,7 +188,7 @@ export function MapsPanel({ model, regions, onDownloadOrgMap }: { model: Operato
                         <div className="flex items-center gap-2 px-2 py-2">
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-xs font-medium text-slate-200">{region.name}</div>
-                            {region.location_label && <div className="truncate font-mono text-[10px] text-slate-600">{region.location_label}</div>}
+                            {region.location_label && <div className="truncate text-[11px] text-slate-500">{region.location_label}</div>}
                           </div>
                           <button type="button" onClick={() => renameMap(region)}
                             className="operator-shell-button h-7 w-7 rounded-md" title="Rename">
@@ -216,7 +216,7 @@ export function MapsPanel({ model, regions, onDownloadOrgMap }: { model: Operato
           {/* Org maps */}
           {(openLibrary === "local" || openLibrary === "organization" ? false : true) || openLibrary === "organization" ? (
             <div>
-              <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-violet-400/70">Organization</div>
+              <div className="px-1 pb-1 text-[11px] font-semibold text-violet-400/70">Organization</div>
               <div className="max-h-48 overflow-y-auto">
                 {!cloudAccount?.org ? (
                   <EmptyLine text="Sign in to an org to see shared maps" />
@@ -230,17 +230,17 @@ export function MapsPanel({ model, regions, onDownloadOrgMap }: { model: Operato
                     <div key={orgMap.id} className="border-b border-white/5 last:border-b-0">
                       {isPendingDelete ? (
                         <div className="px-2 py-2 space-y-1.5 rounded bg-red-500/10 border border-red-500/25">
-                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-red-300">
+                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-red-300">
                             <AlertTriangle size={11} className="shrink-0" />
                             Remove &ldquo;{orgMap.name}&rdquo; from org? All team members will lose access.
                           </div>
                           <div className="flex gap-1.5">
                             <button type="button" onClick={() => removeFromOrg(orgMap)} disabled={isBusy}
-                              className="flex-1 rounded bg-red-500/20 px-2 py-1 text-[10px] font-medium text-red-300 hover:bg-red-500/30 transition-colors disabled:opacity-40">
+                              className="flex-1 rounded bg-red-500/20 px-2 py-1 text-[11px] font-medium text-red-300 hover:bg-red-500/30 transition-colors disabled:opacity-40">
                               {isBusy ? "Removing…" : "Remove from Org"}
                             </button>
                             <button type="button" onClick={() => setPendingDeleteId(null)}
-                              className="flex-1 rounded bg-white/5 px-2 py-1 text-[10px] text-slate-400 hover:bg-white/10 transition-colors">
+                              className="flex-1 rounded bg-white/5 px-2 py-1 text-[11px] text-slate-400 hover:bg-white/10 transition-colors">
                               Cancel
                             </button>
                           </div>
@@ -249,7 +249,7 @@ export function MapsPanel({ model, regions, onDownloadOrgMap }: { model: Operato
                         <div className="flex items-center gap-2 px-2 py-2">
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-xs font-medium text-slate-200">{orgMap.name}</div>
-                            <div className="truncate font-mono text-[10px] text-slate-600">
+                            <div className="truncate font-mono text-[11px] text-slate-600">
                               {orgMap.location_label ?? `${orgMap.lat_min.toFixed(3)}, ${orgMap.lon_min.toFixed(3)}`} · Z{orgMap.zoom}
                             </div>
                           </div>

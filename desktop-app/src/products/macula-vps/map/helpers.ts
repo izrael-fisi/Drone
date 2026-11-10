@@ -3,19 +3,6 @@ import { clampMapLatitude, clampMapZoom, pointsBounds, wrapMapLongitude } from "
 
 /** Macula VPS map tooling helpers: regions, map-cut geometry, providers, telemetry labels. */
 
-export function regionCenter(region?: Region): [number, number] {
-  if (!region) return [37.775, -122.418];
-  if (region.polygon_points?.length) {
-    const lats = region.polygon_points.map(([lat]) => lat);
-    const lons = region.polygon_points.map(([, lon]) => lon);
-    return [
-      (Math.min(...lats) + Math.max(...lats)) / 2,
-      (Math.min(...lons) + Math.max(...lons)) / 2,
-    ];
-  }
-  return [(region.lat_min + region.lat_max) / 2, (region.lon_min + region.lon_max) / 2];
-}
-
 export function regionPolygon(region?: Region): [number, number][] {
   if (!region) return [];
   if (region.polygon_points?.length) return region.polygon_points;
@@ -107,7 +94,7 @@ export function sumSelectedProviderTotals(estimate: MapUsageEstimate): MapUsageE
   };
 }
 
-export function tileCoordinateForPoint(point: [number, number], zoom: number) {
+function tileCoordinateForPoint(point: [number, number], zoom: number) {
   const z = clampMapZoom(Math.round(zoom));
   const scale = 2 ** z;
   const lat = clampMapLatitude(point[0]);

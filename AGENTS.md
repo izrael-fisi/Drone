@@ -71,8 +71,6 @@ navigation path. Those documents supersede the older prototype architecture.
   older page routes now open shared docks. Trace imports/routes before
   editing an old page; do not recreate duplicate controls or classical defaults.
   New products register a `ProductModule`; see `docs/desktop-platform.md`.
-- `desktop-app/export-preview/`: source files for the Windows browser-preview
-  zip package.
 - `docs/`: operator, hardware, PX4, desktop app, and Windows handoff docs.
 - `config/`: camera, Pi runtime, and PX4 hardware snapshots.
 
@@ -97,6 +95,10 @@ The desktop app should be map-first and operator-focused:
 
 Keep Vision Pipeline / Camera & Vision as the only editable algorithm settings
 surface. Other panes may summarize those settings.
+
+Visual rules (type, icons, color, surfaces) live in `desktop-app/DESIGN.md`:
+IBM Plex Sans, Phosphor icons, sentence case, no per-row cards, monospace only
+for code/paths/raw data.
 
 ## Verification Commands
 
@@ -123,11 +125,8 @@ cargo check
 cargo test
 ```
 
-Windows UI preview export:
-
-```bash
-./scripts/dev/export_desktop_ui_preview.sh
-```
+The desktop app runs only inside Tauri (no browser fallback); verify UI in the
+desktop window with `npm run tauri dev`.
 
 On Windows PowerShell, use the equivalent:
 

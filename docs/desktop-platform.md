@@ -171,6 +171,39 @@ category) and the briefing point.
 
 The briefing is advisory only. TFRs and NOTAMs are not included yet.
 
+## Projects (site layouts)
+
+Platform feature, available in every product (`src/platform/projects/`). A
+project is a named site with a saved map view and placed items: cameras (facing,
+field of view and range drawn as a view cone), sensors (coverage circle),
+markers, launch pads, geofences and keep-out zones (polygons).
+
+- Saved to `DroneVisionNav/projects.json` by Rust (`commands/projects.rs`,
+  written through a temp file and renamed). The store saves shortly after each
+  change and never before the first load, so an unreadable file is never
+  overwritten. `model.ts` owns the schema; `parseDocument` drops malformed
+  entries instead of failing the whole load (tested in `model.test.ts`).
+- Placing uses the platform map tool and takes over from the active product's
+  tool. `PlacingBar` shows instructions; Enter finishes an area, Backspace
+  removes the last corner, Esc cancels.
+- Site layouts are a `global` layer: visible in every view and toggleable in
+  Layers. Clicking a placed point opens it in the Projects panel.
+
+## Map view
+
+The map reopens where it was left: `GlobalMap` saves the center and zoom
+(`platformStore.mapView`, per machine) about 0.6 s after the map settles. Esri
+imagery is requested up to zoom 19 (`IMAGERY_NATIVE_MAX_ZOOM`) and scaled
+beyond that up to zoom 22. Above 19, Esri serves grey "Map data not yet
+available" tiles. Double-click zoom is off while a placement tool is active.
+
+## Sidebar
+
+`PlatformDock` is one glass sidebar: project chip, Overview, Layers, the active
+product's tools (or the product list in the Overview), then Settings and
+Account. It is labelled when nothing is open. It compacts to an icon rail
+while a panel is open or when collapsed. Widths come from `shell/layout.ts`.
+
 ## Backend connection and API
 
 The app talks to one Proxigo server at a time: **Proxigo Cloud** or an

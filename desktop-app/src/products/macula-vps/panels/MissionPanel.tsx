@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { TrashIcon as Trash2 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { CircleMarker, MapContainer, Pane, Polygon, Polyline, TileLayer, Tooltip, useMap } from "react-leaflet";
 import { SAVED_MISSIONS_CHANGED, loadSavedMissions, missionBoundsFromParts, missionCenter, removeSavedMission } from "../../../lib/missions";
@@ -8,11 +8,11 @@ import { EmptyLine, PanelStack, StatusRow } from "../../../platform/ui";
 
 export type MissionPreviewBounds = [[number, number], [number, number]];
 
-export function clampCoordinate(value: number, min: number, max: number) {
+function clampCoordinate(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-export function missionPreviewBounds(mission: SavedMission): MissionPreviewBounds {
+function missionPreviewBounds(mission: SavedMission): MissionPreviewBounds {
   const bounds = mission.bounds ?? missionBoundsFromParts(mission.border_points, mission.waypoints);
   if (!bounds) return [[-85, -180], [85, 180]];
   const centerLat = (bounds.lat_min + bounds.lat_max) / 2;
@@ -44,7 +44,7 @@ export function missionPreviewBounds(mission: SavedMission): MissionPreviewBound
   ];
 }
 
-export function missionTooltipPlacement(point: [number, number], center: [number, number]) {
+function missionTooltipPlacement(point: [number, number], center: [number, number]) {
   const horizontal = Math.abs(point[1] - center[1]) >= Math.abs(point[0] - center[0]);
   if (horizontal) {
     return point[1] <= center[1]
@@ -56,7 +56,7 @@ export function missionTooltipPlacement(point: [number, number], center: [number
     : { direction: "bottom" as const, offset: [0, 8] as [number, number] };
 }
 
-export function livePositionLatLon(position: DronePositionUpdate | null): [number, number] | null {
+function livePositionLatLon(position: DronePositionUpdate | null): [number, number] | null {
   const lat = position?.lat_lon?.lat;
   const lon = position?.lat_lon?.lon;
   return typeof lat === "number" && Number.isFinite(lat) && typeof lon === "number" && Number.isFinite(lon)
@@ -107,8 +107,8 @@ export function MissionPanel() {
         </button>
       )}
     >
-      <label className="block rounded-lg border border-border bg-bg-card px-3 py-2">
-        <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Mission</span>
+      <label className="block rounded-lg bg-white/[0.035] px-3 py-2">
+        <span className="block text-[11px] font-semibold text-slate-500">Mission</span>
         <select
           value={selectedMission?.id ?? ""}
           onChange={(event) => setSelectedMissionId(event.target.value || null)}
@@ -145,7 +145,7 @@ export function MissionPanel() {
   );
 }
 
-export function MissionPreview({
+function MissionPreview({
   mission,
   livePosition,
 }: {
@@ -258,7 +258,7 @@ export function MissionPreview({
   );
 }
 
-export function MissionPreviewViewport({ mission, bounds }: { mission: SavedMission; bounds: MissionPreviewBounds }) {
+function MissionPreviewViewport({ mission, bounds }: { mission: SavedMission; bounds: MissionPreviewBounds }) {
   const map = useMap();
   const south = bounds[0][0];
   const west = bounds[0][1];
@@ -295,11 +295,11 @@ export function MissionPreviewViewport({ mission, bounds }: { mission: SavedMiss
   return null;
 }
 
-export function MissionStat({ label, value, detail }: { label: string; value: string | number; detail: string }) {
+function MissionStat({ label, value, detail }: { label: string; value: string | number; detail: string }) {
   return (
-    <div className="rounded-lg border border-border bg-bg-card p-3">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</div>
-      <div className="mt-1 font-mono text-sm font-semibold text-orange-300">{value}</div>
+    <div className="rounded-lg bg-white/[0.035] p-3">
+      <div className="text-[11px] font-semibold text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold tabular-nums text-orange-300">{value}</div>
       <div className="mt-0.5 truncate text-xs text-slate-500">{detail}</div>
     </div>
   );

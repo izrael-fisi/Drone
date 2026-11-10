@@ -1,4 +1,4 @@
-import { Home, Loader2, MapPin, Search, type LucideIcon } from "lucide-react";
+import { HouseIcon as Home, CircleNotchIcon as Loader2, MapPinIcon as MapPin, MagnifyingGlassIcon as Search, type Icon as IconType } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useShellStore } from "../../lib/shellStore";
@@ -14,7 +14,7 @@ type CommandEntry = {
   detail: string;
   group: string;
   keywords?: string;
-  Icon: LucideIcon;
+  Icon: IconType;
   disabled?: boolean;
   action: () => void;
 };
@@ -37,20 +37,16 @@ export function SpotlightSearchButton({
         type="button"
         onClick={onOpen}
         className={cn(
-          "pointer-events-auto flex h-12 w-full items-center gap-3 rounded-full border px-4 text-left shadow-2xl backdrop-blur-xl transition-all",
+          "pointer-events-auto flex h-11 w-full items-center gap-3 rounded-full border px-4 text-left shadow-2xl backdrop-blur-xl transition-all",
           open
             ? "border-cyan-500/45 bg-bg-base/80 text-slate-100 shadow-[0_18px_60px_rgba(255,102,0,0.16)]"
             : "border-white/15 bg-white/[0.075] text-slate-300 shadow-[0_18px_60px_rgba(0,0,0,0.42)] hover:border-cyan-500/40 hover:bg-bg-base/72 hover:text-slate-100",
         )}
         title="Search"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-bg-base/55 text-cyan-400">
-          <Search size={16} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">Search places, maps, panels, settings</span>
-          <span className="block truncate text-[11px] text-slate-500">Location lookup and operator shortcuts</span>
-        </span>
+        <Search size={18} className="shrink-0 text-slate-300" />
+        <span className="min-w-0 flex-1 truncate text-sm">Search places and commands</span>
+        <kbd className="shrink-0 rounded border border-white/15 px-1.5 py-0.5 font-sans text-[11px] text-slate-400">Ctrl K</kbd>
       </button>
     </div>
   );
@@ -267,7 +263,7 @@ export function CommandPalette({
         <div className="overflow-y-auto p-2">
           {query.trim().length >= 2 && (
             <div className="mb-2 border-b border-white/10 pb-2">
-              <div className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">
+              <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold text-slate-600">
                 {locationLoading ? <Loader2 size={12} className="animate-spin" /> : <MapPin size={12} />}
                 Locations
               </div>
@@ -283,7 +279,7 @@ export function CommandPalette({
                     <span className="block truncate text-sm font-medium text-slate-200">{result.label}</span>
                     <span className="block truncate text-xs text-slate-500">{result.detail}</span>
                   </span>
-                  <span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-slate-600">Place</span>
+                  <span className="shrink-0 text-[11px] text-slate-600">Place</span>
                 </button>
               ))}
               {!locationLoading && locationResults.length === 0 && (
@@ -316,7 +312,7 @@ export function CommandPalette({
                     <span className="block truncate text-sm font-medium text-slate-200">{entry.label}</span>
                     <span className="block truncate text-xs text-slate-500">{entry.detail}</span>
                   </span>
-                  <span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-slate-600">{entry.group}</span>
+                  <span className="shrink-0 text-[11px] text-slate-600">{entry.group}</span>
                 </button>
               );
             })

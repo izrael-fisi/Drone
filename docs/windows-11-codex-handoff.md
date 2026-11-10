@@ -184,33 +184,16 @@ cd desktop-app
 npm run tauri dev
 ```
 
-## UI Preview Zip
+## UI Preview
 
-To regenerate the browser-only Windows preview package from a Unix-like shell:
-
-```bash
-./scripts/dev/export_desktop_ui_preview.sh
-```
-
-If using PowerShell only, run:
-
-```powershell
-cd desktop-app
-npm ci
-npm run build
-```
-
-Then serve `desktop-app\dist` with a simple static server, or use the checked-in
-templates under `desktop-app\export-preview` as reference.
-
-The generated export folder and zip live under `desktop-app\export\` and are
-ignored by Git.
+The browser-only preview package was retired: the app calls Rust commands
+directly and has no browser fallback. Preview UI in the desktop window with
+`npm run tauri dev`.
 
 ## Active Development Priorities
 
 1. Keep the desktop app map-first and operator-focused.
-2. Keep Raspberry Pi/PX4 hardware workflows separate from browser-only preview
-   flows.
+2. Keep Raspberry Pi/PX4 hardware workflows behind explicit operator actions.
 3. Continue hardening live position telemetry: GPS primary, vision fallback,
    dead reckoning, degraded/no-position states.
 4. Preserve support-bundle evidence and flight review outputs.

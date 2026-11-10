@@ -56,14 +56,6 @@ export interface CloudAccount {
   entitled_products?: string[] | null;
 }
 
-export async function setMemberAllowance(
-  session: ProxigoSession,
-  userId: string,
-  km2Allowance: number | null
-): Promise<void> {
-  await apiCall<unknown>(session, "PATCH", "/api/org", { user_id: userId, km2_allowance: km2Allowance }, "Failed to update allowance");
-}
-
 export interface OrgMapRegion {
   id: string;
   org_id: string;

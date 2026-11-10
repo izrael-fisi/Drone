@@ -6,7 +6,6 @@ import { useShellStore, type BottomDockTabId, type RightDockRoute } from "./lib/
 import { Onboarding } from "./pages/Onboarding";
 import { GlobalMap } from "./platform/map/GlobalMap";
 import { PlatformShell } from "./platform/shell/PlatformShell";
-import { Settings } from "./pages/Settings";
 import { proxigo, type ProxigoSession } from "./lib/proxigo";
 import type { Profile } from "./lib/types";
 import { useBackendStore } from "./platform/api/backend";
@@ -158,19 +157,19 @@ export default function App() {
           <Route path="/mission-planner-gcs" element={<OpenHomeSurface rightDock="ground-control" />} />
           <Route path="/ardupilot" element={<OpenHomeSurface rightDock="ground-control" />} />
           <Route path="/system" element={<OpenHomeSurface rightDock="vehicle" />} />
-          <Route path="/system/module-setup" element={<OpenSettingsGroup group="device" />} />
+          <Route path="/system/module-setup" element={<OpenHomeSurface rightDock="vehicle" />} />
           <Route path="/system/vision" element={<OpenHomeSurface rightDock="camera" />} />
           <Route path="/system/status" element={<OpenHomeSurface bottomDock="system-status" />} />
           <Route path="/devices" element={<OpenHomeSurface rightDock="vehicle" />} />
           <Route path="/vehicle-manager" element={<OpenHomeSurface rightDock="vehicle" />} />
-          <Route path="/pi-setup" element={<OpenSettingsGroup group="device" />} />
-          <Route path="/module-setup" element={<OpenSettingsGroup group="device" />} />
+          <Route path="/pi-setup" element={<OpenHomeSurface rightDock="vehicle" />} />
+          <Route path="/module-setup" element={<OpenHomeSurface rightDock="vehicle" />} />
           <Route path="/vision-pipeline" element={<OpenHomeSurface rightDock="camera" />} />
           <Route path="/camera-vision" element={<OpenHomeSurface rightDock="camera" />} />
           <Route path="/models" element={<OpenHomeSurface rightDock="camera" />} />
           <Route path="/system-status" element={<OpenHomeSurface bottomDock="system-status" />} />
           <Route path="/diagnostics" element={<OpenHomeSurface bottomDock="diagnostics" />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/settings" element={<OpenHomeSurface rightDock="settings" />} />
         </Route>
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
@@ -200,9 +199,6 @@ function OpenHomeSurface({
   return <Navigate to="/home" replace />;
 }
 
-function OpenSettingsGroup({ group }: { group: string }) {
-  return <Navigate to={`/settings?group=${encodeURIComponent(group)}`} replace />;
-}
 
 function ProxigoLoginScreen({
   profile,
@@ -251,20 +247,15 @@ function ProxigoLoginScreen({
 
   return (
     <div className="flex h-screen bg-bg-base items-center justify-center">
-      {/* Background grid */}
       <div
-        className="absolute inset-0 opacity-[0.03]"
-        style={{
-          backgroundImage:
-            "linear-gradient(#FF6600 1px, transparent 1px), linear-gradient(90deg, #FF6600 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
+        className="pointer-events-none absolute inset-0"
+        style={{ background: "radial-gradient(ellipse 60% 50% at 50% 38%, rgba(255,102,0,0.07), transparent 70%)" }}
       />
 
       <div className="relative z-10 w-full max-w-sm px-6 animate-fade-in">
         <div className="flex flex-col items-center mb-8">
           <DroneLogo size={48} />
-          <h1 className="mt-4 text-2xl font-bold text-slate-100">Sign in to Proxigo</h1>
+          <h1 className="mt-4 text-2xl font-semibold text-slate-100">Sign in to Proxigo</h1>
           <p className="text-slate-400 text-sm mt-1 text-center">
             Your account tracks map download quota and subscription status.
           </p>
@@ -273,7 +264,7 @@ function ProxigoLoginScreen({
         <div className="card space-y-4">
           <ServerPicker onPendingChange={setServerPending} />
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">
               Email
             </label>
             <input
@@ -287,7 +278,7 @@ function ProxigoLoginScreen({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">
               Password
             </label>
             <input

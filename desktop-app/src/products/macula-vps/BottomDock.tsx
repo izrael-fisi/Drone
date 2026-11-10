@@ -1,15 +1,15 @@
-import { Activity, MessageSquare, Radio, SlidersHorizontal, Terminal, type LucideIcon } from "lucide-react";
+import { PulseIcon as Activity, ChatCenteredTextIcon as MessageSquare, BroadcastIcon as Radio, SlidersHorizontalIcon as SlidersHorizontal, TerminalWindowIcon as Terminal, type Icon as IconType } from "@phosphor-icons/react";
 import type { BottomDockTabId } from "../../lib/shellStore";
 import { cn } from "../../lib/utils";
 import type { OperatorRuntimeModel } from "../../lib/operatorRuntimeAdapter";
 import { DEFAULT_PIPELINE_CONFIG } from "../../lib/pipelineConfig";
 
-export const BOTTOM_TABS: Array<{ id: BottomDockTabId; label: string; Icon: LucideIcon; requiresDevice?: boolean }> = [
-  { id: "system-status", label: "System Status", Icon: Activity },
+export const BOTTOM_TABS: Array<{ id: BottomDockTabId; label: string; Icon: IconType; requiresDevice?: boolean }> = [
+  { id: "system-status", label: "System status", Icon: Activity },
   { id: "diagnostics", label: "Diagnostics", Icon: Activity },
   { id: "parameters", label: "Parameters", Icon: SlidersHorizontal },
   { id: "messages", label: "Messages", Icon: MessageSquare, requiresDevice: true },
-  { id: "ekf-init", label: "EKF Init", Icon: Radio, requiresDevice: true },
+  { id: "ekf-init", label: "EKF init", Icon: Radio, requiresDevice: true },
   { id: "console", label: "Console", Icon: Terminal, requiresDevice: true },
 ];
 
@@ -78,7 +78,7 @@ export function BottomDock({
           <div className="flex h-12 items-center gap-2 border-b border-white/10 px-4">
             {ActiveTabIcon && <ActiveTabIcon size={15} className="text-orange-300" />}
             <span className="text-sm font-semibold text-slate-100">{activeTab?.label ?? "Status"}</span>
-            <span className="ml-auto font-data-mono text-[10px] uppercase tracking-[0.12em] text-slate-600">
+            <span className="ml-auto text-[11px] text-slate-600">
               {effectiveTab}
             </span>
           </div>
@@ -98,50 +98,50 @@ export function BottomDock({
   );
 }
 
-export function dockRows(tab: BottomDockTabId, model: OperatorRuntimeModel) {
+function dockRows(tab: BottomDockTabId, model: OperatorRuntimeModel) {
   const endpoint = model.activeDevice?.mavlink_endpoint ?? "not configured";
   const mapName = model.activeMap?.areaName ?? "none selected";
   if (tab === "system-status") {
     return [
       { label: "EDGE_API", value: model.edgeConnectionState === "online" ? "live" : "unavailable", tone: model.edgeConnectionState === "online" ? "ready" : "warning" },
-      { label: "DEVICE", value: model.activeDevice?.name ?? "no active device", tone: model.activeDevice ? "ready" : "warning" },
-      { label: "RUNTIME", value: model.activeDevice?.remote_project_path ?? "runtime path not configured", tone: model.activeDevice?.remote_project_path ? "ready" : "warning" },
-      { label: "CAMERA", value: model.activeDevice?.camera_profile ?? "unavailable", tone: model.activeDevice?.camera_profile ? "ready" : "muted" },
-      { label: "MAP", value: mapName, tone: model.activeMap ? "active" : "warning" },
+      { label: "Device", value: model.activeDevice?.name ?? "no active device", tone: model.activeDevice ? "ready" : "warning" },
+      { label: "Runtime", value: model.activeDevice?.remote_project_path ?? "runtime path not configured", tone: model.activeDevice?.remote_project_path ? "ready" : "warning" },
+      { label: "Camera", value: model.activeDevice?.camera_profile ?? "unavailable", tone: model.activeDevice?.camera_profile ? "ready" : "muted" },
+      { label: "Map", value: mapName, tone: model.activeMap ? "active" : "warning" },
     ];
   }
   if (tab === "parameters") {
     return [
-      { label: "DEVICE", value: model.activeDevice?.name ?? "none", tone: model.activeDevice ? "ready" : "warning" },
+      { label: "Device", value: model.activeDevice?.name ?? "none", tone: model.activeDevice ? "ready" : "warning" },
       { label: "MAV_ENDPOINT", value: endpoint, tone: model.activeDevice?.mavlink_endpoint ? "ready" : "warning" },
       { label: "ACTIVE_MAP", value: mapName, tone: model.activeMap ? "active" : "warning" },
       { label: "EDGE_STATE", value: model.edgeConnectionState, tone: model.edgeConnectionState === "online" ? "ready" : "warning" },
-      { label: "PIPELINE", value: `${DEFAULT_PIPELINE_CONFIG.pipeline} (shadow target)`, tone: "muted" },
+      { label: "Pipeline", value: `${DEFAULT_PIPELINE_CONFIG.pipeline} (shadow target)`, tone: "muted" },
     ];
   }
   if (tab === "messages") {
     return [
-      { label: "MESSAGE", value: "No live MAVLink message stream is attached in browser fallback mode.", tone: "warning" },
-      { label: "ROUTE", value: "Connect the Pi runtime, then use MAVLink source control.", tone: "muted" },
+      { label: "Message", value: "No live MAVLink message stream is attached in browser fallback mode.", tone: "warning" },
+      { label: "Route", value: "Connect the Pi runtime, then use MAVLink source control.", tone: "muted" },
     ];
   }
   if (tab === "ekf-init") {
     return [
       { label: "EKF_INIT", value: model.activeDevice ? "waiting for MAVLink EKF evidence" : "disabled until device is connected", tone: model.activeDevice ? "warning" : "muted" },
-      { label: "GPS", value: "no live sample", tone: "muted" },
-      { label: "VISION", value: "no live sample", tone: "muted" },
+      { label: "Gps", value: "no live sample", tone: "muted" },
+      { label: "Vision", value: "no live sample", tone: "muted" },
     ];
   }
   if (tab === "console") {
     return [
-      { label: "CONSOLE", value: "Console commands are available from connected system tools only.", tone: "warning" },
-      { label: "SAFETY", value: "No PX4 parameters are auto-changed from this shell.", tone: "ready" },
+      { label: "Console", value: "Console commands are available from connected system tools only.", tone: "warning" },
+      { label: "Safety", value: "No PX4 parameters are auto-changed from this shell.", tone: "ready" },
     ];
   }
   return [
-    { label: "EDGE", value: model.edgeConnectionState, tone: model.edgeConnectionState === "online" ? "ready" : "warning" },
+    { label: "Edge", value: model.edgeConnectionState, tone: model.edgeConnectionState === "online" ? "ready" : "warning" },
     { label: "MAP_CACHE", value: `${model.localMaps.length} local / ${model.edgeMaps.length} edge`, tone: model.localMaps.length || model.edgeMaps.length ? "ready" : "warning" },
     { label: "ACTIVE_MAP", value: mapName, tone: model.activeMap ? "active" : "warning" },
-    { label: "RUNTIME", value: model.activeDevice?.remote_project_path ?? "runtime path not configured", tone: model.activeDevice?.remote_project_path ? "ready" : "warning" },
+    { label: "Runtime", value: model.activeDevice?.remote_project_path ?? "runtime path not configured", tone: model.activeDevice?.remote_project_path ? "ready" : "warning" },
   ];
 }

@@ -6,7 +6,9 @@
 @tailwind utilities;
 
 :root {
-  font-family: Satoshi, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
   --primary: #ff6600;
   --primary-foreground: #000000;
   --background: #0b0c0d;
@@ -55,11 +57,16 @@ body {
   user-select: none;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* Browser surfaces belong to the design too. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #3a3b3d; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 102, 0, 0.45); }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); background-clip: padding-box; }
+::selection { background: rgba(255, 102, 0, 0.35); color: #fff; }
+:focus-visible { outline: 2px solid rgba(255, 140, 64, 0.85); outline-offset: 2px; border-radius: 4px; }
+input, textarea { caret-color: var(--ops-active); }
+/* Numbers that change or line up (telemetry, quotas, times) use tabular figures. */
+.tabular, td, .font-data-mono { font-variant-numeric: tabular-nums; }
 
 /* Allow text selection in inputs */
 input, textarea, [contenteditable] { user-select: text; }
@@ -141,34 +148,16 @@ input[type="range"]::-webkit-slider-thumb {
     @apply w-full bg-bg-card border border-border rounded-md px-3 py-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/70 focus:ring-0 transition-colors;
   }
   .label {
-    @apply block font-mono text-[10px] font-bold text-slate-400 mb-1.5 uppercase tracking-[0.1em];
+    @apply block text-xs font-medium text-slate-400 mb-1.5;
   }
   .section-title {
-    @apply font-mono text-lg font-semibold text-slate-100;
-  }
-  .badge-cyan {
-    @apply inline-flex items-center gap-1 bg-cyan-500/10 text-cyan-300 text-xs font-medium px-2 py-0.5 rounded-full border border-cyan-500/25;
-  }
-  .badge-green {
-    @apply inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-300 text-xs font-medium px-2 py-0.5 rounded-full border border-emerald-500/25;
-  }
-  .badge-red {
-    @apply inline-flex items-center gap-1 bg-red-500/10 text-red-300 text-xs font-medium px-2 py-0.5 rounded-full border border-red-500/25;
-  }
-  .badge-yellow {
-    @apply inline-flex items-center gap-1 bg-yellow-500/10 text-yellow-300 text-xs font-medium px-2 py-0.5 rounded-full border border-yellow-500/25;
-  }
-  .ops-panel {
-    @apply border border-border bg-bg-surface rounded-lg;
-  }
-  .ops-tile {
-    @apply border border-border bg-bg-surface rounded-lg px-3 py-2;
+    @apply text-lg font-semibold text-slate-100;
   }
   .ops-label {
-    @apply font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400;
+    @apply text-xs font-medium text-slate-400;
   }
   .ops-value {
-    @apply font-mono text-sm font-semibold text-slate-100 tabular-nums;
+    @apply text-sm font-semibold text-slate-100 tabular-nums;
   }
   .ops-led {
     @apply inline-block h-2 w-2 shrink-0 rounded-full bg-slate-500;
@@ -188,44 +177,9 @@ input[type="range"]::-webkit-slider-thumb {
   .ops-led-offline {
     background: var(--ops-offline);
   }
-  .ops-map-overlay {
-    @apply border border-border-strong bg-bg-overlay/95 rounded-lg shadow-2xl;
-  }
-  .ops-console {
-    @apply bg-bg-base border border-border rounded-lg px-3 py-2.5 text-[11px] font-mono text-slate-300 whitespace-pre-wrap leading-relaxed;
-  }
-  .glass-panel {
-    @apply rounded-lg border border-border bg-bg-card/95 backdrop-blur-none shadow-none;
-  }
-  .glass-hover {
-    @apply hover:bg-bg-elevated hover:text-slate-100 transition-colors;
-  }
-  .panel-3d-left {
-    box-shadow: inset -1px 0 0 rgba(255, 102, 0, 0.08);
-  }
-  .panel-3d-right {
-    box-shadow: inset 1px 0 0 rgba(255, 102, 0, 0.08);
-  }
-  .panel-3d-center {
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.015);
-  }
+  /* Values: proportional sans with tabular figures, not a monospace costume. */
   .font-data-mono {
-    @apply font-mono;
-  }
-  .font-label-caps {
-    @apply font-mono uppercase tracking-[0.12em];
-  }
-  .font-headline-lg {
-    @apply font-sans;
-  }
-  .text-label-caps {
-    @apply text-[10px];
-  }
-  .text-data-mono {
-    @apply text-xs;
-  }
-  .text-headline-lg {
-    @apply text-xl;
+    @apply font-sans font-medium;
   }
   .text-status-active,
   .neon-cyan {
@@ -277,42 +231,6 @@ input[type="range"]::-webkit-slider-thumb {
   }
   .shadow-depth-inset {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
-  }
-  .shadow-depth-raised {
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.24);
-  }
-  .bar-3d {
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.1);
-  }
-  .holo-core {
-    width: 100%;
-    height: 58px;
-    border: 1px solid rgba(104, 199, 230, 0.22);
-    background:
-      linear-gradient(rgba(255,102,0,0.08) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,102,0,0.08) 1px, transparent 1px),
-      linear-gradient(135deg, rgba(255,102,0,0.12), transparent 45%);
-    background-size: 16px 16px, 16px 16px, auto;
-    border-radius: 8px;
-    box-shadow: none;
-    position: relative;
-  }
-  .holo-core::before {
-    content: "TACTICAL HEALTH";
-    position: absolute;
-    left: 10px;
-    top: 9px;
-    font: 700 10px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: 0.12em;
-    color: var(--ops-active);
-  }
-  .holo-core::after {
-    content: "READY / DEGRADED ITEMS 03";
-    position: absolute;
-    left: 10px;
-    bottom: 9px;
-    font: 600 10px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #8EA2B8;
   }
   .ops-screen-bg {
     background:

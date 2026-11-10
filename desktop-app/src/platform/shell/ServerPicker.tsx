@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { Cloud, Loader2, Server, ShieldCheck, WifiOff } from "lucide-react";
+import { CloudIcon as Cloud, CircleNotchIcon as Loader2, HardDrivesIcon as Server, ShieldCheckIcon as ShieldCheck, WifiSlashIcon as WifiOff } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
 import { useBackendStore, type BackendKind } from "../api/backend";
@@ -51,7 +51,7 @@ export function ServerPicker({ onPendingChange }: { onPendingChange?: (pending: 
 
   return (
     <div className="space-y-2">
-      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Server</label>
+      <label className="block text-xs font-semibold text-slate-500">Server</label>
       <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-bg-elevated p-1">
         {([
           ["proxigo_cloud", "Proxigo Cloud", Cloud],

@@ -1,4 +1,4 @@
-import { CloudSun, Crosshair, Gauge, Layers, RadioTower, RefreshCw, Shield } from "lucide-react";
+import { AirplaneInFlightIcon, CloudSunIcon as CloudSun, CrosshairIcon as Crosshair, GaugeIcon as Gauge, CellTowerIcon as RadioTower, ArrowClockwiseIcon as RefreshCw, ShieldIcon as Shield } from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { usePlatformMapStore } from "../../platform/mapStore";
 import type {
@@ -104,7 +104,7 @@ function useAirspaceCommands(): ProductCommand[] {
   return useMemo<ProductCommand[]>(() => [
     {
       id: "airspace-brief-center",
-      label: "Brief Map Center",
+      label: "Brief map center",
       detail: "Airspace and weather at the center of the map",
       group: "Airspace & Weather",
       keywords: "weather wind airspace laanc go no-go",
@@ -117,7 +117,7 @@ function useAirspaceCommands(): ProductCommand[] {
     },
     {
       id: "airspace-refresh",
-      label: "Refresh Briefing",
+      label: "Refresh briefing",
       detail: "Reload weather and airspace for the briefing point",
       group: "Airspace & Weather",
       Icon: RefreshCw,
@@ -157,28 +157,28 @@ export const airspaceWeatherProduct: ProductModule = {
       id: PANEL_BRIEFING,
       label: "Briefing",
       Icon: Gauge,
-      command: { label: "Flight Briefing", detail: "Go / no-go for the briefing point", keywords: "weather wind airspace" },
+      command: { label: "Flight briefing", detail: "Go / no-go for the briefing point", keywords: "weather wind airspace" },
       Component: BriefingPanel,
     },
     {
       id: PANEL_AIRSPACE,
       label: "Airspace",
-      Icon: Layers,
+      Icon: AirplaneInFlightIcon,
       command: { label: "Airspace", detail: "Controlled airspace and LAANC ceilings near the briefing point", keywords: "faa class b c d laanc" },
       Component: AirspacePanel,
     },
     {
       id: PANEL_STATIONS,
-      label: "Weather Stations",
+      label: "Weather stations",
       Icon: RadioTower,
-      command: { label: "Weather Stations", detail: "Nearby METAR observations", keywords: "metar taf weather" },
+      command: { label: "Weather stations", detail: "Nearby METAR observations", keywords: "metar taf weather" },
       Component: StationsPanel,
     },
     {
       id: PANEL_LIMITS,
-      label: "Flight Limits",
+      label: "Flight limits",
       Icon: Shield,
-      command: { label: "Flight Limits", detail: "Wind, visibility and temperature thresholds" },
+      command: { label: "Flight limits", detail: "Wind, visibility and temperature thresholds" },
       Component: LimitsPanel,
     },
   ],

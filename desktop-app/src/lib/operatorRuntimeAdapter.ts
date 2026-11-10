@@ -61,7 +61,7 @@ function mapWorkflowId(region: Region) {
   return region.id || region.output_path || region.name;
 }
 
-export function adaptRegionToOperatorMap(region: Region): OperatorMapRequest {
+function adaptRegionToOperatorMap(region: Region): OperatorMapRequest {
   const workflowId = mapWorkflowId(region);
   const lifecycle = mapState(region);
   const isActive = lifecycle === "active" || Boolean(region.active_bundle_path);

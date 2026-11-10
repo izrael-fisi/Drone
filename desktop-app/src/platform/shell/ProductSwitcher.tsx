@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Globe2, Lock } from "lucide-react";
+import { CheckIcon as Check, CaretDownIcon as ChevronDown, GlobeHemisphereWestIcon as Globe2, LockSimpleIcon as Lock } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
 import { useActiveProduct, useEntitlements, useSwitchProduct } from "../hooks";

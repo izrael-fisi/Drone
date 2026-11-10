@@ -43,7 +43,13 @@ export type MapViewport = {
 
 export const MAP_MIN_ZOOM = 0;
 export const WEB_MERCATOR_LAT_LIMIT = 85.05112878;
-export const MAP_MAX_ZOOM = 23;
+export const MAP_MAX_ZOOM = 22;
+/**
+ * Deepest zoom Esri World Imagery serves real tiles for in most places. Beyond
+ * it Esri returns grey "Map data not yet available" tiles, so the map scales
+ * up these tiles instead (close zoom for placing site items stays sharp enough).
+ */
+export const IMAGERY_NATIVE_MAX_ZOOM = 19;
 export const PLACEHOLDER_ORG_COUNTRY_CENTER: [number, number] = [39.8283, -98.5795];
 export const PLACEHOLDER_ORG_COUNTRY_ZOOM = 3;
 
@@ -66,10 +72,10 @@ export type MapLibreRuntime = typeof import("maplibre-gl") & {
 };
 
 export const EMPTY_GEOJSON: MapGeoJsonCollection = { type: "FeatureCollection", features: [] };
-export const VECTOR_LABEL_GLYPHS = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
-export const VECTOR_LABEL_SOURCE_URL = "https://tiles.openfreemap.org/planet";
+const VECTOR_LABEL_GLYPHS = "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
+const VECTOR_LABEL_SOURCE_URL = "https://tiles.openfreemap.org/planet";
 
-export function vectorLabelTextField(): ["coalesce", ["get", string], ["get", string], ["get", string]] {
+function vectorLabelTextField(): ["coalesce", ["get", string], ["get", string], ["get", string]] {
   return ["coalesce", ["get", "name_en"], ["get", "name:latin"], ["get", "name"]];
 }
 
@@ -90,7 +96,7 @@ export const SATELLITE_STYLE: StyleSpecification = {
       type: "raster",
       tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
       tileSize: 256,
-      maxzoom: MAP_MAX_ZOOM,
+      maxzoom: IMAGERY_NATIVE_MAX_ZOOM,
     },
     openmaptiles: {
       type: "vector",

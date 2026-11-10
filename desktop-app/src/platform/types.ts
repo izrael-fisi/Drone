@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import type { Icon as IconType } from "@phosphor-icons/react";
 import type { ComponentType } from "react";
 
 /**
@@ -44,7 +44,7 @@ export interface ProductPanel {
   /** Globally unique dock route id. */
   id: string;
   label: string;
-  Icon: LucideIcon;
+  Icon: IconType;
   /** Hidden panels are reachable as drill-downs/commands but get no rail button. */
   showInRail?: boolean;
   /** Rail button that should appear active while this drill-down is open. */
@@ -123,6 +123,10 @@ export interface PlatformMapLayer {
    * is active, never in the Overview, and not offered as a layer toggle.
    */
   activeOnly?: boolean;
+  /** Shown in every view (platform data such as site layouts), not just its product's. */
+  global?: boolean;
+  /** Always drawn, never offered as a toggle (e.g. a shape being drawn). */
+  internal?: boolean;
 }
 
 export interface ProductBottomDockProps {
@@ -138,7 +142,7 @@ export interface ProductCommand {
   detail: string;
   group: string;
   keywords?: string;
-  Icon: LucideIcon;
+  Icon: IconType;
   disabled?: boolean;
   run: (ctx: PlatformContext) => void;
 }
@@ -149,7 +153,7 @@ export interface ProductModule {
   shortName: string;
   tagline: string;
   category: ProductCategory;
-  Icon: LucideIcon;
+  Icon: IconType;
   /** Hex accent used for the product's badge and map layers. */
   accent: string;
   /** Key matched against `CloudAccount.entitled_products`. */

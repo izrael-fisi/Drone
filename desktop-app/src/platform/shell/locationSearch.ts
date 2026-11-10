@@ -38,7 +38,7 @@ export type ArcGisGeocodeResponse = {
   candidates?: ArcGisGeocodeCandidate[];
 };
 
-export const POPULAR_LOCATION_HINTS: Record<string, string[]> = {
+const POPULAR_LOCATION_HINTS: Record<string, string[]> = {
   "san francisco": ["san francisco", "california", "ca", "united states", "usa"],
   "new york": ["new york", "ny", "united states", "usa"],
   "los angeles": ["los angeles", "california", "ca", "united states", "usa"],
@@ -75,7 +75,7 @@ export const POPULAR_LOCATION_HINTS: Record<string, string[]> = {
   montreal: ["montreal", "quebec", "canada"],
 };
 
-export const POPULAR_LOCATION_AUTOCOMPLETE: PopularLocation[] = [
+const POPULAR_LOCATION_AUTOCOMPLETE: PopularLocation[] = [
   { id: "popular-dubai", label: "Dubai", detail: "Dubai, United Arab Emirates", lat: 25.2048, lon: 55.2708, aliases: ["dxb", "dub"], popularity: 1000 },
   { id: "popular-shanghai", label: "Shanghai", detail: "Shanghai, China", lat: 31.2304, lon: 121.4737, aliases: ["sha", "shanghai china"], popularity: 995 },
   { id: "popular-new-york", label: "New York", detail: "New York, United States", lat: 40.7128, lon: -74.006, aliases: ["nyc", "new york city"], popularity: 990 },
@@ -115,7 +115,7 @@ export const POPULAR_LOCATION_AUTOCOMPLETE: PopularLocation[] = [
   { id: "popular-dallas", label: "Dallas", detail: "Texas, United States", lat: 32.7767, lon: -96.797, aliases: ["dfw"], popularity: 820 },
 ];
 
-export function normalizeLocationText(value: string) {
+function normalizeLocationText(value: string) {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -166,7 +166,7 @@ export function mergeLocationResults(primary: LocationResult[], secondary: Locat
     .slice(0, 5);
 }
 
-export function locationCandidateText(candidate: ArcGisGeocodeCandidate) {
+function locationCandidateText(candidate: ArcGisGeocodeCandidate) {
   const attributes = candidate.attributes;
   return [
     candidate.address,

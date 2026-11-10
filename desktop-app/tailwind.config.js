@@ -32,15 +32,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: [
-          "Satoshi",
-          "system-ui",
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "Segoe UI",
-          "sans-serif",
-        ],
-        mono: ["JetBrains Mono", "Fira Code", "monospace"],
+        sans: ["IBM Plex Sans", "Segoe UI", "system-ui", "sans-serif"],
+        mono: ["IBM Plex Mono", "Consolas", "monospace"],
       },
       animation: {
         "fade-in": "fadeIn 0.3s ease-out",

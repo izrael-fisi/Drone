@@ -88,9 +88,9 @@ export function CalibrationPanel({ model }: { model: OperatorRuntimeModel }) {
         disabled={capturing || !hasCaptureConfig}
       />
       {capturePreview && (
-        <div className="overflow-hidden rounded-lg border border-border bg-bg-card">
+        <div className="overflow-hidden rounded-lg bg-white/[0.035]">
           <img src={capturePreview} alt="Latest camera calibration capture" className="aspect-video w-full object-cover" />
-          <div className="border-t border-border px-3 py-2 font-mono text-[10px] text-slate-500">
+          <div className="border-t border-border px-3 py-2 font-mono text-[11px] text-slate-500">
             {capturePath ?? "camera-preview/latest.jpg"}
           </div>
         </div>

@@ -1,6 +1,6 @@
 
 
-export function hasTauriWindowRuntime() {
+function hasTauriWindowRuntime() {
   if (typeof window === "undefined") return false;
   const tauriInternals = (
     window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown; metadata?: unknown } }

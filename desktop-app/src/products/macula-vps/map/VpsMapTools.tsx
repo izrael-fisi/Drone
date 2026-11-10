@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Map as MapIcon, Navigation } from "lucide-react";
+import { PulseIcon as Activity, MapTrifoldIcon as MapIcon, NavigationArrowIcon as Navigation } from "@phosphor-icons/react";
 import { listen } from "@tauri-apps/api/event";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { createSavedMissionId, missionBoundsFromParts, upsertSavedMission } from "../../../lib/missions";
@@ -703,8 +703,8 @@ export function VpsMapTools({ leftInsetClass }: ProductMapOverlayProps) {
         <div className="flex items-center gap-2">
           <span className={cn("ops-led", activeDevice ? "ops-led-ready" : "ops-led-offline")} />
           <Activity size={13} className={activeDevice ? "text-status-ready" : "text-slate-500"} />
-          <span className="font-data-mono text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Connection</span>
-          <span className="ml-auto truncate font-data-mono text-[10px] text-slate-400">{activeDevice?.name ?? "Offline"}</span>
+          <span className="text-[11px] font-semibold text-slate-500">Connection</span>
+          <span className="ml-auto truncate font-data-mono text-[11px] text-slate-400">{activeDevice?.name ?? "Offline"}</span>
         </div>
         <div className="mt-3 grid gap-2">
           <HudRow

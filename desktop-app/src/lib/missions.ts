@@ -11,7 +11,7 @@ export function createSavedMissionId() {
   return `mission-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export function missionBounds(points: [number, number][]) {
+function missionBounds(points: [number, number][]) {
   if (points.length === 0) return undefined;
   const lats = points.map(([lat]) => lat);
   const lons = points.map(([, lon]) => lon);
@@ -79,7 +79,7 @@ export function loadSavedMissions(): SavedMission[] {
   }
 }
 
-export function saveSavedMissions(missions: SavedMission[]) {
+function saveSavedMissions(missions: SavedMission[]) {
   if (typeof window === "undefined") return;
   const nextMissions = missions.slice().sort((left, right) => right.updated_at.localeCompare(left.updated_at));
   window.localStorage.setItem(SAVED_MISSIONS_KEY, JSON.stringify(nextMissions));
