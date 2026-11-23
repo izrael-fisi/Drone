@@ -1,4 +1,15 @@
-# Drone GNSS-Denied Vision Navigation
+# Proxigo Global View
+
+Global View is the active enterprise physical-security workspace. It builds on
+the existing satellite globe to define site boundaries, assign fixed detection
+appliances, and review alerts from vision, RF, and access-control sources.
+
+Run `npm ci` and `npm run dev` from `desktop-app` to open the local demo.
+The [Global View monitoring guide](docs/global-view-monitoring.md) covers the
+operator workflow and normalized event format. Autonomous drone navigation
+work is paused. The flight-research workspace is available at `/home`.
+
+## Paused research · Drone GNSS-Denied Vision Navigation
 
 **Transferring to another LLM or development machine?** Start with
 [LLM_HANDOFF.md](LLM_HANDOFF.md), the
@@ -6,14 +17,19 @@
 [verification/artifact inventory](docs/handoff-verification-2026-09-05.md).
 This is shadow research, not a flight-qualified GNSS-denied navigation release.
 
-This repository contains the two active parts of the GNSS-denied navigation
-project:
+**Portable module deployment:** the companion flight-computer/camera module is
+airframe-independent, with Holybro X500 V2 and X650 V2 development profiles.
+Start with [container deployment and testing](docs/portable-module-deployment.md)
+for CPU/native replay images, prop-off telemetry and the GCS web container.
+Live camera-driver containerization and aircraft output remain separate gates.
+
+The earlier GNSS-denied navigation project comprised two parts:
 
 1. Drone runtime code for the Raspberry Pi companion computer.
 2. A ground-control / mission-planner desktop app.
 
 ROS 2, Gazebo, and PX4 SITL are no longer part of the active project scaffold.
-Hardware bench testing with the real Pixhawk/Holybro stack is the path forward.
+The prior hardware integration plan called for bench testing with the real Pixhawk/Holybro stack.
 
 The target is a vision-first, fail-closed runtime. Current research combines:
 
@@ -49,7 +65,7 @@ Read [Target Vision-First Architecture](docs/architecture.md),
 [Change Playbook](docs/change-playbook.md) before binding a model or vehicle.
 The [Architecture Reassessment](docs/architecture-reassessment-2026-08.md)
 records what is implemented today and the modern stack selected for migration.
-The active learned product program is documented in
+The learned navigation program is documented in
 [Flagship Modern Vision Pipeline](docs/flagship-modern-vision-pipeline.md).
 
 ## Current Hardware Target

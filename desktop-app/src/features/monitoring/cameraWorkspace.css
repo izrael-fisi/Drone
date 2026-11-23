@@ -1,0 +1,130 @@
+.gv-camera-workspace {
+  --gv-camera-line: #343437;
+  display: grid;
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--gv-rim);
+  border-radius: 12px;
+  background: #111113;
+  color: var(--gv-text);
+}
+.gv-camera-workspace-header, .gv-camera-content-title, .gv-camera-feature-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.gv-camera-workspace-header { padding: 12px 18px; background: linear-gradient(125deg, #222224, #161619 65%); border-bottom: 1px solid var(--gv-camera-line); }
+.gv-camera-workspace-title, .gv-camera-header-actions, .gv-wall-tile-header, .gv-directory-actions { display: flex; align-items: center; gap: 8px; }
+.gv-camera-workspace-title { gap: 11px; }
+.gv-camera-workspace-title > span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 9px; color: var(--gv-orange); background: #35251d; border: 1px solid #664333; }
+.gv-camera-workspace-title h2 { font-size: 1.125rem; font-weight: 750; }
+.gv-camera-workspace-title p, .gv-camera-content-title p, .gv-camera-feature-header span, .gv-camera-profile dt,
+.gv-directory-camera-name p, .gv-directory-camera-state small, .gv-wall-tile-footer small, .gv-camera-coverage-row p {
+  color: var(--gv-muted);
+  font-size: .75rem;
+}
+.gv-camera-header-actions { flex-wrap: wrap; min-width: 0; }
+.gv-camera-workspace :is(.gv-button, .gv-icon-button, input, select) { min-height: 44px; }
+.gv-camera-workspace .gv-icon-button { width: 44px; }
+.gv-camera-workspace .gv-button { white-space: normal; }
+.gv-camera-view-picker { display: grid; min-width: 0; gap: 3px; color: var(--gv-secondary); font-size: .75rem; }
+.gv-camera-workspace-header .gv-camera-header-actions { align-items: end; }
+.gv-camera-workspace-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 18px; scroll-padding-block: 12px; }
+.gv-camera-content-title { margin-bottom: 13px; }
+.gv-camera-content-title h3 { font-size: 1.125rem; font-weight: 700; }
+.gv-camera-content-title p { margin-top: 3px; }
+.gv-camera-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; padding: 10px; margin-bottom: 12px; border: 1px solid var(--gv-camera-line); border-radius: 9px; background: #19191b; }
+.gv-camera-toolbar[hidden] { display: none; }
+.gv-camera-filters, .gv-wall-options { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.gv-camera-filters { flex: 2 1 460px; }
+.gv-wall-options { flex: 1 1 365px; }
+.gv-camera-filters label, .gv-wall-options label { display: grid; gap: 4px; min-width: 0; color: var(--gv-secondary); font-weight: 600; font-size: .75rem; }
+.gv-camera-filters label { flex: 1 1 130px; }
+.gv-camera-filters label:first-child { flex: 2 1 200px; }
+.gv-wall-options label { min-width: min(100%, 150px); }
+.gv-camera-toolbar :is(select, input), .gv-camera-feature-header select, .gv-camera-view-picker select {
+  width: 100%; min-width: 0; max-width: 100%; padding: 6px 8px;
+  border: 1px solid #515156; border-radius: 6px; background: #121214; color: var(--gv-text); font: inherit;
+}
+.gv-camera-search { position: relative; }
+.gv-camera-search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--gv-muted); pointer-events: none; }
+.gv-camera-search input { padding-left: 30px; }
+.gv-camera-search input::placeholder { color: var(--gv-muted); }
+.gv-camera-toolbar form { flex-basis: 100%; border-top: 1px solid var(--gv-camera-line); padding-top: 10px; }
+.gv-wall-options p { align-self: center; font-size: .75rem; color: var(--gv-secondary); }
+.gv-wall-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.gv-wall-grid[data-layout="1"] { grid-template-columns: minmax(0, 1fr); max-width: 1020px; margin-inline: auto; }
+.gv-wall-grid[data-layout="9"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.gv-wall-tile, .gv-camera-feature, .gv-directory-camera, .gv-camera-coverage-row {
+  min-width: 0;
+  border: 1px solid var(--gv-camera-line);
+  border-radius: 9px;
+  background: #18181b;
+}
+.gv-wall-tile-header, .gv-wall-tile-footer { min-width: 0; padding: 2px 8px; }
+.gv-wall-tile-header h4 { flex: 1; font-size: .8125rem; font-weight: 700; overflow-wrap: anywhere; }
+.gv-wall-tile .gv-camera-feed, .gv-camera-feature .gv-camera-feed { margin: 0; border: 0; border-radius: 0; }
+.gv-wall-tile .gv-feed-frame, .gv-camera-feature .gv-feed-frame { background: #070708; }
+.gv-wall-tile .gv-camera-feed-empty { aspect-ratio: 16 / 9; }
+.gv-wall-tile .gv-feed-status, .gv-camera-feature .gv-feed-status { padding-inline: 10px; }
+.gv-wall-tile .gv-feed-retry, .gv-camera-feature .gv-feed-retry { min-height: 32px; }
+.gv-wall-tile-footer { display: flex; align-items: center; justify-content: space-between; gap: 5px; flex-wrap: wrap; min-height: 31px; border-top: 1px solid var(--gv-camera-line); }
+.gv-wall-health { display: inline-flex; gap: 6px; align-items: center; }
+.gv-camera-pin[aria-pressed=true] { color: #ffc29d; }
+.gv-camera-pin[aria-pressed=true] svg { fill: currentColor; }
+.gv-wall-paused { display: grid; place-content: center; justify-items: center; gap: 8px; aspect-ratio: 16 / 9; background: #0d0d0f; color: var(--gv-secondary); }
+.gv-wall-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 14px; color: var(--gv-secondary); }
+.gv-camera-empty { padding: 22px 12px; color: var(--gv-muted); text-align: center; border: 1px dashed #515156; border-radius: 9px; }
+.gv-camera-directory, .gv-camera-coverage-list { display: grid; gap: 8px; }
+.gv-directory-camera { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px; }
+.gv-directory-camera-name { display: flex; align-items: center; gap: 9px; min-width: 0; overflow-wrap: anywhere; }
+.gv-directory-camera-name svg { flex: none; color: var(--gv-muted); }
+.gv-directory-camera h4, .gv-camera-coverage-row h4, .gv-camera-feature h4 { font-weight: 700; }
+.gv-directory-camera-state { display: flex; gap: 5px 10px; flex-wrap: wrap; align-items: center; }
+.gv-directory-actions { flex-wrap: wrap; }
+.gv-camera-focus-layout { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.gv-camera-feature-header, .gv-camera-profile, .gv-camera-evidence { padding: 12px; overflow-wrap: anywhere; }
+.gv-camera-feature-header label { display: grid; gap: 4px; color: var(--gv-secondary); font-size: .75rem; }
+.gv-camera-profile dl { display: grid; gap: 8px; margin: 12px 0 2px; }
+.gv-camera-profile dl > div { display: grid; grid-template-columns: minmax(100px, .7fr) minmax(0, 1fr); gap: 8px; }
+.gv-camera-profile dd { color: var(--gv-secondary); }
+.gv-camera-evidence h4 { margin-bottom: 7px; }
+.gv-camera-evidence > p, .gv-camera-coverage-note { color: var(--gv-muted); font-size: .75rem; }
+.gv-camera-event {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px;
+  width: 100%; min-height: 44px; text-align: left; padding: 6px; border-radius: 6px; color: var(--gv-secondary);
+}
+.gv-camera-event:hover, .gv-camera-event[aria-pressed=true] { background: var(--gv-border); }
+.gv-camera-event span { display: grid; gap: 2px; }
+.gv-camera-event small { font-size: .75rem; color: var(--gv-muted); }
+.gv-camera-coverage-note { margin-bottom: 12px; }
+.gv-camera-coverage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px; overflow-wrap: anywhere; }
+.gv-camera-coverage-row meter { display: block; width: min(100%, 430px); height: 12px; margin-top: 6px; }
+.gv-camera-coverage-row meter::-webkit-meter-bar { background: #3c3c40; border-color: #515156; }
+.gv-camera-coverage-row meter::-webkit-meter-optimum-value { background: var(--gv-orange); }
+
+@media (max-width: 800px) {
+  .gv-wall-grid[data-layout="9"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gv-camera-focus-layout { grid-template-columns: minmax(0, 1fr); }
+  .gv-directory-camera { grid-template-columns: minmax(0, 1fr) auto; }
+  .gv-directory-camera-state { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (max-width: 550px) {
+  .gv-camera-workspace-header, .gv-camera-workspace-body { padding-inline: 9px; }
+  .gv-wall-grid, .gv-wall-grid[data-layout="9"], .gv-directory-camera, .gv-camera-coverage-row { grid-template-columns: minmax(0, 1fr); }
+  .gv-camera-coverage-row button { justify-self: start; }
+}
+@media (max-height: 380px) {
+  .gv-camera-workspace { display: block; overflow: auto; }
+}
+@media (forced-colors: active) {
+  .gv-camera-workspace { --gv-camera-line: CanvasText; }
+  .gv-camera-event[aria-pressed="true"] { border: 1px solid Highlight; }
+  .gv-camera-coverage-row meter::-webkit-meter-bar { background: Canvas; border-color: CanvasText; }
+}

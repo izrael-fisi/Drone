@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "test:e2e": "playwright test",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -15,10 +16,12 @@
     "@tauri-apps/plugin-fs": "^2.4.0",
     "@tauri-apps/plugin-shell": "^2.3.0",
     "@tauri-apps/plugin-store": "^2.2.0",
+    "hls.js": "^1.7.4",
     "leaflet": "^1.9.4",
     "leaflet-draw": "^1.0.4",
     "lucide-react": "^0.474.0",
     "maplibre-gl": "^5.24.0",
+    "polygon-clipping": "^0.15.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
@@ -26,6 +29,8 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.65.1",
     "@tauri-apps/cli": "^2.5.0",
     "@types/leaflet": "^1.9.14",
     "@types/leaflet-draw": "^1.0.12",

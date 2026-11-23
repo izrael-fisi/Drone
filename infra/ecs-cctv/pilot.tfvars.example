@@ -1,0 +1,16 @@
+name                = "proxigo-cctv-demo"
+organization_id     = "example-org"
+site_id             = "example-site"
+vpc_id              = "vpc-0123456789abcdef0"
+private_subnet_ids  = ["subnet-0123456789abcdef0"]
+aws_https_cidrs     = ["10.20.30.0/28"]
+aws_https_prefix_list_ids = ["pl-0123456789abcdef0"]
+worker_image        = "123456789012.dkr.ecr.us-east-1.amazonaws.com/proxigo-cctv@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+cameras = {
+  yard-camera = {
+    secret_arn   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:proxigo/yard-example"
+    rtsp_cidr    = "192.0.2.12/32"
+    gateway_cidr = "192.0.2.15/32"
+  }
+}

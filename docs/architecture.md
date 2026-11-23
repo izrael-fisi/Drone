@@ -3,6 +3,17 @@
 For the transfer snapshot, requirements, implementation boundaries and remaining
 work, start with the [technical handoff](technical-handoff-2026-09-05.md).
 
+## Portable Module Boundary
+
+The deployment target is now an airframe-independent companion flight-computer
+and camera module. Holybro X500 V2 and X650 V2 are development installations,
+not algorithm branches. Pi 5 is the reference compute, not an airframe coupling.
+The [container deployment contract](portable-module-deployment.md) separates
+installation metadata and controller transport from learned processing. It adds
+validated finite replay/bench jobs and optional GCS web packaging; live camera
+container ingress and aircraft publication remain unqualified. Never reuse a
+mount calibration merely because the same module moves to another airframe.
+
 > **Maturity note (2026-08-30):** This document is the target architecture and
 > contract, not a claim that every adapter is already flight-ready. See
 > [Architecture Reassessment](architecture-reassessment-2026-08.md) for the

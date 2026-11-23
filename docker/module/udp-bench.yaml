@@ -1,0 +1,7 @@
+# Use only with flight_controller.transport=udp_listen and udp_port=14550.
+# On native Linux forward existing telemetry here; do not start a second FC owner.
+services:
+  module:
+    network_mode: bridge
+    ports:
+      - "${TELEMETRY_BIND_IP:-127.0.0.1}:14550:14550/udp"

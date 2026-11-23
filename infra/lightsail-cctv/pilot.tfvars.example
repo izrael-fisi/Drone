@@ -1,0 +1,2 @@
+ssh_key_pair_name = "proxigo-cctv-admin"
+admin_cidrs       = ["203.0.113.10/32"]

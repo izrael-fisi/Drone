@@ -1,0 +1,4 @@
+-r requirements.txt
+torch>=2.7,<3
+transformers>=4.50,<5
+scipy>=1.14,<2

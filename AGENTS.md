@@ -3,29 +3,25 @@
 This file is the first-stop context for Codex or another coding agent after
 cloning the repo, especially on a Windows 11 development machine.
 
-For a conversation-independent transfer, first read `LLM_HANDOFF.md`,
-`docs/technical-handoff-2026-09-05.md`, and
-`docs/handoff-verification-2026-09-05.md`. They distinguish implementation from
-targets, document test limitations and list artifacts excluded from Git.
-Immediate priority is camera/capture, current-state estimation and training;
-desktop expansion can wait. No learned aircraft transport is enabled.
+## Active Project Direction
 
-## Project Goal
+Global View is the enterprise physical-security and monitoring application.
+Reuse the existing satellite globe to draw customer site boundaries, assign
+vision, RF, and other detection appliances, and review the resulting alerts.
+The preview entry point is `desktop-app/src/features/monitoring/GlobalView.tsx`.
+See [Global View enterprise monitoring](docs/global-view-monitoring.md) for the
+workflow, normalized observation format, and pilot scope.
 
-Build a GNSS-denied drone navigation stack with two active sections:
-
-1. **Drone runtime code** for Raspberry Pi 5 + Pixhawk/PX4 hardware.
-2. **Ground-control / mission-planner desktop app** for map selection, mission
-   planning, runtime setup, telemetry monitoring, and evidence review.
-
-The active navigation goal is vision-first localization against versioned,
-preloaded georeferenced maps. GPS is an independent primary telemetry source
-when healthy; the visual system must never silently become a metric global pose
-without map geometry, calibration, timestamp, covariance, and ambiguity gates.
+Autonomous drone navigation development is paused. For historical work, read
+`LLM_HANDOFF.md`, `docs/technical-handoff-2026-09-05.md`, and
+`docs/handoff-verification-2026-09-05.md`. Those documents distinguish
+implementation from targets, record test limitations, and list artifacts excluded
+from Git. `docs/portable-module-deployment.md` describes the earlier portable
+module work. No learned aircraft transport is enabled.
 
 Read `docs/architecture.md`, `docs/interface-reference.md`,
 `docs/px4-integration.md`, and `docs/change-playbook.md` before changing the
-navigation path. Those documents supersede the older prototype architecture.
+historical navigation path.
 
 ## What Is Out Of Scope
 
@@ -60,10 +56,11 @@ navigation path. Those documents supersede the older prototype architecture.
 - `scripts/pi/`: Raspberry Pi setup, validation, runtime, field capture, status
   bridge, and support-bundle wrappers.
 - `desktop-app/`: Tauri + React operator app.
-- The currently routed map-first app is mainly `src/App.tsx`,
-  `src/components/Layout.tsx`, and `src/pages/Dashboard.tsx` inside desktop-app.
-  Many older page routes now open shared docks. Trace imports/routes before
-  editing an old page; do not recreate duplicate controls or classical defaults.
+- `desktop-app/src/features/monitoring/`: Global View operator workflow, map
+  overlays, boundary evaluation, and local preview persistence.
+- `desktop-app/src/App.tsx` routes the preserved flight-research workspace at
+  `/home`. Its shared docks and map are in `src/components/Layout.tsx` and
+  `src/pages/Dashboard.tsx`. Trace imports/routes before editing an older page.
 - `desktop-app/export-preview/`: source files for the Windows browser-preview
   zip package.
 - `docs/`: operator, hardware, PX4, desktop app, and Windows handoff docs.
@@ -73,9 +70,9 @@ Generated folders such as `desktop-app/dist/`, `desktop-app/export/`,
 `desktop-app/node_modules/`, and `desktop-app/src-tauri/target/` should not be
 committed.
 
-## Desktop App Direction
+## Flight-Research Workspace
 
-The desktop app should be map-first and operator-focused:
+The historical workspace is organized into these map-first surfaces:
 
 - Start/Dashboard: live operations map, active map, active device, position
   source, GNSS-denied bundle state, quick actions.

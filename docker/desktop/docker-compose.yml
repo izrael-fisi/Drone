@@ -4,6 +4,7 @@ services:
     build:
       context: ../..
       dockerfile: docker/desktop/Dockerfile
+      target: development
     working_dir: /workspace/desktop-app
     environment:
       CHOKIDAR_USEPOLLING: "true"

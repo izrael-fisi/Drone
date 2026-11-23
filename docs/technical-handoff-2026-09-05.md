@@ -14,6 +14,15 @@ It is not a replacement for the detailed contracts or evidence. Exact commands
 and verification outcomes are in [handoff verification](handoff-verification-2026-09-05.md).
 Paths in this document are relative to the repository, not the previous Mac.
 
+**Deployment supplement:** the subsequent user direction is an airframe-agnostic
+companion flight-computer/camera module, developed on Holybro X500 V2 and X650 V2.
+The [portable module deployment foundation](portable-module-deployment.md) adds
+strict installation/job contracts, CPU/native research containers and GCS web
+packaging around existing finite jobs. Airframe identity does not choose the
+algorithm or establish calibration. Live camera container ingress and a qualified
+flight-controller publication adapter remain outstanding. The original hardware
+inventory below must not be mistaken for the new module's platform restriction.
+
 ## 1. Purpose And Current Priority
 
 Build low-cost GNSS-denied drone localization from downward camera imagery,

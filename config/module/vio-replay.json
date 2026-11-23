@@ -1,0 +1,26 @@
+{
+  "schema_version": "vision_nav_module_deployment_v1",
+  "module_id": "vision-module-001",
+  "profile": "pi5_crossview_nav_v1",
+  "execution_provider": "onnxruntime_cpu",
+  "shadow_only": true,
+  "installation": {
+    "installation_id": "generic-unmeasured",
+    "airframe": "Generic airframe",
+    "flight_computer_id": "companion-unverified",
+    "camera_module_id": "camera-unverified",
+    "calibration_id": null,
+    "mount_notes": "Measure camera/IMU and camera/body transforms for this installation."
+  },
+  "flight_controller": {
+    "protocol": "mavlink2",
+    "autopilot": "unverified",
+    "transport": "disabled"
+  },
+  "job": {
+    "kind": "vio_replay",
+    "inputs": {
+      "capture": "sealed-vio-capture"
+    }
+  }
+}

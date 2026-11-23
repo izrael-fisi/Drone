@@ -1,3 +1,5 @@
+# Legacy prototype only. For portable learned module deployment use
+# ../module/compose.yaml; it does not grant privileged whole-host device access.
 services:
   vision-nav-pi:
     image: drone-vision-nav:pi

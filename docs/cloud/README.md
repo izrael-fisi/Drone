@@ -54,7 +54,7 @@ non-regulated customer usage.
 
 ## Implementation Status
 
-Planning scaffold only. No cloud implementation has been performed.
+The Global View CCTV pilot has a Terraform root for its Lightsail worker and a tested private connection check. The commercial account and map services described here remain planning work. [CCTV cloud pilot](../cctv-cloud-pilot.md)
 
 ## Document Index
 

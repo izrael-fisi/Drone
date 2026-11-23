@@ -39,6 +39,7 @@ px4-sitl-evidence/
 
 # Local Pi runtime overrides
 config/pi/vision-nav.env
+config/module/*.local.json
 
 # Transfer staging keeps folder structure, not payloads.
 transfer/mac_to_pi/*
@@ -50,6 +51,8 @@ transfer/pi_to_mac/*
 # Desktop app build/dependency outputs
 desktop-app/node_modules/
 desktop-app/dist/
+desktop-app/playwright-report/
+desktop-app/test-results/
 desktop-app/.npm-cache/
 desktop-app/src-tauri/gen/
 desktop-app/src-tauri/target/

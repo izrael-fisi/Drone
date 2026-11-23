@@ -71,6 +71,7 @@ local-export = [
 ]
 
 [project.scripts]
+vision-nav-module = "vision_nav.deployment.cli:main"
 vision-nav-architecture-demo = "vision_nav.cli:main"
 vision-nav-replay-estimator = "vision_nav.estimation.replay_smoother:main"
 vision-nav-assess-pnp-uncertainty = "vision_nav.estimation.reprojection_uncertainty:main"

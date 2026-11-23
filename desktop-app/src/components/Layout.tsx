@@ -43,6 +43,7 @@ import { loadSavedMissions, missionBoundsFromParts, missionCenter, removeSavedMi
 import { useShellStore, type BottomDockTabId, type MapSearchTarget, type RightDockRoute } from "../lib/shellStore";
 import { useAppStore } from "../lib/store";
 import { cmd } from "../lib/tauri";
+import { runWindowAction } from "../lib/windowControls";
 import type {
   Device,
   DronePositionUpdate,
@@ -82,21 +83,6 @@ const BOTTOM_TABS: Array<{ id: BottomDockTabId; label: string; Icon: LucideIcon;
   { id: "ekf-init", label: "EKF Init", Icon: Radio, requiresDevice: true },
   { id: "console", label: "Console", Icon: Terminal, requiresDevice: true },
 ];
-
-function hasTauriWindowRuntime() {
-  if (typeof window === "undefined") return false;
-  const tauriInternals = (
-    window as Window & { __TAURI_INTERNALS__?: { invoke?: unknown; metadata?: unknown } }
-  ).__TAURI_INTERNALS__;
-  return typeof tauriInternals?.invoke === "function" && Boolean(tauriInternals.metadata);
-}
-
-async function runWindowAction(action: "minimize" | "toggleMaximize" | "close") {
-  if (!hasTauriWindowRuntime()) return;
-  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-  const appWindow = getCurrentWindow();
-  await appWindow[action]();
-}
 
 export function Layout() {
   const { devices, regions, activeDeviceId, setActiveDevice } = useAppStore();

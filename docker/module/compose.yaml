@@ -1,0 +1,67 @@
+name: vision-nav-module
+
+x-module: &module
+  init: true
+  read_only: true
+  user: "${MODULE_UID:-1000}:${MODULE_GID:-1000}"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  network_mode: none
+  pids_limit: 256
+  mem_limit: "${MODULE_MEMORY:-4g}"
+  cpus: "${MODULE_CPUS:-4}"
+  shm_size: 256m
+  tmpfs: ["/tmp:rw,nosuid,nodev,size=512m"]
+  stop_grace_period: 30s
+  volumes:
+    - type: bind
+      source: "${MODULE_CONFIG:-../../config/module/generic.json}"
+      target: /etc/vision-nav/module.json
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: "${MODULE_INPUTS:-../../data/module-inputs}"
+      target: /inputs
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: "${MODULE_OUTPUTS:-../../logs/module}"
+      target: /outputs
+      bind: {create_host_path: false}
+  command: [inspect]
+
+services:
+  module:
+    <<: *module
+    image: drone-vision-module:cpu
+    build:
+      context: ../..
+      dockerfile: docker/module/Dockerfile
+      target: runtime
+      args: {SOURCE_REVISION: "${SOURCE_REVISION:-unrecorded}"}
+  research:
+    <<: *module
+    profiles: [research]
+    image: drone-vision-module:research-native
+    build:
+      context: ../..
+      dockerfile: docker/module/Dockerfile
+      target: research-native
+      args: {SOURCE_REVISION: "${SOURCE_REVISION:-unrecorded}"}
+  gcs:
+    profiles: [gcs]
+    image: drone-vision-gcs:web
+    build:
+      context: ../..
+      dockerfile: docker/desktop/Dockerfile
+      target: web
+    ports: ["127.0.0.1:8080:8080"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=64m"]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

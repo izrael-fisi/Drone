@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Drone Vision Nav",
+        "title": "Proxigo Global View",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,

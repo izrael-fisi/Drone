@@ -4,6 +4,8 @@
 *.py text eol=lf
 *.rs text eol=lf
 *.ts text eol=lf
+# This MPEG-TS playback fixture needs byte-for-byte preservation.
+desktop-app/tests/e2e/fixtures/camera-tile-0.ts binary -eol
 *.tsx text eol=lf
 *.js text eol=lf
 *.mjs text eol=lf

@@ -1,0 +1,7 @@
+# Linux only, opt-in, one mapped device. No camera or whole-/dev exposure.
+services:
+  module:
+    devices:
+      - "${FC_DEVICE:?Set FC_DEVICE to the verified by-id serial path}:/dev/flight-controller:rw"
+    group_add:
+      - "${FC_GID:?Set FC_GID to the serial device numeric group}"

@@ -2,6 +2,19 @@
 
 This is the language-neutral contract for integrating the scaffold. Field names match the Python reference in `src/vision_nav/types.py`; if a different language is used, generate an equivalent IDL/schema and preserve the semantics.
 
+## Portable Deployment Contract
+
+`vision_nav_module_deployment_v1` is an installation/job configuration, not a
+navigation packet. `module_id`, flight-computer/camera identities and installation
+metadata are separate from the fixed learned profile and flight-controller
+transport. X500 V2/X650 V2 names never select estimator behavior. Unknown fields,
+unsupported algorithms, flight-output requests and escaped paths are rejected.
+`vision_nav_module_launch_v1` records configuration digest, environment and
+dispatched command; it is not liveness or completion. See
+[container contract](portable-module-deployment.md) for finite jobs, artifact
+mounts, declared-versus-measured identity and hardware limitations. No existing
+frame, timestamp, covariance, delayed-ownership or publication contract changes.
+
 ## Coordinate and timestamp rules
 
 | Item | Contract |

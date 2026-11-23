@@ -5,12 +5,29 @@ import { cmd } from "./lib/tauri";
 import { useAppStore } from "./lib/store";
 import { useShellStore, type BottomDockTabId, type RightDockRoute } from "./lib/shellStore";
 import { Dashboard } from "./pages/Dashboard";
+import { GlobalView } from "./features/monitoring/GlobalView";
+import { EnterpriseMonitoring } from "./features/monitoring/EnterpriseMonitoring";
+import { SharedCameraView } from "./features/monitoring/SharedCameraView";
 import { Onboarding } from "./pages/Onboarding";
 import { Settings } from "./pages/Settings";
 import { proxigo, type ProxigoSession } from "./lib/proxigo";
 import type { Profile } from "./lib/types";
 
 export default function App() {
+  if (document.documentElement.dataset.enterprise === "true") return <EnterpriseMonitoring />;
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<GlobalView />} />
+        <Route path="/monitoring" element={<GlobalView />} />
+        <Route path="/camera-viewer" element={<SharedCameraView />} />
+        <Route path="/*" element={<FlightResearchApp />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+function FlightResearchApp() {
   const { profile, setProfile, setDevices, setRegions, setProxigoSession, setCloudAccount, proxigoSession, cloudAccount } = useAppStore();
   const [loading, setLoading] = useState(true);
 
@@ -121,55 +138,52 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/home" replace />} />
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route element={<Layout />}>
-          <Route path="/home" element={<Dashboard />} />
-          <Route path="/dashboard" element={<OpenHomeSurface />} />
-          <Route path="/navigation-panel" element={<OpenHomeSurface />} />
-          <Route path="/flights" element={<OpenHomeSurface rightDock="flights" />} />
-          <Route path="/flight-review" element={<OpenHomeSurface rightDock="flights" />} />
-          <Route path="/history" element={<OpenHomeSurface rightDock="flights" />} />
-          <Route path="/maps" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/maps/planner" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/maps/bundles" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/maps/terrain" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/missions" element={<OpenHomeSurface rightDock="missions" />} />
-          <Route path="/mission" element={<OpenHomeSurface rightDock="missions" />} />
-          <Route path="/mission-planner" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/mission-bundle-builder" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/bundle-builder" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/bundle" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/mission-bundle" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/terrain" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/terrain-planning" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/upload" element={<OpenHomeSurface rightDock="maps" />} />
-          <Route path="/mavlink" element={<OpenHomeSurface bottomDock="diagnostics" />} />
-          <Route path="/ground-control" element={<OpenHomeSurface rightDock="ground-control" />} />
-          <Route path="/gcs" element={<OpenHomeSurface rightDock="ground-control" />} />
-          <Route path="/qgroundcontrol" element={<OpenHomeSurface rightDock="ground-control" />} />
-          <Route path="/mission-planner-gcs" element={<OpenHomeSurface rightDock="ground-control" />} />
-          <Route path="/ardupilot" element={<OpenHomeSurface rightDock="ground-control" />} />
-          <Route path="/system" element={<OpenHomeSurface rightDock="vehicle" />} />
-          <Route path="/system/module-setup" element={<OpenSettingsGroup group="device" />} />
-          <Route path="/system/vision" element={<OpenHomeSurface rightDock="camera" />} />
-          <Route path="/system/status" element={<OpenHomeSurface bottomDock="system-status" />} />
-          <Route path="/devices" element={<OpenHomeSurface rightDock="vehicle" />} />
-          <Route path="/vehicle-manager" element={<OpenHomeSurface rightDock="vehicle" />} />
-          <Route path="/pi-setup" element={<OpenSettingsGroup group="device" />} />
-          <Route path="/module-setup" element={<OpenSettingsGroup group="device" />} />
-          <Route path="/vision-pipeline" element={<OpenHomeSurface rightDock="camera" />} />
-          <Route path="/camera-vision" element={<OpenHomeSurface rightDock="camera" />} />
-          <Route path="/models" element={<OpenHomeSurface rightDock="camera" />} />
-          <Route path="/system-status" element={<OpenHomeSurface bottomDock="system-status" />} />
-          <Route path="/diagnostics" element={<OpenHomeSurface bottomDock="diagnostics" />} />
-          <Route path="/settings" element={<Settings />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/home" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <Routes>
+      <Route path="/onboarding" element={<Onboarding />} />
+      <Route element={<Layout />}>
+        <Route path="/home" element={<Dashboard />} />
+        <Route path="/dashboard" element={<OpenHomeSurface />} />
+        <Route path="/navigation-panel" element={<OpenHomeSurface />} />
+        <Route path="/flights" element={<OpenHomeSurface rightDock="flights" />} />
+        <Route path="/flight-review" element={<OpenHomeSurface rightDock="flights" />} />
+        <Route path="/history" element={<OpenHomeSurface rightDock="flights" />} />
+        <Route path="/maps" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/maps/planner" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/maps/bundles" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/maps/terrain" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/missions" element={<OpenHomeSurface rightDock="missions" />} />
+        <Route path="/mission" element={<OpenHomeSurface rightDock="missions" />} />
+        <Route path="/mission-planner" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/mission-bundle-builder" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/bundle-builder" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/bundle" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/mission-bundle" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/terrain" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/terrain-planning" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/upload" element={<OpenHomeSurface rightDock="maps" />} />
+        <Route path="/mavlink" element={<OpenHomeSurface bottomDock="diagnostics" />} />
+        <Route path="/ground-control" element={<OpenHomeSurface rightDock="ground-control" />} />
+        <Route path="/gcs" element={<OpenHomeSurface rightDock="ground-control" />} />
+        <Route path="/qgroundcontrol" element={<OpenHomeSurface rightDock="ground-control" />} />
+        <Route path="/mission-planner-gcs" element={<OpenHomeSurface rightDock="ground-control" />} />
+        <Route path="/ardupilot" element={<OpenHomeSurface rightDock="ground-control" />} />
+        <Route path="/system" element={<OpenHomeSurface rightDock="vehicle" />} />
+        <Route path="/system/module-setup" element={<OpenSettingsGroup group="device" />} />
+        <Route path="/system/vision" element={<OpenHomeSurface rightDock="camera" />} />
+        <Route path="/system/status" element={<OpenHomeSurface bottomDock="system-status" />} />
+        <Route path="/devices" element={<OpenHomeSurface rightDock="vehicle" />} />
+        <Route path="/vehicle-manager" element={<OpenHomeSurface rightDock="vehicle" />} />
+        <Route path="/pi-setup" element={<OpenSettingsGroup group="device" />} />
+        <Route path="/module-setup" element={<OpenSettingsGroup group="device" />} />
+        <Route path="/vision-pipeline" element={<OpenHomeSurface rightDock="camera" />} />
+        <Route path="/camera-vision" element={<OpenHomeSurface rightDock="camera" />} />
+        <Route path="/models" element={<OpenHomeSurface rightDock="camera" />} />
+        <Route path="/system-status" element={<OpenHomeSurface bottomDock="system-status" />} />
+        <Route path="/diagnostics" element={<OpenHomeSurface bottomDock="diagnostics" />} />
+        <Route path="/settings" element={<Settings />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/home" replace />} />
+    </Routes>
   );
 }
 

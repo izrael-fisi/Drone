@@ -7,12 +7,25 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+research/vendor/
+research/outputs/
+.venv*/
+.env
+.env.*
+**/*.pem
+**/id_ed25519*
+**/id_rsa*
+config/pi/vision-nav.env
+config/module/*.local.json
+desktop-app/export/
+*.zip
 
 data/
 logs/
 map_bundles/
 transfer/mac_to_pi/*
 transfer/pi_to_mac/*
+transfer/
 px4-sitl-evidence/
 
 desktop-app/node_modules/

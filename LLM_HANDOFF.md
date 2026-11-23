@@ -3,7 +3,32 @@
 Handoff date: **2026-09-05**. Repository: **izrael-fisi/Drone**, branch **main**.
 This file is independent of any particular assistant or conversation history.
 
-## Transfer Checkpoint
+## Current Product Direction · November 22, 2026
+
+Global View is the active enterprise monitoring product. Reuse the existing
+satellite globe for customer-defined boundaries, fixed detection appliance
+integration, and operator alert review. See
+[the monitoring guide](docs/global-view-monitoring.md) for the current preview
+and pilot scope. Autonomous drone work is paused. The sections below record the
+flight-research checkpoint and its priorities at the time.
+
+## Flight-Research Transfer Checkpoint
+
+**Subsequent deployment direction:** the module must be airframe-independent,
+using our companion flight computer and camera. X500 V2 and X650 V2 are the
+development installations. The [portable deployment foundation](docs/portable-module-deployment.md)
+adds strict module/job configuration, CPU/native research containers, finite
+replay/telemetry jobs and a GCS web image. It does not finish live camera
+container ingress, continuous learned estimation or aircraft publication.
+
+**Local deployment verification:** Colima/Docker tooling is now installed on
+the development Mac under the explicit `colima-drone-dev` context. All three
+Linux ARM64 images built, the native CTest suite passed, and the engine-backed
+verifier completed the actual 160-frame shadow replay and web HTTP checks.
+Run `python3 scripts/dev/verify_module_containers.py --build` on another machine
+(add `--context colima-drone-dev` on this Mac). See the deployment document for
+image identities and limits. AMD64, physical Pi/camera/aircraft qualification and
+trained-model accuracy are not established by these synthetic container tests.
 
 The original learned-observer stream measurements are tied to
 `fe13385f19f550af38941421280c077a9e59917c`. Later commits include documentation
@@ -63,8 +88,8 @@ or claiming continuous learned navigation.
 - `pi5_crossview_nav_v1` is the target profile name, not a certified checkpoint.
   The current student is project-owned cross-attention, not a reproduced
   Video2BEV/Bearing-UAV model. ORB/AKAZE/SIFT remain frozen baselines only.
-- The user's immediate priority is flight data collection, camera stabilization,
-  calibration, vision development and RunPod training. UI expansion can wait.
+- At this checkpoint the priority was flight data collection, camera stabilization,
+  calibration, vision development and RunPod training.
 - GitHub's newer map-first UI, Proxigo integration and companion API changes are
   preserved. They do not qualify navigation or authorize aircraft control.
 - Git contains source and example manifests, **not** model weights, map imagery,

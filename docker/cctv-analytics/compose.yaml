@@ -1,0 +1,38 @@
+services:
+  worker:
+    image: proxigo-cctv-analytics:pilot
+    build:
+      context: ../..
+      dockerfile: docker/cctv-analytics/Dockerfile
+    command: ["--config", "/private/worker.json"]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    stop_grace_period: 20s
+    tmpfs: ["/tmp"]
+    environment:
+      - SSL_CERT_FILE
+    volumes:
+      - type: bind
+        source: ${PROXIGO_CCTV_PRIVATE_DIR:?Provide an absolute private configuration directory}
+        target: /private
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PROXIGO_CCTV_MODELS_DIR:?Provide an absolute model directory}
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false
+      - worker-state:/state
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  worker-state:
