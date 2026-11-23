@@ -1,0 +1,55 @@
+name: Portable module containers
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/module/Dockerfile
+          target: research-native
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: vision-nav-module:ci
+          build-args: SOURCE_REVISION=${{ github.sha }}
+      - name: Run actual native smoke, without network or devices
+        run: |
+          mkdir -p data/module-inputs logs/module
+          docker run --rm --platform '${{ matrix.platform }}' --init \
+            --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,size=512m \
+            -v "$PWD/config/module/native-smoke.json:/etc/vision-nav/module.json:ro" \
+            -v "$PWD/data/module-inputs:/inputs:ro" -v "$PWD/logs/module:/outputs" \
+            vision-nav-module:ci run --run-id ci-native
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: module-evidence-${{ strategy.job-index }}
+          path: logs/module/
+  web-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test static GCS
+        run: |
+          docker build --target web -f docker/desktop/Dockerfile -t vision-nav-gcs:ci .
+          docker run -d --name gcs --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges -p 127.0.0.1:8080:8080 vision-nav-gcs:ci
+          trap 'docker rm -f gcs' EXIT
+          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:8080/healthz
+          curl -fsS http://127.0.0.1:8080/mission-planner | grep 'id="root"'
