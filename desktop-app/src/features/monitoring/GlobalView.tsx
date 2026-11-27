@@ -1,3 +1,4 @@
+import { IntelligencePosture } from "./SiteIntelligence";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import {
   Activity, Bell, Camera, Cctv, ChevronLeft, ChevronRight, CircleAlert, Layers3,
@@ -25,6 +26,7 @@ import { CameraInspection, useVideoHealth, VideoPosture, type VideoCheck } from 
 import { useIncidentArchive } from "./incidentArchive";
 import { useGatewayEvents } from "./gatewayEvents";
 import { WorkspaceSearch, type SearchTarget } from "./WorkspaceSearch";
+import { EvidenceSearch } from "./EvidenceSearch";
 import { BoundaryForm } from "./BoundaryEditor";
 import { bearingTo, insertVertex, MAX_VERTICES, moveVertex, placeBoundaryPoint, readCoordinates, toCoordinateDraft, type BoundaryDraft } from "./configurationModel";
 import { ALL_GROUPS, UNGROUPED, DeviceForm, DeviceInventory, GroupForm, readCameraView, toCameraViewDraft, type DeviceDraft, type DevicePlacement } from "./DeviceInventory";
@@ -32,10 +34,14 @@ import { CAMERA_COVERAGE_COLORS, calculateCameraCoverage } from "./cameraCoverag
 import type { WallPreferences } from "./cameraWallModel";
 import { SitePosture } from "./SitePosture";
 import { CctvAnalyticsPosture } from "./CctvAnalytics";
+import { DockOccupancyPanel } from "./DockOccupancyPanel";
+import { InspectionResultsPanel } from "./InspectionResultsPanel";
+import { DoorPassageReview } from "./DoorPassageReview";
 import { FloorSelect, SiteFloors } from "./SiteFloors";
 import { SiteTelemetryPanel, useSiteTelemetry, type TelemetryConnection } from "./SiteTelemetry";
 import { canManageSite, enterpriseWorkspace, SiteCameraViewer, SiteOperatorPanel, siteInventory, siteRequest, useSiteOperator, type SiteSession } from "./SiteOperator";
 import { SiteConfigurationPanel, type SiteDraft } from "./SiteConfigurationPanel";
+import { SiteOperationsPanel } from "./SiteOperationsPanel";
 import { OrganizationAccounts } from "./OrganizationAccounts";
 import { SiteReadiness } from "./SiteReadiness";
 import { DEFAULT_INSIGHTS_VIEW, SiteInsights, type SiteInsightsView } from "./SiteInsights";
@@ -45,7 +51,7 @@ import { OrganizationDispatch, useOrganizationDispatch } from "./OrganizationDis
 import { hasTauriWindowRuntime, runWindowAction } from "../../lib/windowControls";
 import {
   BOUNDARY_VISIBILITY, MODALITY_LABEL, SAMPLE_SUMMARIES,
-  associatedCamera, boundaryColor, boundaryVisibility, cameraSourceLabel, httpEndpointUrl, evaluateObservation, labelKey, loadWorkspace, parseLabels, parseObservation, readMonitoringFile, samplePosition, saveDeviceAssignments, saveWorkspace, validLabels, validateBoundary,
+  associatedCamera, boundaryColor, boundaryVisibility, cameraSourceLabel, httpEndpointUrl, evaluateObservation, labelKey, loadWorkspace, parseLabels, parseObservation, readMonitoringFile, samplePosition, saveDeviceAssignments, saveWorkspace, validInspectionStationId, validLabels, validateBoundary,
   observationKey, type Alert, type Boundary, type DeviceGroup, type IncomingObservation, type IncidentAction, type Position, type Sensor, type SiteEvent, type SiteFloor, type Workspace,
 } from "./monitoringModel";
 import "./globalView.css";
@@ -99,7 +105,8 @@ function gatewayMapPoints(incident: GatewayIncident, sensors: Sensor[], boundari
 }
 
 const EMPTY_SITE: Workspace = { sensors: [], boundaries: [], groups: [], alerts: [], received: [] };
-type EnterpriseWorkspaceAccess = { current: SiteSession; sites: SiteSession[]; incidentId?: string; visit: (session: SiteSession, incidentId?: string) => void;
+type EnterpriseWorkspaceAccess = { current: SiteSession; sites: SiteSession[]; incidentId?: string; incidentReplay?: boolean;
+  visit: (session: SiteSession, incidentId?: string, replay?: boolean) => void;
   onAccessEnded: () => void; controls: ReactNode };
 
 export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAccess }) {
@@ -124,12 +131,13 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
   const [insights, setInsights] = useState<{ scope: string; view: SiteInsightsView }>();
   const siteConnection = enterprise?.current ?? manualConnection;
   const [connectedSites, setConnectedSites] = useState<SiteSession[]>([]);
-  const [dispatchAlert, setDispatchAlert] = useState<{ siteId: string; incidentId: string } | undefined>(() => enterprise?.incidentId ? {
-    siteId: enterprise.current.operator.siteId, incidentId: enterprise.incidentId,
+  const [dispatchAlert, setDispatchAlert] = useState<{ siteId: string; incidentId: string; replay?: boolean } | undefined>(() => enterprise?.incidentId ? {
+    siteId: enterprise.current.operator.siteId, incidentId: enterprise.incidentId, replay: enterprise.incidentReplay,
   } : undefined);
   const dispatchSites = enterprise?.sites ?? connectedSites;
-  const dispatchStatus = useOrganizationDispatch(dispatchSites);
+  const dispatchState = useOrganizationDispatch(dispatchSites);
   const [siteDraft, setSiteDraft] = useState<SiteDraft>();
+  const [importRequest, setImportRequest] = useState(0);
   const siteOperator = useSiteOperator(siteConnection, localWorkspace);
   const siteSession = siteOperator.session;
   const insightsScope = siteSession ? JSON.stringify([siteSession.base, siteSession.operator.subject, siteSession.operator.cameras]) : "local";
@@ -146,6 +154,7 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
   }, [siteOperator.status]);
   const [initialReplayEvent, setInitialReplayEvent] = useState<SiteEvent>();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [evidenceSearch, setEvidenceSearch] = useState<{ incident?: Alert }>();
   const [cameraWorkspace, setCameraWorkspace] = useState<{ cameraId?: string; revision: number } | null>(null);
   const enterpriseWall = useRef<{ preferences?: WallPreferences; save: (value: WallPreferences) => void }>({
     save: (preferences) => { enterpriseWall.current.preferences = preferences; },
@@ -201,6 +210,7 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
       let created = 0;
       for (const event of events) {
         if (!event || typeof event !== "object" || !("type" in event)) continue;
+        if ("nativeAnalytics" in event) continue;
         try {
           if (event.type === "health") workspace = recordHealthReport(workspace, parseHealthReport(event, now));
           else if (event.type === "observation") {
@@ -424,6 +434,12 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
   function cancelSearch() {
     setSearchOpen(false);
     requestFocus(searchOrigin.current);
+  }
+
+  function openEvidenceSearch(incident?: Alert) {
+    if (!searchOpen) searchOrigin.current = currentFocus();
+    setSearchOpen(false);
+    setEvidenceSearch({ incident });
   }
 
   function currentListSection(): ListSection {
@@ -801,11 +817,12 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
     const reportInterval = String(sensor?.reportIntervalSeconds ?? REPORT_INTERVAL.default);
     setEditor({ kind: "sensor", placement: sensor || listView ? "idle" : "location", value: sensor ? {
       id: sensor.id, name: sensor.name, modality: sensor.modality, demo: sensor.demo, groupId: sensor.groupId, floorId: sensor.floorId, dependencyIds: sensor.dependencyIds,
-      mapLabel: sensor.mapLabel, linkedCameraId: sensor.linkedCameraId, reportInterval, healthUrl: sensor.healthUrl ?? "", gatewayId: sensor.gatewayId ?? "",
+      mapLabel: sensor.mapLabel, linkedCameraId: sensor.linkedCameraId, passageRuleId: sensor.passageRuleId,
+      reportInterval, healthUrl: sensor.healthUrl ?? "", gatewayId: sensor.gatewayId ?? "",
       boundaryIds, coordinates: toCoordinateDraft(sensor.position), labelsText: sensor.labels.join(", "),
       cameraView: toCameraViewDraft(sensor.cameraView), cameraFeedUrl: sensor.cameraFeedUrl ?? "", cameraGridUrl: sensor.cameraGridUrl ?? "",
       cameraProvider: sensor.cameraProvider, cameraChannel: sensor.cameraChannel, cameraGatewayKind: sensor.cameraGatewayKind, analyticsRules: sensor.analyticsRules,
-      analyticsPlacement: sensor.analyticsPlacement,
+      analyticsPlacement: sensor.analyticsPlacement, inspectionStationId: sensor.inspectionStationId,
     } : {
       id: newId(), name: "", modality: "vision", coordinates: toCoordinateDraft(null), boundaryIds, demo: false, reportInterval, healthUrl: "", gatewayId: "", floorId: boundary?.floorId ?? activeFloor?.id,
       groupId: groups.find((group) => group.id === groupFilter)?.id ?? null, labelsText: "", mapLabel: "", cameraView: null, cameraFeedUrl: "", cameraGridUrl: "",
@@ -828,7 +845,9 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
     if (value.modality === "vision" && ((draftView && !cameraView) || (draftFeed.trim() && !feed) || (draftGrid.trim() && !gridFeed))) return;
     const healthUrl = httpEndpointUrl(draftHealthUrl);
     const gatewayId = normalizeGatewayId(draftGatewayId);
+    const station = value.modality === "vision" ? fields.inspectionStationId?.trim() : undefined;
     if ((draftHealthUrl.trim() && !healthUrl) || (draftGatewayId.trim() && !gatewayId)) return;
+    if (station && !validInspectionStationId(station)) return;
     const linkedCameraId = value.modality === "access" && cameras.some((camera) => camera.id !== value.id && camera.id === fields.linkedCameraId)
       ? fields.linkedCameraId : null;
     const sensor: Sensor = { ...fields, name: fields.name.trim(), mapLabel: fields.mapLabel.trim(), labels, position, cameraView,
@@ -838,7 +857,9 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
       cameraGatewayKind: value.modality === "vision" && feed ? cameraGatewayKind : undefined,
       analyticsRules: value.modality === "vision" && fields.analyticsRules?.length ? fields.analyticsRules : undefined,
       analyticsPlacement: value.modality === "vision" ? fields.analyticsPlacement : undefined,
-      linkedCameraId, reportIntervalSeconds, healthUrl, gatewayId: gatewayId ?? undefined };
+      inspectionStationId: station || undefined,
+      linkedCameraId, passageRuleId: linkedCameraId ? fields.passageRuleId : undefined,
+      reportIntervalSeconds, healthUrl, gatewayId: gatewayId ?? undefined };
     const existing = sensors.some((entry) => entry.id === value.id);
     const savedAt = Date.now();
     setConfiguration((current) => {
@@ -1017,7 +1038,11 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
   const deviceList = <DeviceInventory devices={sensors} visible={visibleDevices} groups={groups} healthById={healthById} maintenanceById={maintenanceById}
     groupFilter={groupFilter} labelFilter={effectiveLabelFilter} disabled={!!editor} selected={selectedSensor?.id}
     onGroupFilter={setGroupFilter} onLabelFilter={setLabelFilter} onSelect={(id) => select("sensor", id, true)}
-    onRegister={() => startSensor()} onEditGroup={startGroup} />;
+    onRegister={() => startSensor()} onEditGroup={startGroup}
+    onImport={canManageSite(siteSession) && !editingSite ? () => {
+      setImportRequest((value) => value + 1);
+      if (listView) openListSection("posture"); else { setReviewTab("posture"); setReviewOpen(true); requestFocus("review"); }
+    } : undefined} />;
 
   const boundaryList = <div className="gv-sidebar-section">
     {!listView && <div className="gv-section-heading"><h3>Boundaries <span>{boundaries.length}</span></h3>
@@ -1047,29 +1072,52 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
     setDispatchAlert(undefined); setTelemetry(undefined); setSelection(null); setReplayEvent(null); setFloorId("");
   }
 
-  function visitSite(session: SiteSession, incidentId?: string) {
+  function visitSite(session: SiteSession, incidentId?: string, replay = false) {
     if (incidentId && listView) setListSection("alerts");
-    if (siteConnection === session && incidentId) { select("alert", incidentId, true); return; }
-    if (enterprise) { enterprise.visit(session, incidentId); return; }
+    if (siteConnection?.base === session.base && incidentId) {
+      const alert = alerts.find((entry) => entry.id === incidentId);
+      if (alert) { select("alert", incidentId, true); if (replay) openReplay(alert); }
+      else setDispatchAlert({ siteId: session.operator.siteId, incidentId, replay });
+      return;
+    }
+    if (enterprise) { enterprise.visit(session, incidentId, replay); return; }
     setSiteSession(session); setSiteDraft(undefined); setTelemetry(undefined); setSelection(null); setReplayEvent(null); setFloorId("");
-    setDispatchAlert(incidentId ? { siteId: session.operator.siteId, incidentId } : undefined);
+    setDispatchAlert(incidentId ? { siteId: session.operator.siteId, incidentId, replay } : undefined);
   }
 
   useEffect(() => {
     if (!dispatchAlert || !siteOperator.ready || siteSession?.operator.siteId !== dispatchAlert.siteId) return;
-    setDispatchAlert(undefined);
-    if (alerts.some((alert) => alert.id === dispatchAlert.incidentId)) select("alert", dispatchAlert.incidentId, true);
-    else setNotice("That incident is no longer in the site queue.");
+    const alert = alerts.find((item) => item.id === dispatchAlert.incidentId);
+    if (alert) {
+      select("alert", dispatchAlert.incidentId, true);
+      if (dispatchAlert.replay) openReplay(alert);
+      setDispatchAlert(undefined);
+      return;
+    }
+    const controller = new AbortController();
+    void siteOperator.history(dispatchAlert.incidentId, AbortSignal.any([controller.signal, AbortSignal.timeout(8000)])).catch((issue) => {
+      if (!controller.signal.aborted) {
+        setNotice(issue instanceof Error ? issue.message : "Could not open the recorded incident.");
+        setDispatchAlert(undefined);
+      }
+    });
+    return () => controller.abort();
   }, [dispatchAlert, siteOperator.ready, siteSession?.operator.siteId, alerts]);
 
   const dispatch = siteSession && !editingSite && siteOperator.status !== "revoked" ? {
-    active: siteSession, sites: dispatchSites, status: dispatchStatus, onVisit: visitSite,
+    active: siteSession, sites: dispatchSites, status: dispatchState.status, onVisit: visitSite, onRefresh: dispatchState.refresh,
     onAdd: (session: SiteSession) => setConnectedSites((current) => [...current.filter((site) => site.operator.siteId !== session.operator.siteId), session]),
   } : undefined;
 
   const alertList = <IncidentQueue workspace={workspace} filters={incidentFilters} onFilter={setIncidentFilters}
     selected={selectedAlert?.id} onOpen={openQueuedIncident}
-    gatewayRows={<>{dispatch && <OrganizationDispatch {...dispatch} />}{(incidentFilters.status === "all" || incidentFilters.status === "new") && <GatewayIncidentRows
+    gatewayRows={<>{siteSession && siteOperator.ready && <button type="button" className="gv-button"
+      onClick={() => openEvidenceSearch()}>Evidence search and cases</button>}
+      {dispatch && <OrganizationDispatch {...dispatch} />}
+      {siteSession && siteOperator.ready && !editingSite && workspace.sensors.some(({ passageRuleId }) => passageRuleId) &&
+        <DoorPassageReview key={insightsScope} session={siteSession} workspace={workspace} mapView={!listView}
+          onJump={jumpToReplayEvent} onClose={() => setReplayEvent(null)} />}
+      {(incidentFilters.status === "all" || incidentFilters.status === "new") && <GatewayIncidentRows
       incidents={incidentFilters.status === "new" ? activeGatewayIncidents : gatewayIncidents} onOpen={(id) => select("gateway", id, true)} />}</>}
     onSaveSearch={(name, filters) => setWorkspace((current) => ({ ...current, savedIncidentSearches: [
       ...(current.savedIncidentSearches ?? []).filter((entry) => entry.name !== name), { name, filters },
@@ -1108,12 +1156,25 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
     endpoint: new URL("api/site/telemetry", siteSession.base).href, token: siteSession.token,
   }) : undefined} />}
     {siteSession && siteOperator.status !== "revoked" && <>
-      <SiteConfigurationPanel session={siteSession} local={localWorkspace} editing={editingSite} publishedVersion={siteOperator.publishedVersion}
+      <SiteConfigurationPanel session={siteSession} local={localWorkspace} editing={editingSite} publishedVersion={siteOperator.publishedVersion} importRequest={importRequest}
         onEdit={(draft) => { setSiteDraft(draft); setSelection(null); setReplayEvent(null); }} onExit={() => { setSiteDraft(undefined); setEditor(null); }} />
       <OrganizationAccounts session={siteSession} />
+      {!editingSite && <SiteOperationsPanel session={siteSession} workspace={workspace} version={siteOperator.publishedVersion}
+        onBoundary={(boundary) => select("boundary", boundary.id, true)} onIncident={(id) => visitSite(siteSession, id)}
+        onValidation={siteAssets.refresh} />}
+      {!editingSite && <IntelligencePosture session={siteSession} workspace={workspace}
+        onCamera={(id) => select("sensor", id, true)} onBoundary={(id) => select("boundary", id, true)} />}
       <CctvAnalyticsPosture workspace={workspace} session={siteSession} version={siteOperator.publishedVersion} onCamera={(id) => select("sensor", id, true)} />
+      {!editingSite && <DockOccupancyPanel key={insightsScope}
+        workspace={workspace} version={siteOperator.publishedVersion} session={siteSession}
+        ready={siteOperator.ready && siteOperator.status !== "offline"} onCamera={(id) => select("sensor", id, true)} />}
+      {!editingSite && siteOperator.ready && <InspectionResultsPanel key={insightsScope}
+        session={siteSession} cameras={cameras} onCamera={(id) => select("sensor", id, true)} />}
       {editingSite && <XProtectCatalog session={siteSession} onAdd={(camera) => {
         setConfiguration((current) => current.sensors.some(({ id }) => id === camera.id) ? current : { ...current, sensors: [...current.sensors, camera] });
+      }} />}
+      {editingSite && <XProtectCatalog session={siteSession} provider="genetec" onAdd={(device) => {
+        setConfiguration((current) => current.sensors.some(({ id }) => id === device.id) ? current : { ...current, sensors: [...current.sensors, device] });
       }} />}
       <SiteReadiness session={siteSession} workspace={workspace} health={healthById} version={siteOperator.publishedVersion} now={healthNow} editing={!!editingSite}
         assets={siteAssets.assets} refreshAssets={siteAssets.refresh}
@@ -1307,10 +1368,27 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
             : selectedAlert && replayAlert ? <IncidentPanel key={selectedAlert.id + (siteSession?.operator.name ?? "")} alert={selectedAlert} camera={evidenceCamera} archive={archive} cameras={incidentCameras(selectedAlert, sensors, coverage)}
               operatorNameOverride={siteSession?.operator.name} readOnly={!!siteSession && (siteSession.operator.role === "viewer" || !siteOperator.ready)}
               siteSession={siteSession}
+              onIntelligenceEvidence={({ sensorId, eventId, occurredAt, text, type }) => {
+                const match = incidentTimeline(workspace, replayAlert).find(({ observation }) => observation.sensorId === sensorId && observation.id === eventId);
+                const device = sensors.find((sensor) => sensor.id === sensorId);
+                const recordedEvent: SiteEvent | undefined = occurredAt && text ? {
+                  observation: { id: eventId, sensorId, occurredAt, summary: text, eventType: type },
+                  sensorName: device?.name ?? sensorId, modality: device?.modality ?? (type === "rf-detection" ? "rf" : "vision"),
+                  cameraId: selectedAlert.cameraId ?? null, floorId: selectedAlert.floorId, origin: "Site gateway",
+                  boundaries: [{ id: selectedAlert.zoneId, name: selectedAlert.zoneName }],
+                } : undefined;
+                const entry = match ?? recordedEvent;
+                if (!entry) { openReplay(selectedAlert); return; }
+                setInitialReplayEvent(entry);
+                jumpToReplayEvent(entry);
+                requestFocus("review");
+              }}
+              onCase={siteSession && siteOperator.ready ? () => openEvidenceSearch(selectedAlert) : undefined}
               recordingCoverage={workspace.recordingRecoveryEnabled ? workspace.recordingCoverage?.find((row) => row.incidentId === selectedAlert.id) : undefined}
               timeline={incidentTimeline(workspace, replayAlert)}
               companion={correlatedAlert} onReplayEvent={(entry) => openQueuedIncident(selectedAlert, entry)}
-              replay={showReplay ? <IncidentReplay alert={replayAlert} workspace={workspace} videoChecks={videoChecks} initialEvent={initialReplayEvent}
+              replay={showReplay ? <IncidentReplay alert={replayAlert} workspace={workspace} siteSession={siteSession}
+                videoChecks={videoChecks} initialEvent={initialReplayEvent}
                 onJump={jumpToReplayEvent} mapView={!listView} onBack={() => leaveReplay(selectedAlert)} onClose={() => closeReview()} /> : undefined}
               onReplay={() => openReplay(selectedAlert)}
               related={activeAlerts.filter((alert) => alert.id !== selectedAlert.id)} onSelectRelated={(id) => select("alert", id, true)}
@@ -1339,6 +1417,8 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
                   {selectedBoundary.notes && <div><dt>Notes</dt><dd>{selectedBoundary.notes}</dd></div>}
                   <div><dt>Devices</dt><dd>{sensors.filter((sensor) => selectedBoundary.sensorIds.includes(sensor.id)).map((sensor) => sensor.name).join(", ") || "None"}</dd></div>
                 </dl>
+                {authoritativeSite && !editingSite && <DockOccupancyPanel workspace={workspace} version={siteOperator.publishedVersion}
+                  ready={siteOperator.ready && siteOperator.status !== "offline"} boundaryId={selectedBoundary.id} onCamera={(id) => select("sensor", id, true)} />}
                 <div className="gv-detail-actions">
                   <button type="button" className="gv-button gv-primary" data-focus-key="edit-boundary"
                     onClick={() => startBoundary(selectedBoundary)}>Edit boundary</button>
@@ -1351,7 +1431,14 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
 
             </>}
         </aside>}
-        {searchOpen && <WorkspaceSearch targets={searchTargets} onClose={cancelSearch} onSelect={jumpTo} />}
+        {searchOpen && <WorkspaceSearch targets={searchTargets} onClose={cancelSearch} onSelect={jumpTo}
+          onEvidence={siteSession && siteOperator.ready ? () => openEvidenceSearch() : undefined} />}
+        {evidenceSearch && siteSession && siteOperator.status !== "revoked" && <EvidenceSearch key={insightsScope}
+          active={siteSession} sites={dispatchSites} incident={evidenceSearch.incident ? {
+            id: evidenceSearch.incident.id, title: evidenceSearch.incident.observation.summary,
+          } : undefined}
+          onClose={() => { setEvidenceSearch(undefined); requestFocus(searchOrigin.current); }}
+          onIncident={(site, id) => { setEvidenceSearch(undefined); visitSite(site, id, true); }} />}
         {cameraWorkspace && <CameraWorkspace key={cameraWorkspace.revision} workspace={workspace} healthById={healthById} videoChecks={videoChecks} now={healthNow} coverage={coverage} compact={compact} onInspect={inspectCamera} siteSession={siteSession}
           enterpriseWall={enterprise ? enterpriseWall.current : undefined}
           inspectionsReadOnly={authoritativeSite && (!siteOperator.ready || siteSession?.operator.role === "viewer")}

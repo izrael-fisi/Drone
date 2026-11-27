@@ -56,6 +56,7 @@ class SiteCollaboration:
             raise CameraError("Device camera mappings must use registered device IDs.")
         self.accounts = SiteAccounts(activity, config, self.site, proxy_secret)
         self.monitor = None
+        self.ai_jobs = None
         with activity.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS shared_incidents (
@@ -78,6 +79,7 @@ class SiteCollaboration:
 
     def session(self, actor):
         return {"site": self.site, "siteId": self.accounts.site_id, "timeZone": self.time_zone, "organization": self.accounts.organization,
+                "automaticTriageAvailable": bool(self.ai_jobs and self.ai_jobs.automatic),
                 **{key: actor[key] for key in ("subject", "name", "role", "cameras")}}
 
     @staticmethod
@@ -115,6 +117,16 @@ class SiteCollaboration:
             existing_camera, revision, owner, closed, handoff = existing or (camera, 0, None, False, False)
             if existing_camera != camera or not self.can_view(actor, existing_camera):
                 raise PermissionError("Your role cannot change this incident.")
+            guided = kind in ("procedure-step", "procedure-override")
+            if guided:
+                action_id = text_field(action, "actionId", 96)
+                request = json.dumps(action, sort_keys=True)
+                duplicate = db.execute("SELECT subject,request,response FROM procedure_actions WHERE incident=? AND action_id=?",
+                                       (identifier, action_id)).fetchone()
+                if duplicate:
+                    if duplicate[:2] != (actor["subject"], request):
+                        raise Conflict("This procedure action ID was already used.")
+                    return json.loads(duplicate[2])
             if revision != version:
                 raise Conflict("This incident changed on another workstation. Refreshing its activity.")
             if closed and kind != "bookmark":
@@ -127,13 +139,20 @@ class SiteCollaboration:
                 normalized["name"] = name
             elif kind == "acknowledge":
                 pass
+            elif kind == "procedure-override" and self.monitor:
+                normalized = self.monitor.procedures.advance(db, identifier, action, actor)
             elif owner != name:
                 raise Conflict("This change requires ownership. Use the pending handoff to transfer the incident.")
             elif kind == "note":
                 normalized["text"] = text_field(action, "text", 500)
             elif kind == "resolve" and action.get("disposition") in ("confirmed", "false-alarm", "maintenance", "inconclusive"):
+                procedure = self.monitor.procedures.detail(db, identifier) if self.monitor else None
+                if procedure and procedure["step"] is not None:
+                    raise Conflict("Complete the active response procedure before resolving this incident.")
                 closed, handoff = True, False
                 normalized["disposition"] = action["disposition"]
+            elif kind == "procedure-step" and self.monitor:
+                normalized = self.monitor.procedures.advance(db, identifier, action, actor)
             elif kind == "checklist" and action.get("step") in ("verify", "contact", "document") and type(action.get("done")) is bool:
                 normalized.update(step=action["step"], done=action["done"])
             elif kind == "handoff":
@@ -141,6 +160,13 @@ class SiteCollaboration:
                 normalized.update(nextAction=text_field(action, "nextAction", 180), note=text_field(action, "note", 500, True))
                 if action.get("dueAt"):
                     normalized["dueAt"] = due_date(action["dueAt"]).isoformat()
+                if "aiJobId" in action:
+                    if not self.ai_jobs:
+                        raise Conflict("AI handoff is disabled at this site.")
+                    account = db.execute("SELECT * FROM organization_accounts WHERE subject=? AND active=1", (actor["subject"],)).fetchone()
+                    if not account or self.accounts.public_entry(account) != actor:
+                        raise PermissionError("Your site permissions changed. Sign in again.")
+                    normalized["aiDraft"] = self.ai_jobs.approve(db, actor, identifier, action["aiJobId"], revision)
             elif kind == "bookmark":
                 start, end = (due_date(action.get(field)) for field in ("startAt", "endAt"))
                 if not 0 < (end - start).total_seconds() <= 1800:
@@ -154,8 +180,12 @@ class SiteCollaboration:
                 db.execute("DELETE FROM shared_handoff_due WHERE incident=?", (identifier,))
                 if kind == "handoff" and normalized.get("dueAt") and payload.get("priority") == "High":
                     db.execute("INSERT INTO shared_handoff_due VALUES(?,?,0,?)", (identifier, due_date(normalized["dueAt"]).timestamp(), owner))
-            return self.append(db, "incident", camera, {"incidentId": identifier, "revision": revision, "actor": name,
-                                                         "at": current_time, "action": normalized})
+            result = self.append(db, "incident", camera, {"incidentId": identifier, "revision": revision, "actor": name,
+                                                          "at": current_time, "action": normalized})
+            if guided:
+                db.execute("INSERT INTO procedure_actions VALUES(?,?,?,?,?)",
+                           (identifier, action_id, actor["subject"], request, json.dumps(result)))
+            return result
 
     def enqueue_overdue(self):
         with self.activity.connect() as db:

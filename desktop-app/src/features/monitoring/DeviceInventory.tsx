@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Cctv, ChevronRight, DoorOpen, Folder, FolderPlus, Pencil, Plus, Radio, X } from "lucide-react";
 import { readCoordinates, type CoordinateDraft } from "./configurationModel";
-import { CAMERA_SOURCE_MAX_LENGTH, CAMERA_VIEW_LIMITS, httpEndpointUrl, isCameraView, labelKey, MODALITIES, MODALITY_LABEL, parseLabels, validLabels, type Boundary, type CameraGatewayKind, type CameraView, type DeviceGroup, type Modality, type Sensor } from "./monitoringModel";
+import { CAMERA_SOURCE_MAX_LENGTH, CAMERA_VIEW_LIMITS, httpEndpointUrl, isCameraView, labelKey, MODALITIES, MODALITY_LABEL, parseLabels, validInspectionStationId, validLabels, type Boundary, type CameraGatewayKind, type CameraView, type DeviceGroup, type Modality, type Sensor } from "./monitoringModel";
 import { validReportInterval, type ApplianceHealth, type HealthReport, type MaintenanceWindow } from "./applianceHealth";
 import { ApplianceSetup } from "./ApplianceSetup";
 import { HealthIndicator } from "./DeviceHealth";
@@ -45,12 +45,13 @@ interface InventoryProps {
   onLabelFilter: (value: string) => void;
   onSelect: (id: string) => void;
   onRegister: () => void;
+  onImport?: () => void;
   onEditGroup: (group?: DeviceGroup) => void;
 }
 
 export const deviceIcon = { vision: Cctv, rf: Radio, access: DoorOpen };
 
-export function DeviceInventory({ devices, visible, groups, healthById, maintenanceById, groupFilter, labelFilter, selected, disabled, onGroupFilter, onLabelFilter, onSelect, onRegister, onEditGroup }: InventoryProps) {
+export function DeviceInventory({ devices, visible, groups, healthById, maintenanceById, groupFilter, labelFilter, selected, disabled, onGroupFilter, onLabelFilter, onSelect, onRegister, onImport, onEditGroup }: InventoryProps) {
   const labelOptions = [...new Map(devices.flatMap((device) => device.labels.map((label) => [labelKey(label), label] as const))).entries()]
     .sort((a, b) => a[1].localeCompare(b[1]));
   const displayedGroups = [...groups, { id: UNGROUPED, name: "Ungrouped" }].filter((group) => groupFilter === ALL_GROUPS || group.id === groupFilter);
@@ -63,6 +64,7 @@ export function DeviceInventory({ devices, visible, groups, healthById, maintena
           onClick={() => onEditGroup()}><FolderPlus size={14} /> New group</button>
         <button type="button" className="gv-button" data-focus-key="add-device" disabled={disabled}
           onClick={onRegister}><Plus size={15} /> Add device</button>
+        {onImport && <button type="button" className="gv-button" disabled={disabled} onClick={onImport}>Import inventory</button>}
       </div>
       <div className="gv-device-filters">
         <label><span id="gv-group-filter-label">Group</span><select aria-labelledby="gv-group-filter-label" value={groupFilter} disabled={disabled} onChange={(event) => onGroupFilter(event.target.value)}>
@@ -131,12 +133,14 @@ export function DeviceForm({ device, groups, boundaries, cameras, floors, depend
   const healthSource = httpEndpointUrl(device.healthUrl);
   const invalidHealthSource = !!device.healthUrl.trim() && !healthSource;
   const invalidGateway = !!device.gatewayId.trim() && !normalizeGatewayId(device.gatewayId);
+  const station = device.inspectionStationId?.trim();
+  const invalidStation = device.modality === "vision" && !!station && !validInspectionStationId(station);
   const assignedBoundaries = boundaries.filter((boundary) => boundary.floorId === device.floorId && device.boundaryIds.includes(boundary.id));
   const legacyAnalytics = !savedDevice?.analyticsPlacement && !!savedDevice?.analyticsRules?.length;
   const analyticsError = configurationDraft && device.modality === "vision" ? analyticsRuleError(device.analyticsRules ?? [], assignedBoundaries.map(({ id }) => id)) : "";
   const canSave = !!position && !!device.name.trim() && !checking && !invalidLabels && !invalidView
     && (sourceType ? gatewayReady : !invalidFeed && !invalidGridFeed) && !invalidHealthSource
-    && !invalidGateway && !analyticsError && validReportInterval(Number(device.reportInterval));
+    && !invalidGateway && !invalidStation && !analyticsError && validReportInterval(Number(device.reportInterval));
   const enabledIds = boundaries.filter((boundary) => boundary.enabled && device.boundaryIds.includes(boundary.id)).map((boundary) => boundary.id);
   const removingCamera = savedDevice?.modality === "vision" && device.modality !== "vision";
   const removingAccessLink = savedDevice?.modality === "access" && !!savedDevice.linkedCameraId && device.modality !== "access";
@@ -268,10 +272,19 @@ export function DeviceForm({ device, groups, boundaries, cameras, floors, depend
       </fieldset>}
       {device.modality === "access" && <div className="gv-form-field">
         <label htmlFor="gv-linked-camera">Linked camera</label>
-        <select id="gv-linked-camera" value={device.linkedCameraId ?? ""} onChange={(event) => patch({ linkedCameraId: event.target.value || null })}>
+        <select id="gv-linked-camera" value={device.linkedCameraId ?? ""} onChange={(event) => patch({ linkedCameraId: event.target.value || null, passageRuleId: undefined })}>
           <option value="">No linked camera</option>
           {cameras.filter((camera) => camera.id !== device.id).map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}
         </select>
+        {configurationDraft && device.linkedCameraId && <label>Inbound passage tripwire
+          <select value={device.passageRuleId ?? ""} onChange={(event) => patch({ passageRuleId: event.target.value || undefined })}>
+            <option value="">Passage review disabled</option>
+            {cameras.find(({ id }) => id === device.linkedCameraId)?.analyticsRules
+              ?.filter(({ kind, object, direction, boundaryId, cameraNative }) => kind === "line-crossing" && object === "person"
+                && direction !== "either" && !cameraNative && device.boundaryIds.includes(boundaryId))
+              .map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </label>}
       </div>}
       <label><span id="gv-device-group-label">Device group</span><select aria-labelledby="gv-device-group-label" value={device.groupId ?? ""} onChange={(event) => patch({ groupId: event.target.value || null })}>
         <option value="">Ungrouped</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
@@ -305,6 +318,11 @@ export function DeviceForm({ device, groups, boundaries, cameras, floors, depend
         onChange={(analyticsRules) => patch({ analyticsRules,
           analyticsPlacement: device.analyticsPlacement ?? (legacyAnalytics ? undefined : "cloud") })} />}
       {analyticsError && <p role="alert">{analyticsError}</p>}
+      {configurationDraft && device.modality === "vision" && <label>Inspection station ID (pilot)
+        <input value={device.inspectionStationId ?? ""} maxLength={96} aria-invalid={invalidStation}
+          aria-describedby="gv-inspection-station-help" onChange={(event) => patch({ inspectionStationId: event.target.value })} />
+        <small id="gv-inspection-station-help">Optional. Use the ID from the simulated station adapter. Letters, numbers, hyphens and underscores are supported.</small>
+      </label>}
       <ApplianceSetup key={device.modality} deviceId={device.id} name={device.name} feed={sourceType ? null : feed} gridFeed={sourceType ? null : gridFeed} interval={device.reportInterval}
         healthUrl={device.healthUrl} source={healthSource} onSource={(healthUrl) => patch({ healthUrl })}
         gatewayId={device.gatewayId} invalidGateway={invalidGateway} onGateway={(gatewayId) => patch({ gatewayId })}

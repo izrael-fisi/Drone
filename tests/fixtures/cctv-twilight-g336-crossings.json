@@ -1,0 +1,28 @@
+{
+  "source": "MEVA/MEVID CC BY 4.0, 2018-05-16.21-10-08.21-15-08.school.G336, first 59 seconds",
+  "sourceSha256": "2dbc7f5b1c142946528eeaf852acd5dd25c6065466a1e40c80ab2616cd1890c8",
+  "replayStart": "2026-01-01T00:00:00+00:00",
+  "sensorId": "g336",
+  "lane": "ground",
+  "sampleFps": 4,
+  "durationSeconds": 59,
+  "rules": {
+    "walk": {
+      "events": {
+        "opening-crossing": [[0.5, 2.5]],
+        "close-group-of-four": [[22.25, 26.5]],
+        "first-overlapping-pair": [[35, 38.25]],
+        "single-walker": [[44.25, 46.75]],
+        "second-overlapping-pair": [[47.75, 51.5]]
+      },
+      "expectedCounts": {
+        "opening-crossing": 1,
+        "close-group-of-four": 4,
+        "first-overlapping-pair": 2,
+        "single-walker": 1,
+        "second-overlapping-pair": 2
+      },
+      "reviewedEmpty": [[5, 20], [27, 34], [39, 43], [52, 59]]
+    }
+  }
+}

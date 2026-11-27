@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ANALYTICS_PLACEMENTS, analyticsWorkerState, EVENT_TYPES, validateBoundary, type AnalyticsKind, type AnalyticsPlacement, type AnalyticsRule, type AnalyticsThresholds, type AnalyticsWorker, type Boundary, type Position, type Workspace } from "./monitoringModel";
+import { ANALYTICS_PLACEMENTS, analyticsWorkerState, EVENT_TYPES, FACTORY_SAFETY_RULES, validateBoundary, type AnalyticsKind, type AnalyticsPlacement, type AnalyticsRule, type AnalyticsThresholds, type AnalyticsWorker, type Boundary, type FactorySafetyRule, type Position, type Workspace } from "./monitoringModel";
 import { CctvReview } from "./CctvReview";
 import { CctvReport } from "./CctvReport";
+import { CommissioningPanel } from "./CommissioningPanel";
+import { NativeAnalyticsPanel } from "./NativeAnalyticsPanel";
 import type { SiteSession } from "./SiteOperator";
 
-const KINDS: [AnalyticsKind, string][] = [["line-crossing", "Tripwire"], ["zone-entry", "Zone entry"], ["zone-dwell", "Dwell"],
+const KINDS: [AnalyticsKind, string][] = [["line-crossing", "Tripwire"], ["zone-entry", "Zone entry"], ["zone-dwell", "Time in zone"],
   ["restricted-stop", "Vehicle stop"], ["drone-sighting", "Possible drone"]];
 const OBJECTS = { person: "Person", vehicle: "Vehicle", drone: "Possible drone" } as const;
 const STATES: Record<AnalyticsWorker["state"], string> = { starting: "Starting", running: "Analyzing video", idle: "Idle", "no-video": "Waiting for video",
@@ -35,7 +37,16 @@ function imageRegion(points: Position[]) {
 
 export function analyticsRuleError(rules: AnalyticsRule[], boundaryIds: string[]) {
   return rules.some((rule) => !boundaryIds.includes(rule.boundaryId) || !rule.name.trim()) ? "Give each rule a name and an assigned boundary."
+    : rules.some(({ trackOccupancy, kind, object, mode }) => trackOccupancy && (kind !== "zone-entry" || object !== "vehicle" || mode !== "observe"))
+      ? "Dock occupancy uses an Observe-only vehicle zone-entry rule."
+    : rules.some(({ cameraNative, kind, mode }) => cameraNative && (kind !== "line-crossing" || mode !== "observe"))
+      ? "Camera-native analytics uses an Observe-only line-crossing rule."
+    : rules.some(({ safetyRule, kind, object, mode, requireMovement }) => safetyRule && (
+      FACTORY_SAFETY_RULES[safetyRule]?.kind !== kind || FACTORY_SAFETY_RULES[safetyRule]?.object !== object || mode !== "observe" || requireMovement))
+      ? "Choose the matching Observe-only behavior for each factory safety rule."
     : rules.some((rule) => !validThresholds(rule) || rule.schedule && !validThresholds(rule.schedule.night)) ? "Check confidence, confirmation time and minimum object size."
+      : rules.some(({ kind, dwellGapSeconds: gap = 0 }) => !Number.isFinite(gap) || gap < 0 || gap > 1 || gap > 0 && kind !== "zone-dwell")
+        ? "Set a detection gap between zero and one second for time in zone."
       : rules.some(({ schedule }) => schedule && (!CLOCK.test(schedule.dayStartsAt) || !CLOCK.test(schedule.nightStartsAt) || schedule.dayStartsAt === schedule.nightStartsAt))
         ? "Choose distinct day and night start times."
         : rules.some(({ kind, points, exclusions }) => !(kind === "line-crossing"
@@ -125,13 +136,17 @@ function RegionControl({ rule, onChange }: { rule: AnalyticsRule; onChange: (fie
     <div className="gv-cctv-image">
       {image && <img src={image} alt="Camera reference" />}
       <canvas ref={canvas} width={500} height={280} aria-hidden="true" onClick={(event) => {
-        if (!points[selected]) return;
         const bounds = event.currentTarget.getBoundingClientRect();
         const unit = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 1000) / 1000;
-        update(selected, [unit((event.clientX - bounds.left) / bounds.width), unit((event.clientY - bounds.top) / bounds.height)]);
+        const point: Position = [unit((event.clientX - bounds.left) / bounds.width), unit((event.clientY - bounds.top) / bounds.height)];
+        if (!line && points.length < 3) {
+          setPoints([...points, point]);
+          setSelected(points.length);
+        } else if (points[selected]) update(selected, point);
       }} />
     </div>
-    <small>Choose a point, then click the image or edit its coordinates. Dashed regions are excluded from this rule.</small>
+    <small>{!line && points.length < 3 ? "Click the image to place three region points, or start with an editable rectangle."
+      : "Choose a point, then click the image or edit its coordinates. Dashed regions are excluded from this rule."}</small>
     <div className="gv-cctv-points">
       {points.map((point, index) => <div key={index}>
         <button type="button" className="gv-button" onClick={() => setSelected(index)} aria-pressed={index === selected}>Point {index + 1}</button>
@@ -144,22 +159,25 @@ function RegionControl({ rule, onChange }: { rule: AnalyticsRule; onChange: (fie
       </div>)}
     </div>
     {!line && points.length < 12 && <button className="gv-button" type="button" onClick={() => {
+      if (points.length < 3) {
+        setPoints(defaultPoints("zone-entry")); setSelected(0); return;
+      }
       const next = [...points];
       const nextPoint = points[(selected + 1) % points.length] ?? points[0];
       const current = points[selected] ?? points[0];
       next.splice(selected + 1, 0, [(current[0] + nextPoint[0]) / 2, (current[1] + nextPoint[1]) / 2]);
       setPoints(next); setSelected(selected + 1);
-    }}>Add region point</button>}
+    }}>{points.length < 3 ? "Start with a rectangle" : "Add region point"}</button>}
   </div>;
 }
 
-function ThresholdFields({ prefix = "", value, onChange }: {
-  prefix?: string; value: AnalyticsThresholds; onChange: (fields: Partial<AnalyticsThresholds>) => void;
+function ThresholdFields({ prefix = "", durationLabel, value, onChange }: {
+  prefix?: string; durationLabel: string; value: AnalyticsThresholds; onChange: (fields: Partial<AnalyticsThresholds>) => void;
 }) {
   return <>
     <label>{prefix}Minimum confidence (%)<input type="number" min={5} max={100} step={1} value={Math.round(value.minimumScore * 100)}
       onChange={(event) => onChange({ minimumScore: (event.target.valueAsNumber || 0) / 100 })} /></label>
-    <label>{prefix}Confirmation time (seconds)<input type="number" min={.25} max={600} step={.25} value={value.seconds}
+    <label>{prefix}{durationLabel}<input type="number" min={.25} max={600} step={.25} value={value.seconds}
       onChange={(event) => onChange({ seconds: event.target.valueAsNumber || 0 })} /></label>
     <label>{prefix}Minimum object size (pixels)<input type="number" min={4} max={2000} value={value.minimumPixels}
       onChange={(event) => onChange({ minimumPixels: event.target.valueAsNumber || 0 })} /></label>
@@ -168,6 +186,7 @@ function ThresholdFields({ prefix = "", value, onChange }: {
 
 function RuleProfiles({ rule, timeZone, onChange }: { rule: AnalyticsRule; timeZone: string; onChange: (fields: Partial<AnalyticsRule>) => void }) {
   const { schedule, minimumScore, minimumPixels, seconds } = rule;
+  const durationLabel = rule.kind === "zone-dwell" ? "Time in zone (seconds)" : "Confirmation time (seconds)";
   return <>
     <label className="gv-checkbox"><input type="checkbox" checked={!!schedule} onChange={(event) => onChange({
       schedule: event.target.checked ? { dayStartsAt: "06:00", nightStartsAt: "18:00", night: { minimumScore, minimumPixels, seconds } } : undefined,
@@ -177,8 +196,8 @@ function RuleProfiles({ rule, timeZone, onChange }: { rule: AnalyticsRule; timeZ
       <label>Day starts<input type="time" value={schedule.dayStartsAt} onChange={(event) => onChange({ schedule: { ...schedule, dayStartsAt: event.target.value } })} /></label>
       <label>Night starts<input type="time" value={schedule.nightStartsAt} onChange={(event) => onChange({ schedule: { ...schedule, nightStartsAt: event.target.value } })} /></label>
     </>}
-    <ThresholdFields prefix={schedule ? "Day · " : ""} value={rule} onChange={onChange} />
-    {schedule && <ThresholdFields prefix="Night · " value={schedule.night} onChange={(fields) => onChange({ schedule: { ...schedule, night: { ...schedule.night, ...fields } } })} />}
+    <ThresholdFields prefix={schedule ? "Day · " : ""} durationLabel={durationLabel} value={rule} onChange={onChange} />
+    {schedule && <ThresholdFields prefix="Night · " durationLabel={durationLabel} value={schedule.night} onChange={(fields) => onChange({ schedule: { ...schedule, night: { ...schedule.night, ...fields } } })} />}
   </>;
 }
 
@@ -209,25 +228,63 @@ export function CctvRulesEditor({ rules, boundaries, timeZone, placement, legacy
         <summary>{rule.name || "New rule"} · {rule.mode === "alert" ? "Alerts on" : "Observe"}</summary>
         <div className="gv-triage-content gv-incident-form">
           <label>Rule name<input maxLength={48} value={rule.name} onChange={(event) => patch(rule.id, { name: event.target.value })} /></label>
-          <label>Behavior<select value={rule.kind} onChange={(event) => {
+          <label>Behavior<select value={rule.kind} disabled={!!rule.safetyRule} onChange={(event) => {
             const kind = event.target.value as AnalyticsKind;
             patch(rule.id, { kind, object: options(kind).includes(rule.object) ? rule.object : options(kind)[0],
               points: defaultPoints(kind), direction: "either", seconds: kind === "zone-dwell" || kind === "restricted-stop" ? 12 : 1,
+              dwellGapSeconds: kind === "zone-dwell" ? .75 : undefined,
+              trackOccupancy: kind === "zone-entry" ? rule.trackOccupancy : undefined,
+              cameraNative: kind === "line-crossing" ? rule.cameraNative : undefined,
+              requireMovement: kind === "restricted-stop" ? rule.requireMovement : undefined,
+              scaleCrossingBuffer: kind === "line-crossing" && rule.object === "person" ? rule.scaleCrossingBuffer : undefined,
               minimumScore: kind === "drone-sighting" ? .15 : .35, minimumPixels: kind === "drone-sighting" ? 12 : 20 });
           }}>{KINDS.map(([kind, text]) => <option key={kind} value={kind}>{text}</option>)}</select></label>
-          <label>Object<select value={rule.object} onChange={(event) => patch(rule.id, { object: event.target.value as AnalyticsRule["object"] })}>
+          <label>Object<select value={rule.object} disabled={!!rule.safetyRule} onChange={(event) => {
+            const object = event.target.value as AnalyticsRule["object"];
+            patch(rule.id, { object, scaleCrossingBuffer: object === "person" ? rule.scaleCrossingBuffer : undefined,
+              trackOccupancy: object === "vehicle" ? rule.trackOccupancy : undefined });
+          }}>
             {options(rule.kind).map((value) => <option key={value} value={value}>{OBJECTS[value]}</option>)}</select></label>
+          {rule.kind === "restricted-stop" && !rule.safetyRule && <label className="gv-checkbox">
+            <input type="checkbox" checked={!!rule.requireMovement}
+              onChange={(event) => patch(rule.id, { requireMovement: event.target.checked })} />
+            Require movement before the stop
+          </label>}
           <label>Alert boundary<select value={rule.boundaryId} onChange={(event) => patch(rule.id, { boundaryId: event.target.value })}>
             {!boundaries.some(({ id }) => id === rule.boundaryId) && <option value={rule.boundaryId}>Choose an assigned boundary</option>}
             {boundaries.map((area) => <option key={area.id} value={area.id}>{area.name}{area.enabled ? "" : " (paused)"}</option>)}</select></label>
-          <label>Rule mode<select value={rule.mode} onChange={(event) => patch(rule.id, { mode: event.target.value as AnalyticsRule["mode"] })}>
+          <label>Rule mode<select value={rule.mode} disabled={!!rule.trackOccupancy || !!rule.safetyRule || !!rule.cameraNative} onChange={(event) => patch(rule.id, { mode: event.target.value as AnalyticsRule["mode"] })}>
             <option value="observe">Observe only</option><option value="alert">Create site alerts</option></select></label>
+          {rule.kind === "line-crossing" && <label className="gv-checkbox">
+            <input type="checkbox" checked={!!rule.cameraNative} onChange={(event) => patch(rule.id, {
+              cameraNative: event.target.checked || undefined, ...(event.target.checked ? { mode: "observe" } : {}),
+            })} />Use camera-native ONVIF events
+          </label>}
+          {rule.cameraNative && <small>The enrolled camera supplies crossings from its configured line. Verify the line on that camera.</small>}
+          {rule.kind === "zone-entry" && rule.object === "vehicle" && <label className="gv-checkbox">
+            <input type="checkbox" checked={!!rule.trackOccupancy} onChange={(event) => patch(rule.id, {
+              trackOccupancy: event.target.checked || undefined, ...(event.target.checked ? { mode: "observe" } : {}),
+            })} />Track dock occupancy
+          </label>}
           {rule.kind === "drone-sighting" && <p>Review possible drone sightings in Observe mode during commissioning.</p>}
           {rule.kind === "line-crossing" && <label>Crossing direction<select value={rule.direction}
             onChange={(event) => patch(rule.id, { direction: event.target.value as AnalyticsRule["direction"] })}>
             <option value="either">Both directions</option><option value="positive">Toward the right of point 1 → 2</option>
             <option value="negative">Toward the left of point 1 → 2</option></select></label>}
+          {rule.kind === "line-crossing" && rule.object === "person" && <>
+            <label className="gv-checkbox">
+              <input type="checkbox" checked={!!rule.scaleCrossingBuffer}
+                onChange={(event) => patch(rule.id, { scaleCrossingBuffer: event.target.checked || undefined })} />
+              Scale crossing buffer to person size
+            </label>
+            <small>Use a narrower buffer for people who appear small in the camera image.</small>
+          </>}
           <RuleProfiles rule={rule} timeZone={timeZone} onChange={(fields) => patch(rule.id, fields)} />
+          {rule.kind === "zone-dwell" && <>
+            <label>Maximum detection gap (seconds)<input type="number" min={0} max={1} step={.05} value={rule.dwellGapSeconds ?? 0}
+              onChange={(event) => patch(rule.id, { dwellGapSeconds: event.target.valueAsNumber || 0 })} /></label>
+            <small>The timer pauses when the object drops out of view. Set zero to restart the timer after any gap.</small>
+          </>}
           <RegionControl rule={rule} onChange={(fields) => patch(rule.id, fields)} />
           <button type="button" className="gv-button" onClick={() => onChange(rules.filter(({ id }) => id !== rule.id))}>Remove rule</button>
         </div>
@@ -236,6 +293,15 @@ export function CctvRulesEditor({ rules, boundaries, timeZone, placement, legacy
         id: crypto.randomUUID(), name: "Zone entry", kind: "zone-entry", object: "person", mode: "observe", boundaryId: boundaries[0].id,
         points: defaultPoints("zone-entry"), direction: "either", minimumScore: .35, minimumPixels: 20, seconds: 1,
       }])}>Add CCTV rule</button>
+      <button type="button" className="gv-button" disabled={!boundaries.length || rules.length >= 12} onClick={() => onChange([...rules, {
+        id: crypto.randomUUID(), name: "Dock monitoring", kind: "zone-entry", object: "vehicle", mode: "observe", boundaryId: boundaries[0].id,
+        points: [], direction: "either", minimumScore: .35, minimumPixels: 20, seconds: 2, trackOccupancy: true,
+      }])}>Add dock monitoring</button>
+      {Object.entries(FACTORY_SAFETY_RULES).map(([safetyRule, preset]) =>
+        <button key={safetyRule} type="button" className="gv-button" disabled={!boundaries.length || rules.length >= 12}
+          onClick={() => onChange([...rules, { id: crypto.randomUUID(), ...preset, safetyRule: safetyRule as FactorySafetyRule,
+            mode: "observe", boundaryId: boundaries[0].id, points: [], direction: "either", minimumScore: .35, minimumPixels: 20,
+          }])}>Add {preset.name.toLowerCase()}</button>)}
       {!boundaries.length && <small>Assign this camera to a boundary to add rules.</small>}
     </div>
   </details>;
@@ -261,16 +327,20 @@ export function CctvAnalyticsPosture({ workspace, session, version, onCamera }: 
         const worker = reported?.placement === placement ? reported : undefined;
         const waiting = placement === "cloud" ? "Waiting for cloud worker" : placement === "on-premises" ? "Waiting for on-premises worker" : "Waiting for worker";
         const state = analyticsWorkerState(worker, placement, version, clock);
-        const status = state === "waiting" ? waiting : state === "stale" ? "Worker stopped reporting"
+        const nativeOnly = camera.analyticsRules?.every(({ cameraNative }) => cameraNative);
+        const status = nativeOnly ? "Camera-native events" : state === "waiting" ? waiting : state === "stale" ? "Worker stopped reporting"
           : state === "old-policy" ? "Waiting for published rules" : STATES[state];
         return <button className="gv-posture-row" type="button" key={camera.id} onClick={() => onCamera(camera.id)}>
-          <span><strong>{camera.name}</strong><small>{compute} · {status} · {camera.analyticsRules?.length} rules</small>
-            {worker?.models.length ? <small>{worker.models.join(" · ")} · {worker.fps} fps{worker.pending ? ` · ${worker.pending} queued` : ""}</small> : null}</span>
+          <span><strong>{camera.name}</strong><small>{nativeOnly ? status : compute + " · " + status} · {camera.analyticsRules?.length} rules</small>
+            {!nativeOnly && worker?.models.length ? <small>{worker.models.join(" · ")} · {worker.fps} fps{worker.pending ? ` · ${worker.pending} queued` : ""}</small> : null}</span>
         </button>;
       })}
       {open && <div key={accessKey} className="gv-triage-content">
         <CctvReview session={session} version={version} cameras={workspace.sensors.filter((camera) => camera.modality === "vision")} />
         <CctvReport session={session} publishedVersion={version} />
+        <CommissioningPanel session={session} cameras={cameras} />
+        {cameras.some(({ analyticsRules }) => analyticsRules?.some(({ cameraNative }) => cameraNative)) &&
+          <NativeAnalyticsPanel session={session} cameras={cameras} onCamera={onCamera} />}
       </div>}
     </div>
   </details>;
@@ -280,6 +350,8 @@ export function AnalyticsEvidenceDetails({ evidence, event }: { evidence: NonNul
   return <dl className="gv-cctv-evidence" aria-label="CCTV detection details">
     <div><dt>Rule</dt><dd>{evidence.ruleName ?? (event ? EVENT_TYPES[event] : evidence.ruleId)}</dd></div>
     <div><dt>Detected object</dt><dd>{OBJECTS[evidence.object]} · {Math.round(evidence.score * 100)}% model score</dd></div>
+    {evidence.dwellSeconds !== undefined && <div><dt>Observed time in zone</dt><dd>{Number(evidence.dwellSeconds.toFixed(2))} s</dd></div>}
+    {evidence.movementObserved && <div><dt>Vehicle movement</dt><dd>Observed before the stop</dd></div>}
     <div><dt>Source</dt><dd>Camera image · {evidence.model}</dd></div>
     <div><dt>Published version</dt><dd>{evidence.policyVersion}</dd></div>
     {evidence.placement && <div><dt>Analytics compute</dt><dd>{ANALYTICS_PLACEMENTS[evidence.placement]}</dd></div>}

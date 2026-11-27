@@ -1,0 +1,18 @@
+{
+  "source": "MEVA CC BY 4.0, 2018-03-13.17-35-00.17-40-00.school.G299",
+  "sourceSha256": "cb23b3261e5e156774c02599d0450839666a232eef2ecf66fa45e4105f23a38a",
+  "replayStart": "2026-01-01T00:00:00+00:00",
+  "sensorId": "g299",
+  "lane": "ground",
+  "sampleFps": 4,
+  "durationSeconds": 300,
+  "rules": {
+    "door": {
+      "events": {
+        "approach-from-gym": [[187.5, 191.5]],
+        "return-to-gym": [[215.5, 220.25]]
+      },
+      "reviewedEmpty": [[198, 210], [225, 240]]
+    }
+  }
+}

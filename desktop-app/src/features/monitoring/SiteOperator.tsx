@@ -6,9 +6,9 @@ import { readSiteEndpoint } from "./SiteTelemetry";
 
 export const SITE_ROLES = { viewer: "Viewer", operator: "Operator", supervisor: "Supervisor", "org-admin": "Organization admin" } as const;
 export type SiteRole = keyof typeof SITE_ROLES;
-export type SiteOperator = { site: string; siteId: string; timeZone: string; organization: { id: string; name: string }; name: string; subject: string; role: SiteRole; cameras: "*" | string[] };
+export type SiteOperator = { site: string; siteId: string; timeZone: string; organization: { id: string; name: string }; name: string; subject: string; role: SiteRole; cameras: "*" | string[]; automaticTriageAvailable?: boolean };
 export type SiteSession = { base: string; token: string; operator: SiteOperator; enterprise?: boolean };
-export type SiteInventory = Pick<Workspace, "sensors" | "boundaries" | "floors" | "groups" | "dependencies" | "correlationRule">;
+export type SiteInventory = Pick<Workspace, "sensors" | "boundaries" | "floors" | "groups" | "dependencies" | "correlationRule" | "procedures">;
 type MonitorUpdate = { publishedVersion: number; account: SiteOperator; scopeRevision: string; unchanged?: boolean; eventCursor?: number;
   healthCursor?: number; configuration?: SiteInventory; siteEvents?: SiteEvent[]; alerts?: Alert[]; health?: unknown[] };
 type SiteMonitorUpdate = MonitorUpdate & { mediaCursor?: number; recordingCoverage?: Workspace["recordingCoverage"]; recoveryEnabled?: boolean;
@@ -17,6 +17,7 @@ type SiteMonitorUpdate = MonitorUpdate & { mediaCursor?: number; recordingCovera
 type SharedIncident = { resource: "incident"; sequence: number; revision: number; incidentId: string; at: string; action: IncidentAction };
 type SharedMaintenance = { resource: "maintenance"; sequence: number; sensorId: string; mode: "schedule" | "stop"; startsAt: string; at: string; endsAt?: string; reason?: string };
 type SharedAction = SharedIncident | SharedMaintenance;
+type IncidentHistory = { alerts: Alert[]; actions: SharedAction[]; events: SiteEvent[] };
 
 export function canViewSiteCamera(session: SiteSession, cameraId?: string | null) {
   return session.operator.cameras === "*" || !!cameraId && session.operator.cameras.includes(cameraId);
@@ -60,6 +61,7 @@ export function siteInventory(workspace: SiteInventory): SiteInventory {
     })),
     boundaries: workspace.boundaries.map((value) => ({ ...value, floorId: value.floorId ?? undefined })),
     floors: workspace.floors ?? [], groups: workspace.groups, dependencies: workspace.dependencies ?? [], correlationRule: workspace.correlationRule,
+    procedures: workspace.procedures,
   };
 }
 
@@ -125,7 +127,7 @@ function project(workspace: Workspace, site: SiteSession, actions: SharedAction[
   const alerts = workspace.alerts.filter((alert) => canViewSiteCamera(site, alert.cameraId)).map((alert): Alert => {
     const baseline: Alert = { ...alert, status: "new", owner: undefined, reviewedAt: undefined, activity: undefined, handoff: undefined,
       responseSteps: undefined, disposition: undefined, evidenceBookmarks: undefined };
-    return (incidents.get(alert.id) ?? []).reduce((state, { action, at }) => applyIncidentAction(state, action, at), baseline);
+    return (incidents.get(alert.id) ?? []).reduce((state, { action, at, sequence }) => applyIncidentAction(state, action, at, sequence), baseline);
   });
   return { workspace: { ...result, alerts, siteEvents: workspace.siteEvents?.filter((event) => canViewSiteCamera(site, event.cameraId)),
     gatewayIncidents: workspace.gatewayIncidents?.filter((incident) => incident.devices.every((device) => allowedIds.has(device.sensorId))) }, incidents };
@@ -133,12 +135,17 @@ function project(workspace: Workspace, site: SiteSession, actions: SharedAction[
 
 export function useSiteOperator(session: SiteSession | undefined, local: Workspace) {
   const [snapshot, setSnapshot] = useState<{ session: SiteSession; actions: SharedAction[]; status: "syncing" | "ready" | "offline" | "revoked";
-    account?: SiteOperator; publishedVersion?: number; published?: Workspace; synchronizedAt?: number }>();
+    account?: SiteOperator; publishedVersion?: number; published?: Workspace; synchronizedAt?: number; history?: IncidentHistory }>();
   const current = snapshot?.session === session ? snapshot : undefined;
   const effective = useMemo(() => session && current?.account ? { ...session, operator: current.account } : session, [session, current?.account]);
-  const projection = useMemo(() => current?.status === "revoked" ? undefined : effective
-    ? project(current?.published ? { ...current.published, savedIncidentSearches: local.savedIncidentSearches } : local, effective, current?.actions ?? []) : undefined,
-  [local, effective, current?.published, current?.actions, current?.status]);
+  const projection = useMemo(() => {
+    if (!effective || current?.status === "revoked") return;
+    const base = current?.published ? { ...current.published, savedIncidentSearches: local.savedIncidentSearches } : local;
+    const history = current?.history;
+    const alerts = history ? [...base.alerts, ...history.alerts.filter((entry) => !base.alerts.some(({ id }) => id === entry.id))] : base.alerts;
+    const siteEvents = history ? [...base.siteEvents ?? [], ...history.events] : base.siteEvents;
+    return project({ ...base, alerts, siteEvents }, effective, current?.actions ?? []);
+  }, [local, effective, current?.published, current?.actions, current?.status, current?.history]);
 
   function append(active: SiteSession, events: SharedAction[]) {
     setSnapshot((current) => {
@@ -182,7 +189,9 @@ export function useSiteOperator(session: SiteSession | undefined, local: Workspa
           const ids = new Set(known.map(({ sequence }) => sequence));
           const added = (page.events as SharedAction[]).filter(({ sequence }) => !ids.has(sequence));
           const actions = scopeChanged || added.length ? [...known, ...added].sort((a, b) => a.sequence - b.sequence) : previous.actions;
-          return { ...previous, account: scopeChanged ? monitor.account : previous.account, actions, publishedVersion: monitor.publishedVersion, synchronizedAt: Date.now(),
+          const accountChanged = scopeChanged || monitor.account?.automaticTriageAvailable !== previous.account?.automaticTriageAvailable;
+          return { ...previous, account: accountChanged ? monitor.account : previous.account, history: scopeChanged ? undefined : previous.history,
+            actions, publishedVersion: monitor.publishedVersion, synchronizedAt: Date.now(),
             published: monitor.unchanged ? previous.published : publishedWorkspace(monitor, local, previous.published), status };
         });
       } catch (error) {
@@ -204,6 +213,14 @@ export function useSiteOperator(session: SiteSession | undefined, local: Workspa
     ready: current?.status === "ready",
     session: effective, publishedVersion: current?.publishedVersion ?? 0,
     status: current?.status, synchronizedAt: current?.synchronizedAt,
+    async history(incidentId: string, signal?: AbortSignal) {
+      if (!session) return;
+      const history = await siteRequest(session, "incident-history?" + new URLSearchParams({ incidentId }), undefined, signal) as IncidentHistory;
+      if (signal?.aborted) return;
+      setSnapshot((previous) => previous?.session === session && previous.status === "ready" ? { ...previous, history } : previous);
+      append(session, history.actions);
+      return history.alerts[0];
+    },
     async incident(alert: Alert, action: IncidentAction) {
       if (!session) return;
       const revision = projection?.incidents.get(alert.id)?.slice(-1)[0]?.revision ?? 0;

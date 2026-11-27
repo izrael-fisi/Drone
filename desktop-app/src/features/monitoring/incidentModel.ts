@@ -25,11 +25,15 @@ export function incidentCamera(alert: Alert, sensors: Sensor[]) {
   return source?.modality === alert.modality ? associatedCamera(source, sensors) : undefined;
 }
 
-export function applyIncidentAction(alert: Alert, action: IncidentAction, occurredAt: string): Alert {
+export function applyIncidentAction(alert: Alert, action: IncidentAction, occurredAt: string, sourceSequence?: number): Alert {
   if (alert.status === "resolved" && action.kind !== "bookmark") return alert;
   let patch: Partial<Alert> = {};
   let activity: IncidentActivity;
   switch (action.kind) {
+    case "procedure-step":
+    case "procedure-override":
+      activity = { ...action, occurredAt, operator: action.name ?? alert.owner };
+      break;
     case "acknowledge":
       if (alert.status !== "new") return alert;
       patch = { status: "acknowledged" };
@@ -64,7 +68,7 @@ export function applyIncidentAction(alert: Alert, action: IncidentAction, occurr
       if (!alert.owner || !nextAction || nextAction.length > 180 || note.length > 500 || (due !== undefined && !Number.isFinite(due))) return alert;
       const dueAt = due === undefined ? undefined : new Date(due).toISOString();
       patch = { handoff: { nextAction, note, occurredAt, operator: alert.owner, dueAt } };
-      activity = { kind: "handoff", nextAction, note, occurredAt, operator: alert.owner, dueAt };
+      activity = { kind: "handoff", nextAction, note, occurredAt, operator: alert.owner, dueAt, aiDraft: action.aiDraft };
       break;
     }
     case "accept-handoff": {
@@ -86,5 +90,5 @@ export function applyIncidentAction(alert: Alert, action: IncidentAction, occurr
       break;
     }
   }
-  return { ...alert, ...patch, reviewedAt: occurredAt, activity: [...(alert.activity ?? []), activity] };
+  return { ...alert, ...patch, reviewedAt: occurredAt, activity: [...(alert.activity ?? []), { ...activity, sourceSequence }] };
 }

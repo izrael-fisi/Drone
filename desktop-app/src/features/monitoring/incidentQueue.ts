@@ -1,34 +1,52 @@
 import type { Alert, AlertStatus, EventType } from "./monitoringModel.ts";
 
-export type CorrelationRule = { enabled: boolean; windowSeconds: number; graceSeconds?: number };
+export type CorrelationRule = { enabled: boolean; windowSeconds: number; graceSeconds?: number; includeHeldOpen?: boolean };
 export const DEFAULT_CORRELATION_RULE: CorrelationRule = { enabled: false, windowSeconds: 45 };
 
-function pairTime(a: Alert, b: Alert, windowSeconds: number) {
-  if (!a.cameraId || a.cameraId !== b.cameraId || a.zoneId !== b.zoneId
-    || (a.origin === "Simulation") !== (b.origin === "Simulation")) return;
-  const [door, camera] = a.modality === "access" ? [a, b] : [b, a];
-  if (door.modality !== "access" || door.observation.eventType !== "door-forced-open"
-    || camera.modality !== "vision" || camera.observation.eventType !== "line-crossing") return;
-  const seconds = (Date.parse(camera.observation.occurredAt) - Date.parse(door.observation.occurredAt)) / 1000;
-  if (Math.abs(seconds) <= windowSeconds) return seconds;
+export function pairKind(alert: Alert) {
+  const event = alert.observation.eventType;
+  if (alert.modality === "access" && event === "door-forced-open") return "door";
+  if (alert.modality === "access" && event === "door-held-open") return "held";
+  if (alert.modality === "vision" && event === "line-crossing") return "camera";
 }
 
 export function correlateAlert(alert: Alert, prior: Alert[], rule = DEFAULT_CORRELATION_RULE): Alert {
-  if (!rule.enabled || !Number.isInteger(rule.windowSeconds) || rule.windowSeconds < 5 || rule.windowSeconds > 180) return alert;
+  const kind = pairKind(alert);
+  if (!kind || !alert.cameraId || !rule.enabled || !Number.isInteger(rule.windowSeconds) || rule.windowSeconds < 5 || rule.windowSeconds > 180) return alert;
   const paired = new Set(prior.flatMap((entry) => entry.correlation ? [entry.correlation.incidentId] : []));
-  const match = prior.flatMap((entry) => {
-    if (entry.correlation || entry.status === "resolved" || paired.has(entry.id)) return [];
-    const seconds = pairTime(alert, entry, rule.windowSeconds);
-    return seconds === undefined ? [] : [{ incidentId: entry.id, seconds }];
-  }).sort((a, b) => Math.abs(a.seconds) - Math.abs(b.seconds))[0];
-  return match ? { ...alert, correlation: match } : alert;
+  const timestamp = (entry: Alert) => Date.parse(entry.observation.occurredAt) / 1000;
+  const time = timestamp(alert);
+  const available = prior.filter((entry) => !entry.correlation && entry.status !== "resolved" && !paired.has(entry.id)
+    && entry.cameraId === alert.cameraId && entry.zoneId === alert.zoneId && entry.configurationVersion === alert.configurationVersion
+    && (entry.origin === "Simulation") === (alert.origin === "Simulation"));
+  const candidates = (type: typeof kind, center = time) => available.filter((entry) => pairKind(entry) === type &&
+    Math.abs(timestamp(entry) - center) <= rule.windowSeconds)
+    .sort((a, b) => Math.abs(timestamp(a) - center) - Math.abs(timestamp(b) - center));
+  let match: Alert | undefined;
+  if (kind === "door") {
+    [match] = candidates("camera");
+  } else if (kind === "camera") {
+    [match] = candidates("door");
+    if (!match && rule.includeHeldOpen) {
+      const held = candidates("held");
+      if (held.length === 1 && !candidates("camera", timestamp(held[0])).length) [match] = held;
+    }
+  } else if (rule.includeHeldOpen) {
+    const cameras = candidates("camera");
+    if (cameras.length === 1 && !candidates("held", timestamp(cameras[0])).length && !candidates("door", timestamp(cameras[0])).length) {
+      [match] = cameras;
+    }
+  }
+  if (!match) return alert;
+  const seconds = kind === "camera" ? time - timestamp(match) : timestamp(match) - time;
+  return { ...alert, correlation: { incidentId: match.id, seconds } };
 }
 
-export function previewCorrelation(alerts: Alert[], windowSeconds: number) {
+export function previewCorrelation(alerts: Alert[], windowSeconds: number, includeHeldOpen = false) {
   const processed: Alert[] = [];
   for (const entry of [...alerts].sort((a, b) => Date.parse(a.observation.occurredAt) - Date.parse(b.observation.occurredAt))) {
-    if (entry.observation.eventType !== "door-forced-open" && entry.observation.eventType !== "line-crossing") continue;
-    processed.push(correlateAlert({ ...entry, status: "new", correlation: undefined }, processed, { enabled: true, windowSeconds }));
+    if (!pairKind(entry)) continue;
+    processed.push(correlateAlert({ ...entry, status: "new", correlation: undefined }, processed, { enabled: true, windowSeconds, includeHeldOpen }));
   }
   return processed.filter((entry) => entry.correlation);
 }

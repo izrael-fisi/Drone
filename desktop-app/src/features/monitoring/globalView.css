@@ -417,6 +417,14 @@
 .gv-triage-section > summary:focus-visible, .gv-maintenance-form textarea:focus-visible { outline: 2px solid var(--gv-orange); outline-offset: 2px; }
 .gv-triage-section > summary span { margin-left: 4px; color: var(--gv-muted); font: 11px var(--gv-mono); }
 .gv-triage-content { padding: 0 8px 8px; }
+.gv-intelligence { padding: 8px 0; }
+.gv-intelligence ul { margin: 4px 0 8px; padding-left: 20px; }
+.gv-intelligence .gv-button { white-space: normal; text-align: left; }
+.gv-automatic-review { padding: 10px; }
+.gv-automatic-review h4, .gv-automatic-review h5 { margin: 4px 0; }
+.gv-automatic-review ol { list-style: none; padding: 0; margin: 0; }
+.gv-automatic-event { display: grid; gap: 3px; width: 100%; }
+.gv-automatic-event time { color: var(--gv-muted); font: 11px var(--gv-mono); }
 .gv-triage-records li { display: grid; justify-items: start; gap: 4px; padding-top: 8px; border-top: 1px solid var(--gv-line); overflow-wrap: anywhere; }
 .gv-triage-records li span { color: var(--gv-secondary); font-size: 11px; }
 .gv-triage-records small { color: var(--gv-muted); font-size: 11px; }
@@ -579,6 +587,12 @@
   backdrop-filter: blur(24px) saturate(.55);
 }
 .gv-search::backdrop { background: rgba(0, 0, 0, .34); }
+.gv-evidence-link { margin: 8px 12px 12px; }
+.gv-evidence-dialog { inset-block-start: 5dvh; width: min(760px, calc(100vw - 24px)); max-height: 90dvh; overflow: auto; }
+.gv-evidence-dialog > div { padding: 16px; }
+.gv-evidence-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; }
+.gv-evidence-dialog input, .gv-evidence-dialog select { min-width: 0; width: 100%; }
+.gv-evidence-dialog input[type="checkbox"] { width: auto; }
 .gv-search-field { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--gv-line); color: var(--gv-muted); }
 .gv-search-field input { flex: 1; min-width: 0; min-height: 32px; padding: 4px; border: 0; border-radius: 4px; background: transparent; color: var(--gv-text); }
 .gv-search-field input::placeholder { color: var(--gv-muted); }

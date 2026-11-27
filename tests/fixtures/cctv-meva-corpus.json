@@ -1,0 +1,112 @@
+{
+  "dataset": "Kitware MEVA KF1 evaluation annotations",
+  "license": "CC BY 4.0",
+  "annotations": {
+    "revision": "421841a75577b697c314e952e585aecbb1b99e17",
+    "url": "https://gitlab.kitware.com/api/v4/projects/meva%2Fmeva-data-repo/repository/archive.tar.gz?sha=421841a75577b697c314e952e585aecbb1b99e17&path=annotation/DIVA-phase-2/MEVA/kitware",
+    "sha256": "74f837521cddba0db85dbe82ca47f54ccc58960cbb4392960d6aae3141c78653"
+  },
+  "casesPerRecording": 24,
+  "videos": [
+    {
+      "key": "drops-123-r13/2018-03-15/15/2018-03-15.15-10-00.15-15-00.school.G336.r13.avi",
+      "sha256": "7b55f8d52f83b5bc3424de3011c99eabdc57b06aab1de52f9044023801391daf"
+    },
+    {
+      "key": "drops-123-r13/2018-03-07/17/2018-03-07.17-00-00.17-05-00.bus.G506.r13.avi",
+      "sha256": "d7445c7fdb8570c0652323446f153bca6d5ec92bd3436a605c92d75cff1127af"
+    },
+    {
+      "key": "drops-123-r13/2018-03-15/15/2018-03-15.15-00-07.15-05-07.hospital.G436.r13.avi",
+      "sha256": "55b99bf0e6fe9849b95902179b41728f4a3955a702d4f7ca58da07cb8ef45f07"
+    },
+    {
+      "key": "drops-123-r13/2018-03-05/13/2018-03-05.13-20-01.13-25-01.school.G328.r13.avi",
+      "sha256": "64102272e6611681dbcf7d6fa5ac7aa939595ce29d54151ff604c077e9061dd1"
+    },
+    {
+      "key": "drops-123-r13/2018-03-07/11/2018-03-07.11-00-04.11-05-04.hospital.G341.r13.avi",
+      "sha256": "521041e05734d16d8ae9d6c496f24ab21ba3136f8f8281e2cf55563eb4e70808"
+    },
+    {
+      "key": "drops-123-r13/2018-03-11/11/2018-03-11.11-15-01.11-20-01.school.G424.r13.avi",
+      "sha256": "8e9524c33c3614d8ddd7b87a45ef5fd36aea5a6d9585d9b36f64f77e0866a345"
+    },
+    {
+      "key": "drops-123-r13/2018-03-09/10/2018-03-09.10-15-00.10-20-00.school.G299.r13.avi",
+      "sha256": "9f25ee3c5a4f582fe3287e7b1727450f33f3ef9c557eba2cd7dc5a9519ee6ab7"
+    },
+    {
+      "key": "drops-123-r13/2018-03-15/15/2018-03-15.14-55-00.15-00-00.school.G339.r13.avi",
+      "sha256": "ae694d3f90d056e9b1822e1053d310a1071a02d5d33abfb296b5c23aba73272d"
+    },
+    {
+      "key": "drops-123-r13/2018-03-07/11/2018-03-07.11-05-06.11-10-06.bus.G340.r13.avi",
+      "sha256": "408691db783e035b8777a4687ec94c3fac87b006cab783315c2eea598df6332f"
+    },
+    {
+      "key": "drops-123-r13/2018-03-13/15/2018-03-13.15-50-00.15-55-00.school.G421.r13.avi",
+      "sha256": "a9ca6d24497058bfb7a4fc225d6b2f42d183cfe227df60a1ce39af76da9c31e4"
+    },
+    {
+      "key": "drops-123-r13/2018-03-12/10/2018-03-12.10-05-00.10-10-00.school.G330.r13.avi",
+      "sha256": "a638a34a2121f3edc7767f6a5ba599c62beaba0742cba4b7fc031fd70e5cc72f"
+    },
+    {
+      "key": "drops-123-r13/2018-03-15/15/2018-03-15.15-45-00.15-50-00.bus.G505.r13.avi",
+      "sha256": "f11e129944378f7f11b666e104a86d7b617fcb04819dbf2cf83761bf892bdeff"
+    },
+    {
+      "key": "drops-123-r13/2018-03-09/10/2018-03-09.10-10-01.10-15-01.admin.G329.r13.avi",
+      "sha256": "917cc7a4514cd71d8e29d16337e3f017140beda6673b626868e209671f30fcf3"
+    },
+    {
+      "key": "drops-123-r13/2018-03-11/11/2018-03-11.11-15-01.11-20-01.school.G638.r13.avi",
+      "sha256": "930b2fb6426695f1ea245788f3e817be7166832c19c64034e56a60a7b357860b"
+    },
+    {
+      "key": "drops-123-r13/2018-03-05/13/2018-03-05.13-20-01.13-25-01.bus.G331.r13.avi",
+      "sha256": "baf9adfe5b334340c3ad9ca719a2c18ed4970df5ed394c5dd78ceb33dfd23533"
+    },
+    {
+      "key": "drops-123-r13/2018-03-11/17/2018-03-11.17-10-00.17-15-00.school.G639.r13.avi",
+      "sha256": "38fae02bcc5ef09f6a8a0196a975557cda676589193c3688e4cc4c7afd49932a"
+    },
+    {
+      "key": "drops-123-r13/2018-03-12/11/2018-03-12.11-05-01.11-10-01.school.G423.r13.avi",
+      "sha256": "957dd46bf87cd8ccec6bd1f3f45b8c9756aa4603f2e730b9144db3ac7974c5b8"
+    },
+    {
+      "key": "drops-123-r13/2018-03-15/15/2018-03-15.14-55-03.15-00-03.school.G300.r13.avi",
+      "sha256": "c91f91faef796cbaae750b4279fa2352f44aa1cb27158065e16937ab301827bb"
+    },
+    {
+      "key": "drops-123-r13/2018-03-07/17/2018-03-07.16-55-01.17-00-01.admin.G326.r13.avi",
+      "sha256": "53dfc844a9415d39b098f525f54983f035f6191747e89aa839d79824195ab0d5"
+    },
+    {
+      "key": "drops-123-r13/2018-03-13/15/2018-03-13.15-50-01.15-55-01.school.G419.r13.avi",
+      "sha256": "759009731d4ed0732463cf92dc1e2e2cfacdc1f3adbc9d7c195c90928e3baffb"
+    },
+    {
+      "key": "drops-123-r13/2018-03-07/11/2018-03-07.10-55-00.11-00-00.bus.G508.r13.avi",
+      "sha256": "c0a0eb7c794f37b9af4d2c7e8973a1029a546d9830d4fa9a66e37308abd8ab5b"
+    },
+    {
+      "key": "drops-123-r13/2018-03-12/11/2018-03-12.11-05-00.11-10-01.school.G420.r13.avi",
+      "sha256": "a7ec5e4ec63e423a865cd6a4d347b637f8e2330210683ba074ad0f8f8121fb92"
+    },
+    {
+      "key": "drops-123-r13/2018-03-07/17/2018-03-07.16-55-00.17-00-00.bus.G509.r13.avi",
+      "sha256": "848863720eedf5ccc8d60ae0c8a0925b5f8a4e6f7ed63d6a8f23155c8290a8bf"
+    },
+    {
+      "key": "drops-123-r13/2018-03-11/16/2018-03-11.16-10-08.16-15-08.hospital.G301.r13.avi",
+      "sha256": "78514c420fa5f23d94323dc0f62afb2a5b2eb5bcdaa45def2b3241d1993ce5e8"
+    },
+    {
+      "key": "drops-123-r13/2018-03-07/17/2018-03-07.17-35-01.17-40-01.hospital.G436.r13.avi",
+      "sha256": "a0b78b93beffb99e5c9d1b3aaada6b08fc273ad947f3755400e1875a52581039"
+    }
+  ]
+}

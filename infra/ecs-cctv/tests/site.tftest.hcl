@@ -1,4 +1,11 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_resource "aws_sqs_queue" {
+    override_during = plan
+    defaults = {
+      url = "https://sqs.us-east-1.amazonaws.com/123456789012/mock"
+    }
+  }
+}
 
 variables {
   name               = "proxigo-pilot"
@@ -16,17 +23,26 @@ variables {
       enabled      = true
     }
     dock = {
-      secret_arn   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:proxigo/dock-example"
-      rtsp_cidr    = "192.0.2.13/32"
-      gateway_cidr = "192.0.2.15/32"
-      cpu          = 1024
-      memory       = 2048
+      secret_arn          = "arn:aws:secretsmanager:us-east-1:123456789012:secret:proxigo/dock-example"
+      rtsp_cidr           = "192.0.2.13/32"
+      gateway_cidr        = "192.0.2.15/32"
+      cpu                 = 1024
+      memory              = 2048
+      worker_image_digest = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
     }
   }
 }
 
 run "camera_services_have_scoped_capacity" {
   command = plan
+
+  assert {
+    condition = (
+      one(jsondecode(aws_ecs_task_definition.worker["yard"].container_definitions)).image == var.worker_image &&
+      one(jsondecode(aws_ecs_task_definition.worker["dock"].container_definitions)).image == "${split("@", var.worker_image)[0]}@${var.cameras["dock"].worker_image_digest}"
+    )
+    error_message = "A camera can select a different worker digest from the same private repository."
+  }
 
   assert {
     condition = (
@@ -85,4 +101,36 @@ run "reject_shared_camera_credentials" {
   }
 
   expect_failures = [var.cameras]
+}
+
+run "twelve_camera_site" {
+  command = plan
+
+  variables {
+    worker_capacity = { cpu = 2048, memory = 4096 }
+    cameras = {
+      for i in range(1, 13) : format("camera-%02d", i) => {
+        secret_arn   = format("arn:aws:secretsmanager:us-east-1:123456789012:secret:proxigo/camera-%02d", i)
+        rtsp_cidr    = format("192.0.2.%d/32", i)
+        gateway_cidr = "192.0.2.15/32"
+        enabled      = true
+      }
+    }
+  }
+
+  assert {
+    condition = length(output.workers) == 12 && alltrue([
+      for service in values(aws_ecs_service.worker) :
+      service.desired_count == 1 && !one(service.network_configuration).assign_public_ip
+    ])
+    error_message = "The site must plan twelve isolated, private camera services."
+  }
+
+  assert {
+    condition = alltrue([
+      for task in values(aws_ecs_task_definition.worker) :
+      tonumber(task.cpu) == 2048 && tonumber(task.memory) == 4096
+    ]) && length(distinct([for queue in values(aws_sqs_queue.worker) : queue.name])) == 12
+    error_message = "Every camera must inherit the pilot capacity and have its own outbox."
+  }
 }

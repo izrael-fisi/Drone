@@ -350,6 +350,12 @@ In Chrome the pilot closes both operator sessions, submits a forced-door event, 
 
 See [CCTV analytics for Global View](cctv-analytics.md) for versioned people, vehicle and possible drone rules, cloud and on-premises compute placement, local replay, and pilot evidence.
 
+See the [industry vision pilot](industry-vision-pilot.md) for dock occupancy, factory observations, held-open door corroboration, simulated inspection, and the local regression gates.
+
+See [commissioning and industry operations](global-view-vnext.md) for tripwire comparison, shared dock schedules, door passage review, native camera events, and OPC UA inspection.
+
+See [enterprise operations](global-view-enterprise-operations.md) for guided procedures, evidence search and cases, bulk inventory import, VMS connectors, dispatch, and encrypted site recovery.
+
 ## Connect an ONVIF or RTSP camera
 
 Run the site gateway on a computer that can reach the camera network. It needs Python 3.10 or later and FFmpeg with `libx264`. From the repository root, replace the example CIDR with the approved camera subnet or a single camera IP with a `/32` prefix.

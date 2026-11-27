@@ -4,8 +4,8 @@ resource "aws_ecs_task_definition" "worker" {
   family                   = local.names[each.key]
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = each.value.cpu
-  memory                   = each.value.memory
+  cpu                      = coalesce(each.value.cpu, var.worker_capacity.cpu)
+  memory                   = coalesce(each.value.memory, var.worker_capacity.memory)
   execution_role_arn       = aws_iam_role.execution[each.key].arn
   task_role_arn            = aws_iam_role.worker[each.key].arn
 
@@ -20,7 +20,7 @@ resource "aws_ecs_task_definition" "worker" {
 
   container_definitions = jsonencode([{
     name                   = "worker"
-    image                  = var.worker_image
+    image                  = each.value.worker_image_digest == null ? var.worker_image : "${split("@", var.worker_image)[0]}@${each.value.worker_image_digest}"
     essential              = true
     user                   = "10001:10001"
     readonlyRootFilesystem = true

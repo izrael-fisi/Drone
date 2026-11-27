@@ -1,6 +1,7 @@
 """Shared assistance for site dependencies and commissioning records."""
 
 import json
+from hashlib import sha256
 import time
 
 from onvif import CameraError
@@ -8,6 +9,13 @@ from site_accounts import manages_site
 from site_activity import valid_event_device
 from site_collaboration import Conflict, iso_now, text_field
 from site_configuration import SiteConfiguration, endpoint
+
+
+def rule_fingerprint(camera, boundary, rule, models):
+    camera_fields = {key: camera.get(key) for key in ("position", "floorId", "cameraView", "cameraFeedUrl", "cameraGridUrl",
+                                                      "cameraProvider", "cameraChannel", "analyticsPlacement")}
+    return sha256(json.dumps([camera_fields, boundary["vertices"], boundary.get("floorId"), rule, models],
+                             sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 class SiteAssets:
@@ -25,6 +33,10 @@ class SiteAssets:
                 );
                 CREATE INDEX IF NOT EXISTS commissioning_by_camera
                     ON commissioning_results(version,boundary,camera,sequence);
+                CREATE TABLE IF NOT EXISTS validated_camera_rules (
+                    camera TEXT NOT NULL, rule TEXT NOT NULL, fingerprint TEXT NOT NULL, created TEXT NOT NULL,
+                    actor TEXT NOT NULL, note TEXT NOT NULL, PRIMARY KEY(camera,rule,fingerprint)
+                );
             """)
 
     def status(self, actor):
@@ -51,7 +63,29 @@ class SiteAssets:
                                     WHERE sequence IN (SELECT max(sequence) FROM commissioning_results
                                         WHERE version=? GROUP BY boundary,camera)
                                 """, (active[0],)) if camera in allowed_cameras]
-        return {"tickets": tickets, "commissioning": commissioning, "recordingChecks": recording_checks}
+            rules = self.validated_rules(db, snapshot, active[0])
+        return {"tickets": tickets, "commissioning": commissioning, "recordingChecks": recording_checks, "validatedRules": rules}
+
+    @staticmethod
+    def fingerprint(db, version, camera, boundary, rule):
+        worker = db.execute("SELECT body FROM analytics_workers WHERE camera=?", (camera["id"],)).fetchone()
+        state = json.loads(worker[0]) if worker and not rule.get("cameraNative") else {}
+        models = state.get("models", []) if state.get("version") == version else []
+        return rule_fingerprint(camera, boundary, rule, models)
+
+    def validated_rules(self, db, snapshot, version):
+        boundaries = {item["id"]: item for item in snapshot["boundaries"]}
+        records = []
+        for camera in snapshot["sensors"]:
+            for rule in camera.get("analyticsRules", ()):
+                if not (boundary := boundaries.get(rule["boundaryId"])):
+                    continue
+                fingerprint = self.fingerprint(db, version, camera, boundary, rule)
+                row = db.execute("SELECT created,actor,note FROM validated_camera_rules WHERE camera=? AND rule=? AND fingerprint=?",
+                                 (camera["id"], rule["id"], fingerprint)).fetchone()
+                if row:
+                    records.append({"cameraId": camera["id"], "ruleId": rule["id"], "createdAt": row[0], "actor": row[1], "note": row[2]})
+        return records
 
     def change(self, actor, payload):
         operation = payload.get("operation")
@@ -106,6 +140,17 @@ class SiteAssets:
                           "passed": all(tests[key] for key in required)}
                 db.execute("INSERT INTO commissioning_results(version,sensor,camera,boundary,actor,created,result) VALUES(?,?,?,?,?,?,?)",
                            (version, resource, camera, boundary, actor["subject"], iso_now(), json.dumps(result)))
+            elif operation == "verify-rule":
+                resource = text_field(payload, "cameraId", 80)
+                camera = next((row for row in site["sensors"] if row["id"] == resource and row["modality"] == "vision"), None)
+                selected = next((rule for rule in (camera or {}).get("analyticsRules", ()) if rule["id"] == payload.get("ruleId")), None)
+                boundary = next((row for row in site["boundaries"] if selected and row["id"] == selected["boundaryId"] and row["enabled"]), None)
+                if not selected or not boundary:
+                    raise CameraError("Choose a published rule for an enabled boundary.")
+                fingerprint = self.fingerprint(db, version, camera, boundary, selected)
+                note = text_field(payload, "note", 500)
+                db.execute("INSERT OR REPLACE INTO validated_camera_rules VALUES(?,?,?,?,?,?)",
+                           (resource, selected["id"], fingerprint, iso_now(), actor["subject"], note))
             else:
                 raise CameraError("Choose an available site asset operation.")
             db.execute("INSERT INTO activity_audit(occurred_at,actor,action,resource,detail) VALUES(?,?,?,?,?)",

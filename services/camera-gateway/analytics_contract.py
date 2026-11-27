@@ -17,6 +17,15 @@ STATES = {"starting", "running", "no-video", "model-error", "idle", "delivery-de
 PROFILES = ("all-day", "day", "night")
 PLACEMENTS = ("cloud", "on-premises")
 LINK_CHECK = "analytics-link-check"
+SAFETY_RULES = {"person-vehicle-lane": ("zone-entry", "person"),
+                "vehicle-marked-walkway": ("restricted-stop", "vehicle")}
+
+
+def detection_summary(rule, item):
+    subject = LABELS[item["object"]]
+    if "dwellSeconds" in item:
+        return f"{subject} remained in zone for {item['dwellSeconds']:.2f}".rstrip("0").rstrip(".") + f" s · {rule['name']}"
+    return f"{subject} {RULE_LABELS[rule['kind']]} · {rule['name']}"
 
 
 def worker_tokens(path):
@@ -87,8 +96,18 @@ def excluded(rule, point):
 
 def matches_evidence(rule, item):
     profile = rule.get("profile", "all-day")
+    anchor = detection_anchor(item["box"], item["object"])
     if (item.get("profile", "all-day") != profile or rule.get("exclusions") and not item.get("profile")
-            or excluded(rule, detection_anchor(item["box"], item["object"])) or not qualifies(rule, item)):
+            or excluded(rule, anchor) or not qualifies(rule, item)):
+        return False
+    if bool(rule.get("requireMovement")) != (item.get("movementObserved") is True):
+        return False
+    if (rule.get("requireMovement") or rule.get("trackOccupancy") or rule.get("safetyRule")) and not contains(rule["points"], anchor):
+        return False
+    if "dwellSeconds" in item:
+        return (rule["kind"] == "zone-dwell" and item["dwellSeconds"] + 1e-6 >= rule["seconds"]
+                and contains(rule["points"], anchor))
+    if rule.get("dwellGapSeconds"):
         return False
     if rule["kind"] == "line-crossing" and (rule.get("exclusions") or "crossing" in item):
         point = item.get("crossing")
@@ -121,10 +140,35 @@ def rules(raw, boundaries, polygon):
         exclusions = rule.get("exclusions", [])
         if not isinstance(exclusions, list) or len(exclusions) > 4:
             raise CameraError("Use up to four exclusion zones per CCTV rule.")
+        gap = rule.get("dwellGapSeconds", 0)
+        if not number(gap, 0, 1) or gap and kind != "zone-dwell":
+            raise CameraError("Time in zone supports up to one second between sightings when detection is interrupted.")
+        require_movement = rule.get("requireMovement", False)
+        if type(require_movement) is not bool or require_movement and kind != "restricted-stop":
+            raise CameraError("Movement confirmation applies to vehicle stops.")
+        scale_crossing_buffer = rule.get("scaleCrossingBuffer", False)
+        if type(scale_crossing_buffer) is not bool or scale_crossing_buffer and (kind != "line-crossing" or label != "person"):
+            raise CameraError("An adaptive crossing buffer applies to person tripwires.")
+        track_occupancy = rule.get("trackOccupancy", False)
+        if type(track_occupancy) is not bool or track_occupancy and (kind, label, mode) != ("zone-entry", "vehicle", "observe"):
+            raise CameraError("Dock occupancy uses an Observe-only vehicle zone-entry rule.")
+        safety_rule = rule.get("safetyRule")
+        if safety_rule is not None and (not isinstance(safety_rule, str) or SAFETY_RULES.get(safety_rule) != (kind, label)
+                                        or mode != "observe" or require_movement):
+            raise CameraError("Use the matching Observe-only behavior for a factory safety rule.")
+        native = rule.get("cameraNative", False)
+        if type(native) is not bool or native and (kind != "line-crossing" or mode != "observe"):
+            raise CameraError("Camera-native analytics uses an Observe-only line-crossing rule.")
         seen.add(identifier)
         result.append({"id": identifier, "name": name.strip(), "kind": kind, "object": label, "mode": mode,
                        "boundaryId": boundary, "points": points, "direction": direction, **thresholds(rule),
                        **({"exclusions": [polygon(shape) for shape in exclusions]} if exclusions else {}),
+                       **({"dwellGapSeconds": gap} if gap else {}),
+                       **({"requireMovement": True} if require_movement else {}),
+                       **({"scaleCrossingBuffer": True} if scale_crossing_buffer else {}),
+                       **({"trackOccupancy": True} if track_occupancy else {}),
+                       **({"safetyRule": safety_rule} if safety_rule else {}),
+                       **({"cameraNative": True} if native else {}),
                        **({"schedule": profile_schedule(rule["schedule"])} if "schedule" in rule else {})})
     return result
 
@@ -149,6 +193,14 @@ def evidence(raw):
         result["profile"] = raw["profile"]
     if "crossing" in raw:
         result["crossing"] = unit_point(raw["crossing"])
+    if "dwellSeconds" in raw:
+        if not number(raw["dwellSeconds"], 0, 660):
+            raise CameraError("Provide a valid observed dwell duration.")
+        result["dwellSeconds"] = raw["dwellSeconds"]
+    if "movementObserved" in raw:
+        if label != "vehicle" or raw["movementObserved"] is not True:
+            raise CameraError("Provide valid vehicle movement confirmation.")
+        result["movementObserved"] = True
     return result
 
 

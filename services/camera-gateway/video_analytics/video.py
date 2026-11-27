@@ -1,5 +1,6 @@
-"""FFmpeg decode with bounded latest-frame buffering for live RTSP."""
+"""FFmpeg decode with bounded frame buffering for live RTSP."""
 
+from collections import deque
 from contextlib import suppress
 from datetime import datetime, timezone
 import subprocess
@@ -55,8 +56,10 @@ def end(process):
 
 
 class LiveVideo:
-    def __init__(self, source, width, height, fps, stop, enabled):
-        self.condition, self.latest = Condition(), None
+    def __init__(self, source, width, height, fps, stop, enabled, *, buffer_ms=0):
+        self.condition = Condition()
+        self.frames = deque(maxlen=3 if buffer_ms else 1)
+        self.buffer_seconds = buffer_ms / 1000
         self.last_frame_at = None
         self.ready = False
         self.args, self.stop, self.enabled = command(source, width, height, fps, True), stop, enabled
@@ -88,20 +91,26 @@ class LiveVideo:
                     self.ready = True
                     offset += 1
                     with self.condition:
-                        self.latest = (offset, self.last_frame_at, time.time(), frame)
+                        self.frames.append((offset, self.last_frame_at, time.time(), frame))
                         self.condition.notify_all()
             finally:
                 end(process)
                 watchdog.join()
                 self.ready = False
                 with self.condition:
-                    self.latest = None
+                    self.frames.clear()
             self.stop.wait(2)
 
-    def get(self, after):
+    def get(self, after, *, ordered=False):
         with self.condition:
-            self.condition.wait_for(lambda: self.stop.is_set() or self.latest is not None and self.latest[0] > after, timeout=1)
-            return self.latest if self.latest is not None and self.latest[0] > after else None
+            self.condition.wait_for(lambda: self.stop.is_set() or self.frames and self.frames[-1][0] > after, timeout=1)
+            if not self.frames or self.frames[-1][0] <= after:
+                return None
+            latest = self.frames[-1]
+            if ordered and self.buffer_seconds:
+                fresh_after = time.monotonic() - self.buffer_seconds
+                return next((frame for frame in self.frames if frame[0] > after and frame[1] >= fresh_after), latest)
+            return latest
 
 
 def replay(source, width, height, fps):

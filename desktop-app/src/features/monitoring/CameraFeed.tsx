@@ -17,12 +17,16 @@ export function CameraFeed({ camera, preferGrid = false, announce = true }: {
   </div>;
 }
 
-export function RecordedFeed({ recording, name, synchronized }: { recording: Recording; name: string; synchronized?: RefObject<HTMLVideoElement> }) {
-  return <StreamPlayer url={recording.url} name={name} format={recording.format} startAt={recording.eventOffsetSeconds} synchronized={synchronized} />;
+export function RecordedFeed({ recording, name, synchronized, accessToken }: {
+  recording: Recording; name: string; synchronized?: RefObject<HTMLVideoElement>; accessToken?: string;
+}) {
+  return <StreamPlayer url={recording.url} name={name} format={recording.format} startAt={recording.eventOffsetSeconds}
+    synchronized={synchronized} accessToken={accessToken} />;
 }
 
-function StreamPlayer({ url, name, format = "hls", startAt, announce = true, synchronized }: {
-  url: string; name: string; format?: Recording["format"]; startAt?: number; announce?: boolean; synchronized?: RefObject<HTMLVideoElement>;
+function StreamPlayer({ url, name, format = "hls", startAt, announce = true, synchronized, accessToken }: {
+  url: string; name: string; format?: Recording["format"]; startAt?: number; announce?: boolean;
+  synchronized?: RefObject<HTMLVideoElement>; accessToken?: string;
 }) {
   const localVideo = useRef<HTMLVideoElement>(null);
   const videoRef = synchronized ?? localVideo;
@@ -35,6 +39,8 @@ function StreamPlayer({ url, name, format = "hls", startAt, announce = true, syn
     if (!video) return;
     let hls: Hls | undefined;
     let timer: number | undefined;
+    const request = new AbortController();
+    let objectUrl: string | undefined;
     let closed = false;
     let failed = false;
     let autoplayAttempted = false;
@@ -50,6 +56,7 @@ function StreamPlayer({ url, name, format = "hls", startAt, announce = true, syn
     const fail = () => {
       if (closed || failed) return;
       failed = true;
+      request.abort();
       window.clearTimeout(timer);
       stopMedia();
       setState("Feed unavailable");
@@ -88,7 +95,15 @@ function StreamPlayer({ url, name, format = "hls", startAt, announce = true, syn
     void (async () => {
       const native = video.canPlayType("application/vnd.apple.mpegurl");
       if (format === "mp4" || native === "probably") {
-        video.src = url;
+        if (format === "mp4" && accessToken) {
+          const response = await fetch(url, { headers: { Authorization: "Bearer " + accessToken },
+            signal: request.signal, redirect: "error", cache: "no-store", credentials: "omit" });
+          if (!response.ok) { fail(); return; }
+          const media = await response.blob();
+          if (closed || failed) return;
+          objectUrl = URL.createObjectURL(media);
+        }
+        video.src = objectUrl ?? url;
         return;
       }
       const { default: Player } = await import("hls.js");
@@ -108,11 +123,13 @@ function StreamPlayer({ url, name, format = "hls", startAt, announce = true, syn
 
     return () => {
       closed = true;
+      request.abort();
       window.clearTimeout(timer);
       for (const [event, listener] of Object.entries(listeners)) video.removeEventListener(event, listener);
       stopMedia();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [url, attempt, format, startAt, synchronized, videoRef]);
+  }, [url, attempt, format, startAt, synchronized, videoRef, accessToken]);
 
   return <div className="gv-camera-feed">
     <div className="gv-feed-frame">

@@ -279,8 +279,25 @@ test("enterprise sign-in isolates organizations and live camera, incident, and s
       }
       expect((await browserRequest(page, ownPath + "/api/site/analytics-review")).status).toBe(200);
       expect((await browserRequest(page, ownPath + "/api/site/analytics-report")).status).toBe(200);
+      expect((await browserRequest(page, ownPath + "/api/site/inspection-results")).status).toBe(200);
+      for (const route of ["commissioning-runs", "dock-schedules", "door-passages", "camera-native", "dispatch", "cases", "operations", "ai-jobs", "automatic-triage", "device-degradation", "sensor-fusion"]) {
+        expect((await browserRequest(page, ownPath + "/api/site/" + route)).status).toBe(200);
+        expect((await browserRequest(page, foreignPath + "/api/site/" + route)).status).toBe(404);
+      }
+      await expect.poll(async () => {
+        const result = await browserRequest(page, ownPath + "/api/site/evidence-search");
+        expect(result.status).toBe(200);
+        expect(result.data).not.toContain("restricted incident");
+        expect(result.data).not.toContain(foreignName);
+        return JSON.parse(result.data).results.length;
+      }).toBeGreaterThan(0);
+      expect((await browserRequest(page, foreignPath + "/api/site/evidence-search")).status).toBe(404);
+      expect((await browserRequest(page, foreignPath + "/api/site/case-export", "POST")).status).toBe(404);
+      expect((await browserRequest(page, foreignPath + "/api/site/ai-jobs", "POST")).status).toBe(404);
+      expect((await browserRequest(page, foreignPath + "/api/site/automatic-triage", "POST")).status).toBe(404);
+      expect((await browserRequest(page, foreignPath + "/api/site/ai-jobs/" + "a".repeat(32))).status).toBe(404);
       for (const path of ["/api/site/session", "/api/site/monitoring", "/api/site/activity", "/api/site/telemetry", "/api/site/accounts", "/api/site/analytics-review",
-        "/api/site/analytics-report",
+        "/api/site/analytics-report", "/api/site/inspection-results",
         `/streams/${foreign.key}/index.m3u8`, `/streams/${foreign.key}/recording.json?at=1`]) {
         expect((await browserRequest(page, foreignPath + path)).status, path).toBe(404);
       }

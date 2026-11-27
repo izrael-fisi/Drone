@@ -54,7 +54,7 @@ function buildInsights(workspace: Workspace, health: Props["healthById"], video:
       const recordingVerified = check?.recording ?? false;
       const rules = camera.analyticsRules?.filter(({ boundaryId }) => boundaryId === boundary.id) ?? [];
       const worker = rules.length && version && boundary.enabled ? analyticsWorkerState(workspace.analyticsWorkers?.[camera.id], camera.analyticsPlacement, version, now) : undefined;
-      return { camera, videoLabel, fieldVerified, videoAtRisk, check, recordingVerified, rules, worker };
+      return { camera, videoLabel, fieldVerified, videoAtRisk, check, recordingVerified, rules, worker, signal };
     });
     const verified = cameras.filter(({ camera, fieldVerified, videoAtRisk }) => fieldVerified && !videoAtRisk && !impaired.includes(camera)).length;
     const recording = cameras.filter(({ recordingVerified }) => recordingVerified).length;
@@ -120,13 +120,20 @@ export function SiteInsights({ workspace, healthById, videoChecks, assets, asset
             {!!impaired.length && <ul className="gv-posture-note">{impaired.map((sensor) => <li key={sensor.id}>
               {sensor.name} · {HEALTH_LABELS[healthById.get(sensor.id)?.status ?? "unknown"]}</li>)}</ul>}
             {!cameras.length && <p className="gv-posture-note">No camera assigned to this boundary.</p>}
-            {cameras.map(({ camera, fieldVerified, videoLabel, check, recordingVerified, rules, worker }) => <div className="gv-insights-device" key={camera.id}>
+            {cameras.map(({ camera, fieldVerified, videoLabel, check, recordingVerified, rules, worker, signal }) => <div className="gv-insights-device" key={camera.id}>
               <button type="button" className="gv-button" data-focus-key={`insight-camera:${boundary.id}:${camera.id}`} onClick={() => onCamera(camera.id)}>{camera.name}</button>
-              <small>{fieldVerified ? "Field check recorded" : "Field of view unverified"} · {videoLabel}</small>
+              <small>{isCameraView(camera.cameraView) ? "Modeled view" : "No modeled view"} · {fieldVerified
+                ? "Field check recorded " + new Date(camera.cameraVerifiedAt!).toLocaleDateString() : "Field of view unverified"}</small>
+              <small>{videoLabel}{signal?.lastVideoAt ? " · " + new Date(signal.lastVideoAt).toLocaleString() : ""}</small>
+              {signal?.clockCheckedAt && <small>Camera clock offset {signal.clockOffsetSeconds ?? 0}s · {new Date(signal.clockCheckedAt).toLocaleString()}</small>}
               {version > 0 && <small>{recordingVerified ? "Recording verified by drill" : check ? "Recording follow-up required" : "Recording unverified"}
                 {check && ` · ${new Date(check.createdAt).toLocaleDateString()}`}</small>}
               {worker && <small>{camera.analyticsPlacement ? `${ANALYTICS_PLACEMENTS[camera.analyticsPlacement]} · ` : ""}{WORKER_LABELS[worker]}</small>}
-              {!!rules.length && <ul aria-label={`${camera.name} rules`}>{rules.map((rule) => <li key={rule.id}>{rule.name} · {rule.mode === "alert" ? "Alert mode" : "Observe mode"}</li>)}</ul>}
+              {!!rules.length && <ul aria-label={`${camera.name} rules`}>{rules.map((rule) => {
+                const review = assets?.validatedRules?.find((item) => item.cameraId === camera.id && item.ruleId === rule.id);
+                return <li key={rule.id}>{rule.name} · {rule.mode === "alert" ? "Alert mode" : "Observe mode"}
+                  <small>{review ? "Rule validated · " + new Date(review.createdAt).toLocaleDateString() : "Rule validation due"}</small></li>;
+              })}</ul>}
             </div>)}
             {!!incidents.length && <ul className="gv-insights-incidents" aria-label="Open boundary incidents">{incidents.map((incident) => <li key={incident.id}>
               <button type="button" className="gv-button" data-focus-key={`insight-incident:${boundary.id}:${incident.id}`} onClick={() => onIncident(incident.id)}>{incident.observation.summary}</button>

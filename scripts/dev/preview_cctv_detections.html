@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proxigo CCTV Detection Preview</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --accent: #ff8b53;
+      --vehicle: #d6e1e7;
+      --ink: #f3f1ee;
+      --muted: #a5a19b;
+      --line: rgba(255, 255, 255, .11);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: radial-gradient(ellipse at top, #28211e 0%, #161514 44%, #101010 100%);
+      min-height: 100vh;
+    }
+    main { max-width: 1376px; margin: auto; padding: 26px clamp(14px, 4vw, 56px) 28px; }
+    header { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; }
+    .brand { font-size: 13px; color: var(--accent); font-weight: 720; margin: 0 0 5px; }
+    h1 { margin: 0; font-size: clamp(24px, 3vw, 36px); font-weight: 660; letter-spacing: -.04em; }
+    .selector { display: grid; gap: 6px; min-width: min(340px, 100%); }
+    label, .muted { color: var(--muted); font-size: 13px; }
+    button, select {
+      background: #2b2927;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      border-radius: 9px;
+      min-height: 38px;
+      padding: 7px 12px;
+      font: inherit;
+      font-size: 14px;
+    }
+    button { cursor: pointer; }
+    button:hover, select:hover { background: #35312e; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    :disabled { opacity: .55; cursor: default; }
+    .player {
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      overflow: hidden;
+      background: #1c1a19;
+      box-shadow: 0 22px 65px #0005;
+    }
+    .stage {
+      background: #090909;
+      display: grid;
+      place-items: center;
+      min-height: min(52vw, 62vh);
+    }
+    canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: 68vh; }
+    .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 13px 16px; border-top: 1px solid var(--line); }
+    #play { width: 84px; font-weight: 650; background: #3d2a21; border-color: #895339; }
+    #play:hover { background: #513527; }
+    .time { white-space: nowrap; font: 13px ui-monospace, monospace; color: #dfdbd5; }
+    input { accent-color: var(--accent); }
+    #position { flex: 1; min-width: 120px; }
+    .toggle { display: flex; gap: 7px; align-items: center; white-space: nowrap; color: var(--ink); }
+    .readout { display: flex; gap: 14px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin: 12px 2px 0; }
+    .counts, .legend { display: flex; align-items: center; gap: 12px; }
+    .counts { font-size: 14px; }
+    .legend { color: var(--muted); font-size: 13px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 11px; height: 11px; border: 2px solid var(--accent); border-radius: 2px; }
+    .legend .vehicle { border-color: var(--vehicle); }
+    #status { margin: 0; color: var(--muted); font-size: 13px; }
+    @media (max-width: 560px) {
+      .selector { width: 100%; }
+      .controls { gap: 9px; }
+      .time { font-size: 12px; }
+      #position { min-width: 80px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <p class="brand">Proxigo</p>
+      <h1>CCTV detection preview</h1>
+    </div>
+    <div class="selector">
+      <label for="clip">Recording</label>
+      <select id="clip" disabled></select>
+    </div>
+  </header>
+  <section class="player" aria-label="Recording and playback controls">
+    <div class="stage">
+      <canvas id="video" width="960" height="540" aria-label="Recording with live person and vehicle detection overlays"></canvas>
+    </div>
+    <div class="controls">
+      <button id="play" type="button" disabled>Play</button>
+      <span class="time" id="time">0:00 / 0:00</span>
+      <input id="position" type="range" min="0" max="1" value="0" step="any" aria-label="Playback position" disabled>
+      <label class="toggle"><input type="checkbox" id="boxes" checked> Show boxes</label>
+    </div>
+  </section>
+  <div class="readout">
+    <div class="counts">
+      <span id="detections">Waiting for first frame</span>
+      <span class="legend" aria-hidden="true"><span><i></i>Person</span><span><i class="vehicle"></i>Vehicle</span></span>
+    </div>
+    <p id="status" role="status">Loading recordings…</p>
+  </div>
+</main>
+<script>
+  const clip = document.querySelector("#clip");
+  const play = document.querySelector("#play");
+  const position = document.querySelector("#position");
+  const boxes = document.querySelector("#boxes");
+  const time = document.querySelector("#time");
+  const status = document.querySelector("#status");
+  const counts = document.querySelector("#detections");
+  const canvas = document.querySelector("#video");
+  const context = canvas.getContext("2d");
+  const colors = { person: "#ff8b53", vehicle: "#d6e1e7" };
+  let profile, request, lastFrame;
+  let currentTime = 0;
+  let playing = false;
+  let finished = false;
+
+  function formatTime(seconds) {
+    const whole = Math.floor(seconds);
+    return Math.floor(whole / 60) + ":" + String(whole % 60).padStart(2, "0");
+  }
+
+  function setPlaying(value) {
+    playing = value;
+    play.textContent = value ? "Pause" : "Play";
+  }
+
+  function settings() {
+    return "YOLO11 · " + profile.fps + " fps · " + Math.round(profile.confidence * 100) + "% confidence floor";
+  }
+
+  function draw() {
+    if (!lastFrame) return;
+    const { image, detections } = lastFrame;
+    const { width, height } = canvas;
+    context.drawImage(image, 0, 0, width, height);
+    if (!boxes.checked) return;
+    const fontSize = Math.max(14, Math.round(width / 67));
+    context.font = "600 " + fontSize + "px system-ui, sans-serif";
+    context.textBaseline = "middle";
+    context.lineWidth = Math.max(2, width / 450);
+    const labels = [];
+    for (const item of detections) {
+      const [x0, y0, x1, y1] = item.box;
+      const x = x0 * width;
+      const y = y0 * height;
+      const color = colors[item.label];
+      const label = item.label + " " + Math.round(item.score * 100) + "%";
+      const labelWidth = context.measureText(label).width + 12;
+      const labelHeight = fontSize + 8;
+      const labelX = Math.min(x, width - labelWidth);
+      const above = Math.max(0, y - labelHeight);
+      const labelY = [0, -1, 1, -2, 2].map(row => above + row * labelHeight).find(top =>
+        top >= 0 && top + labelHeight <= height && labels.every(other =>
+          labelX + labelWidth <= other.left || labelX >= other.right ||
+          top + labelHeight <= other.top || top >= other.bottom)) ?? above;
+      labels.push({ left: labelX, right: labelX + labelWidth, top: labelY, bottom: labelY + labelHeight });
+      context.strokeStyle = color;
+      context.strokeRect(x, y, (x1 - x0) * width, (y1 - y0) * height);
+      context.fillStyle = "rgba(15, 15, 15, .9)";
+      context.fillRect(labelX, labelY, labelWidth, labelHeight);
+      context.fillStyle = color;
+      context.fillText(label, labelX + 6, labelY + labelHeight / 2);
+    }
+  }
+
+  async function showFrame(frame, signal) {
+    if (frame.error) throw new Error(frame.error);
+    const image = new Image();
+    image.src = "data:image/jpeg;base64," + frame.jpeg;
+    await image.decode();
+    if (signal.aborted) return;
+    lastFrame = { image, detections: frame.detections };
+    currentTime = frame.time;
+    draw();
+    if (!position.matches(":active")) position.value = currentTime;
+    time.textContent = formatTime(currentTime) + " / " + formatTime(profile.clips[clip.value].duration);
+    const people = frame.detections.filter(item => item.label === "person").length;
+    const vehicles = frame.detections.length - people;
+    counts.textContent = people || vehicles ? people + (people === 1 ? " person" : " people") +
+      " · " + vehicles + (vehicles === 1 ? " vehicle" : " vehicles") : "No detections in this frame";
+    status.textContent = settings();
+  }
+
+  async function stream(at, continuous) {
+    request?.abort();
+    const session = new AbortController();
+    request = session;
+    finished = false;
+    setPlaying(continuous);
+    status.textContent = "Reading the recording…";
+    const query = new URLSearchParams({ clip: clip.value, start: at, once: continuous ? "0" : "1" });
+    try {
+      const response = await fetch("/stream?" + query, { signal: session.signal });
+      if (!response.ok) throw new Error("Could not start playback.");
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      let pending = "";
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        const lines = (pending + chunk.value).split("\n");
+        pending = lines.pop();
+        for (const line of lines) {
+          if (session.signal.aborted) return;
+          await showFrame(JSON.parse(line), session.signal);
+        }
+      }
+      if (continuous && !session.signal.aborted) finished = true;
+    } catch (error) {
+      if (!session.signal.aborted) status.textContent = error.message;
+    } finally {
+      if (request === session) {
+        request = null;
+        setPlaying(false);
+      }
+    }
+  }
+
+  function startClip() {
+    const selected = profile.clips[clip.value];
+    canvas.width = selected.width;
+    canvas.height = selected.height;
+    currentTime = 0;
+    position.max = selected.duration;
+    position.value = 0;
+    lastFrame = null;
+    counts.textContent = "Waiting for first frame";
+    time.textContent = "0:00 / " + formatTime(selected.duration);
+    stream(0, true);
+  }
+
+  play.addEventListener("click", () => {
+    if (playing) {
+      request?.abort();
+      setPlaying(false);
+      status.textContent = "Paused · " + settings();
+    } else {
+      stream(finished ? 0 : currentTime, true);
+    }
+  });
+  position.addEventListener("input", () => {
+    time.textContent = formatTime(Number(position.value)) + " / " + formatTime(profile.clips[clip.value].duration);
+  });
+  position.addEventListener("change", () => stream(Number(position.value), playing));
+  clip.addEventListener("change", startClip);
+  boxes.addEventListener("change", draw);
+
+  async function initialize() {
+    try {
+      const response = await fetch("/clips");
+      if (!response.ok) throw new Error("Could not load the recordings.");
+      profile = await response.json();
+      profile.clips.forEach((recording, index) => clip.add(new Option(recording.name, index)));
+      clip.value = profile.selected;
+      clip.disabled = play.disabled = position.disabled = false;
+      startClip();
+    } catch (error) {
+      status.textContent = error.message;
+    }
+  }
+  initialize();
+</script>
+</body>
+</html>

@@ -3,6 +3,7 @@
 import json
 
 from onvif import CameraError
+from analytics_contract import SAFETY_RULES
 from site_activity import valid_event_device
 from site_collaboration import Conflict, iso_now, text_field
 
@@ -32,10 +33,12 @@ class AnalyticsReview:
         camera = query.get("camera", [""])[0]
         source = query.get("source", ["live"])[0]
         status = query.get("status", ["pending"])[0]
+        safety = query.get("safety", [""])[0]
         before = int(query.get("before", [str(2**63 - 1)])[0])
         version = int(query.get("version", ["0"])[0])
         if ((camera and not valid_event_device(camera)) or source not in ("live", "replay")
-                or status not in ("all", "pending", *OUTCOMES) or not 0 < before < 2**63 or not 0 <= version < 2**53):
+                or status not in ("all", "pending", *OUTCOMES) or safety not in ("", "all", *SAFETY_RULES)
+                or not 0 < before < 2**63 or not 0 <= version < 2**53):
             raise ValueError("Choose valid CCTV review filters.")
         conditions = [OBSERVED, "json_extract(event.body,'$.observation.analytics.source')=?"]
         args = [source]
@@ -49,6 +52,11 @@ class AnalyticsReview:
         if version:
             conditions.append("json_extract(event.body,'$.configurationVersion')=?")
             args.append(version)
+        if safety == "all":
+            conditions.append("json_extract(event.body,'$.observation.analytics.safetyRule') IS NOT NULL")
+        elif safety:
+            conditions.append("json_extract(event.body,'$.observation.analytics.safetyRule')=?")
+            args.append(safety)
         joined = " FROM monitored_events event LEFT JOIN analytics_reviews review ON review.event_seq=event.seq WHERE " + " AND ".join(conditions)
         with self.activity.connect() as db:
             db.execute("BEGIN")

@@ -32,9 +32,12 @@ SESSION_AGE = 8 * 60 * 60
 FLOW_AGE = 300
 SLUG = r"[a-z0-9][a-z0-9-]{0,79}"
 SITE_ROUTE = re.compile(PREFIX + rf"/orgs/({SLUG})/sites/({SLUG})(/.+)")
-SITE_READ = {"session", "activity", "monitoring", "configuration", "accounts", "assets", "vms-channels", "telemetry", "analytics-review", "analytics-report"}
+SITE_READ = {"session", "activity", "monitoring", "configuration", "accounts", "assets", "vms-channels", "telemetry", "analytics-review", "analytics-report", "inspection-results", "commissioning-runs", "dock-schedules", "door-passages", "camera-native"}
+SITE_READ.update(("response-procedure", "evidence-search", "cases", "vms-status", "operations", "dispatch", "incident-history", "ai-jobs", "automatic-triage", "device-degradation", "sensor-fusion"))
+AI_JOB = re.compile(r"ai-jobs/[a-f0-9]{32}")
 SITE_WRITE = {"incident", "maintenance", "configuration", "configuration/preview", "accounts", "assets",
-              "commissioning-test", "vms-playback", "analytics-review"}
+              "commissioning-test", "vms-playback", "analytics-review", "commissioning-runs", "dock-schedules",
+              "cases", "case-export", "configuration/import", "evidence-recording", "ai-jobs", "automatic-triage", "sensor-fusion"}
 ASSET = re.compile(r"/assets/[a-zA-Z0-9_.-]+")
 MAX_JSON = 1_048_576
 
@@ -383,7 +386,7 @@ class Handler(BaseHTTPRequestHandler):
         writes = self.command == "POST"
         api_path = path.removeprefix("/api/site/") if path.startswith("/api/site/") else None
         allowed = (api_path in SITE_WRITE or path in ("/api/clips/hold", "/api/clips/package")) if writes else (
-            api_path in SITE_READ or any(pattern.fullmatch(path) for pattern in (STREAM, GRID_STREAM, VIDEO_STATUS, EVENTS, RECORDING, CLIP)))
+            api_path in SITE_READ or (api_path is not None and AI_JOB.fullmatch(api_path)) or any(pattern.fullmatch(path) for pattern in (STREAM, GRID_STREAM, VIDEO_STATUS, EVENTS, RECORDING, CLIP)))
         if org_id != session[0] or site_id not in portal.organizations[session[0]].sites or not allowed:
             self.error(404, "Site resource unavailable.")
             return
@@ -395,7 +398,7 @@ class Handler(BaseHTTPRequestHandler):
         request = portal.gateway_request(org_id, site_id, session[1], path + ("?" + query if query else ""),
                                          body, self.headers.get("Range"))
         try:
-            timeout = 120 if path == "/api/clips/package" or RECORDING.fullmatch(path) else 25
+            timeout = 120 if path in ("/api/clips/package", "/api/site/case-export", "/api/site/cases", "/api/site/evidence-recording") or RECORDING.fullmatch(path) else 25
             try:
                 upstream = HTTP.open(request, timeout=timeout)
             except HTTPError as error:

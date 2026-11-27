@@ -14,7 +14,7 @@ def verify(package, public_key):
     fingerprint = sha256(public_key.read_bytes()).hexdigest()
     with ZipFile(package) as bundle, tempfile.TemporaryDirectory() as directory:
         names = bundle.namelist()
-        if len(names) > 7 or len(set(names)) != len(names):
+        if len(names) > 8 or len(set(names)) != len(names):
             raise ValueError("Unexpected evidence package contents.")
         if bundle.getinfo("manifest.json").file_size > 65_536 or bundle.getinfo("manifest.sig").file_size > 1024:
             raise ValueError("Invalid manifest size.")
@@ -25,11 +25,17 @@ def verify(package, public_key):
         subprocess.run(["openssl", "dgst", "-sha256", "-verify", str(public_key), "-signature", str(root / "manifest.sig"), str(root / "manifest.json")],
                        check=True, capture_output=True, timeout=10)
         manifest = json.loads(manifest_bytes)
-        if manifest.get("version") != 1 or manifest["signingKeySha256"] != fingerprint or not isinstance(manifest.get("clips"), list):
+        if manifest.get("version") not in (1, 2) or manifest["signingKeySha256"] != fingerprint or not isinstance(manifest.get("clips"), list):
             raise ValueError("Unexpected evidence manifest or signing key.")
         verified = {"manifest.json", "manifest.sig", "signing-key.pem"}
         if bundle.getinfo("signing-key.pem").file_size > 4096 or sha256(bundle.read("signing-key.pem")).hexdigest() != fingerprint:
             raise ValueError("Bundled key does not match the pinned key.")
+        if manifest["version"] == 2:
+            report = manifest["caseReport"]
+            name = "case-report.json"
+            if report["file"] != name or bundle.getinfo(name).file_size > 1_048_576 or sha256(bundle.read(name)).hexdigest() != report["sha256"]:
+                raise ValueError("Case report checksum mismatch.")
+            verified.add(name)
         for clip in manifest["clips"]:
             name = clip["file"]
             if not re.fullmatch(r"clip-[1-4]\.mp4", name) or name in verified or bundle.getinfo(name).file_size > 32 * 1024 * 1024:
@@ -41,7 +47,7 @@ def verify(package, public_key):
             if digest.hexdigest() != clip["sha256"]:
                 raise ValueError(f"Checksum mismatch for {name}.")
             verified.add(name)
-        if set(names) != verified or len(verified) == 3:
+        if set(names) != verified or not manifest["clips"]:
             raise ValueError("Evidence files do not match the manifest.")
     return fingerprint
 

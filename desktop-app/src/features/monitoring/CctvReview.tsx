@@ -3,7 +3,7 @@ import { RecordedFeed } from "./CameraFeed";
 import { gatewayStream } from "./gatewayStream";
 import { useIncidentArchive } from "./incidentArchive";
 import { siteRequest, SiteRequestError, type SiteSession } from "./SiteOperator";
-import type { Sensor, SiteEvent } from "./monitoringModel";
+import { FACTORY_SAFETY_RULES, type IncomingObservation, type Sensor, type SiteEvent } from "./monitoringModel";
 
 const OUTCOMES = { confirmed: "Confirmed", "false-detection": "False detection", unverifiable: "Unable to verify" } as const;
 type Outcome = keyof typeof OUTCOMES;
@@ -13,7 +13,9 @@ type Entry = { sequence: number; event: SiteEvent; review: Reviewed | null };
 type ReviewPage = { entries: Entry[]; counts: Record<Exclude<Filter, "all">, number>; before: number | null };
 const DATES = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium", timeZone: "UTC" });
 
-function ObservationRecording({ event, camera }: { event: SiteEvent; camera?: Sensor }) {
+export function ObservationRecording({ event, camera }: {
+  event: { sensorName: string; observation: Pick<IncomingObservation, "recording" | "occurredAt"> }; camera?: Sensor;
+}) {
   const archive = useIncidentArchive(event, camera);
   const recording = event.observation.recording ?? (archive?.state === "available" ? archive.recording : undefined);
   if (recording) return <RecordedFeed recording={recording} name={event.sensorName + " observation recording"} />;
@@ -65,6 +67,7 @@ export function CctvReview({ session, version, cameras }: { session: SiteSession
   const [camera, setCamera] = useState("");
   const [source, setSource] = useState("live");
   const [status, setStatus] = useState<Filter>("pending");
+  const [safety, setSafety] = useState("");
   const [currentVersion, setCurrentVersion] = useState(false);
   const [before, setBefore] = useState<number>();
   const [selected, setSelected] = useState<number>();
@@ -75,6 +78,7 @@ export function CctvReview({ session, version, cameras }: { session: SiteSession
 
   const filters = new URLSearchParams({ source, status });
   if (camera) filters.set("camera", camera);
+  if (safety) filters.set("safety", safety);
   if (before) filters.set("before", String(before));
   if (currentVersion && version) filters.set("version", String(version));
   const query = filters.toString();
@@ -118,6 +122,10 @@ export function CctvReview({ session, version, cameras }: { session: SiteSession
       </select></label>
       <label>Observation source<select value={source} onChange={(event) => { setSource(event.currentTarget.value); reset(); }}>
         <option value="live">Live CCTV</option><option value="replay">Replay</option>
+      </select></label>
+      <label>Factory safety<select value={safety} onChange={(event) => { setSafety(event.currentTarget.value); reset(); }}>
+        <option value="">All CCTV rules</option><option value="all">All factory safety rules</option>
+        {Object.entries(FACTORY_SAFETY_RULES).map(([id, rule]) => <option key={id} value={id}>{rule.name}</option>)}
       </select></label>
       <label>Review status<select value={status} onChange={(event) => { setStatus(event.currentTarget.value as Filter); reset(); }}>
         <option value="pending">Pending{page ? ` (${page.counts.pending})` : ""}</option><option value="all">All decisions</option>

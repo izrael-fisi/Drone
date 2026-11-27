@@ -6,6 +6,7 @@ private_subnet_ids  = ["subnet-0123456789abcdef0"]
 aws_https_cidrs     = ["10.20.30.0/28"]
 aws_https_prefix_list_ids = ["pl-0123456789abcdef0"]
 worker_image        = "123456789012.dkr.ecr.us-east-1.amazonaws.com/proxigo-cctv@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+worker_capacity     = { cpu = 2048, memory = 4096 }
 
 cameras = {
   yard-camera = {

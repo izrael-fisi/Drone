@@ -1,0 +1,22 @@
+{
+  "source": "MEVA/MEVID CC BY 4.0, 2018-05-16.21-10-00.21-15-00.school.G639, first 90 seconds",
+  "sourceSha256": "f682594a3bee62d41e599e33f64ad7e2d6fbedf5668540d35424ab365c832522",
+  "replayStart": "2026-01-01T00:00:00+00:00",
+  "sensorId": "g639",
+  "lane": "ground",
+  "sampleFps": 4,
+  "durationSeconds": 90,
+  "rules": {
+    "stairs": {
+      "events": {
+        "first-on-stairs": [[28.5, 29.5]],
+        "second-on-stairs": [[29.75, 31]],
+        "backpack-on-stairs": [[37.5, 39]],
+        "first-of-later-three": [[70.5, 72]],
+        "second-of-later-three": [[73.75, 75]],
+        "third-of-later-three": [[76.75, 78.5]]
+      },
+      "reviewedEmpty": [[0, 26], [32.5, 35.5], [40.5, 69], [80, 90]]
+    }
+  }
+}

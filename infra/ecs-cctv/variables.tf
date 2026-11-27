@@ -76,16 +76,27 @@ variable "worker_image" {
   }
 }
 
+variable "worker_capacity" {
+  description = "Default task sizing in vCPU units and MiB for cameras without explicit overrides."
+  type = object({
+    cpu    = number
+    memory = number
+  })
+  default  = { cpu = 512, memory = 1024 }
+  nullable = false
+}
+
 variable "cameras" {
   description = "Published Global View camera IDs and per-camera settings. Each enabled service runs one active worker."
   type = map(object({
-    secret_arn   = string
-    rtsp_cidr    = string
-    gateway_cidr = string
-    rtsp_port    = optional(number, 554)
-    enabled      = optional(bool, false)
-    cpu          = optional(number, 512)
-    memory       = optional(number, 1024)
+    secret_arn          = string
+    rtsp_cidr           = string
+    gateway_cidr        = string
+    rtsp_port           = optional(number, 554)
+    enabled             = optional(bool, false)
+    cpu                 = optional(number)
+    memory              = optional(number)
+    worker_image_digest = optional(string)
   }))
 
   validation {
@@ -102,5 +113,12 @@ variable "cameras" {
   validation {
     condition     = length(distinct([for camera in values(var.cameras) : camera.secret_arn])) == length(var.cameras)
     error_message = "Enroll each camera with a distinct worker secret."
+  }
+
+  validation {
+    condition = alltrue([
+      for camera in values(var.cameras) : camera.worker_image_digest == null || can(regex("^sha256:[0-9a-f]{64}$", camera.worker_image_digest))
+    ])
+    error_message = "A camera image override must be a SHA-256 digest from the same ECR repository."
   }
 }

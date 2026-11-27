@@ -1,0 +1,23 @@
+{
+  "source": "MEVA CC BY 4.0, 2018-03-07.16-50-00.16-55-00.school.G638",
+  "sourceSha256": "0cb58df65f9f517cd51ae70764d99f12f7f2c8182832684e406cb7ebc10a466d",
+  "replayStart": "2026-01-01T00:00:00+00:00",
+  "sensorId": "g638",
+  "lane": "ground",
+  "sampleFps": 4,
+  "durationSeconds": 300,
+  "rules": {
+    "door": {
+      "events": {
+        "first-approach": [[9, 14.5]],
+        "second-approach": [[29.75, 33.5]],
+        "wait-at-door": [[47.5, 58]],
+        "person-from-right": [[123.75, 128.75]],
+        "approach-with-blue-cap": [[142.75, 147.5]],
+        "exit-then-wait": [[242, 244.25], [246.5, 248.5]],
+        "separate-approach": [[244.25, 246.5]]
+      },
+      "reviewedEmpty": [[60, 90], [180, 210]]
+    }
+  }
+}

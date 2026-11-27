@@ -1,4 +1,5 @@
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { AutomaticTriageReview, DraftHandoff, GateEvidence, HandoffEvidenceLinks, type IntelligenceEvent } from "./SiteIntelligence";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Bell, Check, ChevronLeft, ChevronRight, CircleAlert, History, Video, X } from "lucide-react";
 import { CameraFeed, RecordedFeed } from "./CameraFeed";
 import { INCIDENT_DISPOSITIONS, type Alert, type IncidentAction, type IncidentActivity, type IncidentDisposition, type RecordingCoverage, type ResponseStep, type Sensor, type SiteEvent } from "./monitoringModel";
@@ -8,6 +9,8 @@ import type { IncidentArchive } from "./incidentArchive";
 import type { SiteSession } from "./SiteOperator";
 import { XProtectPlayback } from "./XProtectCamera";
 import { AnalyticsEvidenceDetails } from "./CctvAnalytics";
+import { pairKind } from "./incidentQueue";
+import { IncidentProcedure } from "./ResponseProcedures";
 
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium", timeZone: "UTC" });
 const statuses = { new: "New", acknowledged: "Investigating", resolved: "Resolved" };
@@ -20,7 +23,7 @@ function stepsFor(alert: Alert, companion?: Alert) {
     contact: "Notify the designated site contact if the sighting is corroborated",
     document: "Record the sighting and any corroborating observations",
   };
-  if (alert.observation.eventType === "door-forced-open" || companion?.observation.eventType === "door-forced-open") return {
+  if ([alert, companion].some((entry) => entry && (pairKind(entry) === "door" || pairKind(entry) === "held"))) return {
     verify: "Compare the door event with the linked camera", contact: "Contact the site lead for the affected access point",
     document: "Record the door status and disposition",
   };
@@ -41,12 +44,16 @@ function activityText(entry: IncidentActivity, steps: Record<ResponseStep, strin
     case "handoff": return `Handoff · ${entry.nextAction}${entry.note ? "\n" + entry.note : ""}`;
     case "accept-handoff": return "Accepted handoff";
     case "bookmark": return `Bookmarked evidence · ${entry.label}`;
+    case "procedure-step": return `${entry.label ?? entry.step} · ${entry.answer}${entry.text ? "\n" + entry.text : ""}`;
+    case "procedure-override": return `Supervisor override · ${entry.reason}`;
   }
 }
 
-export function IncidentPanel({ alert, camera, cameras, archive, companion, related, replay, timeline, operatorNameOverride, readOnly, recordingCoverage, siteSession, onSelectRelated, onReplayEvent, onReplay, onBack, backLabel, onClose, onAction }: {
+export function IncidentPanel({ alert, camera, cameras, archive, companion, related, replay, timeline, operatorNameOverride, readOnly, recordingCoverage, siteSession, onSelectRelated, onReplayEvent, onReplay, onBack, backLabel, onClose, onAction, onCase, onIntelligenceEvidence }: {
   related: Alert[]; onSelectRelated: (id: string) => void;
   onReplay: () => void; replay?: ReactNode;
+  onCase?: () => void;
+  onIntelligenceEvidence?: (ref: IntelligenceEvent) => void;
   alert: Alert; camera?: Sensor; onBack: () => void; backLabel?: string; onClose: () => void; onAction: (action: IncidentAction) => void;
   cameras: ReturnType<typeof incidentCameras>;
   archive?: IncidentArchive;
@@ -65,6 +72,8 @@ export function IncidentPanel({ alert, camera, cameras, archive, companion, rela
   const [cameraId, setCameraId] = useState("");
   const [nextAction, setNextAction] = useState(alert.handoff?.nextAction ?? "");
   const [handoffNote, setHandoffNote] = useState(alert.handoff?.note ?? "");
+  const [aiJobId, setAiJobId] = useState<string>();
+  useEffect(() => setAiJobId(undefined), [alert.handoff?.occurredAt]);
   const [handoffDue, setHandoffDue] = useState(alert.handoff?.dueAt?.slice(0, 16) ?? "");
   const [recipient, setRecipient] = useState("");
   const investigation = useRef<HTMLHeadingElement>(null);
@@ -107,10 +116,20 @@ export function IncidentPanel({ alert, camera, cameras, archive, companion, rela
         <div><dt>{alert.locationBasis === "device" ? alert.modality === "vision" ? "Camera location" : "Door location" : "Location"}</dt>
           <dd className="gv-mono">{lat.toFixed(5)}°, {lng.toFixed(5)}°</dd></div>
         <div><dt>Event origin</dt><dd>{alert.origin}</dd></div>
+        {alert.observation.vendor && <div><dt>Vendor source</dt><dd>{alert.observation.vendor.provider === "genetec" ? "Genetec Security Center" : "Milestone XProtect"}
+          {" · "}{alert.observation.vendor.eventType}</dd></div>}
+        {alert.affectedCameras && <div><dt>Affected cameras</dt><dd>{alert.affectedCameras.join(", ")}</dd></div>}
+        {!!alert.affectedDependencies?.length && <div><dt>Associated infrastructure</dt><dd>{alert.affectedDependencies.join(", ")}</dd></div>}
+        {!!alert.maintenanceCameras?.length && <div><dt>Under maintenance</dt><dd>{alert.maintenanceCameras.join(", ")}</dd></div>}
+        {alert.coverageRecoveredAt && <div><dt>Coverage restored</dt><dd>{dateTime.format(new Date(alert.coverageRecoveredAt))} UTC</dd></div>}
         {alert.configurationVersion !== undefined && <div><dt>Configuration version</dt><dd>Version {alert.configurationVersion}</dd></div>}
       </dl>
       <button type="button" className="gv-button gv-open-replay" onClick={() => { setPlayback(null); onReplay(); }}><History size={15} /> Replay timeline</button>
+      {onCase && <button type="button" className="gv-button" onClick={onCase}>Open incident case workspace</button>}
     </section>
+      {siteSession && onIntelligenceEvidence && !!alert.configurationVersion &&
+        <AutomaticTriageReview session={siteSession} incident={alert} onEvidence={onIntelligenceEvidence} />}
+
     {alert.observation.analytics && <section className="gv-details" aria-label="CCTV analytics evidence">
       <h4>CCTV analytics evidence</h4><AnalyticsEvidenceDetails evidence={alert.observation.analytics} event={alert.observation.eventType} />
     </section>}
@@ -192,6 +211,12 @@ export function IncidentPanel({ alert, camera, cameras, archive, companion, rela
         </form>
       </>}
       {alert.disposition && <p>Disposition · {INCIDENT_DISPOSITIONS[alert.disposition]}</p>}
+      {siteSession && !!alert.configurationVersion && <div id="gv-source-procedure" tabIndex={-1}>
+        <IncidentProcedure session={siteSession} incidentId={alert.id} activityCount={alert.activity?.length ?? 0}
+          canEdit={canEdit && !!alert.owner} readOnly={!!readOnly || resolved} onAction={onAction} onReplay={onReplay} />
+      </div>}
+      {siteSession && onIntelligenceEvidence && !!alert.configurationVersion &&
+        <GateEvidence session={siteSession} incident={alert} onEvidence={onIntelligenceEvidence} />}
       {alert.owner && <details className="gv-triage-section">
         <summary>Response checklist and handoff</summary>
         <div className="gv-triage-content">
@@ -207,21 +232,33 @@ export function IncidentPanel({ alert, camera, cameras, archive, companion, rela
             {!operatorNameOverride && <label>Receiving operator<input required maxLength={80} value={recipient} onChange={(event) => setRecipient(event.target.value)} /></label>}
             <button type="submit" className="gv-button" disabled={!receivingOperator.trim() || receivingOperator.trim() === alert.owner}>Accept handoff</button>
           </form>}
+          {canEdit && siteSession && onIntelligenceEvidence && !!alert.configurationVersion &&
+            <DraftHandoff session={siteSession} incident={alert} onEvidence={onIntelligenceEvidence}
+              onApply={(id, summary, next) => { setAiJobId(id); setHandoffNote(summary); setNextAction(next); }} />}
           {canEdit && <form className="gv-incident-form" onSubmit={(event) => {
             event.preventDefault();
-            onAction({ kind: "handoff", nextAction, note: handoffNote, dueAt });
+            onAction({ kind: "handoff", nextAction, note: handoffNote, dueAt, aiJobId });
           }}>
             <label>Next action<input required maxLength={180} value={nextAction} onChange={(event) => setNextAction(event.target.value)} /></label>
             <label>Handoff note<textarea rows={2} maxLength={500} value={handoffNote} onChange={(event) => setHandoffNote(event.target.value)} /></label>
             <label>Due (UTC)<input type="datetime-local" value={handoffDue} onChange={(event) => setHandoffDue(event.target.value)} /></label>
+            {aiJobId && <div>
+              <p role="status">Draft applied. Review and save the handoff to share it.</p>
+              <button type="button" className="gv-button" onClick={() => {
+                setAiJobId(undefined); setHandoffNote(alert.handoff?.note ?? ""); setNextAction(alert.handoff?.nextAction ?? "");
+              }}>Discard applied draft</button>
+            </div>}
             <button type="submit" className="gv-button" disabled={!nextAction.trim() || nextAction.trim() === alert.handoff?.nextAction && handoffNote.trim() === alert.handoff?.note && dueAt === alert.handoff?.dueAt}>Save handoff</button>
           </form>}
         </div>
       </details>}
       {!!alert.activity?.length && <ol className="gv-incident-activity" aria-label="Incident activity">
-        {[...alert.activity].reverse().map((entry, index) => <li key={entry.occurredAt + index}>
+        {[...alert.activity].reverse().map((entry, index) => <li key={entry.occurredAt + index}
+          id={entry.sourceSequence ? "gv-source-action-" + entry.sourceSequence : undefined} tabIndex={-1}>
           <small>{entry.operator ?? "Local operator"} · {dateTime.format(new Date(entry.occurredAt))} UTC</small>
           <span>{activityText(entry, steps)}</span>
+          {entry.kind === "handoff" && entry.aiDraft && onIntelligenceEvidence &&
+            <HandoffEvidenceLinks sources={entry.aiDraft.sources} onEvidence={onIntelligenceEvidence} />}
         </li>)}
       </ol>}
     </section>

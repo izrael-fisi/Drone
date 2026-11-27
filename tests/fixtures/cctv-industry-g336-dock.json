@@ -1,0 +1,35 @@
+{
+  "recording": "2018-03-07.16-50-06.16-55-06.school.G336",
+  "source": "https://mevadata-public-01.s3.amazonaws.com/drops-123-r13/2018-03-07/16/2018-03-07.16-50-06.16-55-06.school.G336.r13.avi",
+  "license": "CC BY 4.0",
+  "sourceSha256": "8f4a4698c1b9ac72fb3f74cc4a31c6895cbce3f94d074739a3329a0d9f052ae3",
+  "startSeconds": 20,
+  "durationSeconds": 32,
+  "width": 1920,
+  "height": 1080,
+  "fps": 4,
+  "detailRegion": [0.28, 0.16, 0.49, 0.36],
+  "policy": {
+    "version": 1,
+    "rules": [{
+      "id": "bay-occupancy",
+      "name": "Bay occupancy",
+      "kind": "zone-entry",
+      "object": "vehicle",
+      "mode": "observe",
+      "boundaryId": "reviewed-bay-simulation",
+      "points": [[0.35, 0.267], [0.473, 0.267], [0.473, 0.335], [0.35, 0.335]],
+      "minimumScore": 0.35,
+      "minimumPixels": 20,
+      "seconds": 2,
+      "trackOccupancy": true
+    }]
+  },
+  "transitions": [
+    {"state": "unknown", "windowSeconds": [0, 0]},
+    {"state": "vacant", "windowSeconds": [5, 5]},
+    {"state": "occupied", "windowSeconds": [9, 12]},
+    {"state": "vacant", "windowSeconds": [18, 27]}
+  ],
+  "expectedArrivals": 1
+}

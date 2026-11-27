@@ -22,11 +22,33 @@ USER root
 RUN pip install --no-cache-dir 'boto3>=1.40,<2' \
     && touch /state/.worker-volume \
     && chown 10001:10001 /state/.worker-volume
-COPY --from=cctvmodels /yolox_nano.onnx /models/yolox_nano.onnx
-RUN echo 'c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d  /models/yolox_nano.onnx' | sha256sum -c -
+ARG CCTV_GROUND_MODEL=yolo11s
+ARG CCTV_GROUND_MODEL_SHA256
+ENV PROXIGO_CCTV_GROUND_MODEL=${CCTV_GROUND_MODEL}
+ENV PROXIGO_CCTV_GROUND_MODEL_SHA256=${CCTV_GROUND_MODEL_SHA256}
+COPY --from=cctvmodels /${CCTV_GROUND_MODEL}.onnx /models/${CCTV_GROUND_MODEL}.onnx
+RUN python -c 'import os; from ecs_worker import ground_model; from video_analytics.detectors import fingerprint; model = ground_model(os.environ["PROXIGO_CCTV_GROUND_MODEL"], os.environ["PROXIGO_CCTV_GROUND_MODEL_SHA256"]); fingerprint(model["path"], model["sha256"])'
 VOLUME ["/state"]
 ENV TMPDIR=/state
 USER 10001:10001
 ENTRYPOINT ["python", "/app/ecs_worker.py"]
+
+FROM ecs AS ecs-pose
+USER root
+ARG CCTV_DETAIL_POSE_MODEL=yolo11l-pose
+ARG CCTV_DETAIL_POSE_SHA256
+ENV PROXIGO_CCTV_DETAIL_POSE_MODEL=${CCTV_DETAIL_POSE_MODEL}
+ENV PROXIGO_CCTV_DETAIL_POSE_SHA256=${CCTV_DETAIL_POSE_SHA256}
+COPY --from=cctvmodels /${CCTV_DETAIL_POSE_MODEL}.onnx /models/${CCTV_DETAIL_POSE_MODEL}.onnx
+RUN python -c 'import os; from ecs_worker import detail_pose_model; from video_analytics.detectors import fingerprint; model = detail_pose_model(os.environ["PROXIGO_CCTV_DETAIL_POSE_SHA256"], os.environ["PROXIGO_CCTV_DETAIL_POSE_MODEL"]); fingerprint(model["path"], model["sha256"])'
+USER 10001:10001
+
+FROM ecs AS ecs-person
+USER root
+ARG CCTV_PERSON_MODEL_SHA256
+ENV PROXIGO_CCTV_PERSON_MODEL_SHA256=${CCTV_PERSON_MODEL_SHA256}
+COPY --from=cctvmodels /yolo11-person.onnx /models/yolo11-person.onnx
+RUN python -c 'import os; from ecs_worker import person_model; from video_analytics.detectors import fingerprint; model = person_model(os.environ["PROXIGO_CCTV_PERSON_MODEL_SHA256"]); fingerprint(model["path"], model["sha256"])'
+USER 10001:10001
 
 FROM worker AS local

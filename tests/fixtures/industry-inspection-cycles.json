@@ -1,0 +1,12 @@
+{
+  "stationId": "assembly-line-2",
+  "cycles": [
+    {"resultId": "idle-001", "elapsedSeconds": 0, "statusCode": 0},
+    {"resultId": "cycle-001", "elapsedSeconds": 0, "statusCode": 1, "recipeId": "bracket-v3",
+     "componentId": "retaining-clip", "partId": "frame-001", "lotId": "lot-a"},
+    {"resultId": "cycle-002", "elapsedSeconds": 0, "statusCode": 2, "recipeId": "bracket-v3",
+     "componentId": "retaining-clip", "partId": "frame-002", "lotId": "lot-a"},
+    {"resultId": "cycle-003", "elapsedSeconds": 0, "statusCode": 3},
+    {"resultId": "cycle-004", "elapsedSeconds": 0, "statusCode": 255}
+  ]
+}

@@ -27,13 +27,21 @@ from axis_archive import AxisArchive
 from site_activity import SiteActivity, valid_event_device
 from video_integrity import FILTER, inspect_sample
 from evidence_package import build_package
+from inventory_import import change_import
+from gateway_state import StateLock
 from site_telemetry import SiteTelemetry, read_device_tokens
 from site_collaboration import Conflict, SiteCollaboration
 from site_accounts import manages_site
 from site_monitoring import SiteMonitoring, camera_for
 from site_assets import SiteAssets
 from milestone_connector import MilestoneConnector
+from genetec_connector import GenetecConnector
 from onvif_archive import OnvifArchive, profile_g_recordings
+from commissioning_runs import CommissioningRuns
+from native_camera_events import enroll_native
+from ai_jobs import AIJobs, JOB_ID
+from device_degradation import DeviceDegradation
+from sensor_fusion import SensorFusion
 
 DEVICE_ID = re.compile(r"[A-Za-z0-9_-]{1,96}")
 STREAM = re.compile(r"/streams/([0-9a-f]{48})/(index\.m3u8|segment-\d+\.ts)")
@@ -45,6 +53,7 @@ EVENTS = re.compile(r"/streams/([0-9a-f]{48})/events\.json")
 PUSH = re.compile(r"/api/cameras/([A-Za-z0-9_-]{1,96})/events")
 ANALYTICS = re.compile(r"/api/cameras/([A-Za-z0-9_-]{1,96})/analytics")
 VIEW = re.compile(r"/view/([0-9a-f]{48})/(index\.m3u8|segment-\d+\.ts)")
+AI_JOB_ROUTE = re.compile(r"/api/site/ai-jobs/(" + JOB_ID.pattern + ")")
 MAX_CAMERAS = 128
 START_TIMEOUT = 17
 IDLE_TIMEOUT = 35
@@ -110,7 +119,8 @@ class Relay:
 class CameraGateway:
     def __init__(self, state, ffmpeg, networks, max_streams, probe_interval=90, axis_recorders=(), telemetry_upstream=None,
                  telemetry_secret="", telemetry_devices=None, telemetry_reader="", telemetry_receiver="", site_config=None,
-                 identity_proxy_secret="", require_camera_session=False, profile_g=None, capture_python=None, analytics_workers=None):
+                 identity_proxy_secret="", require_camera_session=False, profile_g=None, capture_python=None, analytics_workers=None,
+                 commissioning_worker=None, site_intelligence=None):
         state.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.registry = state / "cameras.json"
         self.cameras = json.loads(self.registry.read_text(encoding="utf-8")) if self.registry.exists() else {}
@@ -150,14 +160,52 @@ class CameraGateway:
         self.recording_recovery = False
         self.commissioning_webhook = None
         self.milestone = None
+        self.genetec = None
+        self.commissioning = None
         if self.collaboration:
             accounts = self.collaboration.accounts
             self.monitor = self.collaboration.monitor = SiteMonitoring(self.activity, accounts.organization["id"], accounts.site_id, self.collaboration.time_zone)
             self.assets = SiteAssets(self.activity)
+            self.commissioning = CommissioningRuns(self, commissioning_worker)
         self.telemetry = SiteTelemetry(self.activity, telemetry_upstream, telemetry_secret, self.monitor)
         self.require_camera_session = require_camera_session
         self.state = state
         self.export_lock = threading.Lock()
+        self.ai_jobs = self.device_degradation = self.sensor_fusion = None
+        if site_intelligence is not None:
+            if not isinstance(site_intelligence, dict) or type(site_intelligence.get("deviceDegradation", False)) is not bool:
+                raise CameraError("Provide valid private site intelligence settings.")
+            if "ai" in site_intelligence:
+                settings = site_intelligence["ai"]
+                if not isinstance(settings, dict):
+                    raise CameraError("Provide an AI settings object.")
+                self.ai_jobs = self.collaboration.ai_jobs = AIJobs(self, settings)
+            if site_intelligence.get("deviceDegradation"):
+                self.device_degradation = DeviceDegradation(self)
+            if "gateRadars" in site_intelligence:
+                self.sensor_fusion = self.monitor.sensor_fusion = SensorFusion(self, site_intelligence["gateRadars"])
+
+
+    def operations(self, actor):
+        with self.activity.connect() as db:
+            db.execute("BEGIN")
+            readiness = [{"boundaryId": boundary, "state": state, "cameras": json.loads(cameras), "updatedAt": updated, "incidentId": incident}
+                         for boundary, state, cameras, updated, incident in db.execute(
+                             "SELECT boundary,state,cameras,updated,incident FROM boundary_coverage ORDER BY boundary")
+                         if actor["cameras"] == "*" or json.loads(cameras) and set(json.loads(cameras)) <= set(actor["cameras"])]
+            if not manages_site(actor):
+                return {"coverage": readiness}
+            telemetry = db.execute("SELECT max(received_at) FROM telemetry").fetchone()[0]
+            queued = db.execute("SELECT count(*),min(json_extract(payload,'$.occurredAt')) FROM alert_deliveries").fetchone()
+            video = db.execute("SELECT state,count(*) FROM recovery_jobs GROUP BY state").fetchall()
+            caught_up = self.monitor.cases.progress(db)
+        try:
+            backup = json.loads((self.state / "backup-status.json").read_text())
+            backup_at = backup.get("createdAt")
+        except (OSError, ValueError, TypeError):
+            backup_at = None
+        return {"coverage": readiness, "lastTelemetryAt": telemetry, "notificationBacklog": queued[0], "oldestNotificationAt": queued[1],
+                "recorderJobs": dict(video), "indexCurrent": caught_up, "lastBackupAt": backup_at}
 
     def validate_url(self, raw, schemes, allow_credentials=False):
         requirement = "Enter an IP address and a valid " + " or ".join(schemes).upper() + " URL."
@@ -362,6 +410,29 @@ class CameraGateway:
                     self.monitor.delivered(sequence)
             except (OSError, sqlite3.Error):
                 self.stopping.wait(3)
+
+    def evaluate_site_response(self):
+        while not self.stopping.wait(2):
+            try:
+                now = time.time()
+                with self.lock:
+                    video = {device: check["state"] for device, entry in self.cameras.items()
+                             if (check := self.video_checks.get(entry["key"])) and check.get("checkedAt")
+                             and now * 1000 - check["checkedAt"] < self.probe_interval * 3000}
+                with self.activity.connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    self.monitor.coverage_operations.evaluate(db, video, now)
+                    self.monitor.procedures.enqueue_overdue(db, now)
+            except sqlite3.Error:
+                self.stopping.wait(3)
+
+    def index_site_evidence(self):
+        delay = 0.1
+        while not self.stopping.wait(delay):
+            try:
+                delay = 0.1 if self.monitor.cases.index_batch() else 2
+            except sqlite3.Error:
+                delay = 3
 
     def notifications(self, webhook, secret):
         opener = build_opener(ProxyHandler({}), NoRedirect())
@@ -635,7 +706,9 @@ class Handler(BaseHTTPRequestHandler):
         site_push = self.path == "/api/site/telemetry"
         site_write = self.path in ("/api/site/incident", "/api/site/maintenance", "/api/site/viewer", "/api/site/configuration",
                                    "/api/site/configuration/preview", "/api/site/accounts", "/api/site/assets", "/api/site/commissioning-test", "/api/site/vms-playback",
-                                   "/api/site/analytics-review")
+                                   "/api/site/analytics-review", "/api/site/commissioning-runs", "/api/site/dock-schedules",
+                                   "/api/site/cases", "/api/site/case-export", "/api/site/configuration/import", "/api/site/evidence-recording",
+                                   "/api/site/ai-jobs", "/api/site/automatic-triage", "/api/site/sensor-fusion")
         evidence = self.path == "/api/clips/package" or self.path == "/api/clips/hold" and hasattr(self, "portal_actor")
         actor = self.site_actor() if site_write or evidence else None
         management = compare_digest(auth.encode(), ("Bearer " + gateway.token).encode())
@@ -647,7 +720,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             size = int(self.headers.get("Content-Length", "0"))
-            limit = 1_048_576 if self.path in ("/api/site/configuration", "/api/site/configuration/preview") else 16384
+            limit = 1_048_576 if self.path in ("/api/site/configuration", "/api/site/configuration/preview", "/api/site/dock-schedules",
+                                             "/api/site/configuration/import") else 16384
             if self.path.endswith("vms-playback"):
                 limit = 131_072
             if not 1 <= size <= limit or self.headers.get_content_type() != "application/json":
@@ -679,10 +753,44 @@ class Handler(BaseHTTPRequestHandler):
             elif analytics and gateway.monitor:
                 self.json(200, gateway.monitor.analytics_heartbeat(analytics[1], payload, placement))
             elif site_write:
-                if self.path.endswith("analytics-review"):
+                if self.path.endswith("ai-jobs"):
+                    if not gateway.ai_jobs:
+                        raise PermissionError("AI review is disabled at this site.")
+                    self.json(202, gateway.ai_jobs.create(actor, payload))
+                elif self.path.endswith("automatic-triage"):
+                    if not gateway.ai_jobs or not gateway.ai_jobs.automatic:
+                        raise PermissionError("Automatic triage is unavailable at this site.")
+                    self.json(200, gateway.ai_jobs.automatic.change(actor, payload))
+                elif self.path.endswith("sensor-fusion"):
+                    if not gateway.sensor_fusion:
+                        raise PermissionError("Gate sensor fusion is disabled at this site.")
+                    self.json(200, gateway.sensor_fusion.review(actor, payload))
+                elif self.path.endswith("analytics-review"):
                     self.json(200, gateway.monitor.analytics_review.change(actor, payload))
+                elif self.path.endswith("commissioning-runs"):
+                    self.json(200, gateway.commissioning.change(actor, payload))
+                elif self.path.endswith("dock-schedules"):
+                    self.json(200, gateway.monitor.dock_schedules.change(actor, payload))
                 elif self.path.endswith("incident"):
                     self.json(200, gateway.collaboration.incident(actor, payload))
+                elif self.path.endswith("cases"):
+                    self.json(200, gateway.monitor.cases.change(gateway, actor, payload))
+                elif self.path.endswith("evidence-recording"):
+                    self.json(200, gateway.monitor.cases.recording(gateway, actor, payload.get("sourceId")))
+                elif self.path.endswith("case-export"):
+                    if not gateway.export_lock.acquire(blocking=False):
+                        raise OverflowError("Another evidence package is being prepared. Try again shortly.")
+                    try:
+                        evidence, identifier = gateway.monitor.cases.export(actor, gateway, payload)
+                        package, fingerprint = build_package(gateway.archive, gateway.state, evidence, actor["name"])
+                        gateway.activity.audit(actor["subject"], "case-export", identifier, fingerprint)
+                        self.reply(200, package, "application/zip", {"Content-Disposition": 'attachment; filename="proxigo-case-evidence.zip"'})
+                    finally:
+                        gateway.export_lock.release()
+                elif self.path.endswith("configuration/import"):
+                    if not manages_site(actor):
+                        raise PermissionError("Importing site inventory requires a site supervisor.")
+                    self.json(200, change_import(gateway.monitor.configuration, actor, payload))
                 elif self.path.endswith("maintenance"):
                     self.json(200, gateway.collaboration.maintenance(actor, payload))
                 elif self.path.endswith("viewer"):
@@ -768,6 +876,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.json(503, {"error": "Another evidence package is being prepared. Try again shortly."})
                     return
                 try:
+                    payload.pop("caseReport", None)
                     package, fingerprint = build_package(gateway.archive, gateway.state, payload, operator.strip())
                     gateway.activity.audit(actor["subject"] if can_manage_evidence and not management else operator.strip(), "evidence-export", payload["incidentId"], fingerprint)
                     self.reply(200, package, "application/zip", {"Content-Disposition": 'attachment; filename="proxigo-incident-evidence.zip"'})
@@ -816,7 +925,40 @@ class Handler(BaseHTTPRequestHandler):
                 except PermissionError as issue:
                     self.json(403, {"error": str(issue)})
             return
-        if request.path in ("/api/site/session", "/api/site/activity", "/api/site/monitoring", "/api/site/configuration", "/api/site/accounts", "/api/site/assets", "/api/site/vms-channels", "/api/site/analytics-review", "/api/site/analytics-report"):
+        job = AI_JOB_ROUTE.fullmatch(request.path)
+        if job or request.path in ("/api/site/ai-jobs", "/api/site/device-degradation", "/api/site/automatic-triage", "/api/site/sensor-fusion"):
+            gateway = self.server.gateway
+            actor = self.site_actor()
+            if not actor:
+                self.json(401, {"error": "Sign in with an authorized site operator account."})
+                return
+            try:
+                if job:
+                    if not gateway.ai_jobs:
+                        raise PermissionError("This AI job is unavailable to your account.")
+                    data = gateway.ai_jobs.read(actor, job[1])
+                elif request.path.endswith("ai-jobs"):
+                    data = gateway.ai_jobs.capabilities(actor) if gateway.ai_jobs else {"handoff": False, "clipReview": False}
+                elif request.path.endswith("automatic-triage"):
+                    identifier = parse_qs(request.query, max_num_fields=1).get("incidentId", [None])[0]
+                    if identifier is not None and not 1 <= len(identifier) <= 450:
+                        raise CameraError("Choose a valid incident.")
+                    automatic = gateway.ai_jobs.automatic if gateway.ai_jobs else None
+                    data = automatic.read(actor, identifier) if automatic else {"available": False, "review": None}
+                elif request.path.endswith("device-degradation"):
+                    data = gateway.device_degradation.read(actor) if gateway.device_degradation else {"enabled": False}
+                else:
+                    identifier = parse_qs(request.query, max_num_fields=1).get("incidentId", [""])[0]
+                    data = gateway.sensor_fusion.read(actor, identifier) if gateway.sensor_fusion else {"enabled": False}
+                self.json(200, data)
+            except PermissionError as issue:
+                self.json(403, {"error": str(issue)})
+            except (CameraError, ValueError) as issue:
+                self.json(400, {"error": str(issue)})
+            except (OSError, sqlite3.Error):
+                self.json(500, {"error": "The camera gateway could not read its site intelligence records."})
+            return
+        if request.path in ("/api/site/session", "/api/site/activity", "/api/site/monitoring", "/api/site/configuration", "/api/site/accounts", "/api/site/assets", "/api/site/vms-channels", "/api/site/vms-status", "/api/site/analytics-review", "/api/site/analytics-report", "/api/site/inspection-results", "/api/site/commissioning-runs", "/api/site/dock-schedules", "/api/site/door-passages", "/api/site/camera-native", "/api/site/response-procedure", "/api/site/evidence-search", "/api/site/cases", "/api/site/operations", "/api/site/dispatch", "/api/site/incident-history"):
             collaboration = self.server.gateway.collaboration
             actor = self.site_actor()
             if not collaboration or not actor:
@@ -824,9 +966,47 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if request.path.endswith("session"):
                 self.json(200, collaboration.session(actor))
+            elif request.path.endswith("operations"):
+                self.json(200, self.server.gateway.operations(actor))
+            elif request.path.endswith("dispatch"):
+                self.json(200, {**collaboration.monitor.dispatch(actor), "account": collaboration.session(actor)})
+            elif request.path.endswith("incident-history"):
+                try:
+                    identifier = parse_qs(request.query, max_num_fields=1).get("incidentId", [""])[0]
+                    self.json(200, collaboration.monitor.incident_history(actor, identifier))
+                except PermissionError as issue:
+                    self.json(403, {"error": str(issue)})
+                except (CameraError, ValueError):
+                    self.json(400, {"error": "Choose a valid incident."})
+            elif request.path.endswith(("evidence-search", "cases")):
+                try:
+                    query = parse_qs(request.query, max_num_fields=12)
+                    cases = collaboration.monitor.cases
+                    value = cases.search(actor, query) if request.path.endswith("evidence-search") else cases.read(
+                        self.server.gateway, actor, query.get("id", [None])[0])
+                    self.json(200, value)
+                except PermissionError as issue:
+                    self.json(403, {"error": str(issue)})
+                except (CameraError, ValueError, TypeError):
+                    self.json(400, {"error": "Choose a valid case or evidence search."})
+            elif request.path.endswith("response-procedure"):
+                try:
+                    identifier = parse_qs(request.query, max_num_fields=1).get("incidentId", [""])[0]
+                    self.json(200, collaboration.monitor.procedures.read(actor, identifier))
+                except PermissionError as issue:
+                    self.json(403, {"error": str(issue)})
+                except (CameraError, ValueError):
+                    self.json(400, {"error": "Choose a valid incident."})
+            elif request.path.endswith("commissioning-runs"):
+                try:
+                    self.json(200, self.server.gateway.commissioning.read(actor, parse_qs(request.query, max_num_fields=2)))
+                except PermissionError as issue:
+                    self.json(403, {"error": str(issue)})
+                except ValueError as issue:
+                    self.json(400, {"error": str(issue)})
             elif request.path.endswith("analytics-review"):
                 try:
-                    self.json(200, collaboration.monitor.analytics_review.read(actor, parse_qs(request.query, max_num_fields=5)))
+                    self.json(200, collaboration.monitor.analytics_review.read(actor, parse_qs(request.query, max_num_fields=6)))
                 except ValueError:
                     self.json(400, {"error": "Choose valid CCTV review filters."})
             elif request.path.endswith("analytics-report"):
@@ -834,6 +1014,23 @@ class Handler(BaseHTTPRequestHandler):
                     self.json(200, collaboration.monitor.analytics_review.report(actor, parse_qs(request.query, max_num_fields=2)))
                 except ValueError as issue:
                     self.json(400, {"error": str(issue)})
+            elif request.path.endswith("inspection-results"):
+                try:
+                    self.json(200, collaboration.monitor.inspections.read(actor, parse_qs(request.query, max_num_fields=6)))
+                except ValueError:
+                    self.json(400, {"error": "Choose valid inspection result filters."})
+            elif request.path.endswith("dock-schedules"):
+                try:
+                    self.json(200, collaboration.monitor.dock_schedules.read(actor, parse_qs(request.query, max_num_fields=1)))
+                except (CameraError, ValueError) as issue:
+                    self.json(400, {"error": str(issue)})
+            elif request.path.endswith("door-passages"):
+                try:
+                    self.json(200, collaboration.monitor.door_passages.read(actor, parse_qs(request.query, max_num_fields=2)))
+                except ValueError as issue:
+                    self.json(400, {"error": str(issue)})
+            elif request.path.endswith("camera-native"):
+                self.json(200, collaboration.monitor.native_events.read(actor))
             elif request.path.endswith("configuration"):
                 if not manages_site(actor):
                     self.json(403, {"error": "Viewing site drafts requires a site supervisor."})
@@ -850,13 +1047,23 @@ class Handler(BaseHTTPRequestHandler):
             elif request.path.endswith("vms-channels"):
                 if not manages_site(actor):
                     self.json(403, {"error": "Importing camera channels requires a site supervisor."})
-                elif not self.server.gateway.milestone:
-                    self.json(404, {"error": "Configure the site XProtect connector first."})
                 else:
                     try:
-                        self.json(200, self.server.gateway.milestone.channels())
-                    except (OSError, ValueError, CameraError):
-                        self.json(502, {"error": "The XProtect camera catalog could not be read."})
+                        gateway = self.server.gateway
+                        provider = parse_qs(request.query, max_num_fields=1).get("provider", ["xprotect"])[0]
+                        connector = {"xprotect": gateway.milestone, "genetec": gateway.genetec}.get(provider)
+                        if connector:
+                            self.json(200, connector.channels())
+                        else:
+                            self.json(404, {"error": "Configure this VMS connector at the site gateway first."})
+                    except (OSError, ValueError, TypeError, CameraError, KeyError):
+                        self.json(502, {"error": "The VMS channel catalog could not be read."})
+            elif request.path.endswith("vms-status"):
+                if not manages_site(actor):
+                    self.json(403, {"error": "A site supervisor is required to view VMS connector status."})
+                else:
+                    gateway = self.server.gateway
+                    self.json(200, {"connectors": [connector.state.status() for connector in (gateway.milestone, gateway.genetec) if connector]})
             elif request.path.endswith("monitoring"):
                 try:
                     query = parse_qs(request.query, max_num_fields=5)
@@ -984,10 +1191,18 @@ def main():
     parser.add_argument("--milestone-origin", help="Trusted XProtect HTTPS API origin.")
     parser.add_argument("--milestone-token-file", type=Path, help="Private file containing a read-only XProtect user token.")
     parser.add_argument("--milestone-event-map", type=Path, help="Private mapping of XProtect event and source identifiers.")
+    parser.add_argument("--genetec-origin", help="Trusted HTTPS Security Center Web SDK origin.")
+    parser.add_argument("--genetec-credentials", type=Path, help="Private Security Center Web SDK credential JSON file.")
+    parser.add_argument("--genetec-device-map", type=Path, help="Private map from Security Center entity GUIDs to site device IDs.")
+    parser.add_argument("--genetec-stream-port", type=int, default=4591, help="Approved TLS port for Web SDK event streaming.")
+    parser.add_argument("--vms-ca", type=Path, help="Trusted private CA for VMS HTTPS connections.")
     parser.add_argument("--recovery-kbps", type=int, default=4096, help="Maximum average Axis recovery download rate in kilobits per second.")
     parser.add_argument("--telemetry-devices", type=Path, help="Private JSON file mapping device IDs to ingest tokens.")
     parser.add_argument("--analytics-workers", type=Path, help="Private JSON mapping camera IDs to compute-placement worker tokens.")
+    parser.add_argument("--commissioning-worker", type=Path, help="Private JSON with the local replay Python and approved YOLO11 model.")
+    parser.add_argument("--onvif-analytics", type=Path, help="Private JSON array enrolling read-only ONVIF camera event sources.")
     parser.add_argument("--telemetry-upstream", help="HTTPS upstream endpoint for durable site telemetry forwarding.")
+    parser.add_argument("--site-intelligence", type=Path, help="Private site intelligence settings for AI, drift warnings and gate sensors.")
     parser.add_argument("--site-access", type=Path, help="Private site and operator access configuration JSON.")
     parser.add_argument("--require-camera-session", action="store_true", help="Require authenticated site camera authorization for private feeds and recordings.")
     args = parser.parse_args()
@@ -1006,6 +1221,12 @@ def main():
         parser.error("Camera session enforcement requires --site-access.")
     if args.analytics_workers and not args.site_access:
         parser.error("Analytics worker enrollment requires --site-access.")
+    if args.commissioning_worker and not args.site_access:
+        parser.error("Commissioning replay requires --site-access.")
+    if args.site_intelligence and not args.site_access:
+        parser.error("Site intelligence requires --site-access.")
+    if args.onvif_analytics and not args.site_access:
+        parser.error("Native ONVIF events require --site-access.")
     if identity_proxy_secret and not re.fullmatch(r"[a-f0-9]{64}", identity_proxy_secret):
         parser.error("PROXIGO_IDENTITY_PROXY_TOKEN must contain 64 hexadecimal characters.")
     for secret in (telemetry_secret, telemetry_reader, telemetry_receiver):
@@ -1028,13 +1249,22 @@ def main():
         if url.scheme != "https" or not url.hostname or url.username or url.password or url.fragment or len(webhook_secret) < 24:
             parser.error("Set an HTTPS webhook and PROXIGO_WEBHOOK_SECRET of at least 24 characters.")
     try:
+        args.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        state_lock = StateLock(args.state_dir)
         gateway = CameraGateway(args.state_dir, ffmpeg, args.allow_source, args.max_streams, args.probe_interval, args.axis_recorder,
                                args.telemetry_upstream, telemetry_secret, read_device_tokens(args.telemetry_devices), telemetry_reader, telemetry_receiver,
                                json.loads(args.site_access.read_text()) if args.site_access else None, identity_proxy_secret, args.require_camera_session,
-                               profile_g_recordings(args.onvif_recordings), args.onvif_capture_python, worker_tokens(args.analytics_workers))
+                               profile_g_recordings(args.onvif_recordings), args.onvif_capture_python, worker_tokens(args.analytics_workers),
+                               args.commissioning_worker, json.loads(args.site_intelligence.read_text()) if args.site_intelligence else None)
+        native_sources = enroll_native(gateway, args.onvif_analytics)
         if args.milestone_origin:
-            gateway.milestone = MilestoneConnector(args.milestone_origin, args.milestone_token_file, args.milestone_event_map, gateway.telemetry)
-    except (CameraError, OSError, ValueError) as error:
+            gateway.milestone = MilestoneConnector(args.milestone_origin, args.milestone_token_file, args.milestone_event_map, gateway.telemetry, args.vms_ca)
+        if args.genetec_origin:
+            if not gateway.monitor or not args.genetec_credentials or not 1 <= args.genetec_stream_port <= 65535:
+                raise CameraError("Security Center requires a configured site, a private credentials file and a TLS streaming port.")
+            gateway.genetec = GenetecConnector(args.genetec_origin, args.genetec_credentials, args.genetec_device_map,
+                                              gateway.telemetry, args.vms_ca, args.genetec_stream_port)
+    except (CameraError, KeyError, OSError, TypeError, ValueError) as error:
         parser.error(str(error))
     gateway.recording_recovery = args.recording_recovery
     if args.commissioning_webhook:
@@ -1064,10 +1294,32 @@ def main():
         if args.recording_recovery:
             recovery = threading.Thread(target=gateway.monitor.recover_recordings, args=(gateway, args.recovery_kbps), daemon=True)
             recovery.start()
-        milestone = None
-        if gateway.milestone:
-            milestone = threading.Thread(target=gateway.milestone.poll, args=(gateway.stopping,), daemon=True)
-            milestone.start()
+        vms_threads = [threading.Thread(target=connector.poll, args=(gateway.stopping,), daemon=True)
+                       for connector in (gateway.milestone, gateway.genetec) if connector]
+        for worker in vms_threads:
+            worker.start()
+        commissioning = None
+        if gateway.commissioning and gateway.commissioning.worker:
+            commissioning = threading.Thread(target=gateway.commissioning.poll, daemon=True)
+            commissioning.start()
+        passages = None
+        if gateway.monitor:
+            passages = threading.Thread(target=gateway.monitor.door_passages.poll, args=(gateway.stopping,), daemon=True)
+            passages.start()
+            site_response = threading.Thread(target=gateway.evaluate_site_response, daemon=True)
+            site_response.start()
+            evidence_index = threading.Thread(target=gateway.index_site_evidence, daemon=True)
+            evidence_index.start()
+        native_threads = [threading.Thread(target=source.poll, args=(gateway.stopping,), daemon=True) for source in native_sources]
+        for worker in native_threads:
+            worker.start()
+        intelligence = [service.poll for service in (gateway.ai_jobs, gateway.device_degradation, gateway.sensor_fusion) if service]
+        intelligence_threads = [threading.Thread(target=poll, daemon=True) for poll in intelligence]
+        if gateway.sensor_fusion:
+            intelligence_threads.extend(threading.Thread(target=radar.poll, args=(gateway.stopping,), daemon=True)
+                                        for radar in gateway.sensor_fusion.gates)
+        for worker in intelligence_threads:
+            worker.start()
         print(f"Camera gateway listening on {server.server_address[0]}:{server.server_address[1]}", flush=True)
         print(f"Management token file: {gateway.token_path}", flush=True)
 
@@ -1092,8 +1344,17 @@ def main():
                 alert_notifications.join()
             if recovery:
                 recovery.join(timeout=5)
-            if milestone:
-                milestone.join(timeout=7)
+            for worker in vms_threads:
+                worker.join(timeout=8)
+            if commissioning:
+                commissioning.join(timeout=5)
+            if passages:
+                passages.join(timeout=5)
+                site_response.join(timeout=5)
+                evidence_index.join(timeout=5)
+            for worker in (*native_threads, *intelligence_threads):
+                worker.join(timeout=5)
+            state_lock.file.close()
 
 
 if __name__ == "__main__":

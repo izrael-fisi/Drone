@@ -69,12 +69,23 @@ def build_package(archive, state, payload, operator):
                 raise CameraError("A clip exceeds the evidence export size limit.")
             manifest["clips"].append({"file": target.name, "sha256": sha256(target.read_bytes()).hexdigest(), "clipId": clip,
                                       "hold": {field: entry[field] for field in ("sha256", "heldAt", "heldUntil", "heldBy")}, "redactionPercent": mask})
+        report = payload.get("caseReport")
+        if report is not None:
+            report_path = root / "case-report.json"
+            report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+            if report_path.stat().st_size > 1_048_576:
+                raise CameraError("The case report exceeds the evidence export limit.")
+            manifest.update(version=2, caseReport={"file": report_path.name, "sha256": sha256(report_path.read_bytes()).hexdigest()})
         index = root / "manifest.json"
         signature = root / "manifest.sig"
         index.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+        if index.stat().st_size > 65_536:
+            raise CameraError("The evidence manifest exceeds the export limit.")
         subprocess.run([openssl, "dgst", "-sha256", "-sign", str(key), "-out", str(signature), str(index)], check=True, timeout=5, capture_output=True)
         package = root / "evidence.zip"
         with ZipFile(package, "w", compression=ZIP_STORED) as bundle:
             for member in [index, signature, public, *root.glob("clip-*.mp4")]:
                 bundle.write(member, member.name)
+            if report is not None:
+                bundle.write(report_path, report_path.name)
         return package.read_bytes(), manifest["signingKeySha256"]

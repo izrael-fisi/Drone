@@ -1,6 +1,7 @@
 """Site-local adapter ingestion with durable cursor and optional HTTPS forwarding."""
 
 from datetime import datetime, timezone
+from hashlib import sha256
 import json
 from math import isfinite
 import re
@@ -11,8 +12,11 @@ from urllib.request import ProxyHandler, Request, build_opener
 from onvif import CameraError, NoRedirect
 from site_activity import EVENT_LABELS, valid_event_device
 from analytics_contract import KINDS as ANALYTICS_TYPES, evidence
+from inspection_results import EVENT_TYPE as INSPECTION_RESULT, normalize_inspection
+from door_passages import ACCESS_FACTS
+from native_camera_events import native_evidence
 
-TYPES = {"door-forced-open", "door-held-open", "motion", "tamper", "rf-detection"} | ANALYTICS_TYPES
+TYPES = {"door-forced-open", "door-held-open", "motion", "tamper", "rf-detection", INSPECTION_RESULT} | ANALYTICS_TYPES | ACCESS_FACTS
 MAX_EVENTS = 10000
 
 
@@ -34,9 +38,27 @@ def normalize(payload):
             raise CameraError("Health state is online or offline.")
         return {**record, "state": payload["state"]}
     summary, event_type, position = (payload.get(field) for field in ("summary", "eventType", "position"))
+    if event_type == INSPECTION_RESULT:
+        if position is not None or "analytics" in payload:
+            raise CameraError("Inspection results use their published station camera location.")
+        inspection = normalize_inspection(payload.get("inspection"))
+        if inspection["source"] == "opc-ua":
+            identity = json.dumps([inspection["stationId"], inspection["resultId"]], separators=(",", ":"))
+            record["id"] = "inspection-opc-" + sha256(identity.encode()).hexdigest()
+        label = {"pass": "Component presence passed", "fail": "Component presence failed", "incomplete": "Inspection incomplete"}
+        return {**record, "eventType": event_type, "inspection": inspection,
+                "summary": label[inspection["outcome"]]}
+    if "inspection" in payload:
+        raise CameraError("Use the inspection-result type for a component presence result.")
     if not isinstance(summary, str) or not 1 <= len(summary.strip()) <= 160 or not isinstance(event_type, str) or event_type not in TYPES:
         raise CameraError("Supply a supported event type and short summary.")
     record.update(summary=summary.strip(), eventType=event_type)
+    if "nativeAnalytics" in payload:
+        if event_type != "line-crossing" or position is not None or "analytics" in payload:
+            raise CameraError("Provide camera-native analytics on its enrolled crossing rule.")
+        record["nativeAnalytics"] = native_evidence(payload["nativeAnalytics"])
+    if event_type in ACCESS_FACTS and position is not None:
+        raise CameraError("Access passage events use the registered door location.")
     if "analytics" in payload:
         if event_type not in ANALYTICS_TYPES or position is not None:
             raise CameraError("CCTV evidence uses its camera location and a supported rule type.")
@@ -66,8 +88,20 @@ class SiteTelemetry:
                 );
             """)
 
-    def push(self, payload, local=True, analytics_placement=None):
+    def push(self, payload, local=True, analytics_placement=None, native_camera=None, radar=None):
         event = normalize(payload)
+        if "nativeAnalytics" in event and (not local or not self.monitor or native_camera != event["sensorId"]):
+            raise PermissionError("Camera-native events require the enrolled local connector.")
+        if radar:
+            if not local or not self.monitor or event["sensorId"] != radar.sensor or event.get("eventType") != "rf-detection":
+                raise PermissionError("Radar evidence requires the enrolled local connector.")
+            event["radarEvidence"] = {"source": "axis-radar", "cameraId": radar.camera, "boundaryId": radar.boundary, "profile": radar.profile}
+        if "inspection" in event:
+            if not local or not self.monitor:
+                raise CameraError("Inspection results require this site gateway and its enrolled station adapter.")
+            with self.activity.connect() as db:
+                db.execute("BEGIN IMMEDIATE")
+                return self.monitor.record_inspection(db, {**event, "gatewayReceivedAt": time.time()})
         if analytics_placement:
             if "analytics" not in event:
                 raise CameraError("An analytics worker can submit only CCTV observations.")
@@ -96,11 +130,12 @@ class SiteTelemetry:
                            (event["sensorId"], event["type"], event["id"])).fetchone()
         if found:
             return {"accepted": False, "sequence": found[0]}
-        if local and self.upstream and db.execute("SELECT count(*) FROM telemetry_delivery").fetchone()[0] >= MAX_EVENTS:
+        forward = local and self.upstream and "nativeAnalytics" not in event and "radarEvidence" not in event
+        if forward and db.execute("SELECT count(*) FROM telemetry_delivery").fetchone()[0] >= MAX_EVENTS:
             raise OverflowError("The upstream telemetry queue is full. Retry the event later.")
         sequence = db.execute("INSERT INTO telemetry(sensor,kind,event_id,received_at,payload) VALUES(?,?,?,?,?)",
                               (event["sensorId"], event["type"], event["id"], now, encoded)).lastrowid
-        if local and self.upstream:
+        if forward:
             db.execute("INSERT INTO telemetry_delivery VALUES(?,?,?)", (sequence, encoded, received))
         if self.monitor and (local or "analytics" not in event):
             self.monitor.record(db, {**event, "gatewayReceivedAt": received}, sequence)

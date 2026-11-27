@@ -6,7 +6,9 @@ export type SearchTarget = { kind: "sensor" | "boundary" | "alert" | "gateway"; 
 const icons = { sensor: Radio, boundary: Pentagon, alert: Bell, gateway: Network };
 const resultKey = (target: SearchTarget) => target.kind + target.id;
 
-export function WorkspaceSearch({ targets, onClose, onSelect }: { targets: SearchTarget[]; onClose: () => void; onSelect: (target: SearchTarget) => void }) {
+export function WorkspaceSearch({ targets, onClose, onSelect, onEvidence }: {
+  targets: SearchTarget[]; onClose: () => void; onSelect: (target: SearchTarget) => void; onEvidence?: () => void;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -77,6 +79,7 @@ export function WorkspaceSearch({ targets, onClose, onSelect }: { targets: Searc
         })}
       </div>
       {!results.length && <p className="gv-empty" role="status">No matching devices, boundaries, or alerts.</p>}
+      {onEvidence && <button type="button" className="gv-button gv-evidence-link" onClick={onEvidence}>Evidence search and cases</button>}
     </div>
   </dialog>;
 }

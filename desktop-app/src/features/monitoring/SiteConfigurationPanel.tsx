@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { canManageSite, siteInventory, siteRequest, type SiteInventory, type SiteSession } from "./SiteOperator";
+import { ProcedureEditor } from "./ResponseProcedures";
+import { InventoryImport } from "./InventoryImport";
 
-export type SiteDraft = { configuration: SiteInventory; publishedVersion: number; draftRevision: number };
+export type SiteDraft = { configuration: SiteInventory; publishedVersion: number; draftRevision: number; importPreview?: boolean };
 type ConfigurationState = { publishedVersion: number; draftRevision: number; draft: SiteInventory | null; published: SiteInventory | null;
   diff: { collection: string; id: string; name: string; change: "added" | "removed" | "changed";
     fields: { name: string; before: unknown; after: unknown }[] }[];
   history: { version: number; publishedAt: number; actor: string; message: string; restoredFrom?: number }[] };
 
-export function SiteConfigurationPanel({ session, local, editing, onEdit, onExit, publishedVersion }: {
+export function SiteConfigurationPanel({ session, local, editing, onEdit, onExit, publishedVersion, importRequest = 0 }: {
   session: SiteSession; local: SiteInventory; editing?: SiteDraft; onEdit: (draft: SiteDraft) => void; onExit: () => void; publishedVersion: number;
+  importRequest?: number;
 }) {
   const [state, setState] = useState<ConfigurationState>();
   const [expanded, setExpanded] = useState(!!editing);
@@ -21,6 +24,12 @@ export function SiteConfigurationPanel({ session, local, editing, onEdit, onExit
   const [result, setResult] = useState<{ events: number; matchCount: number; incidentCount?: number;
     matches: { source: string; boundary: string; summary: string; severity: string }[] }>();
   useEffect(() => { if (editing) setExpanded(true); }, [!!editing]);
+  useEffect(() => {
+    if (importRequest && canManageSite(session)) {
+      setExpanded(true);
+      if (!state && !busy) void load();
+    }
+  }, [importRequest]);
   if (!canManageSite(session)) return null;
 
   async function load() {
@@ -73,14 +82,21 @@ export function SiteConfigurationPanel({ session, local, editing, onEdit, onExit
       <button className="gv-button" type="button" disabled={busy} onClick={() => void load()}>Refresh configuration</button>
       {state && <>
         {editing ? <div className="gv-detail-actions">
-          <button className="gv-button gv-primary" type="button" disabled={busy} onClick={() => void change("save")}>Save site draft</button>
-          <button className="gv-button" type="button" disabled={busy} onClick={onExit}>Exit draft without saving</button>
+          {!editing.importPreview && <button className="gv-button gv-primary" type="button" disabled={busy} onClick={() => void change("save")}>Save site draft</button>}
+          <button className="gv-button" type="button" disabled={busy} onClick={onExit}>{editing.importPreview ? "Return to inventory import" : "Exit draft without saving"}</button>
         </div> : <div className="gv-detail-actions">
           <button className="gv-button" type="button" disabled={busy} onClick={() => edit(state.draft ?? state.published ?? local)}>
             {state.draft ? "Edit saved site draft" : state.published ? "Edit published configuration as a draft" : "Start draft from preview inventory"}
           </button>
           {state.draft && <button className="gv-button" type="button" disabled={busy} onClick={() => void change("discard")}>Discard saved site draft</button>}
         </div>}
+        {(!editing || editing.importPreview) && <div hidden={!!editing?.importPreview}><InventoryImport session={session} publishedVersion={state.publishedVersion}
+          openRequest={importRequest}
+          draftRevision={state.draftRevision} onSaved={() => void load()} onPreview={(configuration) => onEdit({
+            publishedVersion: state.publishedVersion, draftRevision: state.draftRevision, configuration, importPreview: true,
+          })} /></div>}
+        {editing && !editing.importPreview && <ProcedureEditor definitions={editing.configuration.procedures ?? []} boundaries={editing.configuration.boundaries}
+          onChange={(procedures) => onEdit({ ...editing, configuration: { ...editing.configuration, procedures } })} />}
         {state.draft && <section aria-label="Draft changes">
           <h4>Draft changes</h4>
           {state.diff.length ? <ul className="gv-triage-records">{state.diff.map((item) => <li key={item.collection + item.id}>

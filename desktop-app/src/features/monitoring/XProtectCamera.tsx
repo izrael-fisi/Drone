@@ -3,9 +3,11 @@ import type { Alert, Sensor } from "./monitoringModel";
 import { readCoordinates } from "./configurationModel";
 import { siteRequest, type SiteSession } from "./SiteOperator";
 
-type Channel = { id: string; name: string };
+type Channel = { id: string; name: string; modality?: Sensor["modality"]; deviceId?: string };
 
-export function XProtectCatalog({ session, onAdd }: { session: SiteSession; onAdd: (camera: Sensor) => void }) {
+export function XProtectCatalog({ session, onAdd, provider = "xprotect" }: {
+  session: SiteSession; onAdd: (camera: Sensor) => void; provider?: "xprotect" | "genetec";
+}) {
   const [channels, setChannels] = useState<Channel[]>();
   const [id, setId] = useState("");
   const [longitude, setLongitude] = useState("");
@@ -15,23 +17,25 @@ export function XProtectCatalog({ session, onAdd }: { session: SiteSession; onAd
   const [error, setError] = useState("");
   const position = readCoordinates({ longitude, latitude });
   const selected = channels?.find((channel) => channel.id === id);
+  const label = provider === "genetec" ? "Genetec" : "XProtect";
 
   return <details className="gv-triage-section">
-    <summary>XProtect camera catalog</summary>
+    <summary>{label} {provider === "genetec" ? "device catalog" : "camera catalog"}</summary>
     <div className="gv-triage-content gv-incident-form">
       <button type="button" className="gv-button" disabled={busy} onClick={async () => {
         setBusy(true); setStatus(""); setError("");
-        try { const result = await siteRequest(session, "vms-channels"); setChannels(result.channels); setStatus(`${result.channels.length} available channels.`); }
-        catch (issue) { setError(issue instanceof Error ? issue.message : "Could not load XProtect cameras."); }
+        try { const result = await siteRequest(session, "vms-channels?provider=" + provider); setChannels(result.channels); setStatus(`${result.channels.length} available channels.`); }
+        catch (issue) { setError(issue instanceof Error ? issue.message : `Could not load ${label} channels.`); }
         finally { setBusy(false); }
-      }}>Load XProtect channels</button>
+      }}>Load {label} channels</button>
       {!!channels?.length && <form className="gv-incident-form" onSubmit={(event) => {
         event.preventDefault(); if (!selected || !position) return;
-        onAdd({ id: `xprotect-${selected.id.toLowerCase()}`, name: selected.name.slice(0, 60), position, modality: "vision", demo: false,
-          groupId: null, labels: [], mapLabel: "", cameraView: null, cameraFeedUrl: null, cameraProvider: "Milestone XProtect", cameraChannel: selected.id });
+        onAdd({ id: selected.deviceId ?? `xprotect-${selected.id.toLowerCase()}`, name: selected.name.slice(0, 60), position, modality: selected.modality ?? "vision", demo: false,
+          groupId: null, labels: [], mapLabel: "", cameraView: null, cameraFeedUrl: null,
+          cameraProvider: provider === "genetec" ? "Genetec Security Center" : "Milestone XProtect", cameraChannel: selected.id });
         setStatus(`${selected.name} added to the draft.`);
       }}>
-        <label>XProtect channel<select value={id} onChange={(event) => setId(event.target.value)}><option value="">Choose channel</option>
+        <label>{label} channel<select value={id} onChange={(event) => setId(event.target.value)}><option value="">Choose channel</option>
           {channels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
         <label>Channel latitude<input required inputMode="decimal" value={latitude} onChange={(event) => setLatitude(event.target.value)} /></label>

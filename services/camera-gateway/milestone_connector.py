@@ -7,23 +7,25 @@ from secrets import token_hex
 import sqlite3
 import threading
 import time
+import ssl
 from urllib.parse import urlencode, urlsplit
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
 
 from onvif import CameraError, NoRedirect
 from site_activity import valid_event_device
 from site_telemetry import TYPES
+from vms_status import ConnectorState
 
 GUID = re.compile(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
 
 
 class MilestoneConnector:
-    def __init__(self, origin, token_path, mapping_path, telemetry):
+    def __init__(self, origin, token_path, mapping_path, telemetry, ca_file=None):
         target = urlsplit(origin)
         if target.scheme != "https" or not target.hostname or target.path not in ("", "/") or target.username or target.password or target.query or target.fragment:
             raise CameraError("Set a trusted XProtect HTTPS origin.")
         self.origin, self.token_path, self.telemetry = origin.rstrip("/"), token_path, telemetry
-        self.connect = build_opener(ProxyHandler({}), NoRedirect())
+        self.connect = build_opener(ProxyHandler({}), HTTPSHandler(context=ssl.create_default_context(cafile=ca_file)), NoRedirect())
         self.sessions = {}
         self.session_lock = threading.Lock()
         self.mapping = json.loads(mapping_path.read_text()) if mapping_path else {}
@@ -37,6 +39,7 @@ class MilestoneConnector:
             raise CameraError("Map XProtect event GUIDs and sources to supported Proxigo events and device IDs.")
         if not self.token_path.is_file():
             raise CameraError("Provide a private XProtect user-token file.")
+        self.state = ConnectorState(telemetry, "xprotect", self.origin, playback=True)
 
     def request(self, resource, query=None, body=None, method="GET"):
         token = self.token_path.read_text().strip()
@@ -129,34 +132,40 @@ class MilestoneConnector:
         raise CameraError("Choose a supported recorder playback operation.")
 
     def poll(self, stopping):
-        if not self.sources or not self.event_types:
-            return
         with self.telemetry.activity.connect() as db:
             db.execute("CREATE TABLE IF NOT EXISTS milestone_cursor(origin TEXT PRIMARY KEY, local_id INTEGER NOT NULL)")
             stored = db.execute("SELECT local_id FROM milestone_cursor WHERE origin=?", (self.origin,)).fetchone()
-        after = stored[0] if stored else 0
         start = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() - 300, timezone.utc).isoformat().replace("+00:00", "Z")
         delay = 1
         while not stopping.wait(delay):
             try:
-                query = {"localId": f"gt:{after}", "orderBy": "asc:'localId'", "size": "200"}
-                if not after:
-                    query["time"] = f"gt:'{start}'"
-                rows = [row for row in self.read("events", query) if type(row.get("localId")) is int and after < row["localId"] < 2**63]
-                for row in sorted(rows, key=lambda item: item["localId"]):
-                    source, raw_type, identifier = (row.get(key) for key in ("source", "type", "id"))
-                    device = self.sources.get(source) if isinstance(source, str) else None
-                    event_type = self.event_types.get(raw_type) if isinstance(raw_type, str) else None
-                    if device and event_type and isinstance(identifier, str) and GUID.fullmatch(identifier):
-                        try:
-                            self.telemetry.push({"type": "observation", "sensorId": device, "id": "xprotect-" + identifier.lower(), "occurredAt": row.get("time"),
-                                                 "eventType": event_type, "summary": "XProtect " + event_type.replace("-", " ")})
-                        except CameraError:
-                            pass
-                    after = row["localId"]
-                if rows:
-                    with self.telemetry.activity.connect() as db:
-                        db.execute("INSERT OR REPLACE INTO milestone_cursor VALUES(?,?)", (self.origin, after))
-                delay = 1 if len(rows) >= 200 else 6
+                backlog = self.poll_once(start, stored[0] if stored else 0)
+                delay = 1 if backlog else 6
             except (OSError, ValueError, OverflowError, CameraError, sqlite3.Error):
+                self.state.check("Could not ingest XProtect events. The last accepted position is retained.")
                 delay = 15
+
+    def poll_once(self, start, legacy_cursor=0):
+        if not self.sources or not self.event_types:
+            self.channels()
+            self.state.check()
+            return False
+        after = self.state.cursor("events", legacy_cursor)
+        query = {"localId": f"gt:{after}", "orderBy": "asc:'localId'", "size": "200"}
+        if not after:
+            query["time"] = f"gt:'{start}'"
+        rows = self.read("events", query)
+        if any(type(row.get("localId")) is not int or not 0 < row["localId"] < 2**63 for row in rows):
+            raise CameraError("XProtect returned an invalid event sequence.")
+        for row in sorted((item for item in rows if item["localId"] > after), key=lambda item: item["localId"]):
+            source, raw_type, identifier = (row.get(key) for key in ("source", "type", "id"))
+            device = self.sources.get(source) if isinstance(source, str) else None
+            event_type = self.event_types.get(raw_type) if isinstance(raw_type, str) else None
+            if device and event_type and isinstance(identifier, str) and GUID.fullmatch(identifier):
+                self.state.ingest("events", row["localId"], {"type": "observation", "sensorId": device, "id": "xprotect-" + identifier.lower(),
+                    "occurredAt": row.get("time"), "eventType": event_type, "summary": "XProtect " + event_type.replace("-", " ")},
+                    {"eventId": identifier.lower(), "entityId": source, "eventType": raw_type, "position": row["localId"]})
+            else:
+                self.state.ingest("events", row["localId"], rejected=bool(event_type))
+        self.state.check(backlog=len(rows) >= 200)
+        return len(rows) >= 200

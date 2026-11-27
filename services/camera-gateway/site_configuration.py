@@ -10,7 +10,7 @@ from onvif import CameraError
 from site_activity import valid_event_device
 from site_collaboration import Conflict, iso_now, text_field
 from analytics_contract import PLACEMENTS, rules as analytics_rules, unit_point
-from site_geometry import EPSILON, cross, on_segment
+from site_geometry import EPSILON, cross, segments_intersect
 
 STYLES = {"sage", "stone", "slate", "rose", "copper"}
 
@@ -38,8 +38,7 @@ def validate_ring(vertices, minimum=3, maximum=120, point_reader=coordinates):
             if i == 0 and j == len(edges) - 1:
                 continue
             c, d = edges[j]
-            if (cross(a, b, c) * cross(a, b, d) < 0 and cross(c, d, a) * cross(c, d, b) < 0) or any(
-                on_segment(x, y, p) for x, y, p in [(a, b, c), (a, b, d), (c, d, a), (c, d, b)]):
+            if segments_intersect(a, b, c, d):
                 raise CameraError("Shape edges must not cross.")
     return points
 
@@ -93,7 +92,10 @@ def normalize_configuration(payload):
     grace = rule.get("graceSeconds", 300)
     if type(grace) is not int or not 0 <= grace <= 3600:
         raise CameraError("Use a late-arrival grace period from 0 to 3600 seconds.")
-    sensors = []
+    held_open = rule.get("includeHeldOpen", False)
+    if type(held_open) is not bool:
+        raise CameraError("Choose whether to include held-open door events.")
+    sensors, inspection_stations = [], set()
     for key, sensor in sensor_defs.items():
         modality = sensor.get("modality")
         floor, group, linked = (sensor.get(field) for field in ("floorId", "groupId", "linkedCameraId"))
@@ -102,6 +104,9 @@ def normalize_configuration(payload):
             raise CameraError(f"Invalid type, group or floor for device {key}.")
         if linked is not None and (modality != "access" or not valid_event_device(linked) or sensor_defs.get(linked, {}).get("modality") != "vision"):
             raise CameraError(f"Device {key} must link to a registered camera.")
+        passage_rule = sensor.get("passageRuleId")
+        if passage_rule is not None and (not linked or not valid_event_device(passage_rule)):
+            raise CameraError("Choose an inbound tripwire on the linked camera.")
         camera_view = sensor.get("cameraView") if modality == "vision" else None
         if camera_view is not None:
             limits = {"bearingDeg": (0, 360), "fovDeg": (1, 360), "rangeM": (1, 5000)}
@@ -112,6 +117,11 @@ def normalize_configuration(payload):
         placement = sensor.get("analyticsPlacement")
         if placement is not None and (modality != "vision" or placement not in PLACEMENTS):
             raise CameraError("Choose cloud or on-premises analytics for a camera.")
+        inspection_station = sensor.get("inspectionStationId")
+        if inspection_station is not None:
+            if modality != "vision" or not valid_event_device(inspection_station) or inspection_station in inspection_stations:
+                raise CameraError("Assign each inspection station ID to one camera.")
+            inspection_stations.add(inspection_station)
         verified = sensor.get("cameraVerifiedAt")
         verified_at = None
         if isinstance(verified, str) and len(verified) <= 40:
@@ -130,9 +140,11 @@ def normalize_configuration(payload):
                         "cameraGatewayKind": gateway if modality == "vision" and gateway in ("rtsp", "onvif") else None,
                         "cameraProvider": text_field(sensor, "cameraProvider", 80, True), "cameraChannel": text_field(sensor, "cameraChannel", 80, True),
                         "linkedCameraId": linked, "reportIntervalSeconds": interval, "healthUrl": endpoint(sensor.get("healthUrl")),
+                        **({"passageRuleId": passage_rule} if passage_rule is not None else {}),
                         "gatewayId": text_field(sensor, "gatewayId", 96, True),
                         "dependencyIds": reference_list(sensor.get("dependencyIds", []), dependencies),
                         **({"analyticsPlacement": placement} if placement is not None else {}),
+                        **({"inspectionStationId": inspection_station} if inspection_station is not None else {}),
                         **({"cameraVerifiedAt": verified_at} if verified_at and camera_view else {})})
     zones = []
     for key, zone in zone_defs.items():
@@ -147,7 +159,8 @@ def normalize_configuration(payload):
                       "mapLabel": text_field(zone, "mapLabel", 32, True), "labels": labels(zone), "notes": text_field(zone, "notes", 280, True),
                       "responseTeam": text_field(zone, "responseTeam", 60, True),
                       **({"mapTone": zone["mapTone"]} if isinstance(zone.get("mapTone"), str) and zone["mapTone"] in STYLES else {})})
-    inventory = {"sensors": sensors, "boundaries": zones, "correlationRule": {"enabled": rule["enabled"], "windowSeconds": rule["windowSeconds"], "graceSeconds": grace}}
+    inventory = {"sensors": sensors, "boundaries": zones, "correlationRule": {"enabled": rule["enabled"],
+                 "windowSeconds": rule["windowSeconds"], "graceSeconds": grace, **({"includeHeldOpen": True} if held_open else {})}}
     for sensor in sensors:
         configured = sensor_defs[sensor["id"]].get("analyticsRules", [])
         if configured or configured != []:
@@ -155,6 +168,16 @@ def normalize_configuration(payload):
                 raise CameraError("Configure CCTV analytics on a camera.")
             assigned = {zone["id"] for zone in zones if sensor["id"] in zone["sensorIds"]}
             sensor["analyticsRules"] = analytics_rules(configured, assigned, lambda points: validate_ring(points, 3, 12, unit_point))
+    camera_rules = {sensor["id"]: {rule["id"]: rule for rule in sensor.get("analyticsRules", ())} for sensor in sensors}
+    used_passage_rules = set()
+    for sensor in sensors:
+        if passage := sensor.get("passageRuleId"):
+            key = (sensor["linkedCameraId"], passage)
+            rule = camera_rules[key[0]].get(passage)
+            if (not rule or rule["kind"] != "line-crossing" or rule["object"] != "person" or rule["direction"] == "either" or rule.get("cameraNative")
+                    or key in used_passage_rules or not any(zone["id"] == rule["boundaryId"] and sensor["id"] in zone["sensorIds"] for zone in zones)):
+                raise CameraError("Give each passage door a unique directional person tripwire in its assigned boundary.")
+            used_passage_rules.add(key)
     inventory["groups"] = [{"id": key, "name": text_field(item, "name", 60)} for key, item in groups.items()]
     inventory["floors"] = [{"id": key, "name": text_field(item, "name", 40), "building": text_field(item, "building", 60),
                             "imageUrl": endpoint(item.get("imageUrl")), "corners": validate_ring(item.get("corners"), 4, 4)} for key, item in floors.items()]
@@ -162,6 +185,9 @@ def normalize_configuration(payload):
                                  if item.get("kind") in ("gateway", "switch", "ups")]
     if len(inventory["dependencies"]) != len(dependencies) or any(not floor["imageUrl"] for floor in inventory["floors"]):
         raise CameraError("Provide a supported dependency type and an image URL for every floor.")
+    from response_procedures import normalize_procedures
+    if "procedures" in payload:
+        inventory["procedures"] = normalize_procedures(payload["procedures"], zone_defs)
     return inventory
 
 
@@ -179,6 +205,9 @@ def configuration_diff(before, after):
     if before.get("correlationRule") != after.get("correlationRule"):
         result.append({"collection": "rules", "id": "door-camera", "name": "Door and camera correlation", "change": "changed",
                        "fields": [{"name": "correlationRule", "before": before.get("correlationRule"), "after": after.get("correlationRule")} ]})
+    if before.get("procedures", []) != after.get("procedures", []):
+        result.append({"collection": "rules", "id": "response-procedures", "name": "Response procedures", "change": "changed",
+                       "fields": [{"name": "procedures", "before": before.get("procedures", []), "after": after.get("procedures", [])}]})
     return result
 
 

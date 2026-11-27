@@ -403,7 +403,7 @@ test("two Chrome operators receive persisted telemetry and transfer shared incid
   }
 });
 
-test("published organization site alerts with both Chrome operators closed", async ({ browser, baseURL }) => {
+test("published held-open door and camera incident persists with both Chrome operators closed", async ({ browser, baseURL }) => {
   test.setTimeout(105_000);
   const directory = await mkdtemp(join(tmpdir(), "proxigo-closed-browser-e2e-"));
   const adminToken = "8".repeat(64), doorToken = "6".repeat(64), cameraToken = "7".repeat(64), webhookSecret = "fixture-incident-webhook-secret";
@@ -505,13 +505,14 @@ test("published organization site alerts with both Chrome operators closed", asy
     await button(rail(first), "Alerts").click();
     await alertRegion(first).locator("summary", { hasText: "Door and camera correlation" }).click();
     await alertRegion(first).getByLabel("Group new matching events").check();
+    await alertRegion(first).getByLabel("Include held-open doors with one eligible crossing").check();
     await button(alertRegion(first), "Save correlation rule").click();
     await button(first, "Draft mode · Review changes").click();
     await button(await configuration(first), "Save site draft").click();
     await expect(posture(first).getByText("Shared site draft saved.")).toBeVisible();
 
     const makeEvents = (time: number) => [
-      { id: "pilot-door", sensorId: "gate-01", eventType: "door-forced-open", occurredAt: new Date(time).toISOString(), summary: "Pilot door forced open" },
+      { id: "pilot-door", sensorId: "gate-01", eventType: "door-held-open", occurredAt: new Date(time).toISOString(), summary: "Pilot door held open" },
       { id: "pilot-camera", sensorId: "cam-02", eventType: "line-crossing", occurredAt: new Date(time + 125).toISOString(), summary: "Pilot camera line crossing", position: [-122.2974, 37.786] },
     ];
     const draft = await configuration(first);
@@ -552,17 +553,17 @@ test("published organization site alerts with both Chrome operators closed", asy
     await expect.poll(() => delivered.length, { timeout: 8000 }).toBe(1);
     expect(delivered[0].signatureValid).toBe(true);
     expect(delivered[0].payload).toMatchObject({ type: "site-security-incident", siteId: "east-campus", organizationId: "harbor-logistics",
-      configurationVersion: 1, eventType: "door-forced-open" });
+      configurationVersion: 1, eventType: "door-held-open" });
 
     first = await connect(adminToken); second = await connect(alexToken);
     for (const page of [first, second]) {
       await button(rail(page), "Alerts").click();
       await expect(alertRegion(page).getByText("1 matching incident", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: /^Forced door · camera corroboration/ }).click();
+      await page.getByRole("button", { name: /^Held-open door · camera corroboration/ }).click();
       await expect(panel(page).getByText("Version 1", { exact: true })).toBeVisible();
       await expect(panel(page).getByRole("region", { name: "Correlated source events" })).toContainText("Pilot camera line crossing");
       await button(panel(page), "Replay timeline").click();
-      await expect(panel(page).getByRole("list", { name: "Replay timeline" }).locator("strong")).toHaveText(["Pilot door forced open", "Pilot camera line crossing"]);
+      await expect(panel(page).getByRole("list", { name: "Replay timeline" }).locator("strong")).toHaveText(["Pilot door held open", "Pilot camera line crossing"]);
       await button(panel(page), "Back to incident").click();
     }
     await button(panel(second), "Take ownership").click();
@@ -598,7 +599,7 @@ test("published organization site alerts with both Chrome operators closed", asy
     const boundaryInsights = insights.getByRole("region", { name: "Readiness for East access road" });
     await expect(boundaryInsights).toContainText("Recording follow-up required");
     await expect(boundaryInsights).toContainText("Confirmed dark image");
-    await expect(boundaryInsights).toContainText("Pilot door forced open");
+    await expect(boundaryInsights).toContainText("Pilot door held open");
     await button(rail(second), "Posture").click();
     const remoteInsights = posture(second).getByRole("region", { name: "Site insights" });
     await expect(remoteInsights).toContainText("Your assigned devices");

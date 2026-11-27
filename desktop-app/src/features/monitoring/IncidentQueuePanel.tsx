@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Bell, Clock, Film, Link2 } from "lucide-react";
 import { EVENT_TYPES, MODALITY_LABEL, type Alert, type Workspace } from "./monitoringModel";
-import { DEFAULT_CORRELATION_RULE, DEFAULT_INCIDENT_FILTERS, incidentRows, previewCorrelation, type CorrelationRule, type IncidentFilters } from "./incidentQueue";
+import { DEFAULT_CORRELATION_RULE, DEFAULT_INCIDENT_FILTERS, incidentRows, pairKind, previewCorrelation, type CorrelationRule, type IncidentFilters } from "./incidentQueue";
 
 const STATES = { new: "New", acknowledged: "Investigating", resolved: "Resolved" } as const;
 const TIME = new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short", timeZone: "UTC" });
@@ -30,6 +30,7 @@ export function IncidentQueue({ workspace, filters, onFilter, selected, gatewayR
   const [windowText, setWindowText] = useState(String((workspace.correlationRule ?? DEFAULT_CORRELATION_RULE).windowSeconds));
   const [grace, setGrace] = useState(String(workspace.correlationRule?.graceSeconds ?? 300));
   const [ruleEnabled, setRuleEnabled] = useState(workspace.correlationRule?.enabled ?? false);
+  const [heldOpen, setHeldOpen] = useState(workspace.correlationRule?.includeHeldOpen ?? false);
   const [preview, setPreview] = useState<{ pairs: ReturnType<typeof previewCorrelation>; window: number }>();
   const [ruleSaved, setRuleSaved] = useState(false);
   const saved = workspace.savedIncidentSearches ?? [];
@@ -101,7 +102,7 @@ export function IncidentQueue({ workspace, filters, onFilter, selected, gatewayR
     {onRule && <details className="gv-triage-section">
       <summary>Door and camera correlation</summary>
       <div className="gv-triage-content gv-incident-form">
-        <p>Pair one forced-door event with one line crossing from its linked camera in the same boundary.</p>
+        <p>Pair a door event with a line crossing from its linked camera in the same boundary.</p>
         <label>Correlation window (seconds)<input type="number" min={5} max={180} step={1} value={windowText} onChange={(event) => {
           setWindowText(event.target.value); setPreview(undefined); setRuleSaved(false);
         }} /></label>
@@ -109,9 +110,14 @@ export function IncidentQueue({ workspace, filters, onFilter, selected, gatewayR
           setGrace(event.target.value); setRuleSaved(false);
         }} /></label>
         <label className="gv-checkbox"><input type="checkbox" checked={ruleEnabled} onChange={(event) => { setRuleEnabled(event.target.checked); setRuleSaved(false); }} />Group new matching events</label>
+        <label className="gv-checkbox"><input type="checkbox" checked={heldOpen} onChange={(event) => {
+          setHeldOpen(event.target.checked); setPreview(undefined); setRuleSaved(false);
+        }} />Include held-open doors with one eligible crossing</label>
         <div className="gv-detail-actions">
-          <button type="button" className="gv-button" disabled={!validWindow} onClick={() => setPreview({ pairs: previewCorrelation(workspace.alerts, windowSeconds), window: windowSeconds })}>Preview on history</button>
-          <button type="button" className="gv-button" disabled={!validWindow || !validGrace} onClick={() => { onRule({ enabled: ruleEnabled, windowSeconds, graceSeconds: Number(grace) }); setRuleSaved(true); }}>Save correlation rule</button>
+          <button type="button" className="gv-button" disabled={!validWindow} onClick={() => setPreview({ pairs: previewCorrelation(workspace.alerts, windowSeconds, heldOpen), window: windowSeconds })}>Preview on history</button>
+          <button type="button" className="gv-button" disabled={!validWindow || !validGrace} onClick={() => {
+            onRule({ enabled: ruleEnabled, windowSeconds, graceSeconds: Number(grace), includeHeldOpen: heldOpen || undefined }); setRuleSaved(true);
+          }}>Save correlation rule</button>
         </div>
         {preview && <><p role="status">{preview.pairs.length} matching {preview.pairs.length === 1 ? "pair" : "pairs"} within {preview.window} seconds in retained history.</p>
           {!!preview.pairs.length && <ul className="gv-triage-records">{preview.pairs.slice(-5).reverse().map((entry) => <li key={entry.id}>
@@ -125,11 +131,13 @@ export function IncidentQueue({ workspace, filters, onFilter, selected, gatewayR
     <div className="gv-alert-list">
       {rows.slice(0, limit).map(({ alert, companion, match, handoff }) => {
         const footage = [match, alert, companion].find((entry) => entry?.observation.recording);
+        const door = companion && (pairKind(alert) === "camera" ? pairKind(companion) : pairKind(alert));
         return <div key={alert.id} className="gv-queue-item">
           <button type="button" className="gv-alert-row" data-focus-key={"alert" + alert.id} aria-current={selected === alert.id || undefined}
             onClick={() => onOpen(alert, match.id === alert.id ? undefined : match)}>
             <span className={`gv-severity-icon is-${alert.severity.toLowerCase()}`}><Bell aria-hidden="true" size={17} /></span>
-            <span className="gv-alert-summary"><strong>{companion ? "Forced door · camera corroboration" : alert.observation.summary}</strong>
+            <span className="gv-alert-summary"><strong>{door === "held" ? "Held-open door · camera corroboration"
+              : companion ? "Forced door · camera corroboration" : alert.observation.summary}</strong>
               <small>{alert.zoneName} · {companion ? "2 source events" : MODALITY_LABEL[alert.modality]}</small>
               <small>{alert.severity} priority · {STATES[alert.status]} · {alert.owner ?? "Unassigned"}</small>
               <small>{footage ? "Recording attached" : alert.cameraId ? "Camera linked" : "No camera evidence"}</small>

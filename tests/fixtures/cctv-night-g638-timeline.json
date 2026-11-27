@@ -1,0 +1,15 @@
+{
+  "source": "MEVA CC BY 4.0, 2018-03-11.23-55-00.00-00-00.school.G638",
+  "sourceSha256": "fe4db5a6403389879b2342344ed5515e40b905ad84358499f6a331c7fc2fb7a3",
+  "replayStart": "2026-01-01T00:00:00+00:00",
+  "sensorId": "g638",
+  "lane": "ground",
+  "sampleFps": 4,
+  "durationSeconds": 120,
+  "rules": {
+    "door": {
+      "events": {},
+      "reviewedEmpty": [[60, 120]]
+    }
+  }
+}

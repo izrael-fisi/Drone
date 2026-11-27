@@ -7,6 +7,7 @@ export type SiteAssets = {
     checks?: { recording: boolean } }[];
   recordingChecks?: { version: number; cameraId: string; boundaryId: string; createdAt: string; recording: boolean }[];
   testNotificationsEnabled?: boolean;
+  validatedRules?: { cameraId: string; ruleId: string; createdAt: string; actor: string; note: string }[];
 };
 
 export function useSiteAssets(session: SiteSession | undefined, version: number, active: boolean) {

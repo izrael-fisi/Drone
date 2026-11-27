@@ -10,7 +10,9 @@ export type Modality = "vision" | "rf" | "access";
 export type ZoneKind = "Perimeter" | "Restricted" | "Access";
 export type AlertStatus = "new" | "acknowledged" | "resolved";
 export const EVENT_TYPES = { "door-forced-open": "Door forced open", "door-held-open": "Door held open", "line-crossing": "Camera line crossing", motion: "Camera motion", tamper: "Camera tampering", "rf-detection": "RF detection",
-  "zone-entry": "Camera zone entry", "zone-dwell": "Camera dwell", "restricted-stop": "Vehicle stop", "drone-sighting": "Possible drone sighting" } as const;
+  "coverage-loss": "Critical camera coverage lost", "coverage-recovered": "Critical camera coverage restored",
+  "access-granted": "Access granted", "door-opened": "Door opened", "door-closed": "Door closed",
+  "zone-entry": "Camera zone entry", "zone-dwell": "Time in zone", "restricted-stop": "Vehicle stop", "drone-sighting": "Possible drone sighting" } as const;
 export type EventType = keyof typeof EVENT_TYPES;
 export type AnalyticsKind = "line-crossing" | "zone-entry" | "zone-dwell" | "restricted-stop" | "drone-sighting";
 export type AnalyticsObject = "person" | "vehicle" | "drone";
@@ -18,14 +20,24 @@ export type AnalyticsThresholds = { minimumScore: number; seconds: number; minim
 export type AnalyticsProfile = "all-day" | "day" | "night";
 export const ANALYTICS_PLACEMENTS = { cloud: "Cloud", "on-premises": "On-premises" } as const;
 export type AnalyticsPlacement = keyof typeof ANALYTICS_PLACEMENTS;
+export const FACTORY_SAFETY_RULES = {
+  "person-vehicle-lane": { name: "Person in vehicle lane", kind: "zone-entry", object: "person", seconds: 1 },
+  "vehicle-marked-walkway": { name: "Stopped vehicle in marked walkway", kind: "restricted-stop", object: "vehicle", seconds: 6 },
+} as const;
+export type FactorySafetyRule = keyof typeof FACTORY_SAFETY_RULES;
 export type AnalyticsRule = AnalyticsThresholds & { id: string; name: string; kind: AnalyticsKind; object: AnalyticsObject; mode: "observe" | "alert";
-  boundaryId: string; points: Position[]; direction: "either" | "positive" | "negative"; exclusions?: Position[][];
+  boundaryId: string; points: Position[]; direction: "either" | "positive" | "negative"; exclusions?: Position[][]; dwellGapSeconds?: number;
+  requireMovement?: boolean; scaleCrossingBuffer?: boolean; trackOccupancy?: boolean; safetyRule?: FactorySafetyRule; cameraNative?: boolean;
   schedule?: { dayStartsAt: string; nightStartsAt: string; night: AnalyticsThresholds } };
 export type AnalyticsEvidence = { policyVersion: number; ruleId: string; ruleName?: string; object: AnalyticsObject; model: string;
   trackId: string; score: number; box: [number, number, number, number]; frame: [number, number]; source: "live" | "replay";
-  mode?: AnalyticsRule["mode"]; profile?: AnalyticsProfile; crossing?: Position; placement?: AnalyticsPlacement };
+  mode?: AnalyticsRule["mode"]; profile?: AnalyticsProfile; crossing?: Position; placement?: AnalyticsPlacement; dwellSeconds?: number;
+  movementObserved?: true; safetyRule?: FactorySafetyRule };
+export type DockSnapshot = { ruleId: string; state: "unknown" | "vacant" | "occupied"; sampledAt: number;
+  changedAt?: number; arrivalEventId?: string };
 export type AnalyticsWorker = { version: number; state: "starting" | "running" | "no-video" | "model-error" | "idle" | "delivery-delayed";
-  models: string[]; pending: number; fps: number; frameAgeSeconds: number | null; reportedAt: number; placement?: AnalyticsPlacement };
+  models: string[]; pending: number; fps: number; frameAgeSeconds: number | null; reportedAt: number; placement?: AnalyticsPlacement;
+  dockOccupancy?: DockSnapshot[] };
 export function analyticsWorkerState(worker: AnalyticsWorker | undefined, placement: AnalyticsPlacement | undefined, version: number, now: number):
   AnalyticsWorker["state"] | "waiting" | "stale" | "old-policy" {
   if (!worker || worker.placement !== placement) return "waiting";
@@ -38,15 +50,23 @@ export const INCIDENT_DISPOSITIONS = {
 } as const;
 export type IncidentDisposition = keyof typeof INCIDENT_DISPOSITIONS;
 export type ResponseStep = "verify" | "contact" | "document";
+export type ProcedureStep = { id: string; text: string; kind: "review" | "question" | "finding" | "contact" | "outcome";
+  next?: string | null; yes?: string | null; no?: string | null };
+export type ProcedureDefinition = { name: string; trigger: "door-forced-open" | "door-held-open" | "coverage-loss";
+  boundaryId?: string | null; dueSeconds: number; steps: ProcedureStep[] };
+export type HandoffEvidence = { ref: string; type: string; occurredAt?: string; label?: string;
+  sensorId?: string; eventId?: string; actionSequence?: number; procedureStep?: string };
 export type IncidentAction = { kind: "acknowledge" }
   | { kind: "claim"; name: string }
   | { kind: "note"; text: string }
   | { kind: "resolve"; disposition: IncidentDisposition }
   | { kind: "checklist"; step: ResponseStep; done: boolean }
-  | { kind: "handoff"; nextAction: string; note: string; dueAt?: string }
+  | { kind: "handoff"; nextAction: string; note: string; dueAt?: string; aiJobId?: string; aiDraft?: { sources: HandoffEvidence[]; template: boolean } }
   | { kind: "accept-handoff"; name: string }
-  | { kind: "bookmark"; label: string; startAt: string; endAt: string };
-export type IncidentActivity = IncidentAction & { occurredAt: string; operator?: string };
+  | { kind: "bookmark"; label: string; startAt: string; endAt: string }
+  | { kind: "procedure-step"; actionId?: string; step: string; answer: string; text: string; label?: string; name?: string }
+  | { kind: "procedure-override"; actionId?: string; reason: string; name?: string };
+export type IncidentActivity = IncidentAction & { occurredAt: string; operator?: string; sourceSequence?: number };
 
 export interface DeviceGroup {
   id: string;
@@ -110,8 +130,10 @@ export interface Sensor {
   cameraVerifiedAt?: string;
   cameraInspection?: { issue: VideoIssue; confirmedAt: string; note: string };
   analyticsRules?: AnalyticsRule[];
+  inspectionStationId?: string;
   analyticsPlacement?: AnalyticsPlacement;
   linkedCameraId?: string | null;
+  passageRuleId?: string;
   reportIntervalSeconds?: number;
   healthUrl?: string | null;
   gatewayId?: string;
@@ -155,6 +177,8 @@ export interface IncomingObservation {
   gatewayReceivedAt?: number;
   recording?: Recording;
   analytics?: AnalyticsEvidence;
+  nativeAnalytics?: { source: "onvif-profile-m"; ruleId: string; objectId: string };
+  vendor?: { provider: string; connectorId: string; eventId: string; entityId: string; eventType: string; position: number };
 }
 
 export interface Observation extends IncomingObservation {
@@ -182,6 +206,10 @@ export interface Alert {
   correlation?: { incidentId: string; seconds: number };
   configurationVersion?: number;
   responseTeam?: string;
+  coverageRecoveredAt?: string;
+  affectedCameras?: string[];
+  affectedDependencies?: string[];
+  maintenanceCameras?: string[];
   floorId?: string;
   evidenceBookmarks?: { id: string; label: string; startAt: string; endAt: string; operator: string }[];
 }
@@ -197,6 +225,19 @@ export interface SiteEvent {
   boundaries: Array<{ id: string; name: string }>;
 }
 
+export type InspectionEvent = Pick<SiteEvent, "sensorName" | "cameraId" | "boundaries"> & {
+  configurationVersion: number;
+  observation: Pick<IncomingObservation, "id" | "summary" | "occurredAt"> & {
+    eventType: "inspection-result";
+    inspection: { source: "simulated" | "opc-ua"; stationId: string; recipeId: string; componentId: string;
+      partId?: string; lotId?: string; outcome: "pass" | "fail" | "incomplete"; resultId?: string; simulated?: boolean };
+  };
+};
+
+export function validInspectionStationId(value: string) {
+  return /^[A-Za-z0-9_-]{1,96}$/.test(value);
+}
+
 export interface Workspace {
   boundaries: Boundary[];
   sensors: Sensor[];
@@ -206,6 +247,7 @@ export interface Workspace {
   gatewayIncidents?: GatewayIncident[];
   siteEvents?: SiteEvent[];
   correlationRule?: CorrelationRule;
+  procedures?: ProcedureDefinition[];
   savedIncidentSearches?: { name: string; filters: IncidentFilters }[];
   floors?: SiteFloor[];
   dependencies?: SiteDependency[];
@@ -312,7 +354,7 @@ export function saveDeviceAssignments(workspace: Workspace, sensor: Sensor, boun
   const removesCamera = previous?.modality === "vision" && sensor.modality !== "vision";
   const sensors = previous ? workspace.sensors.map((entry) => {
     if (entry.id === sensor.id) return sensor;
-    if (removesCamera && entry.modality === "access" && entry.linkedCameraId === sensor.id) return { ...entry, linkedCameraId: null };
+    if (removesCamera && entry.modality === "access" && entry.linkedCameraId === sensor.id) return { ...entry, linkedCameraId: null, passageRuleId: undefined };
     return entry;
   }) : [...workspace.sensors, sensor];
   const boundaries = workspace.boundaries.map((boundary) => {
@@ -394,7 +436,8 @@ export function evaluateObservation(workspace: Workspace, incoming: IncomingObse
   const locationBasis = incoming.position ? "reported" : position ? "device" : undefined;
   const matches = position ? workspace.boundaries.filter((zone) => zone.enabled
     && zone.floorId === sensor.floorId && zone.sensorIds.includes(sensor.id) && (locationBasis === "device" || containsPoint(zone.vertices, position))) : [];
-  const created: Alert[] = position ? matches.map((zone) => ({
+  const passageFact = incoming.eventType === "access-granted" || incoming.eventType === "door-opened" || incoming.eventType === "door-closed";
+  const created: Alert[] = position && !passageFact ? matches.map((zone) => ({
     id: JSON.stringify([sensor.id, incoming.id, zone.id]),
     observation: { ...incoming, position }, zoneId: zone.id, zoneName: zone.name, sensorName: sensor.name, modality: sensor.modality,
     severity: zone.kind === "Restricted" ? "High" : "Medium", origin, status: "new", cameraId, locationBasis, floorId: sensor.floorId,

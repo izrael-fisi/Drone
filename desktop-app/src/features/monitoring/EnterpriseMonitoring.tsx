@@ -11,7 +11,7 @@ function sameSites(left: SiteSession[], right: SiteSession[]) {
 
 export function EnterpriseMonitoring() {
   const [sites, setSites] = useState<SiteSession[]>();
-  const [active, setActive] = useState<{ base: string; incidentId?: string }>();
+  const [active, setActive] = useState<{ base: string; incidentId?: string; incidentReplay?: boolean }>();
   const [signedIn, setSignedIn] = useState(false);
   const [organization, setOrganization] = useState("");
   const [busy, setBusy] = useState(false);
@@ -84,8 +84,8 @@ export function EnterpriseMonitoring() {
 
   const signOutButton = <button className="gv-button" type="button" disabled={busy} onClick={() => void signOut()}>Sign out</button>;
   if (current && sites) return <GlobalView key={JSON.stringify([current.base, current.operator.subject])} enterprise={{
-    current, sites, incidentId: current.base === active?.base ? active.incidentId : undefined,
-    visit: (site, incidentId) => setActive({ base: site.base, incidentId }),
+    current, sites, incidentId: current.base === active?.base ? active.incidentId : undefined, incidentReplay: active?.incidentReplay,
+    visit: (site, incidentId, replay) => setActive({ base: site.base, incidentId, incidentReplay: replay }),
     onAccessEnded: () => { setSites(undefined); setActive(undefined); setAttempt((value) => value + 1); },
     controls: <div className="gv-enterprise-controls">
       {sites.length > 1 && <select aria-label="Organization site" value={current.base} onChange={(event) => setActive({ base: event.currentTarget.value })}>

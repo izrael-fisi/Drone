@@ -56,3 +56,6 @@ desktop-app/test-results/
 desktop-app/.npm-cache/
 desktop-app/src-tauri/gen/
 desktop-app/src-tauri/target/
+# Local desktop HTTPS certificate and private key
+/desktop-app/auto.crt
+/desktop-app/auto.key

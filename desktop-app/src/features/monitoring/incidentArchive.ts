@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { IncomingObservation, Recording, Sensor } from "./monitoringModel";
 import { gatewayStream } from "./gatewayStream";
+import type { SiteSession } from "./SiteOperator";
 
 export type ClipHold = { heldUntil: number; heldAt: number; heldBy: string; sha256: string };
 export type IncidentArchive = { state: "loading" | "pending" | "missing" | "unsupported" | "error" }
@@ -25,14 +26,25 @@ export async function preserveClip(archive: Extract<IncidentArchive, { state: "a
   return hold;
 }
 
-export function useIncidentArchive(alert?: { observation: IncomingObservation }, camera?: Sensor): IncidentArchive | undefined {
+export function recordingAccessToken(url: string, session?: SiteSession) {
+  if (!session || session.enterprise || !session.token) return;
+  const base = new URL("streams/", session.base);
+  let target: URL;
+  try { target = new URL(url, base); } catch { return; }
+  if (target.origin === base.origin && !target.username && !target.password && target.pathname.startsWith(base.pathname)
+      && /^[a-f0-9]{48}\/(recording\.json|clips\/[a-f0-9]{32}\.mp4)$/.test(target.pathname.slice(base.pathname.length))) {
+    return session.token;
+  }
+}
+
+export function useIncidentArchive(alert?: { observation: Pick<IncomingObservation, "recording" | "occurredAt"> }, camera?: Sensor, session?: SiteSession): IncidentArchive | undefined {
   const stream = !alert?.observation.recording ? gatewayStream(camera) : null;
   const gateway = stream?.base;
   const cameraKey = stream?.key;
   const occurredAt = alert?.observation.occurredAt;
   const cameraId = camera?.id;
   const requestId = gateway && cameraKey && occurredAt && cameraId ? JSON.stringify([gateway, cameraKey, occurredAt, cameraId]) : null;
-  const [result, setResult] = useState<{ requestId: string; archive: IncidentArchive }>();
+  const [result, setResult] = useState<{ requestId: string; archive: IncidentArchive; session?: SiteSession }>();
   useEffect(() => {
     if (!gateway || !cameraKey || !occurredAt || !cameraId || !requestId) return;
     const base = gateway;
@@ -44,7 +56,8 @@ export function useIncidentArchive(alert?: { observation: IncomingObservation },
       try {
         const address = new URL(`streams/${key}/recording.json`, base);
         address.searchParams.set("at", String(Date.parse(timestamp)));
-        const response = await fetch(address, { signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
+        const token = recordingAccessToken(address.href, session);
+        const response = await fetch(address, { headers: token ? { Authorization: "Bearer " + token } : undefined, signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
           cache: "no-store", credentials: "same-origin", redirect: "error" });
         if (response.status === 404) archive = { state: "unsupported" };
         else if (response.ok) {
@@ -59,13 +72,13 @@ export function useIncidentArchive(alert?: { observation: IncomingObservation },
         }
       } catch { /* The player reports an unavailable recorder. */ }
       if (signal.aborted) return;
-      setResult({ requestId: id, archive });
+      setResult({ requestId: id, archive, session });
       if ((archive.state === "pending" || archive.state === "missing") && attempt < 3) {
         timer = window.setTimeout(() => void lookup(signal, id, source, timestamp, attempt + 1), 5_000);
       }
     }
     void lookup(controller.signal, requestId, cameraId, occurredAt, 0);
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [cameraId, cameraKey, gateway, occurredAt, requestId]);
-  return requestId ? result?.requestId === requestId ? result.archive : { state: "loading" } : undefined;
+  }, [cameraId, cameraKey, gateway, occurredAt, requestId, session]);
+  return requestId ? result?.requestId === requestId && result.session === session ? result.archive : { state: "loading" } : undefined;
 }

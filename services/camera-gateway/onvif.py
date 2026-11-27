@@ -1,6 +1,7 @@
 """Resolve RTSP media profiles on an explicitly addressed ONVIF device."""
 
 from base64 import b64encode
+from copy import deepcopy
 from datetime import datetime, timezone
 from hashlib import sha1
 from secrets import token_bytes
@@ -8,9 +9,10 @@ import time
 from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import (
-    HTTPDigestAuthHandler, HTTPPasswordMgrWithDefaultRealm, HTTPRedirectHandler,
+    HTTPSHandler, HTTPDigestAuthHandler, HTTPPasswordMgrWithDefaultRealm, HTTPRedirectHandler,
     ProxyHandler, Request, build_opener,
 )
+from uuid import uuid4
 from xml.etree import ElementTree as ET
 
 DEVICE = "http://www.onvif.org/ver10/device/wsdl"
@@ -18,6 +20,7 @@ MEDIA1 = "http://www.onvif.org/ver10/media/wsdl"
 MEDIA2 = "http://www.onvif.org/ver20/media/wsdl"
 SCHEMA = "http://www.onvif.org/ver10/schema"
 SOAP = "http://www.w3.org/2003/05/soap-envelope"
+ADDRESSING = "http://www.w3.org/2005/08/addressing"
 WSSE_ROOT = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-"
 WSSE = WSSE_ROOT + "wssecurity-secext-1.0.xsd"
 WSU = WSSE_ROOT + "wssecurity-utility-1.0.xsd"
@@ -44,19 +47,29 @@ def add(parent, namespace, name, text=None, **attributes):
 
 
 class OnvifDevice:
-    def __init__(self, address, username, password, validate_url):
+    def __init__(self, address, username, password, validate_url, tls_context=None):
         self.address = address
         self.username = username
         self.password = password
         self.validate_url = validate_url
         self.host = urlsplit(address).hostname
+        self.tls_context = tls_context
 
-    def request(self, url, namespace, operation, fill):
+    def request(self, url, namespace, operation, fill, *, action=None, references=()):
         envelope = ET.Element(tag(SOAP, "Envelope"))
+        header = add(envelope, SOAP, "Header") if action or references or self.username else None
+        if action:
+            add(header, ADDRESSING, "Action", action)
+            add(header, ADDRESSING, "To", url)
+            add(header, ADDRESSING, "MessageID", "urn:uuid:" + str(uuid4()))
+        for value in references:
+            parameter = deepcopy(value)
+            parameter.set(tag(ADDRESSING, "IsReferenceParameter"), "true")
+            header.append(parameter)
         auth = HTTPPasswordMgrWithDefaultRealm()
         if self.username:
             auth.add_password(None, url, self.username, self.password)
-            security = add(add(envelope, SOAP, "Header"), WSSE, "Security")
+            security = add(header, WSSE, "Security")
             token = add(security, WSSE, "UsernameToken")
             created = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
             nonce = token_bytes(16)
@@ -68,10 +81,10 @@ class OnvifDevice:
             add(token, WSU, "Created", created)
         fill(add(add(envelope, SOAP, "Body"), namespace, operation))
         req = Request(url, ET.tostring(envelope, encoding="utf-8", xml_declaration=True), {
-            "Content-Type": f'application/soap+xml; charset=utf-8; action="{namespace}/{operation}"',
+            "Content-Type": f'application/soap+xml; charset=utf-8; action="{action or namespace + "/" + operation}"',
         })
         try:
-            opener = build_opener(ProxyHandler({}), NoRedirect(), HTTPDigestAuthHandler(auth))
+            opener = build_opener(ProxyHandler({}), NoRedirect(), HTTPDigestAuthHandler(auth), HTTPSHandler(context=self.tls_context))
             with opener.open(req, timeout=4) as response:
                 xml = response.read(MAX_XML + 1)
             if len(xml) > MAX_XML or b"<!DOCTYPE" in xml.upper():

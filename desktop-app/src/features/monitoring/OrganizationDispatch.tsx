@@ -3,10 +3,12 @@ import type { Alert } from "./monitoringModel";
 import { connectSite, siteRequest, SiteRequestError, type SiteSession } from "./SiteOperator";
 import { readSiteEndpoint } from "./SiteTelemetry";
 
-type DispatchSite = { session: SiteSession; connected: boolean; seen?: number; alerts: Alert[]; version?: number };
+type DispatchAlert = Alert & { nextAction?: string; recordingState?: string };
+type DispatchSite = { session: SiteSession; connected: boolean; seen?: number; alerts: DispatchAlert[]; version?: number };
 
 export function useOrganizationDispatch(sites: SiteSession[]) {
   const [status, setStatus] = useState<DispatchSite[]>([]);
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (sites.length <= 1) { setStatus([]); return; }
     const lifetime = new AbortController();
@@ -15,9 +17,9 @@ export function useOrganizationDispatch(sites: SiteSession[]) {
       const next = await Promise.all(sites.map(async (session): Promise<DispatchSite | undefined> => {
         try {
           const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(4500)]);
-          const snapshot = await siteRequest(session, "monitoring", undefined, signal);
+          const snapshot = await siteRequest(session, "dispatch", undefined, signal);
           if (snapshot.account?.organization?.id !== session.operator.organization.id || snapshot.account?.siteId !== session.operator.siteId) return;
-          const alerts = ((snapshot.alerts ?? []) as Alert[]).filter((alert) => !alert.correlation && alert.status !== "resolved");
+          const alerts = ((snapshot.alerts ?? []) as DispatchAlert[]).filter((alert) => !alert.correlation && alert.status !== "resolved");
           return { session, alerts, connected: true, seen: Date.now(), version: snapshot.publishedVersion };
         } catch (error) {
           return error instanceof SiteRequestError && ([401, 403].includes(error.status) || session.enterprise && error.status === 404)
@@ -34,8 +36,8 @@ export function useOrganizationDispatch(sites: SiteSession[]) {
     }
     void poll();
     return () => { lifetime.abort(); window.clearTimeout(timer); };
-  }, [sites]);
-  return status;
+  }, [sites, revision]);
+  return { status, refresh: () => setRevision((value) => value + 1) };
 }
 
 function siteTime(at: number, timeZone: string) {
@@ -43,18 +45,20 @@ function siteTime(at: number, timeZone: string) {
   catch { return new Date(at).toISOString(); }
 }
 
-export function OrganizationDispatch({ active, sites, status, onAdd, onVisit, allowConnect }: {
+export function OrganizationDispatch({ active, sites, status, onAdd, onVisit, onRefresh, allowConnect }: {
   active: SiteSession; sites: SiteSession[]; status: DispatchSite[]; onAdd: (session: SiteSession) => void;
   onVisit: (session: SiteSession, incidentId?: string) => void; allowConnect?: boolean;
+  onRefresh: () => void;
 }) {
   const [gateway, setGateway] = useState("");
   const [credential, setCredential] = useState("");
   const [selected, setSelected] = useState("");
+  const [queue, setQueue] = useState("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const base = readSiteEndpoint(gateway);
   const visible = status.filter(({ session }) => sites.includes(session) && (!selected || session.operator.siteId === selected));
-  const alerts = visible.flatMap((site) => site.alerts.map((alert) => ({ site, alert })))
+  const alerts = visible.flatMap((site) => site.alerts.filter((alert) => queue === "all" || queue === alert.status).map((alert) => ({ site, alert })))
     .sort((a, b) => Number(b.alert.severity === "High") - Number(a.alert.severity === "High")
       || Date.parse(b.alert.observation.occurredAt) - Date.parse(a.alert.observation.occurredAt)).slice(0, 30);
   if (!allowConnect && sites.length < 2) return null;
@@ -80,16 +84,24 @@ export function OrganizationDispatch({ active, sites, status, onAdd, onVisit, al
         {error && <p role="alert">{error}</p>}
       </form>}
       {sites.length > 1 && <>
+        <button type="button" className="gv-button" onClick={onRefresh}>Refresh dispatch sites</button>
+        <label>Dispatch queue<select value={queue} onChange={(event) => setQueue(event.target.value)}>
+          <option value="all">All open incidents</option><option value="new">Unassigned</option><option value="acknowledged">Investigating</option>
+        </select></label>
         <label>Dispatch site<select value={selected} onChange={(event) => setSelected(event.target.value)}>
           <option value="">All connected sites</option>{sites.map((session) => <option key={session.operator.siteId} value={session.operator.siteId}>{session.operator.site}</option>)}
         </select></label>
-        {visible.map((site) => <button type="button" key={site.session.operator.siteId} className="gv-posture-row" aria-current={site.session.operator.siteId === active.operator.siteId || undefined}
+        {visible.map((site) => <button type="button" key={site.session.operator.siteId} className="gv-posture-row"
+          disabled={!site.connected} aria-current={site.session.operator.siteId === active.operator.siteId || undefined}
           onClick={() => onVisit(site.session)}><span><strong>{site.session.operator.site}</strong><small>{site.connected ? "Gateway responding" : "Gateway unreachable"}
             {site.seen ? ` · ${siteTime(site.seen, site.session.operator.timeZone)} local` : ""}{site.version ? ` · Version ${site.version}` : ""}</small></span></button>)}
         {alerts.map(({ site, alert }) => <button type="button" key={`${site.session.operator.siteId}:${alert.id}`} className="gv-posture-row" disabled={!site.connected}
           onClick={() => onVisit(site.session, alert.id)}><span><strong>{alert.observation.summary}</strong>
             <small>{site.session.operator.site} · {alert.zoneName} · {siteTime(Date.parse(alert.observation.occurredAt), site.session.operator.timeZone)} local</small>
-            <small>{alert.severity} priority · {alert.responseTeam ?? "No response team"} · {alert.owner ?? "Unassigned"}</small></span></button>)}
+            <small>{alert.severity} priority · {alert.responseTeam ?? "No response team"} · {alert.owner ?? "Unassigned"} · {Math.max(0, Math.floor(((site.seen ?? Date.now()) - Date.parse(alert.observation.occurredAt)) / 60000))} min old</small>
+            <small>{site.connected ? "" : "Stale · "}{alert.recordingState === "available" ? "Recording available"
+              : alert.recordingState === "gap" ? "Recording gap" : "Recording " + (alert.recordingState ?? "unverified")}</small>
+            {alert.nextAction && <small>Next action · {alert.nextAction}</small>}</span></button>)}
         {!alerts.length && <p>No open incidents from the selected sites.</p>}
       </>}
     </div>

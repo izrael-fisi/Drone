@@ -1,0 +1,28 @@
+{
+  "source": "MEVA/MEVID CC BY 4.0, 2018-05-16.14-25-01.14-30-01.school.G639, full 300 seconds",
+  "sourceSha256": "fb1d9718691b4390090baac8d67e54cc4a2b6d316025ede7b1b2d15c9034884e",
+  "replayStart": "2026-01-01T00:00:00+00:00",
+  "sensorId": "g639",
+  "lane": "ground",
+  "sampleFps": 4,
+  "durationSeconds": 300,
+  "rules": {
+    "stairs": {
+      "events": {
+        "opening-pair": [[19.25, 22]],
+        "lower-stair-pair": [[81.25, 83.25]],
+        "upper-stair-pair": [[129.75, 132]],
+        "upper-stair-walker": [[149, 151]],
+        "closing-walker": [[297.25, 299.5]]
+      },
+      "expectedCounts": {
+        "opening-pair": 2,
+        "lower-stair-pair": 2,
+        "upper-stair-pair": 2,
+        "upper-stair-walker": 1,
+        "closing-walker": 1
+      },
+      "reviewedEmpty": [[17, 19], [26, 32], [178.75, 185.75], [221.25, 225.75], [227.5, 231.5]]
+    }
+  }
+}

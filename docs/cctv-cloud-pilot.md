@@ -18,7 +18,7 @@ The site gateway owns the site configuration and incident state. The worker conn
 
 1. Give the worker host private routes to the exact camera or recorder address and the gateway's TLS endpoint. With Tailscale, use a site subnet router, approve only the required routes, and scope grants to the worker identity and the approved RTSP and HTTPS ports. Keep public inbound ports closed for the worker. Use an existing approved VPN and a separate worker scope for each customer. [Subnet router setup](https://tailscale.com/docs/features/subnet-routers) · [Access grants](https://tailscale.com/docs/features/access-control/grants)
 2. Keep the site gateway listener private. At the worker's private HTTPS origin, permit `GET` and `POST` for `/api/cameras/<camera-id>/analytics` and `POST` for `/api/site/telemetry`. Give that worker its own camera-scoped cloud token. For a private CA, install the PEM bundle in the worker's private directory and set `SSL_CERT_FILE=/private/ca-bundle.pem` when invoking Compose. Use an origin whose certificate name resolves inside the container.
-3. Stage a trusted ONNX model in the model directory. Use the author's YOLOX-Nano checkpoint and record its SHA-256. Store the worker JSON and token under restricted host permissions, readable by container UID 10001. Keep secret files and customer footage out of the repository and images. Start the first pilot with public footage or footage approved for commercial cloud processing. [Official model files](https://github.com/Megvii-BaseDetection/YOLOX/tree/main/demo/ONNXRuntime)
+3. Stage an approved YOLO11s ONNX export in the model directory and record its SHA-256. Store the worker JSON and token under restricted host permissions, readable by container UID 10001. Keep secret files and customer footage out of the repository and images. Start the first pilot with public footage or footage approved for commercial cloud processing. [YOLO11 export](https://docs.ultralytics.com/integrations/onnx/)
 
 ## Start one Compose worker
 
@@ -39,9 +39,9 @@ Save the following as `/srv/proxigo/yard/private/worker.json`. Replace the site 
   "fps": 4,
   "models": {
     "ground": {
-      "kind": "yolox",
-      "path": "/models/yolox_nano.onnx",
-      "sha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
+      "kind": "yolo11",
+      "path": "/models/yolo11s.onnx",
+      "sha256": "<verified SHA-256 of the approved export>",
       "fps": 4
     }
   }
@@ -72,4 +72,4 @@ For a site that requires local inference, use the same Compose file on a site ho
 
 ## Qualification
 
-Run the labeled MEVA replay first. Then replay the same stream through the private cloud pilot and the on-premises worker in Observe mode. Score each rule against the reference events and separately review continuous ordinary activity for false alerts. Measure end-to-end alert delay with synchronized clocks. Before enabling alerts, repeat on the installed cameras and apply the customer's acceptance targets for missed events, false alerts per camera-day, and delay. [Labeled replay](cctv-analytics.md#score-a-labeled-entrance-tripwire) · [Field qualification](cctv-analytics.md#qualification-before-customer-alarms)
+Run the labeled MEVA replay first. Then replay the same stream through the private cloud pilot and the on-premises worker in Observe mode. Score each rule against the reference events and separately review continuous ordinary activity for false alerts. Measure end-to-end alert delay with synchronized clocks. Before enabling alerts, repeat on the installed cameras and apply the customer's acceptance targets for missed events, false alerts per camera-day, and delay. [Labeled replay](cctv-analytics.md#score-labeled-cctv-clips) · [Twelve-camera commissioning](../infra/ecs-cctv/README.md#commission-twelve-cameras) · [Field qualification](cctv-analytics.md#qualification-before-customer-alarms)

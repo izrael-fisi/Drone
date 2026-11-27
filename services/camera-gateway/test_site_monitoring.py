@@ -78,6 +78,88 @@ class PublishedSiteTests(TestCase):
             self.assertEqual(restored["publishedVersion"], 3)
             self.assertEqual(restored["history"][0]["restoredFrom"], 1)
 
+    def test_held_open_opt_in_preserves_a_single_incident_across_restart(self):
+        now = 1_800_000_000
+        held_open = {**self.config["correlationRule"], "includeHeldOpen": True}
+        configuration = {**self.config, "correlationRule": held_open}
+        door, camera = self.events(now + 5)
+        held = {**door, "eventType": "door-held-open", "summary": "Door held open"}
+        with patch("time.time", return_value=now):
+            self.change("save", configuration=configuration)
+            self.change("publish", message="Enable held-open correlation")
+        with patch("time.time", return_value=now + 10):
+            self.assertEqual(self.monitor.preview({"configuration": configuration, "observations": [held, camera]})["incidentCount"], 1)
+            self.assertEqual(self.monitor.preview({"configuration": self.config, "observations": [held, camera]})["incidentCount"], 2)
+            self.assertTrue(self.telemetry.push(camera)["accepted"])
+            self.monitor = SiteMonitoring(self.activity, "harbor", "east-campus")
+            self.telemetry = SiteTelemetry(self.activity, monitor=self.monitor)
+            self.assertTrue(self.telemetry.push(held)["accepted"])
+            self.assertFalse(self.telemetry.push(held)["accepted"])
+        rows = self.monitor.view(self.admin, 0, 0, 0, 0)["alerts"]
+        self.assertEqual(rows[0]["correlation"], {"incidentId": rows[1]["id"], "seconds": 2})
+        notice = self.monitor.pending()
+        self.assertEqual(json.loads(notice[1])["incidentId"], rows[1]["id"])
+        self.monitor.delivered(notice[0])
+        self.assertIsNone(self.monitor.pending())
+
+    def test_held_open_ambiguity_forced_priority_and_late_delivery(self):
+        now = 1_800_000_000
+        enabled = {**self.config["correlationRule"], "includeHeldOpen": True}
+        with patch("time.time", return_value=now):
+            self.change("save", configuration={**self.config, "correlationRule": enabled})
+            self.change("publish", message="Held-open pilot")
+
+        def pair(index, sequence, late=0):
+            time = now + index * 400
+            forced, crossing = self.events(time)
+            held = {**forced, "eventType": "door-held-open"}
+            templates = {"held": held, "held2": held, "camera": crossing, "camera2": crossing, "forced": forced}
+            events = [{**templates[name], "id": f"{index}-{name}"} for name in sequence]
+            with patch("time.time", return_value=time + 5 + late):
+                for item in events:
+                    self.telemetry.push(item)
+            return {row["observation"]["id"]: row for row in self.monitor.view(self.admin, 0, 0, 0, 0)["alerts"]
+                    if row["observation"]["id"].startswith(f"{index}-")}
+
+        for index, sequence, late in [(1, ["held", "held2", "camera"], 0), (2, ["camera", "camera2", "held"], 0),
+                                      (3, ["held", "camera"], 200)]:
+            with self.subTest(sequence=sequence, late=late):
+                self.assertTrue(all("correlation" not in item for item in pair(index, sequence, late).values()))
+        prioritized = pair(4, ["held", "forced", "camera"])
+        self.assertEqual(prioritized["4-camera"]["correlation"]["incidentId"], prioritized["4-forced"]["id"])
+        self.assertNotIn("correlation", prioritized["4-held"])
+        unique = pair(5, ["held", "camera"])
+        self.assertEqual(unique["5-camera"]["correlation"]["incidentId"], unique["5-held"]["id"])
+
+    def test_held_open_pairing_requires_the_same_boundary_camera_and_version(self):
+        now = 1_800_000_000
+        configuration = {**self.config, "correlationRule": {**self.config["correlationRule"], "includeHeldOpen": True}}
+        configuration["sensors"] = [*self.config["sensors"],
+                                   {**self.config["sensors"][1], "id": "other-camera", "name": "Other camera"}]
+        yard = self.config["boundaries"][0]
+        configuration["boundaries"] = [{**yard, "sensorIds": ["door", "other-camera"]},
+                                       {**yard, "id": "other-yard", "name": "Other yard", "sensorIds": ["camera"]}]
+        with patch("time.time", return_value=now):
+            self.change("save", configuration=configuration)
+            self.change("publish", message="Different camera and boundary pairings")
+        with patch("time.time", return_value=now + 10):
+            original, crossing = self.events(now + 5)
+            self.telemetry.push({**original, "eventType": "door-held-open"})
+            self.telemetry.push(crossing)
+            self.telemetry.push({**crossing, "sensorId": "other-camera", "id": "wrong-camera"})
+            rows = self.monitor.view(self.admin, 0, 0, 0, 0)["alerts"]
+            self.assertEqual(len(rows), 3)
+            self.assertTrue(all("correlation" not in item for item in rows))
+            configuration["boundaries"] = [{**yard, "sensorIds": ["door", "camera"]}]
+            self.change("save", configuration=configuration)
+            self.change("publish", message="Match camera and boundary in version two")
+        with patch("time.time", return_value=now + 15):
+            self.telemetry.push({**crossing, "id": "newer-crossing", "occurredAt": stamp(now + 12)})
+            [latest] = [item for item in self.monitor.view(self.admin, 0, 0, 0, 0)["alerts"]
+                        if item["observation"]["id"] == "newer-crossing"]
+            self.assertEqual(latest["configurationVersion"], 2)
+            self.assertNotIn("correlation", latest)
+
     def test_invalid_geometry_and_unassigned_devices_cannot_be_published(self):
         config = {**self.config, "boundaries": [{**self.config["boundaries"][0], "sensorIds": ["other"]}]}
         with self.assertRaises(CameraError):

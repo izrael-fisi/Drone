@@ -1,3 +1,5 @@
+import { ReviewClip } from "./SiteIntelligence";
+import type { SiteSession } from "./SiteOperator";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, MapPin, Play, Video, X } from "lucide-react";
 import { RecordedFeed } from "./CameraFeed";
@@ -8,13 +10,15 @@ import { RecordingComparison } from "./RecordingComparison";
 import { RECORDING_COVERAGE } from "./IncidentPanel";
 import type { VideoCheck } from "./VideoPosture";
 import { AnalyticsEvidenceDetails } from "./CctvAnalytics";
+import { recordingAccessToken, useIncidentArchive } from "./incidentArchive";
 
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium", timeZone: "UTC" });
 const eventLabel = { access: "Door event", vision: "Camera event", rf: "RF detection" };
 
-export function IncidentReplay({ alert, workspace, mapView, videoChecks, initialEvent, onJump, onBack, onClose }: {
+export function IncidentReplay({ alert, workspace, mapView, videoChecks, initialEvent, explicitTimeline, siteSession, onJump, onBack, onClose }: {
   alert: Alert; workspace: Workspace; mapView: boolean; onJump: (event: SiteEvent) => void; onBack: () => void; onClose: () => void;
-  videoChecks?: ReadonlyMap<string, VideoCheck>; initialEvent?: SiteEvent;
+  siteSession?: SiteSession;
+  videoChecks?: ReadonlyMap<string, VideoCheck>; initialEvent?: SiteEvent; explicitTimeline?: SiteEvent[];
 }) {
   const anchorKey = observationKey(alert.observation);
   const [active, setActive] = useState<{ key: string; request: number; recording?: Recording; focusEvent?: boolean }>(() => ({
@@ -25,18 +29,28 @@ export function IncidentReplay({ alert, workspace, mapView, videoChecks, initial
   const player = useRef<HTMLDivElement>(null);
   const eventHeading = useRef<HTMLHeadingElement>(null);
   const entries = useMemo(() => {
-    const timeline = incidentTimeline({ alerts: workspace.alerts, siteEvents: workspace.siteEvents }, alert);
+    const timeline = explicitTimeline ?? incidentTimeline({ alerts: workspace.alerts, siteEvents: workspace.siteEvents }, alert);
+    const initialKey = initialEvent && observationKey(initialEvent.observation);
+    const events = initialEvent && !timeline.some((event) => observationKey(event.observation) === initialKey)
+      ? [...timeline, initialEvent].sort((a, b) => Date.parse(a.observation.occurredAt) - Date.parse(b.observation.occurredAt))
+      : timeline;
     const clips = timeline.filter((event) => event.observation.recording);
-    return timeline.map((event) => {
+    return events.map((event) => {
       const recordings = recordingsForEvent(event, clips);
       return { event, key: observationKey(event.observation), recording: recordings[0], recordings };
     });
-  }, [workspace.alerts, workspace.siteEvents, alert]);
+  }, [workspace.alerts, workspace.siteEvents, alert, explicitTimeline, initialEvent]);
   const selected = entries.find((entry) => entry.key === active.key) ?? entries.find((entry) => entry.key === anchorKey);
   const selectedIndex = selected ? entries.indexOf(selected) : -1;
   const previous = entries[selectedIndex - 1];
   const next = entries[selectedIndex + 1];
-  const recording = selected?.key === active.key ? active.recording : undefined;
+  const eventCamera = (explicitTimeline || siteSession) && selected && !selected.recording
+    ? workspace.sensors.find(({ id }) => id === selected.event.cameraId) : undefined;
+  const archive = useIncidentArchive(eventCamera ? selected?.event : undefined, eventCamera, siteSession);
+  const recording = selected?.key === active.key
+    ? active.recording ?? (initialEvent && active.request === 0 ? selected.recording : undefined)
+      ?? (archive?.state === "available" ? archive.recording : undefined)
+    : undefined;
   const camera = recording && workspace.sensors.find((sensor) => sensor.id === recording.cameraId);
   const angles = selected?.recordings.filter((entry) => (entry.durationSeconds ?? 0) - entry.eventOffsetSeconds > .1);
   const first = angles?.[0], second = angles?.[1];
@@ -58,13 +72,13 @@ export function IncidentReplay({ alert, workspace, mapView, videoChecks, initial
 
   return <div className="gv-incident gv-replay">
     <header className="gv-panel-heading">
-      <button type="button" className="gv-incident-back" onClick={onBack}><ChevronLeft size={16} /> Back to incident</button>
+      <button type="button" className="gv-incident-back" onClick={onBack}><ChevronLeft size={16} /> {explicitTimeline ? "Back to passage review" : "Back to incident"}</button>
       <button type="button" className="gv-icon-button" aria-label="Close replay" onClick={onClose}><X size={17} /></button>
     </header>
     <section className="gv-details gv-incident-summary">
-      <h3>Incident replay</h3>
+      <h3>{explicitTimeline ? "Door passage replay" : "Incident replay"}</h3>
       <p className="gv-replay-anchor">{alert.observation.summary}</p>
-      <p className="gv-replay-window">Site activity within {REPLAY_WINDOW_MINUTES} minutes of the incident · UTC</p>
+      <p className="gv-replay-window">{explicitTimeline ? "Correlated door and camera events · UTC" : `Site activity within ${REPLAY_WINDOW_MINUTES} minutes of the incident · UTC`}</p>
       {recordingCoverage && <p className="gv-recording-continuity" role="status"><Video size={15} aria-hidden="true" />{RECORDING_COVERAGE[recordingCoverage.state]}</p>}
     </section>
     {selected && <section className="gv-details gv-replay-selection" aria-label="Selected replay event">
@@ -87,10 +101,17 @@ export function IncidentReplay({ alert, workspace, mapView, videoChecks, initial
       {comparing && first && second ? <RecordingComparison key={selected.key} recordings={[first, second]} sensors={workspace.sensors}
         eventTime={selected.event.observation.occurredAt} videoChecks={videoChecks} /> : recording ? <div ref={player} className="gv-replay-player">
         <p className="gv-replay-clip"><Video size={15} /> {selected.event.observation.recording ? "Event clip" : "Matched clip"} · {camera?.name ?? recording.cameraId}</p>
-        <RecordedFeed key={active.request} recording={recording} name={(camera?.name ?? "Replay") + " clip"} />
+        <RecordedFeed key={active.request} recording={recording} name={(camera?.name ?? "Replay") + " clip"}
+          accessToken={recordingAccessToken(recording.url, siteSession)} />
       </div> : selected.recording
         ? <button type="button" className="gv-button" onClick={() => jump(selected, true)}><Play size={14} /> Play from event</button>
-        : <p className="gv-replay-gap"><Video size={14} /> No recording for this event</p>}
+        : <p className="gv-replay-gap"><Video size={14} /> {archive?.state === "loading" || archive?.state === "pending"
+          ? "Looking up the recording…" : "No recording for this event"}</p>}
+      {siteSession && !!alert.configurationVersion && !explicitTimeline && selected.event.cameraId &&
+        <ReviewClip key={selected.key} session={siteSession} incident={alert} event={selected.event} onSeek={(clip) => {
+          setComparing(false);
+          setActive((current) => ({ key: selected.key, request: current.request + 1, recording: clip }));
+        }} />}
     </section>}
     <ol className="gv-replay-timeline" aria-label="Replay timeline">
       {entries.map((entry) => {
@@ -105,7 +126,7 @@ export function IncidentReplay({ alert, workspace, mapView, videoChecks, initial
               <small>{eventLabel[event.modality]} · {event.sensorName || MODALITY_LABEL[event.modality]}</small>
               {event.observation.gatewayReceivedAt && <small>Gateway received {dateTime.format(new Date(event.observation.gatewayReceivedAt * 1000))} UTC</small>}
               <span className="gv-replay-event-badges">
-                {key === anchorKey && <small>Incident alert</small>}
+                {key === anchorKey && <small>{explicitTimeline ? "Episode evidence" : "Incident alert"}</small>}
                 {event.observation.position && <small><MapPin size={12} /> {mapView ? "Map" : "Location recorded"}</small>}
                 {clip ? <small><Video size={12} /> Clip</small> : !mapView && <small>No recording</small>}
               </span>
