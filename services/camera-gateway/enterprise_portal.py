@@ -34,6 +34,11 @@ SESSION_COOKIE = "__Host-proxigo-session"
 FLOW_COOKIE = "__Host-proxigo-login"
 SESSION_AGE = 8 * 60 * 60
 FLOW_AGE = 300
+MFA_LEEWAY = 30
+MFA_CLAIM = "https://proxigo.ai/claims/mfa_at"
+CONNECTION_CLAIM = "https://proxigo.ai/claims/connection"
+SIGN_IN_LABELS = {"email": "Continue with email", "google": "Continue with Google", "microsoft": "Continue with Microsoft",
+                  "github": "Continue with GitHub", "sso": "Sign in with your organization"}
 SLUG = r"[a-z0-9][a-z0-9-]{0,79}"
 GUID = re.compile(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}", re.IGNORECASE | re.ASCII)
 SITE_ROUTE = re.compile(PREFIX + rf"/orgs/({SLUG})/sites/({SLUG})(/.+)")
@@ -124,6 +129,12 @@ class Organization:
     sites: dict[str, Site]
     subject_claim: str
     certificate: ClientCertificate | None
+    connections: dict[str, str]
+
+    @property
+    def binding(self):
+        return digest(json.dumps([self.issuer, self.client_id, self.tenant, self.tenant_claim,
+                                  self.subject_claim, self.connections], sort_keys=True))
 
 
 class Portal:
@@ -133,7 +144,11 @@ class Portal:
         self.index = (self.frontend / "index.html").read_bytes().replace(b"<html ", b'<html data-enterprise="true" ', 1)
         self.state = state
         self.organizations = {}
-        issuers, gateways, secrets = set(), set(), set()
+        self.invitation_orgs = {}
+        production = config.get("production", False)
+        if type(production) is not bool:
+            raise ValueError("Set production to true or false.")
+        issuer_tenants, gateways, secrets = {}, set(), set()
         for org_id, raw in config["organizations"].items():
             if not re.fullmatch(SLUG, org_id):
                 raise ValueError("Use stable lowercase organization IDs.")
@@ -143,7 +158,21 @@ class Portal:
             tenant_claim = raw.get("tenantClaim")
             token_auth = raw.get("tokenEndpointAuthMethod", "client_secret_basic")
             subject_claim = raw.get("subjectClaim", "sub")
-            if (issuer.rstrip("/") in issuers or not re.fullmatch(r"[A-Za-z0-9_-]{1,96}", tenant)
+            connections = raw.get("auth0Connections", {})
+            if (not isinstance(connections, dict)
+                    or any(method not in SIGN_IN_LABELS or not isinstance(name, str)
+                           or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", name) for method, name in connections.items())
+                    or len(set(connections.values())) != len(connections)):
+                raise ValueError("Configure a distinct Auth0 connection name for each enabled sign-in method.")
+            if production and not connections:
+                raise ValueError("Production organizations require hosted sign-in with verified MFA.")
+            if connections:
+                if (tenant_claim not in (None, "org_id") or subject_claim != "sub"
+                        or not re.fullmatch(r"org_[A-Za-z0-9]{1,90}", tenant) or tenant in self.invitation_orgs):
+                    raise ValueError("Hosted login requires an Auth0 organization ID and the OIDC subject.")
+                tenant_claim = "org_id"
+                self.invitation_orgs[tenant] = org_id
+            if (not re.fullmatch(r"[A-Za-z0-9_-]{1,96}", tenant)
                     or not isinstance(client, str) or not client
                     or tenant_claim is not None and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", tenant_claim)
                     or token_auth not in ("client_secret_basic", "client_secret_post", "private_key_jwt")
@@ -157,7 +186,11 @@ class Portal:
                 certificate = ClientCertificate.load(raw["clientCertificate"], raw["clientPrivateKey"])
             elif not isinstance(secret, str) or not secret:
                 raise ValueError("Configure the OIDC client secret.")
-            issuers.add(issuer.rstrip("/"))
+            issuer_key = issuer.rstrip("/")
+            tenants = issuer_tenants.setdefault(issuer_key, set())
+            if tenants and (not connections or None in tenants or tenant in tenants):
+                raise ValueError("Only separately bound Auth0 organizations may share an issuer.")
+            tenants.add(tenant if connections else None)
             sites = {}
             if not isinstance(raw["sites"], dict) or not 1 <= len(raw["sites"]) <= 64:
                 raise ValueError("Configure between one and 64 sites per organization.")
@@ -169,7 +202,7 @@ class Portal:
                 secrets.add(token)
                 sites[site_id] = Site(address, token)
             self.organizations[org_id] = Organization(issuer, client, secret, tenant, tenant_claim, token_auth, sites,
-                                                      subject_claim, certificate)
+                                                      subject_claim, certificate, connections)
         if not self.organizations:
             raise ValueError("Configure at least one organization.")
         self.state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -177,12 +210,17 @@ class Portal:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS login_flows (
                     id TEXT PRIMARY KEY, browser TEXT NOT NULL, org TEXT NOT NULL, nonce TEXT NOT NULL,
-                    verifier TEXT NOT NULL, token_endpoint TEXT NOT NULL, jwks_uri TEXT NOT NULL, expires INTEGER NOT NULL
+                    verifier TEXT NOT NULL, token_endpoint TEXT NOT NULL, jwks_uri TEXT NOT NULL, expires INTEGER NOT NULL,
+                    auth_binding TEXT, connection TEXT
                 );
                 CREATE TABLE IF NOT EXISTS sessions (
-                    id TEXT PRIMARY KEY, org TEXT NOT NULL, subject TEXT NOT NULL, expires INTEGER NOT NULL
+                    id TEXT PRIMARY KEY, org TEXT NOT NULL, subject TEXT NOT NULL, expires INTEGER NOT NULL, auth_binding TEXT
                 );
             """)
+            db.execute("BEGIN IMMEDIATE")
+            for table, name in (("login_flows", "auth_binding"), ("login_flows", "connection"), ("sessions", "auth_binding")):
+                if name not in {column[1] for column in db.execute(f"PRAGMA table_info({table})")}:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {name} TEXT")
         self.state.chmod(0o600)
 
     def connect(self):
@@ -191,10 +229,24 @@ class Portal:
     def callback_url(self, org_id):
         return f"{self.origin}{PREFIX}/callback/{org_id}"
 
-    def start_login(self, org_id):
+    def login_options(self, org_id):
         org = self.organizations.get(org_id)
         if not org:
             raise ValueError("Unknown organization.")
+        if not org.connections:
+            return [{"id": "", "label": SIGN_IN_LABELS["sso"]}]
+        return [{"id": method, "label": label} for method, label in SIGN_IN_LABELS.items() if method in org.connections]
+
+    def start_login(self, org_id, method="", *, invitation=None):
+        org = self.organizations.get(org_id)
+        if not org:
+            raise ValueError("Unknown organization.")
+        if invitation is not None:
+            if method or not org.connections or not re.fullmatch(r"[A-Za-z0-9_.~-]{1,1024}", invitation):
+                raise ValueError("Invalid organization invitation.")
+        elif method not in (org.connections or {""}):
+            raise ValueError("Unknown sign-in method for this organization.")
+        connection = org.connections.get(method)
         metadata = read_json(org.issuer.rstrip("/") + "/.well-known/openid-configuration")
         if metadata.get("issuer") != org.issuer:
             raise ValueError("Unexpected identity issuer.")
@@ -208,27 +260,35 @@ class Portal:
         now = int(time.time())
         with closing(self.connect()) as db, db:
             db.execute("DELETE FROM login_flows WHERE expires<=?", (now,))
-            db.execute("INSERT INTO login_flows VALUES(?,?,?,?,?,?,?,?)",
-                       (digest(state), digest(browser), org_id, nonce, verifier, token_endpoint, jwks_uri, now + FLOW_AGE))
+            db.execute("""INSERT INTO login_flows(id,browser,org,nonce,verifier,token_endpoint,jwks_uri,expires,auth_binding,connection)
+                          VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                       (digest(state), digest(browser), org_id, nonce, verifier, token_endpoint, jwks_uri, now + FLOW_AGE,
+                        org.binding, connection))
         scope = "openid profile" if org.subject_claim == "oid" else "openid"
-        query = urlencode({"client_id": org.client_id, "redirect_uri": self.callback_url(org_id), "response_type": "code",
-                           "scope": scope, "state": state, "nonce": nonce, "code_challenge": challenge,
-                           "code_challenge_method": "S256", "prompt": "login"})
-        return authorize + "?" + query, browser
+        query = {"client_id": org.client_id, "redirect_uri": self.callback_url(org_id), "response_type": "code",
+                 "scope": scope, "state": state, "nonce": nonce, "code_challenge": challenge,
+                 "code_challenge_method": "S256", "prompt": "login"}
+        if org.connections:
+            query["organization"] = org.tenant
+        if connection:
+            query["connection"] = connection
+        if invitation:
+            query["invitation"] = invitation
+        return authorize + "?" + urlencode(query), browser
 
     def finish_login(self, org_id, state, browser, query):
         now = int(time.time())
+        org = self.organizations[org_id]
         with closing(self.connect()) as db, db:
-            flow = db.execute("""DELETE FROM login_flows WHERE id=? AND browser=? AND org=? AND expires>?
-                                 RETURNING nonce,verifier,token_endpoint,jwks_uri""",
-                              (digest(state), digest(browser), org_id, now)).fetchone()
+            flow = db.execute("""DELETE FROM login_flows WHERE id=? AND browser=? AND org=? AND expires>? AND auth_binding=?
+                                 RETURNING nonce,verifier,token_endpoint,jwks_uri,expires,connection""",
+                              (digest(state), digest(browser), org_id, now, org.binding)).fetchone()
         if not flow:
             raise ValueError("Sign-in has expired.")
-        org = self.organizations[org_id]
         code = one(query, "code")
         if not code or "error" in query or ("iss" in query and one(query, "iss") != org.issuer):
             raise ValueError("Identity provider did not authorize this sign-in.")
-        nonce, verifier, token_endpoint, jwks_uri = flow
+        nonce, verifier, token_endpoint, jwks_uri, expires, connection = flow
         form = {"grant_type": "authorization_code", "code": code, "redirect_uri": self.callback_url(org_id),
                 "code_verifier": verifier}
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -258,6 +318,12 @@ class Portal:
                 or org.tenant_claim and claims.get(org.tenant_claim) != org.tenant
                 or not re.fullmatch(r"[!-~]{1,200}", claims["sub"])):
             raise ValueError("Identity claims did not match this organization.")
+        if org.connections:
+            verified_at = claims.get(MFA_CLAIM)
+            expected_connections = (connection,) if connection else org.connections.values()
+            if (claims.get(CONNECTION_CLAIM) not in expected_connections or type(verified_at) is not int
+                    or not expires - FLOW_AGE - MFA_LEEWAY <= verified_at <= now + MFA_LEEWAY):
+                raise ValueError("Sign-in requires proof of MFA for the selected connection.")
         if org.subject_claim == "oid":
             subject = claims.get("oid")
             if not isinstance(subject, str) or not GUID.fullmatch(subject):
@@ -270,14 +336,18 @@ class Portal:
         now = int(time.time())
         with closing(self.connect()) as db, db:
             db.execute("DELETE FROM sessions WHERE expires<=? OR id=?", (now, digest(old)))
-            db.execute("INSERT INTO sessions VALUES(?,?,?,?)", (digest(session), org_id, subject, now + SESSION_AGE))
+            db.execute("INSERT INTO sessions(id,org,subject,expires,auth_binding) VALUES(?,?,?,?,?)",
+                       (digest(session), org_id, subject, now + SESSION_AGE, self.organizations[org_id].binding))
         return session
 
     def session(self, session):
         if not session:
             return None
         with closing(self.connect()) as db:
-            return db.execute("SELECT org,subject FROM sessions WHERE id=? AND expires>?", (digest(session), time.time())).fetchone()
+            row = db.execute("SELECT org,subject,auth_binding FROM sessions WHERE id=? AND expires>?",
+                             (digest(session), time.time())).fetchone()
+        if row and (org := self.organizations.get(row[0])) and row[2] == org.binding:
+            return row[:2]
 
     def revoke(self, session):
         if session:
@@ -380,12 +450,28 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError, KeyError, TypeError, jwt.PyJWTError):
                 self.redirect("/?sign-in=failed", cookie(FLOW_COOKIE))
             return
+        if target.path == PREFIX + "/invite":
+            try:
+                query = parse_qs(target.query, max_num_fields=3)
+                org_id = portal.invitation_orgs[one(query, "organization")]
+                url, browser = portal.start_login(org_id, invitation=one(query, "invitation"))
+                self.redirect(url, cookie(FLOW_COOKIE, browser, FLOW_AGE))
+            except (OSError, ValueError, KeyError, TypeError):
+                self.redirect("/?sign-in=failed", cookie(FLOW_COOKIE))
+            return
         if target.path == PREFIX + "/session":
             session = self.authorized()
             if session:
                 org_id, subject = session
                 sites = portal.member_sites(org_id, subject)
                 self.reply(200, json.dumps({"organizationId": org_id, "sites": sites}).encode())
+            return
+        if target.path == PREFIX + "/login-options":
+            try:
+                methods = portal.login_options(one(parse_qs(target.query, max_num_fields=1), "organization"))
+                self.reply(200, json.dumps({"methods": methods}).encode())
+            except ValueError:
+                self.error(404, "Sign-in unavailable for this organization.")
             return
         match = SITE_ROUTE.fullmatch(target.path)
         if match:
@@ -413,7 +499,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == PREFIX + "/login":
             try:
                 query = parse_qs(self.body(4096, "application/x-www-form-urlencoded").decode(), max_num_fields=2)
-                url, browser = portal.start_login(one(query, "organization"))
+                url, browser = portal.start_login(one(query, "organization"), one(query, "method"))
                 self.redirect(url, cookie(FLOW_COOKIE, browser, FLOW_AGE))
             except (OSError, ValueError, KeyError, TypeError):
                 self.redirect("/?sign-in=failed", cookie(FLOW_COOKIE))

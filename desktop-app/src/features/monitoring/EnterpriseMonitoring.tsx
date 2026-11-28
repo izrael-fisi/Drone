@@ -4,6 +4,7 @@ import { isSiteOperator, type SiteSession } from "./SiteOperator";
 
 const API = "/api/enterprise";
 const SITE_ID = /^[a-z0-9][a-z0-9-]{0,79}$/;
+type SignInMethod = { id: string; label: string };
 
 function sameSites(left: SiteSession[], right: SiteSession[]) {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -14,6 +15,7 @@ export function EnterpriseMonitoring() {
   const [active, setActive] = useState<{ base: string; incidentId?: string; incidentReplay?: boolean }>();
   const [signedIn, setSignedIn] = useState(false);
   const [organization, setOrganization] = useState("");
+  const [loginOptions, setLoginOptions] = useState<{ organization: string; methods: SignInMethod[] }>();
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState(() => new URLSearchParams(location.search).get("sign-in") === "failed"
@@ -63,7 +65,28 @@ export function EnterpriseMonitoring() {
     return () => { lifetime.abort(); window.clearTimeout(timer); bus?.close(); window.removeEventListener("pageshow", restore); };
   }, [attempt]);
 
+  useEffect(() => {
+    if (signedIn || !SITE_ID.test(organization)) return;
+    const request = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`${API}/login-options?${new URLSearchParams({ organization })}`, {
+          cache: "no-store", signal: request.signal, redirect: "error",
+        });
+        if (!response.ok) throw new Error();
+        const { methods } = await response.json();
+        if (!Array.isArray(methods) || !methods.length || !methods.every((method) =>
+          typeof method?.id === "string" && typeof method.label === "string")) throw new Error();
+        if (!request.signal.aborted) setLoginOptions({ organization, methods });
+      } catch {
+        if (!request.signal.aborted) setLoginOptions({ organization, methods: [] });
+      }
+    }, 160);
+    return () => { window.clearTimeout(timer); request.abort(); };
+  }, [organization, signedIn]);
+
   const current = sites?.find((site) => site.base === active?.base) ?? sites?.[0];
+  const methods = loginOptions?.organization === organization ? loginOptions.methods : undefined;
 
   async function signOut() {
     setBusy(true); setError("");
@@ -104,8 +127,15 @@ export function EnterpriseMonitoring() {
         : signedIn ? <><p>No sites are currently available to this account.</p>{signOutButton}</>
           : <form method="post" action={API + "/login"} className="gv-incident-form">
             <label>Organization ID<input name="organization" autoComplete="organization" autoCapitalize="none" required maxLength={80}
-              value={organization} onChange={(event) => setOrganization(event.target.value.toLowerCase())} /></label>
-            <button className="gv-button gv-primary" type="submit" disabled={!SITE_ID.test(organization)}>Sign in with your organization</button>
+              value={organization} onChange={(event) => {
+                setLoginOptions(undefined);
+                setOrganization(event.target.value.toLowerCase());
+              }} /></label>
+            {methods?.length ? methods.map(({ id, label }, index) =>
+              <button key={id} className={index === 0 ? "gv-button gv-primary" : "gv-button"}
+                type="submit" name="method" value={id}>{label}</button>) :
+              <button className="gv-button gv-primary" type="submit" disabled>Sign in with your organization</button>}
+            {methods?.length === 0 && <p role="status">Sign-in options are unavailable. Check your organization ID.</p>}
           </form>}
       {error && <p role="alert">{error}</p>}
     </main>

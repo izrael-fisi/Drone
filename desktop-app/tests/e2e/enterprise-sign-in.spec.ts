@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { request as relayRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer } from "node:https";
 import { createServer as reservePort } from "node:net";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +24,7 @@ const choose = (page: Page, label: string) => page.getByRole("navigation", { nam
 const api = "/api/enterprise";
 const route = (org: string, site: string) => `${api}/orgs/${org}/sites/${site}`;
 const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const requireAction = createRequire(import.meta.url);
 const body = async (req: IncomingMessage) => {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -379,5 +381,217 @@ test("enterprise sign-in isolates organizations and live camera, incident, and s
       try { await exited; } finally { clearTimeout(timer); }
     }));
     await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test("production email, Google, and Microsoft require fresh authenticator proof", async ({ browser }) => {
+  test.skip(!python, "Set PROXIGO_ENTERPRISE_PYTHON and build the frontend.");
+  test.setTimeout(90_000);
+  const directory = await mkdtemp(join(tmpdir(), "proxigo-production-login-"));
+  const cert = join(directory, "cert.pem"), key = join(directory, "key.pem");
+  const servers: ReturnType<typeof createServer>[] = [];
+  const children: ChildProcess[] = [];
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const { onExecutePostLogin: requireAuthenticator } = requireAction("../../../infra/auth0-global-view/require-authenticator.cjs");
+  const { onExecutePostLogin: attestAuthenticator } = requireAction("../../../infra/auth0-global-view/attest-authenticator.cjs");
+  const clientId = "fixture-production-web-app", clientSecret = "fixture-web-secret";
+  const tenants = { alpha: "org_FixtureAlpha", beta: "org_FixtureBeta" };
+  const connections = { email: "fixture-email", google: "google-oauth2", microsoft: "windowslive" };
+  const users = { "fixture-email": "auth0|operator", "google-oauth2": "google-oauth2|operator", windowslive: "windowslive|operator" };
+  const enrolled = new Set<string>();
+  const mfa = "https://proxigo.ai/claims/mfa_at";
+  const connectionClaim = "https://proxigo.ai/claims/connection";
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  type Connection = keyof typeof users;
+  type Transaction = { query: URLSearchParams; connection: Connection; mfaComplete: boolean };
+  const transactions = new Map<string, Transaction>();
+  let corrupt: "missing" | "stale" | "connection" | "tenant" | undefined;
+  let portalPort = "", issuer = "", origin = "";
+  try {
+    execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1",
+      "-keyout", key, "-out", cert, "-addext", "subjectAltName=IP:127.0.0.1", "-addext", "basicConstraints=critical,CA:TRUE"], { stdio: "ignore" });
+    const tls = { key: await readFile(key), cert: await readFile(cert) };
+    const front = createServer(tls, (req, res) => {
+      const upstream = relayRequest({ hostname: "127.0.0.1", port: portalPort, path: req.url, method: req.method, headers: req.headers }, (response) => {
+        res.writeHead(response.statusCode!, response.headers);
+        response.pipe(res);
+      });
+      upstream.on("error", () => res.writeHead(502).end());
+      req.pipe(upstream);
+    });
+    servers.push(front);
+    origin = "https://127.0.0.1:" + await listen(front);
+
+    function brokerEvent(tx: Transaction, verified = false) {
+      const user = users[tx.connection];
+      return { client: { client_id: clientId }, secrets: { GLOBAL_VIEW_CLIENT_ID: clientId },
+        connection: { name: tx.connection, strategy: tx.connection === connections.email ? "auth0" : tx.connection },
+        organization: { id: tx.query.get("organization") },
+        user: { email_verified: true, enrolledFactors: enrolled.has(user) ? [{ type: "otp" }] : [] },
+        authentication: { methods: verified ? [{ name: "mfa", type: "otp", timestamp: new Date().toISOString() }] : [] } };
+    }
+
+    const broker = createServer(tls, async (req, res) => {
+      const url = new URL(req.url!, issuer);
+      const json = (value: object) => res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(value));
+      const html = (value: string, status = 200) => res.writeHead(status, { "Content-Type": "text/html" }).end(value);
+      if (url.pathname === "/.well-known/openid-configuration") return json({ issuer, authorization_endpoint: issuer + "authorize",
+        token_endpoint: issuer + "token", jwks_uri: issuer + "keys", code_challenge_methods_supported: ["S256"] });
+      if (url.pathname === "/keys") return json({ keys: [{ ...publicKey.export({ format: "jwk" }), kid: "broker-test", alg: "RS256" }] });
+      if (url.pathname === "/authorize") {
+        const query = url.searchParams;
+        const org = Object.entries(tenants).find(([, tenant]) => query.get("organization") === tenant)?.[0];
+        const connection = (query.get("connection") || (query.get("invitation") === "fixture-invitation" ? connections.google : "")) as Connection;
+        if (!org || !Object.hasOwn(users, connection) || query.get("client_id") !== clientId || query.get("scope") !== "openid"
+          || query.get("redirect_uri") !== origin + api + "/callback/" + org || query.get("prompt") !== "login"
+          || query.get("code_challenge_method") !== "S256" || !query.get("state") || !query.get("nonce")) return res.writeHead(400).end();
+        const ticket = randomUUID();
+        transactions.set(ticket, { query, connection, mfaComplete: false });
+        const heading = connection === connections.email ? "Email and password" : connection === connections.google ? "Google sign-in" : "Microsoft sign-in";
+        const fields = connection === connections.email ? '<label>Email <input type="email" required></label><label>Password <input type="password" required></label>' : "";
+        return html(`<h1>${heading}</h1><form action="/authenticate">${fields}<input type="hidden" name="ticket" value="${ticket}"><button>Continue</button></form>`);
+      }
+      if (url.pathname === "/authenticate") {
+        const ticket = url.searchParams.get("ticket") ?? "", tx = transactions.get(ticket);
+        if (!tx) return res.writeHead(400).end();
+        let step = "";
+        await requireAuthenticator(brokerEvent(tx), { access: { deny: () => { step = "denied"; } }, authentication: {
+          challengeWith: ({ type }: { type: string }) => { if (type === "otp") step = "Authenticator challenge"; },
+          enrollWith: ({ type }: { type: string }) => { if (type === "otp") step = "Set up authenticator"; },
+        } });
+        if (!step || step === "denied") return res.writeHead(400).end();
+        return html(`<h1>${step}</h1><form action="/verify" method="post"><input type="hidden" name="ticket" value="${ticket}"><label>Authenticator code <input name="otp"></label><button>Verify</button></form>`);
+      }
+      if (url.pathname === "/verify" && req.method === "POST") {
+        const form = new URLSearchParams(await body(req));
+        const ticket = form.get("ticket") ?? "", tx = transactions.get(ticket);
+        if (!tx || form.get("otp") !== "123456") return html('<h1>Authenticator code rejected</h1>', 401);
+        tx.mfaComplete = true;
+        enrolled.add(users[tx.connection]);
+        const callback = new URL(tx.query.get("redirect_uri")!);
+        callback.search = new URLSearchParams({ code: ticket, state: tx.query.get("state")! }).toString();
+        return res.writeHead(303, { Location: callback.href }).end();
+      }
+      if (url.pathname === "/token" && req.method === "POST") {
+        const form = new URLSearchParams(await body(req));
+        const ticket = form.get("code") ?? "", tx = transactions.get(ticket);
+        if (!tx || !tx.mfaComplete || form.get("client_id") !== clientId || form.get("client_secret") !== clientSecret
+          || form.get("redirect_uri") !== tx.query.get("redirect_uri") || form.get("grant_type") !== "authorization_code"
+          || createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url") !== tx.query.get("code_challenge")) return res.writeHead(400).end();
+        transactions.delete(ticket);
+        const now = Math.floor(Date.now() / 1000);
+        const claims: Record<string, unknown> = { iss: issuer, aud: clientId, sub: users[tx.connection], nonce: tx.query.get("nonce"),
+          org_id: tx.query.get("organization"), iat: now, exp: now + 300 };
+        let denied = false;
+        await attestAuthenticator(brokerEvent(tx, true), { access: { deny: () => { denied = true; } }, idToken: {
+          setCustomClaim: (name: string, value: unknown) => { claims[name] = value; },
+        } });
+        if (denied) return res.writeHead(400).end();
+        if (corrupt === "missing") delete claims[mfa];
+        if (corrupt === "stale") claims[mfa] = now - 600;
+        if (corrupt === "connection") claims[connectionClaim] = "some-other-connection";
+        if (corrupt === "tenant") claims.org_id = tenants.beta;
+        corrupt = undefined;
+        const token = encode({ alg: "RS256", kid: "broker-test" }) + "." + encode(claims);
+        return json({ id_token: token + "." + sign("sha256", Buffer.from(token), privateKey).toString("base64url") });
+      }
+      res.writeHead(404).end();
+    });
+    servers.push(broker);
+    issuer = "https://127.0.0.1:" + await listen(broker) + "/";
+
+    async function site(org: keyof typeof tenants) {
+      const access = join(directory, `access-${org}.json`);
+      const proxyToken = createHash("sha256").update("fixture-" + org).digest("hex");
+      await writeFile(access, JSON.stringify({ site: "Office", siteId: "office", organization: {
+        id: org, name: org === "alpha" ? "Alpha" : "Beta", directoryTenant: tenants[org],
+      }, operators: Object.fromEntries(Object.values(users).map((id, index) => [id, { name: "Operator " + index, role: "operator", cameras: [] }])) }));
+      const service = spawn(python!, [gateway, "--port", "0", "--allow-source", "127.0.0.1/32", "--state-dir", join(directory, org),
+        "--site-access", access, "--require-camera-session"], { env: { ...process.env, PROXIGO_IDENTITY_PROXY_TOKEN: proxyToken } });
+      children.push(service);
+      const port = (await ready(service, /Camera gateway listening on .*:(\d+)/))[1];
+      return { origin: "http://127.0.0.1:" + port, proxyToken };
+    }
+    const [alpha, beta] = await Promise.all([site("alpha"), site("beta")]);
+    const org = (directoryTenant: string, office: object, auth0Connections: object) => ({ issuer, clientId, clientSecret,
+      tokenEndpointAuthMethod: "client_secret_post", directoryTenant, auth0Connections, sites: { office } });
+    const config = join(directory, "portal.json");
+    await writeFile(config, JSON.stringify({ publicOrigin: origin, production: true, organizations: {
+      alpha: org(tenants.alpha, alpha, connections), beta: org(tenants.beta, beta, { google: connections.google }),
+    } }));
+    const service = spawn(python!, [portal, "--port", "0", "--frontend", dist, "--state", join(directory, "portal.sqlite3"), "--config", config],
+      { env: { ...process.env, SSL_CERT_FILE: cert } });
+    children.push(service);
+    portalPort = (await ready(service, /Enterprise portal listening on .*:(\d+)/))[1];
+
+    const page = await context.newPage();
+    const get = (path: string) => context.request.get(origin + path);
+    async function login(button: string, provider: string, first = false) {
+      await page.goto(origin);
+      await page.getByLabel("Organization ID").fill("alpha");
+      await page.getByRole("button", { name: button, exact: true }).click();
+      await expect(page.getByRole("heading", { name: provider })).toBeVisible();
+      if (provider === "Email and password") {
+        await page.getByLabel("Email").fill("operator@example.test");
+        await page.getByLabel("Password").fill("fixture-password");
+      }
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      await expect(page.getByRole("heading", { name: first ? "Set up authenticator" : "Authenticator challenge" })).toBeVisible();
+      expect((await get(api + "/session")).status()).toBe(401);
+    }
+    async function verifyCode(code = "123456") {
+      await page.getByLabel("Authenticator code").fill(code);
+      await page.getByRole("button", { name: "Verify", exact: true }).click();
+    }
+    async function verifySiteAndSignOut() {
+      await expect(page.getByText("Alpha · Office")).toBeVisible();
+      const result = await get(api + "/session");
+      expect((await result.json()).organizationId).toBe("alpha");
+      expect((await get(route("beta", "office") + "/api/site/session")).status()).toBe(404);
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+      await expect.poll(async () => (await get(api + "/session")).status()).toBe(401);
+    }
+
+    await page.goto(origin);
+    await page.getByLabel("Organization ID").fill("beta");
+    await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with email" })).toHaveCount(0);
+    const invalid = await context.request.post(origin + api + "/login", { headers: { Origin: origin },
+      form: { organization: "beta", method: "microsoft" }, maxRedirects: 0 });
+    expect(invalid.headers().location).toBe("/?sign-in=failed");
+
+    await login("Continue with email", "Email and password", true);
+    await verifyCode("000000");
+    await expect(page.getByRole("heading", { name: "Authenticator code rejected" })).toBeVisible();
+    expect((await get(api + "/session")).status()).toBe(401);
+    for (const [button, provider] of [["Continue with email", "Email and password"],
+      ["Continue with Google", "Google sign-in"], ["Continue with Microsoft", "Microsoft sign-in"]]) {
+      await login(button, provider, true);
+      await verifyCode();
+      await verifySiteAndSignOut();
+    }
+    for (const mode of ["missing", "stale", "connection", "tenant"] as const) {
+      corrupt = mode;
+      await login("Continue with Microsoft", "Microsoft sign-in");
+      await verifyCode();
+      await expect(page.getByRole("alert")).toContainText("sign-in could not be completed");
+      expect((await get(api + "/session")).status()).toBe(401);
+    }
+    await page.goto(origin + api + "/invite?organization=" + tenants.alpha + "&invitation=fixture-invitation");
+    await expect(page.getByRole("heading", { name: "Google sign-in" })).toBeVisible();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Authenticator challenge" })).toBeVisible();
+    await verifyCode();
+    await verifySiteAndSignOut();
+  } finally {
+    await context.close();
+    for (const server of servers) { server.closeAllConnections(); server.close(); }
+    await Promise.all(children.filter((child) => child.exitCode === null && child.signalCode === null).map(async (child) => {
+      const exited = once(child, "exit");
+      child.kill();
+      const timer = setTimeout(() => child.kill("SIGKILL"), 3000);
+      try { await exited; } finally { clearTimeout(timer); }
+    }));
+    await rm(directory, { recursive: true, force: true });
   }
 });

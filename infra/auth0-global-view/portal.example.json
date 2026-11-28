@@ -1,0 +1,25 @@
+{
+  "production": true,
+  "publicOrigin": "https://security.example.com",
+  "organizations": {
+    "customer-site": {
+      "issuer": "https://YOUR_AUTH0_DOMAIN/",
+      "directoryTenant": "org_REPLACEWITHAUTH0ID",
+      "clientId": "AUTH0_APPLICATION_CLIENT_ID",
+      "clientSecret": "INJECT_AUTH0_APPLICATION_CLIENT_SECRET",
+      "tokenEndpointAuthMethod": "client_secret_post",
+      "auth0Connections": {
+        "email": "global-view-email",
+        "google": "google-oauth2",
+        "microsoft": "microsoft-customer",
+        "sso": "customer-work-directory"
+      },
+      "sites": {
+        "main-site": {
+          "origin": "https://gateway.customer.internal",
+          "proxyToken": "INJECT_64_HEX_GATEWAY_PROXY_TOKEN"
+        }
+      }
+    }
+  }
+}
