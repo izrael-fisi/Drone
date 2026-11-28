@@ -4,7 +4,75 @@ import { connectSite, siteRequest, SiteRequestError, type SiteSession } from "./
 import { readSiteEndpoint } from "./SiteTelemetry";
 
 type DispatchAlert = Alert & { nextAction?: string; recordingState?: string };
-type DispatchSite = { session: SiteSession; connected: boolean; seen?: number; alerts: DispatchAlert[]; version?: number };
+type DispatchSite = { session: SiteSession; connected: boolean; seen?: number; alerts: DispatchAlert[]; version?: number; openCount?: number };
+type IncidentPage = { alerts: DispatchAlert[]; openCount: number; nextCursor: string | null };
+
+export function OpenIncidentBacklog({ session, onOpen, label = "Open incident backlog" }: {
+  session: SiteSession; onOpen: (alert: Alert) => void; label?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [page, setPage] = useState<{ session: SiteSession; data: IncidentPage }>();
+  const [paging, setPaging] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const [error, setError] = useState("");
+  const current = page?.session === session ? page.data : undefined;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: number;
+    async function refresh() {
+      try {
+        const data = await siteRequest(session, "dispatch", undefined,
+          AbortSignal.any([controller.signal, AbortSignal.timeout(6000)])) as IncidentPage;
+        if (!controller.signal.aborted) {
+          setError("");
+          setPage((prior) => {
+            if (!prior || prior.session !== session || !open || prior.data.alerts.length <= 30) return { session, data };
+            return { session, data: { ...prior.data, openCount: data.openCount } };
+          });
+        }
+      } catch (issue) {
+        if (controller.signal.aborted) return;
+        setPage(undefined);
+        setError(issue instanceof Error ? issue.message : "Could not load open incidents.");
+      } finally {
+        if (!controller.signal.aborted) timer = window.setTimeout(refresh, 10000);
+      }
+    }
+    void refresh();
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [session, open, revision]);
+
+  async function loadMore() {
+    if (!current?.nextCursor) return;
+    setPaging(true); setError("");
+    try {
+      const data = await siteRequest(session, "dispatch?" + new URLSearchParams({ cursor: current.nextCursor }), undefined,
+        AbortSignal.timeout(8000)) as IncidentPage;
+      setPage((prior) => prior?.session === session ? { session, data: { ...data, alerts: [
+        ...prior.data.alerts, ...data.alerts.filter((alert) => !prior.data.alerts.some(({ id }) => id === alert.id)),
+      ] } } : prior);
+    } catch (issue) {
+      setError(issue instanceof Error ? issue.message : "Could not load older incidents.");
+    } finally { setPaging(false); }
+  }
+
+  return <details className="gv-triage-section" onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>{label}{current && <> <span>{current.openCount} open</span></>}</summary>
+    <div className="gv-triage-content">
+      {open && current && <button type="button" className="gv-button" disabled={paging} onClick={() => {
+        setPage(undefined);
+        setRevision((value) => value + 1);
+      }}>Refresh open incidents</button>}
+      {error && <p role="alert">{error}</p>}
+      {open && current?.alerts.map((alert) => <button type="button" key={alert.id} className="gv-posture-row" onClick={() => onOpen(alert)}>
+        <span><strong>{alert.observation.summary}</strong><small>{alert.severity} · {alert.zoneName} · {siteTime(Date.parse(alert.observation.occurredAt), session.operator.timeZone)} · {alert.owner ?? "Unassigned"}</small></span>
+      </button>)}
+      {open && current?.openCount === 0 && <p>No open incidents.</p>}
+      {current?.nextCursor && <button type="button" className="gv-button" disabled={paging} onClick={() => void loadMore()}>Load older open incidents</button>}
+    </div>
+  </details>;
+}
 
 export function useOrganizationDispatch(sites: SiteSession[]) {
   const [status, setStatus] = useState<DispatchSite[]>([]);
@@ -20,7 +88,7 @@ export function useOrganizationDispatch(sites: SiteSession[]) {
           const snapshot = await siteRequest(session, "dispatch", undefined, signal);
           if (snapshot.account?.organization?.id !== session.operator.organization.id || snapshot.account?.siteId !== session.operator.siteId) return;
           const alerts = ((snapshot.alerts ?? []) as DispatchAlert[]).filter((alert) => !alert.correlation && alert.status !== "resolved");
-          return { session, alerts, connected: true, seen: Date.now(), version: snapshot.publishedVersion };
+          return { session, alerts, connected: true, seen: Date.now(), version: snapshot.publishedVersion, openCount: snapshot.openCount };
         } catch (error) {
           return error instanceof SiteRequestError && ([401, 403].includes(error.status) || session.enterprise && error.status === 404)
             ? undefined : { session, alerts: [], connected: false };
@@ -94,7 +162,7 @@ export function OrganizationDispatch({ active, sites, status, onAdd, onVisit, on
         {visible.map((site) => <button type="button" key={site.session.operator.siteId} className="gv-posture-row"
           disabled={!site.connected} aria-current={site.session.operator.siteId === active.operator.siteId || undefined}
           onClick={() => onVisit(site.session)}><span><strong>{site.session.operator.site}</strong><small>{site.connected ? "Gateway responding" : "Gateway unreachable"}
-            {site.seen ? ` · ${siteTime(site.seen, site.session.operator.timeZone)} local` : ""}{site.version ? ` · Version ${site.version}` : ""}</small></span></button>)}
+            {site.seen ? ` · ${siteTime(site.seen, site.session.operator.timeZone)} local` : ""}{site.version ? ` · Version ${site.version}` : ""}{site.openCount !== undefined ? ` · ${site.openCount} open` : ""}</small></span></button>)}
         {alerts.map(({ site, alert }) => <button type="button" key={`${site.session.operator.siteId}:${alert.id}`} className="gv-posture-row" disabled={!site.connected}
           onClick={() => onVisit(site.session, alert.id)}><span><strong>{alert.observation.summary}</strong>
             <small>{site.session.operator.site} · {alert.zoneName} · {siteTime(Date.parse(alert.observation.occurredAt), site.session.operator.timeZone)} local</small>
@@ -103,6 +171,9 @@ export function OrganizationDispatch({ active, sites, status, onAdd, onVisit, on
               : alert.recordingState === "gap" ? "Recording gap" : "Recording " + (alert.recordingState ?? "unverified")}</small>
             {alert.nextAction && <small>Next action · {alert.nextAction}</small>}</span></button>)}
         {!alerts.length && <p>No open incidents from the selected sites.</p>}
+        {visible.filter((site) => site.connected && (site.openCount ?? 0) > alerts.filter((entry) => entry.site === site).length).map((site) =>
+          <OpenIncidentBacklog key={site.session.base} session={site.session} label={site.session.operator.site + " open incident backlog"}
+            onOpen={(alert) => onVisit(site.session, alert.id)} />)}
       </>}
     </div>
   </details>;

@@ -131,8 +131,10 @@ export function SiteInsights({ workspace, healthById, videoChecks, assets, asset
               {worker && <small>{camera.analyticsPlacement ? `${ANALYTICS_PLACEMENTS[camera.analyticsPlacement]} · ` : ""}{WORKER_LABELS[worker]}</small>}
               {!!rules.length && <ul aria-label={`${camera.name} rules`}>{rules.map((rule) => {
                 const review = assets?.validatedRules?.find((item) => item.cameraId === camera.id && item.ruleId === rule.id);
+                const acceptance = assets?.ruleAcceptances?.find((item) => item.cameraId === camera.id && item.ruleId === rule.id);
                 return <li key={rule.id}>{rule.name} · {rule.mode === "alert" ? "Alert mode" : "Observe mode"}
-                  <small>{review ? "Rule validated · " + new Date(review.createdAt).toLocaleDateString() : "Rule validation due"}</small></li>;
+                  <small>{acceptance ? (acceptance.passed ? "Acceptance passed" : "Acceptance thresholds missed") :
+                    review ? "Field check recorded · " + new Date(review.createdAt).toLocaleDateString() : "Rule acceptance due"}</small></li>;
               })}</ul>}
             </div>)}
             {!!incidents.length && <ul className="gv-insights-incidents" aria-label="Open boundary incidents">{incidents.map((incident) => <li key={incident.id}>

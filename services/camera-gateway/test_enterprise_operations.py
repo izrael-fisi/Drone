@@ -12,6 +12,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+from ai_jobs import AIJobs
 from gateway import CameraGateway
 from gateway_backup import backup, restore
 from gateway_state import StateLock
@@ -181,6 +182,14 @@ class EnterpriseOperationsTests(unittest.TestCase):
     def test_backup_restore_reconciles_access_and_preserves_records(self):
         self.publish()
         self.push("persisted")
+        ai_settings = {"provider": "on-premises", "allowAutomatedTriage": False}
+        service = AIJobs(self.gateway, ai_settings)
+        supervisor = self.gateway.collaboration.accounts.by_subject(SUPERVISOR["subject"])
+        service.quota.read(supervisor, {"dailyLimit": 6, "operatorReserve": 2, "revision": 0})
+        now = time.time()
+        with self.gateway.activity.connect() as db:
+            db.execute("INSERT INTO site_ai_jobs VALUES('draft','admin','','incident','cam','clip-review','{}','ready',?,'','{}',?)",
+                       (now, json.dumps({"provider": "bedrock", "videoFallback": {"submittedAt": now}})))
         cert, key, archive = (self.root / name for name in ("cert.pem", "key.pem", "snapshot.p7m"))
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=Fixture",
                         "-keyout", str(key), "-out", str(cert), "-days", "1"], check=True, capture_output=True)
@@ -197,4 +206,11 @@ class EnterpriseOperationsTests(unittest.TestCase):
         with sqlite3.connect(new / "activity.sqlite3") as db:
             self.assertEqual(db.execute("SELECT id FROM monitored_alerts").fetchone()[0], self.incident())
             self.assertEqual(db.execute("SELECT subject FROM organization_accounts").fetchall(), [("admin",)])
+            self.assertEqual(db.execute("SELECT count(*) FROM site_ai_jobs").fetchone()[0], 0)
         self.assertFalse((new / "management-token").exists())
+        restored_gateway = CameraGateway(new, "ffmpeg", ["127.0.0.0/8"], 12, site_config=json.loads(roster.read_text()))
+        restored_quota = AIJobs(restored_gateway, ai_settings).quota
+        with restored_gateway.activity.connect() as db:
+            budget = restored_quota.snapshot(db, now)
+        self.assertEqual((budget["dailyLimit"], budget["operatorReserve"]), (6, 2))
+        self.assertEqual(budget["usage"], {"operator": 1, "frame": 0, "triage": 0, "fallback": 1})

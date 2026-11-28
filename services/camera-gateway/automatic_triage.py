@@ -2,7 +2,7 @@
 
 import json
 
-from ai_jobs import INSTRUCTIONS, REFS, LIFETIME, references, schema_object
+from ai_jobs import INSTRUCTIONS, LIFETIME, references, schema_object
 from axis_archive import parse_utc
 from onvif import CameraError
 from site_activity import EVENT_LABELS
@@ -12,7 +12,10 @@ from site_collaboration import Conflict, SiteCollaboration, iso_now
 SETTLE_SECONDS = 30
 MAX_DELAY = 300
 RETENTION = 30 * LIFETIME
-SCHEMA = schema_object(keyEvents=REFS)
+TRIAGE_INSTRUCTIONS = INSTRUCTIONS + (
+    " Select up to six relevant timeline records, including corroborating events when available. "
+    "Fill keyEvents with exact copies of the selected records' ref fields."
+)
 RECORDED_FACTS = {
     **{kind: f"{label} reported" for kind, label in EVENT_LABELS.items()},
     "door-forced-open": "Forced-open door reported",
@@ -50,9 +53,9 @@ def recorded_summary(events):
 
 
 class AutomaticTriage:
-    def __init__(self, jobs, limit):
+    def __init__(self, jobs, limit, daily_limit):
         self.jobs, self.activity = jobs, jobs.activity
-        if type(limit) is not int or not 1 <= limit <= jobs.quota:
+        if limit is not None and (type(limit) is not int or not 1 <= limit <= daily_limit):
             raise CameraError("Set an automatic triage limit within the site's daily AI quota.")
         self.limit, self.last_cleanup = limit, 0
         with self.activity.connect() as db:
@@ -75,14 +78,13 @@ class AutomaticTriage:
     def setting(db):
         return db.execute("SELECT enabled,revision,cursor FROM automatic_triage_setting WHERE singleton=1").fetchone()
 
-    @staticmethod
-    def submitted_since(db, start):
-        return db.execute("SELECT count(*) FROM automatic_triage_reports WHERE submitted>=?", (start,)).fetchone()[0]
-
     def status(self, actor, db):
         enabled, revision, _ = self.setting(db)
+        limit = self.jobs.quota.automatic_limit(db)
+        if self.limit is not None:
+            limit = min(limit, self.limit)
         return {"available": True, "enabled": bool(enabled), "revision": revision, "canManage": manages_site(actor),
-                "placement": self.jobs.provider.name, "dailyLimit": self.limit}
+                "placement": self.jobs.provider.name, "model": self.jobs.provider.model, "dailyLimit": limit}
 
     def read(self, actor, identifier=None):
         with self.activity.connect() as db:
@@ -151,16 +153,16 @@ class AutomaticTriage:
                 fallback = select_events(sources, fallback_keys)
             db.execute("BEGIN IMMEDIATE")
             enabled, revision, current = self.setting(db)
-            if not enabled or current != cursor:
+            if not enabled or current != cursor or self.jobs.operator_waiting(db, now):
                 return None
             db.execute("UPDATE automatic_triage_setting SET cursor=? WHERE singleton=1", (sequence,))
             if not use:
                 return None
-            start = now // LIFETIME * LIFETIME
+            budget = self.jobs.quota.snapshot(db, now)
             reason = None
             if now - received >= MAX_DELAY or received - occurred >= MAX_DELAY:
                 reason = "expired"
-            elif self.submitted_since(db, start) >= self.limit or self.jobs.used_today(db, start) >= self.jobs.quota:
+            elif not budget["automaticRemaining"] or (self.limit is not None and budget["usage"]["triage"] >= self.limit):
                 reason = "limit"
             entry = db.execute("INSERT OR IGNORE INTO automatic_triage_reports VALUES(?,?,?,?,?,?,NULL)",
                                (identifier, "timeline" if reason else "processing", now, None if reason else now,
@@ -186,13 +188,13 @@ class AutomaticTriage:
         if not enabled or revision != expected_revision or self.jobs.gateway.stopping.is_set():
             return
         try:
+            available = {event["ref"] for event in sources}
+            schema = schema_object(keyEvents={"type": "array", "items": {"type": "string", "enum": sorted(available)}})
             raw, _ = self.jobs.provider.generate(
-                INSTRUCTIONS + " Select up to six references for the most relevant timeline events. "
-                "Include related corroborating events where available. Return only the keyEvents array inside a JSON object.",
-                json.dumps(sources, ensure_ascii=False), [], SCHEMA)
+                TRIAGE_INSTRUCTIONS, json.dumps(sources, ensure_ascii=False), [], schema)
             if not isinstance(raw, dict) or set(raw) != {"keyEvents"}:
                 raise CameraError("The model returned an invalid incident review.")
-            keys = references(raw["keyEvents"], {event["ref"] for event in sources})
+            keys = references(raw["keyEvents"], available)
             if len(keys) > 6:
                 raise CameraError("The review included too many key events.")
             events = select_events(sources, keys)

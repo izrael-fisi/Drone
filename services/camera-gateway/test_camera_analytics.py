@@ -622,6 +622,7 @@ class GatewayAnalyticsTests(unittest.TestCase):
         actor = {"subject": "officer"}
         snapshot = json.loads(json.dumps(self.snapshot))
         camera = snapshot["sensors"][0]
+        camera["analyticsRules"] = [{**rule, "mode": "observe"} for rule in camera["analyticsRules"]]
         snapshot["sensors"].append({**camera, "id": "new-camera", "name": "New camera"})
         snapshot["boundaries"][0]["sensorIds"].append("new-camera")
         draft = store.change(actor, {"operation": "save", "publishedVersion": 1, "draftRevision": 0, "configuration": snapshot})
@@ -649,8 +650,8 @@ class GatewayAnalyticsTests(unittest.TestCase):
             with self.assertRaises(CameraError):
                 self.telemetry.push(current, analytics_placement=denied)
         self.assertTrue(self.telemetry.push(current, analytics_placement="on-premises")["accepted"])
-        alerts = self.monitor.view({"cameras": "*"}, 0, 0, 0, 0)["alerts"]
-        self.assertEqual({item["observation"]["id"]: item["observation"]["analytics"]["placement"] for item in alerts},
+        events = self.monitor.view({"cameras": "*"}, 0, 0, 0, 0)["siteEvents"]
+        self.assertEqual({item["observation"]["id"]: item["observation"]["analytics"]["placement"] for item in events},
                          {"queued-cloud": "cloud", "local": "on-premises"})
 
     def test_worker_enrollment_requires_unique_camera_and_placement_tokens(self):

@@ -10,10 +10,10 @@ import sqlite3
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from xml.etree import ElementTree as ET
 
-from ai_jobs import AIJobs, clip_result, sample_frames
+from ai_jobs import AIJobs, clip_result, prepare_video, review_frames, sample_frames, video_result
 from automatic_triage import AutomaticTriage, SETTLE_SECONDS
 from axis_archive import utc
 from device_degradation import BUCKET, DAY, DeviceDegradation, regime
@@ -189,7 +189,7 @@ class IntelligenceTests(unittest.TestCase):
         self.push("restart-job", now)
         incident = self.incident()
         self.assertIsNotNone(automatic.take(now + SETTLE_SECONDS + 2))
-        recovered = AutomaticTriage(self.service, 2)
+        recovered = AutomaticTriage(self.service, 2, 3)
         self.assertTrue(recovered.read(self.admin)["enabled"])
         self.assertEqual(recovered.read(self.actor, incident)["review"]["reason"], "restart")
         with patch.object(self.fixture, "generate") as model:
@@ -276,7 +276,7 @@ class IntelligenceTests(unittest.TestCase):
 
     def test_invalid_citations_and_quota_fall_back_to_template(self):
         _, request = self.draft()
-        self.service.quota = 1
+        self.service.quota.read(self.admin, {"dailyLimit": 1, "operatorReserve": 1, "revision": 0})
         first = self.service.create(self.actor, request)
         with patch.object(self.fixture, "generate", return_value=({"summary": [{"text": "Unknown", "evidenceRefs": ["invented"]}]}, {})):
             self.run_queued()
@@ -298,6 +298,8 @@ class IntelligenceTests(unittest.TestCase):
     def test_cloud_media_opt_in_and_missing_capture(self):
         with self.assertRaisesRegex(CameraError, "explicit site approval"):
             AIJobs(self.gateway, {"clipReview": True, "clipBoundaries": ["north"]}, self.fixture)
+        with self.assertRaisesRegex(CameraError, "explicit site approval for video"):
+            AIJobs(self.gateway, {"videoReview": True, "cloudClips": True, "clipBoundaries": ["north"]}, self.fixture)
         self.push("recording", time.time())
         request = {"type": "clip-review", "incidentId": self.incident(), "event": {"sensorId": "door", "id": "recording"}}
         with self.assertRaises(PermissionError):
@@ -307,6 +309,232 @@ class IntelligenceTests(unittest.TestCase):
         result = self.service.read(self.actor, job["id"])
         self.assertEqual(result["outcome"], "unable-to-verify")
         self.assertEqual(self.fixture.calls, [])
+
+    def test_video_segments_translate_excerpt_offsets_and_validate_results(self):
+        stamp = 1700000000
+        recording = {"eventOffsetSeconds": 10, "durationSeconds": 22}
+        segment = {"start_sec": 4.5, "end_sec": 7, "occupancy": "observed", "summary": "Person on walkway."}
+        result = video_result([segment], 4, 12, stamp, recording)["segments"][0]
+        self.assertEqual((result["startSeconds"], result["endSeconds"]), (8.5, 11))
+        self.assertEqual((result["startAt"], result["endAt"]), (utc(stamp - 1.5), utc(stamp + 1)))
+        self.assertEqual(result["outcome"], "observed")
+        for invalid in ({"end_sec": 12.1}, {"start_sec": 12.01, "end_sec": 12.02}, {"start_sec": True},
+                        {"occupancy": "confirmed"}):
+            with self.subTest(invalid=invalid), self.assertRaises(CameraError):
+                video_result([{**segment, **invalid}], 4, 12, stamp, recording)
+
+    def test_cloud_frame_review_pins_the_frame_supplied_to_nova(self):
+        provider = Mock()
+        provider.name = "bedrock"
+        provider.generate.return_value = {"outcome": "observed", "explanation": "A person is visible."}, {}
+        earlier = {"reference": {"ref": "earlier", "eventFrame": False}}
+        event = {"reference": {"ref": "event-time", "eventFrame": True}}
+        result, _ = review_frames(provider, [earlier, event])
+        self.assertEqual(provider.generate.call_args.args[2], [event])
+        self.assertEqual(result["sources"], [event["reference"]])
+
+    def test_site_can_enable_fallback_and_one_uncertain_frame_reserves_one_video_call(self):
+        provider = Mock(name="bedrock-provider")
+        provider.name, provider.model = "bedrock", "us.amazon.nova-2-lite-v1:0"
+        provider.generate.return_value = {"outcome": "unable-to-verify", "explanation": "Unclear frame."}, {
+            "inputTokens": 1100, "outputTokens": 20}
+        provider.review_video.return_value = ([{"start_sec": .5, "end_sec": 2, "occupancy": "observed",
+                                               "summary": "Person by the door."}], {"inputVideoSeconds": 4, "outputTokens": 30})
+        settings = {"clipReview": True, "cloudClips": True, "videoReview": True, "cloudVideo": True,
+                    "clipBoundaries": ["north"], "dailyQuota": 3}
+        self.service = AIJobs(self.gateway, settings, provider)
+        self.push("candidate", time.time())
+        request = {"type": "clip-review", "incidentId": self.incident(), "event": {"sensorId": "door", "id": "candidate"}}
+        frame = {"reference": {"ref": "event-time", "eventFrame": True}}
+        recording = {"eventOffsetSeconds": 2, "durationSeconds": 4}
+        self.assertFalse(self.service.review_settings(self.admin)["enabled"])
+        with self.assertRaises(PermissionError):
+            self.service.review_settings(self.actor, {"enabled": True, "revision": 0})
+        with patch.object(self.service, "recording_frames", return_value=([frame], recording)):
+            baseline = self.service.create(self.actor, request)
+            self.run_queued()
+            self.assertNotIn("videoFallback", self.service.read(self.actor, baseline["id"]))
+        provider.review_video.assert_not_called()
+        self.assertTrue(self.service.review_settings(self.admin, {"enabled": True, "revision": 0})["enabled"])
+        with self.assertRaises(Conflict):
+            self.service.review_settings(self.admin, {"enabled": False, "revision": 0})
+        with patch.object(self.service, "recording_frames", return_value=([frame], recording)), \
+                patch.object(self.service, "recording", return_value=(self.state / "private.mp4", {}, recording)), \
+                patch("ai_jobs.prepare_video", return_value=(b"masked clip", 0, 4)):
+            job = self.service.create(self.actor, request)
+            self.run_queued()
+        result = self.service.read(self.actor, job["id"])
+        self.assertEqual(result["outcome"], "unable-to-verify")
+        self.assertEqual(result["videoFallback"]["segments"][0]["startSeconds"], .5)
+        provider.review_video.assert_called_once_with(b"masked clip")
+        self.assertEqual(self.service.create(self.actor, request)["id"], job["id"])
+        with self.gateway.activity.connect() as db:
+            audit = json.loads(db.execute("SELECT audit FROM site_ai_jobs WHERE id=?", (job["id"],)).fetchone()[0])
+            self.assertEqual(audit["inputTokens"], 1100)
+            self.assertEqual(audit["videoFallback"]["inputVideoSeconds"], 4)
+            self.assertIsInstance(audit["videoFallback"]["submittedAt"], float)
+            self.assertEqual(self.service.quota.usage(db, time.time()), {"operator": 2, "fallback": 1, "triage": 0, "frame": 0})
+        self.assertTrue(AIJobs(self.gateway, settings, provider).review_settings(self.admin)["enabled"])
+
+    def test_video_fallback_respects_quota_and_skips_definitive_frames(self):
+        for index, outcome in enumerate(("unable-to-verify", "not-observed", "observed")):
+            with self.subTest(outcome=outcome):
+                provider = Mock()
+                provider.name, provider.model = "bedrock", "nova"
+                provider.generate.return_value = {"outcome": outcome, "explanation": "Frame observation."}, {}
+                self.service = AIJobs(self.gateway, {"clipReview": True, "cloudClips": True, "videoReview": True,
+                    "cloudVideo": True, "clipBoundaries": ["north"], "dailyQuota": index + 1}, provider)
+                if not self.service.review_settings(self.admin)["enabled"]:
+                    self.service.review_settings(self.admin, {"enabled": True, "revision": 0})
+                event_id = f"candidate-{index}"
+                self.push(event_id, time.time(), "motion", "cam")
+                incident = next(alert["id"] for alert in self.monitor.dispatch(self.actor)["alerts"]
+                                if alert["observation"]["id"] == event_id)
+                frame = {"reference": {"ref": "event-time", "eventFrame": True}}
+                recording = {"eventOffsetSeconds": 2, "durationSeconds": 4}
+                with patch.object(self.service, "recording_frames", return_value=([frame], recording)), \
+                        patch.object(self.service, "recording", return_value=(self.state / "clip.mp4", {}, recording)), \
+                        patch("ai_jobs.prepare_video", return_value=(b"masked clip", 0, 4)):
+                    job = self.service.create(self.actor, {"type": "clip-review", "incidentId": incident,
+                                                           "event": {"sensorId": "cam", "id": event_id}})
+                    self.run_queued()
+                result = self.service.read(self.actor, job["id"])
+                if outcome == "unable-to-verify":
+                    self.assertIn("limit", result["videoFallback"]["unavailable"])
+                else:
+                    self.assertNotIn("videoFallback", result)
+                provider.review_video.assert_not_called()
+
+    def test_automatic_frames_claim_only_new_camera_incidents_and_share_review(self):
+        provider = Mock()
+        provider.name, provider.model = "bedrock", "nova"
+        provider.generate.return_value = {"outcome": "unable-to-verify", "explanation": "Unclear frame."}, {
+            "inputTokens": 1100, "outputTokens": 20}
+        provider.review_video.return_value = ([{"start_sec": .5, "end_sec": 2, "occupancy": "observed",
+                                               "summary": "Person by the door."}], {"inputVideoSeconds": 4, "outputTokens": 30})
+        settings = {"clipReview": True, "cloudClips": True, "videoReview": True, "cloudVideo": True,
+                    "clipBoundaries": ["north"], "dailyQuota": 3}
+        service = AIJobs(self.gateway, settings, provider)
+        automatic = service.automatic_frames
+        self.assertFalse(automatic.read(self.admin)["enabled"])
+        now = time.time()
+        self.push("before-enable", now, "motion", "cam")
+        older = self.incident()
+        with self.assertRaises(PermissionError):
+            automatic.change(self.actor, {"enabled": True, "revision": 0})
+        self.assertTrue(automatic.change(self.admin, {"enabled": True, "revision": 0})["enabled"])
+        with self.assertRaises(Conflict):
+            automatic.change(self.admin, {"enabled": False, "revision": 0})
+        service.review_settings(self.admin, {"enabled": True, "revision": 0})
+        self.assertIsNone(automatic.read(self.actor, older)["review"])
+        self.push("door-with-linked-camera", now + 1)
+        self.assertIsNone(automatic.read(self.actor, self.incident())["review"])
+        self.assertIsNone(automatic.take(now + 12))
+        self.push("camera-incident", now + 2, "motion", "cam")
+        incident = self.incident()
+        self.assertEqual(automatic.read(self.actor, incident)["review"]["state"], "collecting")
+        self.assertIsNone(automatic.take(now + 3))
+        job = automatic.take(now + 13)
+        self.assertEqual(job[3], incident)
+        with self.assertRaises(PermissionError):
+            automatic.read(self.outsider, incident)
+        frame = {"reference": {"ref": "event-time", "eventFrame": True}}
+        recording = {"eventOffsetSeconds": 2, "durationSeconds": 4}
+        with patch.object(service, "recording_frames", return_value=([frame], recording)), \
+                patch.object(service, "recording", return_value=(self.state / "clip.mp4", {}, recording)), \
+                patch("ai_jobs.prepare_video", return_value=(b"masked clip", 0, 4)):
+            service.work(job)
+        result = automatic.read(self.actor, incident)["review"]
+        self.assertEqual(result["outcome"], "unable-to-verify")
+        self.assertEqual(result["videoFallback"]["segments"][0]["startSeconds"], .5)
+        self.assertEqual(result, automatic.read(self.admin, incident)["review"])
+        with self.assertRaises(PermissionError):
+            service.read(self.actor, job[0])
+        provider.review_video.assert_called_once_with(b"masked clip")
+        restarted = AIJobs(self.gateway, settings, provider)
+        self.assertIsNone(restarted.automatic_frames.take(now + 15))
+        self.push("over-quota", now + 5, "motion", "cam")
+        self.assertIsNone(restarted.automatic_frames.take(now + 16))
+        self.assertIn("automatic AI review limit", restarted.automatic_frames.read(self.actor, self.incident())["review"]["message"])
+        provider.generate.assert_called_once()
+
+    def test_automatic_frame_review_rechecks_the_setting_before_sending_media(self):
+        provider = Mock()
+        provider.name, provider.model = "bedrock", "nova"
+        service = AIJobs(self.gateway, {"clipReview": True, "cloudClips": True, "clipBoundaries": ["north"]}, provider)
+        automatic = service.automatic_frames
+        automatic.change(self.admin, {"enabled": True, "revision": 0})
+        when = time.time()
+        self.push("motion", when, "motion", "cam")
+        job = automatic.take(when + 12)
+        automatic.change(self.admin, {"enabled": False, "revision": 1})
+        service.work(job)
+        provider.generate.assert_not_called()
+        self.assertEqual(automatic.read(self.actor, self.incident())["review"]["state"], "failed")
+        self.assertEqual(service.quota.read(self.actor)["automaticRemaining"], 20)
+
+    def test_waiting_operator_work_leaves_automatic_incident_unclaimed(self):
+        provider = Mock()
+        provider.name, provider.model = "bedrock", "nova"
+        service = AIJobs(self.gateway, {"clipReview": True, "cloudClips": True, "clipBoundaries": ["north"]}, provider)
+        automatic = service.automatic_frames
+        automatic.change(self.admin, {"enabled": True, "revision": 0})
+        when = time.time()
+        self.push("motion", when, "motion", "cam")
+        incident = self.incident()
+        operator = service.create(self.actor, {"type": "clip-review", "incidentId": incident,
+                                               "event": {"sensorId": "cam", "id": "motion"}})
+        self.assertIsNone(automatic.take(when + 12))
+        self.assertEqual(automatic.read(self.actor, incident)["review"]["state"], "collecting")
+        manual = service.take()
+        self.assertEqual(manual[0], operator["id"])
+        service.work(manual)
+        self.assertEqual(automatic.take(when + 13)[3], incident)
+
+    def test_site_quota_combines_automation_and_preserves_operator_capacity_after_restart(self):
+        quota = self.service.quota
+        self.assertEqual((quota.read(self.actor)["dailyLimit"], quota.read(self.actor)["operatorReserve"]), (3, 1))
+        policy = {"dailyLimit": 6, "operatorReserve": 3, "revision": 0}
+        with self.assertRaises(PermissionError):
+            quota.read(self.actor, policy)
+        with self.assertRaises(CameraError):
+            quota.read(self.admin, {**policy, "operatorReserve": 7})
+        self.assertEqual(quota.read(self.admin, policy)["revision"], 1)
+        with self.assertRaises(Conflict):
+            quota.read(self.admin, policy)
+
+        automatic = self.service.automatic
+        automatic.change(self.admin, {"enabled": True, "revision": 0})
+        now = time.time()
+        settle = now + SETTLE_SECONDS + 2
+        self.push("first-door", now)
+        with patch.object(self.fixture, "generate", return_value=({"keyEvents": ["incident"]}, {})):
+            automatic.run_one(settle)
+        self.push("forced-door", now + 1)
+        with self.gateway.activity.connect() as db:
+            # Triage, a frame review and its fallback fill the shared allowance.
+            db.execute("INSERT INTO site_ai_jobs VALUES('fixture','','','camera-incident','cam','automatic-frame-review',"
+                       "'{}','ready',?,'',NULL,?)",
+                       (settle, json.dumps({"provider": "bedrock", "videoFallback": {"submittedAt": settle}})))
+        self.assertIsNone(automatic.take(settle + 1))
+        self.assertEqual(automatic.read(self.actor, self.incident())["review"]["reason"], "limit")
+        restarted = AIJobs(self.gateway, {"provider": "on-premises", "handoff": True, "allowAutomatedTriage": False}, self.fixture)
+        with self.gateway.activity.connect() as db:
+            budget = restarted.quota.snapshot(db, settle)
+            self.assertEqual(budget["usage"], {"operator": 0, "frame": 1, "fallback": 1, "triage": 1})
+            self.assertEqual((budget["dailyLimit"], budget["operatorReserve"], budget["revision"]), (6, 3, 1))
+            self.assertEqual((budget["automaticRemaining"], budget["operatorRemaining"], budget["protectedRemaining"]), (0, 3, 3))
+            tomorrow = restarted.quota.snapshot(db, settle + 86400)
+            self.assertEqual((tomorrow["automaticRemaining"], tomorrow["operatorRemaining"], tomorrow["protectedRemaining"]), (3, 6, 3))
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "Requires gateway media tools")
+    def test_video_excerpt_applies_privacy_mask(self):
+        fixture = Path(__file__).resolve().parents[2] / "desktop-app/tests/e2e/fixtures/gate-recording.mp4"
+        clip = {"eventOffsetSeconds": 2.2, "durationSeconds": 6}
+        plain, start, duration = prepare_video("ffmpeg", "ffprobe", fixture, clip, [])
+        masked, _, _ = prepare_video("ffmpeg", "ffprobe", fixture, clip, [[0, 0, 100, 100]])
+        self.assertEqual((start, duration), (0, 6))
+        self.assertNotEqual(plain, masked)
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "Requires the existing FFmpeg gateway dependency")
     def test_clip_frame_uses_media_timestamp_and_applies_mask(self):

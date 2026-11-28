@@ -293,6 +293,8 @@ class SiteConfiguration:
                     if any(rule.get("schedule") for sensor in snapshot["sensors"] for rule in sensor.get("analyticsRules", ())):
                         snapshot["analyticsTimeZone"] = self.time_zone
                         body = json.dumps(snapshot, separators=(",", ":"), allow_nan=False)
+                    from rule_acceptance import require_approval
+                    require_approval(db, active, snapshot)
                 label = text_field(payload, "message", 180)
                 version = db.execute("INSERT INTO configuration_versions(published_at,actor,message,body,restored_from) VALUES(?,?,?,?,?)",
                                      (time.time(), actor["subject"], label, body, restored)).lastrowid

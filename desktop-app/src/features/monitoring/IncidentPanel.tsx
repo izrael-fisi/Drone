@@ -1,4 +1,4 @@
-import { AutomaticTriageReview, DraftHandoff, GateEvidence, HandoffEvidenceLinks, type IntelligenceEvent } from "./SiteIntelligence";
+import { AutomaticFrameSummary, AutomaticTriageReview, DraftHandoff, GateEvidence, HandoffEvidenceLinks, type IntelligenceEvent } from "./SiteIntelligence";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Bell, Check, ChevronLeft, ChevronRight, CircleAlert, History, Video, X } from "lucide-react";
 import { CameraFeed, RecordedFeed } from "./CameraFeed";
@@ -127,6 +127,8 @@ export function IncidentPanel({ alert, camera, cameras, archive, companion, rela
       <button type="button" className="gv-button gv-open-replay" onClick={() => { setPlayback(null); onReplay(); }}><History size={15} /> Replay timeline</button>
       {onCase && <button type="button" className="gv-button" onClick={onCase}>Open incident case workspace</button>}
     </section>
+    {siteSession && !!alert.configurationVersion &&
+      <AutomaticFrameSummary session={siteSession} incident={alert} onReplay={() => { setPlayback(null); onReplay(); }} />}
       {siteSession && onIntelligenceEvidence && !!alert.configurationVersion &&
         <AutomaticTriageReview session={siteSession} incident={alert} onEvidence={onIntelligenceEvidence} />}
 

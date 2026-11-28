@@ -47,7 +47,7 @@ import { SiteReadiness } from "./SiteReadiness";
 import { DEFAULT_INSIGHTS_VIEW, SiteInsights, type SiteInsightsView } from "./SiteInsights";
 import { useSiteAssets } from "./useSiteAssets";
 import { XProtectCatalog } from "./XProtectCamera";
-import { OrganizationDispatch, useOrganizationDispatch } from "./OrganizationDispatch";
+import { OpenIncidentBacklog, OrganizationDispatch, useOrganizationDispatch } from "./OrganizationDispatch";
 import { hasTauriWindowRuntime, runWindowAction } from "../../lib/windowControls";
 import {
   BOUNDARY_VISIBILITY, MODALITY_LABEL, SAMPLE_SUMMARIES,
@@ -1111,8 +1111,10 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
 
   const alertList = <IncidentQueue workspace={workspace} filters={incidentFilters} onFilter={setIncidentFilters}
     selected={selectedAlert?.id} onOpen={openQueuedIncident}
-    gatewayRows={<>{siteSession && siteOperator.ready && <button type="button" className="gv-button"
-      onClick={() => openEvidenceSearch()}>Evidence search and cases</button>}
+    gatewayRows={<>{siteSession && siteOperator.ready && <>
+      <OpenIncidentBacklog key={siteSession.base} session={siteSession} onOpen={(alert) => visitSite(siteSession, alert.id)} />
+      <button type="button" className="gv-button" onClick={() => openEvidenceSearch()}>Evidence search and cases</button>
+    </>}
       {dispatch && <OrganizationDispatch {...dispatch} />}
       {siteSession && siteOperator.ready && !editingSite && workspace.sensors.some(({ passageRuleId }) => passageRuleId) &&
         <DoorPassageReview key={insightsScope} session={siteSession} workspace={workspace} mapView={!listView}
@@ -1126,6 +1128,10 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
     onRule={!siteSession || editingSite ? (correlationRule) => setConfiguration((current) => ({ ...current, correlationRule })) : undefined} />;
 
   const postureList = <SitePosture areas={posture} insights={!editingSite && siteOperator.status !== "revoked" &&
+    <>{siteSession && <SiteOperationsPanel key={insightsScope} session={siteSession} workspace={workspace} version={siteOperator.publishedVersion}
+      health={healthById} assets={siteAssets.assets} onCamera={(id) => select("sensor", id, true)}
+      onBoundary={(boundary) => select("boundary", boundary.id, true)} onIncident={(id) => visitSite(siteSession, id)}
+      onValidation={siteAssets.refresh} />}
     <SiteInsights workspace={workspace} healthById={healthById} videoChecks={videoChecks} version={siteOperator.publishedVersion} now={healthNow}
       view={insights?.scope === insightsScope ? insights.view : DEFAULT_INSIGHTS_VIEW} onView={(view) => setInsights({ scope: insightsScope, view })}
       assets={siteAssets.assets} assetsError={siteAssets.error} onRefresh={siteAssets.refresh}
@@ -1133,7 +1139,7 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
       connection={!siteSession ? "local" : siteOperator.status === "offline" ? "offline" : siteOperator.ready ? "ready" : "syncing"}
       onBoundary={(id) => select("boundary", id, true, { ...currentFocus(), returnToPosture: true })}
       onCamera={(id) => select("sensor", id, true, { ...currentFocus(), returnToPosture: true })}
-      onIncident={(id) => select("alert", id, true, { ...currentFocus(), returnToPosture: true })} />}
+      onIncident={(id) => select("alert", id, true, { ...currentFocus(), returnToPosture: true })} /></>}
     triage={{
     sensors, healthById, now: healthNow, filter: activeFilter, focus: triageFocus, scope: triageScope,
     onFilter: filterHealth, onFocus: listView ? (target) => {
@@ -1159,9 +1165,6 @@ export function GlobalView({ enterprise }: { enterprise?: EnterpriseWorkspaceAcc
       <SiteConfigurationPanel session={siteSession} local={localWorkspace} editing={editingSite} publishedVersion={siteOperator.publishedVersion} importRequest={importRequest}
         onEdit={(draft) => { setSiteDraft(draft); setSelection(null); setReplayEvent(null); }} onExit={() => { setSiteDraft(undefined); setEditor(null); }} />
       <OrganizationAccounts session={siteSession} />
-      {!editingSite && <SiteOperationsPanel session={siteSession} workspace={workspace} version={siteOperator.publishedVersion}
-        onBoundary={(boundary) => select("boundary", boundary.id, true)} onIncident={(id) => visitSite(siteSession, id)}
-        onValidation={siteAssets.refresh} />}
       {!editingSite && <IntelligencePosture session={siteSession} workspace={workspace}
         onCamera={(id) => select("sensor", id, true)} onBoundary={(id) => select("boundary", id, true)} />}
       <CctvAnalyticsPosture workspace={workspace} session={siteSession} version={siteOperator.publishedVersion} onCamera={(id) => select("sensor", id, true)} />

@@ -1,6 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
-const baseURL = "http://127.0.0.1:4180";
+const port = Number(process.env.PROXIGO_PLAYWRIGHT_PORT ?? 4180);
+if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Choose a valid Playwright port.");
+const baseURL = "http://127.0.0.1:" + port;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -12,7 +14,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npm run dev -- --host 127.0.0.1 --port 4180 --strictPort",
+    command: "npm run dev -- --host 127.0.0.1 --port " + port + " --strictPort",
     url: baseURL,
   },
 });

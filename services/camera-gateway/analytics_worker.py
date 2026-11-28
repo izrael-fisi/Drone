@@ -3,6 +3,7 @@
 import argparse
 from contextlib import closing, suppress
 from datetime import datetime, timezone
+from hashlib import sha256
 import json
 import math
 import os
@@ -379,6 +380,10 @@ def run_live(config, dimensions, model_configs, buffer_ms=0):
     worker_endpoint = f"{gateway}/api/cameras/{camera}/analytics"
     event_endpoint = f"{gateway}/api/site/telemetry"
     width, height, fps = dimensions
+    source = urlsplit(config["source"])
+    profile = json.dumps([[source.scheme, source.hostname, source.port, source.path, source.query],
+                          dimensions, config.get("inferenceFps", fps), buffer_ms, config["models"]],
+                         sort_keys=True, separators=(",", ":"))
     stop = Event()
     old_handlers = {signum: signal.signal(signum, lambda *_: stop.set()) for signum in (signal.SIGINT, signal.SIGTERM)}
     unavailable = {"version": 0, "rules": [], "zone": timezone.utc, "validUntil": 0}
@@ -398,6 +403,7 @@ def run_live(config, dimensions, model_configs, buffer_ms=0):
         status = statuses[lane]
         try:
             detector = load_detector(spec)
+            status["artifact"] = detector.id
             variable_profile = spec.get("detailFromRules") or getattr(detector, "automatic_person_model", False)
             if not variable_profile:
                 status["model"] = (None, detector.id)
@@ -463,7 +469,9 @@ def run_live(config, dimensions, model_configs, buffer_ms=0):
         else:
             state = "running" if age is not None and age <= 8 else "no-video"
         dock_version, docks = statuses.get("ground", {}).get("docks", (None, []))
+        artifacts = json.dumps([statuses.get(lane, {}).get("artifact") for lane in sorted(needed)])
         json_request(worker_endpoint, token, {"version": version, "state": state, "models": list(models.values()),
+                     "profileDigest": sha256((profile + artifacts).encode()).hexdigest(),
                      "pending": outbox.count(), "fps": round(min(60, (samples - last_samples) / max(now - last_at, .1)), 2),
                      "frameAgeSeconds": age, **({"dockOccupancy": docks} if docks and dock_version == version else {})})
         return samples

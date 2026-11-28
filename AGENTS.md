@@ -12,6 +12,11 @@ The preview entry point is `desktop-app/src/features/monitoring/GlobalView.tsx`.
 See [Global View enterprise monitoring](docs/global-view-monitoring.md) for the
 workflow, normalized observation format, and pilot scope.
 
+The Proxigo Microsoft 365 directory is for internal staff and testing.
+Customer organizations have their own sign-in configuration. Support their
+work accounts or customer email sign-in through an identity provider, with
+site membership and camera access scoped to the customer organization.
+
 Autonomous drone navigation development is paused. For historical work, read
 `LLM_HANDOFF.md`, `docs/technical-handoff-2026-09-05.md`, and
 `docs/handoff-verification-2026-09-05.md`. Those documents distinguish

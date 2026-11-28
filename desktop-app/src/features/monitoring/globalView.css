@@ -417,6 +417,10 @@
 .gv-triage-section > summary:focus-visible, .gv-maintenance-form textarea:focus-visible { outline: 2px solid var(--gv-orange); outline-offset: 2px; }
 .gv-triage-section > summary span { margin-left: 4px; color: var(--gv-muted); font: 11px var(--gv-mono); }
 .gv-triage-content { padding: 0 8px 8px; }
+.gv-ai-usage { margin: 0; display: grid; gap: 5px; padding-block: 6px; border-bottom: 1px solid var(--gv-line); }
+.gv-ai-usage > div { display: flex; justify-content: space-between; gap: 10px; }
+.gv-ai-usage dd { margin: 0; font-variant-numeric: tabular-nums; }
+.gv-ai-quota-form { padding: 4px 0 0; gap: 8px; }
 .gv-intelligence { padding: 8px 0; }
 .gv-intelligence ul { margin: 4px 0 8px; padding-left: 20px; }
 .gv-intelligence .gv-button { white-space: normal; text-align: left; }

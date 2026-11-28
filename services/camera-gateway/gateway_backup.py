@@ -14,6 +14,7 @@ import tarfile
 import tempfile
 import time
 
+from ai_quota import carry_job_usage
 from gateway_state import StateLock
 from onvif import CameraError
 from site_accounts import SiteAccounts, timestamp
@@ -61,12 +62,19 @@ def backup(state, destination, recipient):
             check_db(dst)
             if dst.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='site_ai_jobs'").fetchone():
                 dst.execute("PRAGMA secure_delete=ON")
+                carry_job_usage(dst, time.time())
                 dst.execute("DELETE FROM site_ai_jobs")
                 dst.commit()
                 dst.execute("VACUUM")
             if dst.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='automatic_triage_setting'").fetchone():
                 dst.execute("UPDATE automatic_triage_setting SET enabled=0, revision=revision+1")
                 dst.execute("UPDATE automatic_triage_reports SET state='timeline',reason='restart' WHERE state='processing'")
+                dst.commit()
+            if dst.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ai_video_fallback_setting'").fetchone():
+                dst.execute("UPDATE ai_video_fallback_setting SET enabled=0, revision=revision+1")
+                dst.commit()
+            if dst.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='automatic_frame_review_setting'").fetchone():
+                dst.execute("UPDATE automatic_frame_review_setting SET enabled=0, revision=revision+1")
                 dst.commit()
         snapshot.chmod(0o600)
         members = {"activity.sqlite3": snapshot}

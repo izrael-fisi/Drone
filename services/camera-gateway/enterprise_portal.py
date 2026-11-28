@@ -20,7 +20,11 @@ import time
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, quote_plus, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from uuid import uuid4
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 import jwt
 
 from gateway import CLIP, EVENTS, GRID_STREAM, RECORDING, STREAM, VIDEO_STATUS
@@ -31,13 +35,17 @@ FLOW_COOKIE = "__Host-proxigo-login"
 SESSION_AGE = 8 * 60 * 60
 FLOW_AGE = 300
 SLUG = r"[a-z0-9][a-z0-9-]{0,79}"
+GUID = re.compile(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}", re.IGNORECASE | re.ASCII)
 SITE_ROUTE = re.compile(PREFIX + rf"/orgs/({SLUG})/sites/({SLUG})(/.+)")
 SITE_READ = {"session", "activity", "monitoring", "configuration", "accounts", "assets", "vms-channels", "telemetry", "analytics-review", "analytics-report", "inspection-results", "commissioning-runs", "dock-schedules", "door-passages", "camera-native"}
-SITE_READ.update(("response-procedure", "evidence-search", "cases", "vms-status", "operations", "dispatch", "incident-history", "ai-jobs", "automatic-triage", "device-degradation", "sensor-fusion"))
+SITE_READ.update(("response-procedure", "evidence-search", "cases", "vms-status", "operations", "dispatch",
+                  "incident-history", "ai-jobs", "ai-quota", "ai-review-settings", "automatic-triage", "automatic-frame-review",
+                  "device-degradation", "sensor-fusion"))
 AI_JOB = re.compile(r"ai-jobs/[a-f0-9]{32}")
 SITE_WRITE = {"incident", "maintenance", "configuration", "configuration/preview", "accounts", "assets",
               "commissioning-test", "vms-playback", "analytics-review", "commissioning-runs", "dock-schedules",
-              "cases", "case-export", "configuration/import", "evidence-recording", "ai-jobs", "automatic-triage", "sensor-fusion"}
+              "cases", "case-export", "configuration/import", "evidence-recording", "ai-jobs", "ai-quota", "ai-review-settings",
+              "automatic-triage", "automatic-frame-review", "sensor-fusion", "retry-notification"}
 ASSET = re.compile(r"/assets/[a-zA-Z0-9_.-]+")
 MAX_JSON = 1_048_576
 
@@ -83,14 +91,39 @@ class Site:
 
 
 @dataclass(frozen=True)
+class ClientCertificate:
+    key: RSAPrivateKey
+    thumbprint: str
+
+    @classmethod
+    def load(cls, certificate_file, key_file):
+        key_path = Path(key_file)
+        if key_path.stat().st_mode & 0o077:
+            raise ValueError("Restrict the OIDC client private key to the portal user.")
+        certificate = x509.load_pem_x509_certificate(Path(certificate_file).read_bytes())
+        key = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+        if not isinstance(key, RSAPrivateKey) or key.key_size < 2048 or key.public_key() != certificate.public_key():
+            raise ValueError("Use a matching RSA client certificate and private key of at least 2048 bits.")
+        thumbprint = base64.urlsafe_b64encode(certificate.fingerprint(hashes.SHA256())).rstrip(b"=").decode()
+        return cls(key, thumbprint)
+
+    def assertion(self, client_id, token_endpoint, now):
+        return jwt.encode({"iss": client_id, "sub": client_id, "aud": token_endpoint, "jti": str(uuid4()),
+                           "iat": now, "nbf": now, "exp": now + 120}, self.key, algorithm="PS256",
+                          headers={"x5t#S256": self.thumbprint})
+
+
+@dataclass(frozen=True)
 class Organization:
     issuer: str
     client_id: str
-    client_secret: str
+    client_secret: str | None
     tenant: str
     tenant_claim: str | None
     token_auth: str
     sites: dict[str, Site]
+    subject_claim: str
+    certificate: ClientCertificate | None
 
 
 class Portal:
@@ -105,14 +138,25 @@ class Portal:
             if not re.fullmatch(SLUG, org_id):
                 raise ValueError("Use stable lowercase organization IDs.")
             issuer = endpoint(raw["issuer"])
-            tenant, client, secret = (raw[key] for key in ("directoryTenant", "clientId", "clientSecret"))
+            tenant, client = (raw[key] for key in ("directoryTenant", "clientId"))
+            secret = raw.get("clientSecret")
             tenant_claim = raw.get("tenantClaim")
             token_auth = raw.get("tokenEndpointAuthMethod", "client_secret_basic")
+            subject_claim = raw.get("subjectClaim", "sub")
             if (issuer.rstrip("/") in issuers or not re.fullmatch(r"[A-Za-z0-9_-]{1,96}", tenant)
-                    or not isinstance(client, str) or not client or not isinstance(secret, str) or not secret
+                    or not isinstance(client, str) or not client
                     or tenant_claim is not None and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", tenant_claim)
-                    or token_auth not in ("client_secret_basic", "client_secret_post")):
+                    or token_auth not in ("client_secret_basic", "client_secret_post", "private_key_jwt")
+                    or subject_claim not in ("sub", "oid")
+                    or subject_claim == "oid" and (tenant_claim != "tid" or not GUID.fullmatch(tenant))):
                 raise ValueError("Configure a distinct organization issuer, client, and directory tenant.")
+            certificate = None
+            if token_auth == "private_key_jwt":
+                if secret is not None:
+                    raise ValueError("Configure only one OIDC client credential.")
+                certificate = ClientCertificate.load(raw["clientCertificate"], raw["clientPrivateKey"])
+            elif not isinstance(secret, str) or not secret:
+                raise ValueError("Configure the OIDC client secret.")
             issuers.add(issuer.rstrip("/"))
             sites = {}
             if not isinstance(raw["sites"], dict) or not 1 <= len(raw["sites"]) <= 64:
@@ -124,7 +168,8 @@ class Portal:
                 gateways.add(address)
                 secrets.add(token)
                 sites[site_id] = Site(address, token)
-            self.organizations[org_id] = Organization(issuer, client, secret, tenant, tenant_claim, token_auth, sites)
+            self.organizations[org_id] = Organization(issuer, client, secret, tenant, tenant_claim, token_auth, sites,
+                                                      subject_claim, certificate)
         if not self.organizations:
             raise ValueError("Configure at least one organization.")
         self.state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -165,8 +210,9 @@ class Portal:
             db.execute("DELETE FROM login_flows WHERE expires<=?", (now,))
             db.execute("INSERT INTO login_flows VALUES(?,?,?,?,?,?,?,?)",
                        (digest(state), digest(browser), org_id, nonce, verifier, token_endpoint, jwks_uri, now + FLOW_AGE))
+        scope = "openid profile" if org.subject_claim == "oid" else "openid"
         query = urlencode({"client_id": org.client_id, "redirect_uri": self.callback_url(org_id), "response_type": "code",
-                           "scope": "openid", "state": state, "nonce": nonce, "code_challenge": challenge,
+                           "scope": scope, "state": state, "nonce": nonce, "code_challenge": challenge,
                            "code_challenge_method": "S256", "prompt": "login"})
         return authorize + "?" + query, browser
 
@@ -186,7 +232,10 @@ class Portal:
         form = {"grant_type": "authorization_code", "code": code, "redirect_uri": self.callback_url(org_id),
                 "code_verifier": verifier}
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        if org.token_auth == "client_secret_post":
+        if org.certificate:
+            form.update(client_id=org.client_id, client_assertion=org.certificate.assertion(org.client_id, token_endpoint, now),
+                        client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+        elif org.token_auth == "client_secret_post":
             form.update(client_id=org.client_id, client_secret=org.client_secret)
         else:
             encoded = f"{quote_plus(org.client_id)}:{quote_plus(org.client_secret)}"
@@ -209,6 +258,11 @@ class Portal:
                 or org.tenant_claim and claims.get(org.tenant_claim) != org.tenant
                 or not re.fullmatch(r"[!-~]{1,200}", claims["sub"])):
             raise ValueError("Identity claims did not match this organization.")
+        if org.subject_claim == "oid":
+            subject = claims.get("oid")
+            if not isinstance(subject, str) or not GUID.fullmatch(subject):
+                raise ValueError("Identity provider did not return a directory user object ID.")
+            return subject.lower()
         return claims["sub"]
 
     def issue_session(self, org_id, subject, old):

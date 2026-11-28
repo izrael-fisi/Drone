@@ -22,6 +22,7 @@ MAX_BYTES = 24 * 1024 * 1024
 CACHE_SECONDS = 3600
 HOLD_SECONDS = 7 * 86400
 MAX_CLIPS = 40
+RECORDING_READY_SECONDS = 10
 
 
 def utc(value):
@@ -56,7 +57,7 @@ class AxisArchive:
         if not origin and not use_onvif:
             return {"state": "unsupported"}
         event = occurred_at / 1000
-        if event > time.time() - 10:
+        if event > time.time() - RECORDING_READY_SECONDS:
             return {"state": "pending"}
         key = stream["key"]
         clip = sha256(f"{key}:{occurred_at}".encode()).hexdigest()[:32]

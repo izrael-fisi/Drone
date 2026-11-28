@@ -9,6 +9,7 @@ from site_accounts import manages_site
 from site_activity import valid_event_device
 from site_collaboration import Conflict, iso_now, text_field
 from site_configuration import SiteConfiguration, endpoint
+from rule_acceptance import fingerprint as acceptance_fingerprint, qualification
 
 
 def rule_fingerprint(camera, boundary, rule, models):
@@ -64,7 +65,25 @@ class SiteAssets:
                                         WHERE version=? GROUP BY boundary,camera)
                                 """, (active[0],)) if camera in allowed_cameras]
             rules = self.validated_rules(db, snapshot, active[0])
-        return {"tickets": tickets, "commissioning": commissioning, "recordingChecks": recording_checks, "validatedRules": rules}
+            acceptances = self.acceptances(db, snapshot, active[0])
+        return {"tickets": tickets, "commissioning": commissioning, "recordingChecks": recording_checks,
+                "validatedRules": rules, "ruleAcceptances": acceptances}
+
+    @staticmethod
+    def acceptances(db, snapshot, version):
+        zones = {item["id"]: item for item in snapshot["boundaries"]}
+        records = []
+        for camera in snapshot["sensors"]:
+            for rule in camera.get("analyticsRules", ()):
+                if not (boundary := zones.get(rule["boundaryId"])):
+                    continue
+                key = acceptance_fingerprint(db, version, camera, boundary, rule, snapshot.get("analyticsTimeZone"))
+                row = db.execute("SELECT created,actor,note,measurements FROM camera_rule_acceptance WHERE camera=? AND rule=? AND fingerprint=?",
+                                 (camera["id"], rule["id"], key)).fetchone() if key else None
+                if row:
+                    records.append({"cameraId": camera["id"], "ruleId": rule["id"], "createdAt": row[0],
+                                    "actor": row[1], "note": row[2], **json.loads(row[3])})
+        return records
 
     @staticmethod
     def fingerprint(db, version, camera, boundary, rule):
@@ -140,17 +159,27 @@ class SiteAssets:
                           "passed": all(tests[key] for key in required)}
                 db.execute("INSERT INTO commissioning_results(version,sensor,camera,boundary,actor,created,result) VALUES(?,?,?,?,?,?,?)",
                            (version, resource, camera, boundary, actor["subject"], iso_now(), json.dumps(result)))
-            elif operation == "verify-rule":
+            elif operation in ("verify-rule", "accept-rule"):
                 resource = text_field(payload, "cameraId", 80)
                 camera = next((row for row in site["sensors"] if row["id"] == resource and row["modality"] == "vision"), None)
                 selected = next((rule for rule in (camera or {}).get("analyticsRules", ()) if rule["id"] == payload.get("ruleId")), None)
                 boundary = next((row for row in site["boundaries"] if selected and row["id"] == selected["boundaryId"] and row["enabled"]), None)
                 if not selected or not boundary:
                     raise CameraError("Choose a published rule for an enabled boundary.")
-                fingerprint = self.fingerprint(db, version, camera, boundary, selected)
                 note = text_field(payload, "note", 500)
-                db.execute("INSERT OR REPLACE INTO validated_camera_rules VALUES(?,?,?,?,?,?)",
-                           (resource, selected["id"], fingerprint, iso_now(), actor["subject"], note))
+                if operation == "accept-rule":
+                    measurements = qualification(payload.get("measurements"))
+                    fingerprint = acceptance_fingerprint(db, version, camera, boundary, selected,
+                                                         site.get("analyticsTimeZone"), fresh=True)
+                    if selected["mode"] != "observe" or not fingerprint:
+                        raise Conflict("Publish this rule in Observe and wait for its current worker profile before recording acceptance.")
+                    db.execute("INSERT OR REPLACE INTO camera_rule_acceptance VALUES(?,?,?,?,?,?,?,?)",
+                               (resource, selected["id"], fingerprint, iso_now(), actor["subject"], note,
+                                json.dumps(measurements), int(measurements["passed"])))
+                else:
+                    fingerprint = self.fingerprint(db, version, camera, boundary, selected)
+                    db.execute("INSERT OR REPLACE INTO validated_camera_rules VALUES(?,?,?,?,?,?)",
+                               (resource, selected["id"], fingerprint, iso_now(), actor["subject"], note))
             else:
                 raise CameraError("Choose an available site asset operation.")
             db.execute("INSERT INTO activity_audit(occurred_at,actor,action,resource,detail) VALUES(?,?,?,?,?)",

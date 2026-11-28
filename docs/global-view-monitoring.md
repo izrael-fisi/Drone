@@ -282,6 +282,8 @@ For local setup, generate an independent 64-character hexadecimal token for the 
 
 Deploy the enterprise portal as the public HTTPS entry point. Operators enter their organization ID, sign in with their work account, and choose among the sites where they have an active membership. The portal uses OpenID Connect Authorization Code with S256 PKCE, a browser-bound one-time state, and a verified RS256 ID token. It validates issuer, audience, nonce, and time claims. Configure `tenantClaim` when the directory provides a tenant claim. The portal creates an eight-hour server-side session with an HttpOnly, Secure cookie and revokes it on sign-out. Each new sign-in asks the provider to reauthenticate. [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) · [OAuth 2.0 Security BCP](https://www.rfc-editor.org/rfc/rfc9700.html)
 
+Each customer uses its own organization ID and sign-in configuration. Connect the customer's work identity provider for single sign-on, or configure an OpenID Connect provider that signs users in with their customer email addresses. Global View uses the verified directory subject for enrollment and checks the customer's site membership and camera scope separately from sign-in.
+
 1. Register a confidential web client for each organization with its own exact issuer and callback. For Microsoft Entra, use the tenant-specific v2 issuer, `tid` as the tenant claim, and `client_secret_post` for token exchange. Register the redirect URI as Web. Use the verified `sub` claim as the stable subject in **Organization accounts** at each authorized site. Role and camera scope come from that site's account record. [Microsoft Entra OpenID Connect](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc)
 2. Start each gateway with `--site-access`, `--require-camera-session`, and a distinct `PROXIGO_IDENTITY_PROXY_TOKEN` created with `openssl rand -hex 32`. Match `organization.id`, `organization.directoryTenant`, and `siteId` to the portal configuration. Keep gateway listeners private. Use HTTPS for portal-to-gateway links across hosts. A loopback HTTP gateway can run on the portal host.
 3. Create the private portal JSON file. This example registers the callback `https://security.example/api/enterprise/callback/harbor-logistics`. Keep the client secret and site proxy tokens in the server-side config file with restricted permissions.
@@ -324,6 +326,44 @@ python3 -m venv ~/.local/share/proxigo/enterprise-venv
 ```
 
 The Chrome fixture uses two local OIDC issuers and four gateways with an overlapping operator subject and site/camera IDs. It covers membership and camera scope, signed login, rejected identity claims, live HLS with MediaMTX, cross-organization routes, and session revocation. To run it after building, set `PROXIGO_ENTERPRISE_PYTHON` to the absolute path of the virtual environment's Python and `MEDIAMTX` to the MediaMTX binary, then run `npm --prefix desktop-app run test:e2e -- enterprise-sign-in.spec.ts`. Customer IdP and HTTPS routing still need validation in the target environment.
+
+### Internal Proxigo Microsoft 365 work accounts
+
+The `proxigo` tenant configuration below serves Proxigo employees and internal testing.
+
+Register **Proxigo Global View Pilot** as a single-tenant **Web** app in the Proxigo Entra tenant. Register the portal's exact HTTPS callback ending in `/api/enterprise/callback/proxigo`. The local pilot uses `https://localhost:8775/api/enterprise/callback/proxigo` with a localhost HTTPS terminator. Register the deployed HTTPS origin separately when that environment is ready. Use only the `openid` and `profile` delegated scopes for the object-ID enrollment below. [Microsoft Web app registration](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri)
+
+Upload the portal's public RSA certificate under **Certificates & secrets → Certificates**. Store the matching PEM private key in the portal's private deployment configuration with owner-only permissions. Use absolute file paths and omit `clientSecret` for this certificate-based registration. [Microsoft certificate credentials](https://learn.microsoft.com/en-us/entra/identity-platform/certificate-credentials)
+
+```json
+{
+  "publicOrigin": "https://localhost:8775",
+  "organizations": {
+    "proxigo": {
+      "issuer": "https://login.microsoftonline.com/PROXIGO_ENTRA_TENANT_ID/v2.0",
+      "directoryTenant": "PROXIGO_ENTRA_TENANT_ID",
+      "tenantClaim": "tid",
+      "subjectClaim": "oid",
+      "clientId": "ENTRA_APPLICATION_CLIENT_ID",
+      "tokenEndpointAuthMethod": "private_key_jwt",
+      "clientCertificate": "/private/proxigo/entra-client.cer",
+      "clientPrivateKey": "/private/proxigo/entra-client.key",
+      "sites": {
+        "pilot": {
+          "origin": "http://127.0.0.1:8777",
+          "proxyToken": "THE_64_HEX_CHARACTER_GATEWAY_PROXY_TOKEN"
+        }
+      }
+    }
+  }
+}
+```
+
+For the new site, use `proxigo` as the organization ID, `pilot` as the site ID, and the same `directoryTenant` in the gateway's private site access file. Use each approved founder's lowercase **user Object ID** from the Proxigo directory as their account subject. Assign their Global View role and camera scope in the site roster. Explicit membership applies even to Entra Global Administrators. Existing organizations default to `sub` and can retain their current enrollment and token exchange. [Microsoft ID token claims](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference)
+
+Verify in the portal with organization ID `proxigo`. Complete the Microsoft sign-in and MFA, open the authorized site, and check that an account without a site membership sees an empty site list. Confirm that sign-out invalidates the Global View session. Public tenant discovery and signing keys can establish reachability before registration. A completed callback and authorized site session establish sign-in.
+
+Exchange Online receives ordinary business mail through the public MX. Global View delivers incident notifications through its signed webhook and has no inbound mailbox processing. This sign-in integration uses only identity scopes and leaves email delivery with Exchange and AWS account recovery with the separately controlled recovery mailboxes.
 
 ## Publish site configuration and run always-on alerts
 

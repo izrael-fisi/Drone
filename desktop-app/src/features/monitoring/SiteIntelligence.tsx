@@ -3,18 +3,25 @@ import { siteRequest, SiteRequestError, type SiteSession } from "./SiteOperator"
 import type { Alert, HandoffEvidence, IncomingObservation, Recording, SiteEvent, Workspace } from "./monitoringModel";
 
 type Placement = "bedrock" | "on-premises";
-type Capabilities = { handoff: boolean; clipReview: boolean; placement?: Placement; clipBoundaries?: string[] };
+type Capabilities = { handoff: boolean; clipReview: boolean; videoReview?: boolean; model?: string;
+  placement?: Placement; clipBoundaries?: string[] };
 type Claim = { text: string; evidenceRefs: string[] };
 type Draft = { summary: Claim[]; nextAction: Claim; sources: HandoffEvidence[]; template?: boolean };
 type Frame = { ref: string; offsetSeconds: number; occurredAt: string; eventFrame: boolean };
+type ReviewRecording = { path: string; cameraId: string; durationSeconds: number; eventOffsetSeconds: number; eventAt?: number };
 type ClipResult = { outcome: "observed" | "not-observed" | "unable-to-verify"; explanation: string; sources: Frame[];
-  recording?: { path: string; cameraId: string; durationSeconds: number; eventOffsetSeconds: number } };
+  recording?: ReviewRecording; videoFallback?: VideoResult };
+type VideoSegment = { startSeconds: number; endSeconds: number; startAt: string; endAt: string;
+  outcome: ClipResult["outcome"]; summary: string };
+type VideoResult = { segments: VideoSegment[]; unavailable?: string; pending?: boolean; recording?: ReviewRecording };
 type Job = { id: string; state: "queued" | "running" | "ready" | "failed" | "approved"; message?: string };
 type JobResult<T> = Job & T;
+type AutomaticFrameResult = { state: "collecting" | "running" | "failed" | "ready"; message?: string } & Partial<ClipResult>;
 
 const time = new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "medium", timeZone: "UTC" });
 const clock = (at: string | number) => time.format(new Date(typeof at === "string" ? at : at * 1000)) + " UTC";
 const placementName = (value?: Placement) => value === "bedrock" ? "Approved cloud model" : "On-premises model";
+const reviewModel = (model?: string) => model === "us.amazon.nova-2-lite-v1:0" ? "Nova 2 Lite" : undefined;
 
 function useRead<T>(session: SiteSession | undefined, path: string, interval?: number) {
   const [snapshot, setSnapshot] = useState<{ session: SiteSession; path: string; data: T }>();
@@ -62,13 +69,17 @@ function useJob<T>(session: SiteSession) {
         if (Date.now() >= limit) throw new Error("The site AI queue is still busy. Try again shortly.");
         await new Promise((resolve) => window.setTimeout(resolve, 750));
         result = await request("ai-jobs/" + result.id);
+        if (!controller.signal.aborted && result.state === "running" && "videoFallback" in result) setJob(result);
       }
       if (!controller.signal.aborted) {
         if (result.state !== "ready") throw new Error(result.message ?? "This review is unavailable.");
         setJob(result);
       }
     } catch (issue) {
-      if (!controller.signal.aborted) setError(issue instanceof Error ? issue.message : "Site AI review is unavailable.");
+      if (!controller.signal.aborted) {
+        setJob(undefined);
+        setError(issue instanceof Error ? issue.message : "Site AI review is unavailable.");
+      }
     } finally {
       if (!controller.signal.aborted) setBusy(false);
     }
@@ -135,13 +146,80 @@ export function DraftHandoff({ session, incident, onApply, onEvidence }: {
 }
 
 const observations = { observed: "Occupancy observed", "not-observed": "Occupancy not observed", "unable-to-verify": "Unable to verify" };
-const clipQuestion = "Was the gate area occupied by a person or vehicle at the event time?";
+const clipQuestion = "Was a person or vehicle visible in the monitored area at the event time?";
+
+function useAutomaticFrameReview(session: SiteSession, incident: Alert, anchor = true) {
+  const eligible = anchor && session.operator.role !== "viewer" && incident.modality === "vision"
+    && incident.cameraId === incident.observation.sensorId && incident.observation.analytics?.source !== "replay"
+    && !["coverage-loss", "coverage-recovered"].includes(incident.observation.eventType ?? "");
+  const path = "automatic-frame-review?" + new URLSearchParams({ incidentId: incident.id });
+  return useRead<{ review?: AutomaticFrameResult }>(eligible ? session : undefined, path, 2000)?.review;
+}
+
+function frameStatus(review: AutomaticFrameResult) {
+  if (review.state === "collecting") return "Waiting for the camera recording…";
+  if (review.state === "failed") return review.message ?? "Automatic frame review was interrupted. Check the recording in replay.";
+  return review.outcome ? null : "Nova is reviewing the event frame…";
+}
+
+export function AutomaticFrameSummary({ session, incident, onReplay }: { session: SiteSession; incident: Alert; onReplay: () => void }) {
+  const review = useAutomaticFrameReview(session, incident);
+  if (!review) return null;
+  return <section className="gv-details" aria-label="Automatic camera review">
+    <h4>Automatic camera review</h4>
+    <div role="status">
+      {review.outcome ? <p><strong>Nova · {observations[review.outcome]}</strong></p> : <p>{frameStatus(review)}</p>}
+      {review.videoFallback && <p>{review.videoFallback.pending ? "Pegasus is reviewing the event clip…" :
+        review.videoFallback.unavailable ?? "Pegasus clip review ready"}</p>}
+    </div>
+    {review.outcome && <button type="button" className="gv-button" onClick={onReplay}>Open automatic review in replay</button>}
+  </section>;
+}
+
+function FrameObservations({ result, seek, automatic = false }: {
+  result: Pick<ClipResult, "outcome" | "explanation" | "sources">; seek: (offset: number) => Promise<void>; automatic?: boolean;
+}) {
+  return <div aria-label={automatic ? "Automatic Nova frame review" : "AI draft observation"}>
+    <h4>{automatic ? "Nova draft observation" : "Draft observation"} · {observations[result.outcome]}</h4>
+    <p>{result.explanation}</p>
+    {result.sources.map((frame) => <button key={frame.ref} type="button" className="gv-button" onClick={() => void seek(frame.offsetSeconds)}>
+      Seek to {clock(frame.occurredAt)}{frame.eventFrame ? " · Event frame" : ""}
+    </button>)}
+  </div>;
+}
+
+function VideoObservations({ result, seek, automatic }: {
+  result: VideoResult; seek: (offset: number) => Promise<void>; automatic: boolean;
+}) {
+  return <div aria-label={automatic ? "Automatic Pegasus clip review" : "AI video review"}>
+    <h4>{automatic ? "Pegasus fallback" : "Draft video observations"}</h4>
+    {result.pending ? <p role="status">Pegasus is reviewing the event clip…</p> :
+      result.unavailable ? <p role="status">{result.unavailable}</p> : result.segments.length ? <ol className="gv-triage-records">
+        {result.segments.map((segment, index) => <li key={index}>
+          <strong>{observations[segment.outcome]}</strong>
+          <p>{segment.summary}</p>
+          <div className="gv-detail-actions">
+            <button type="button" className="gv-button" onClick={() => void seek(segment.startSeconds)}>
+              Start · <time dateTime={segment.startAt}>{clipTime(segment.startAt)} UTC</time>
+            </button>
+            <button type="button" className="gv-button" onClick={() => void seek(segment.endSeconds)}>
+              End · <time dateTime={segment.endAt}>{clipTime(segment.endAt)} UTC</time>
+            </button>
+          </div>
+        </li>)}
+      </ol> : <p>No matching segments found. Review the original recording if needed.</p>}
+  </div>;
+}
 
 export function ReviewClip({ session, incident, event, onSeek }: {
   session: SiteSession; incident: Alert; event: SiteEvent; onSeek: (recording: Recording) => void;
 }) {
   const features = useRead<Capabilities>(session, "ai-jobs");
-  const { job, busy, error, run } = useJob<ClipResult>(session);
+  const fallbackSetting = useRead<ReviewSetting>(features?.videoReview && features.clipReview ? session : undefined,
+    "ai-review-settings", 10000);
+  const automatic = useAutomaticFrameReview(session, incident, incident.observation.id === event.observation.id
+    && incident.observation.sensorId === event.observation.sensorId);
+  const { job, busy, error, run } = useJob<ClipResult | VideoResult>(session);
   const [confirm, setConfirm] = useState(false);
   const [seekError, setSeekError] = useState("");
   const blob = useRef<{ path: string; url: string }>();
@@ -150,57 +228,95 @@ export function ReviewClip({ session, incident, event, onSeek }: {
     seekRequest.current?.abort();
     if (blob.current) URL.revokeObjectURL(blob.current.url);
   }, []);
-  if (!features?.clipReview || !features.clipBoundaries?.includes(incident.zoneId)) return null;
+  if ((!features?.clipReview && !features?.videoReview) || !features.clipBoundaries?.includes(incident.zoneId)) return null;
+  const frameModel = reviewModel(features.model);
+  const fallback = job && "outcome" in job ? job.videoFallback : undefined;
 
-  async function seek(offset: number) {
-    const target = job?.recording;
+  function analyze(type: "clip-review" | "video-review") {
+    seekRequest.current?.abort();
+    setSeekError("");
+    void run({ type, incidentId: incident.id, event: { sensorId: event.observation.sensorId, id: event.observation.id } });
+  }
+
+  async function seek(offset: number, target = job?.recording ?? fallback?.recording) {
     if (!target || !/^streams\/[a-f0-9]{48}\/clips\/[a-f0-9]{32}\.mp4$/.test(target.path)) return;
     const controller = new AbortController();
     seekRequest.current?.abort();
     seekRequest.current = controller;
     setSeekError("");
     try {
-      let url = new URL(target.path, session.base).href;
+      const cameraKey = target.path.split("/")[1];
+      const stamp = target.eventAt ?? Date.parse(event.observation.occurredAt);
+      const lookup = new URL(`streams/${cameraKey}/recording.json`, session.base);
+      lookup.searchParams.set("at", String(stamp));
+      const headers = !session.enterprise && session.token ? { Authorization: "Bearer " + session.token } : undefined;
+      const signal = AbortSignal.any([AbortSignal.timeout(60000), controller.signal]);
+      let clip;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const response = await fetch(lookup, { headers, signal, cache: "no-store", redirect: "error" });
+        clip = response.ok ? await response.json() : undefined;
+        if (clip?.state !== "pending" || attempt === 3) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      }
+      if (clip?.state !== "available" || typeof clip.clipId !== "string" || !/^[a-f0-9]{32}$/.test(clip.clipId)
+        || !Number.isFinite(clip.eventOffsetSeconds) || !Number.isFinite(clip.durationSeconds)) {
+        throw new Error("The recorder could not supply footage for this timestamp.");
+      }
+      const citedOffset = offset - target.eventOffsetSeconds + clip.eventOffsetSeconds;
+      if (!Number.isFinite(citedOffset) || citedOffset < -.001 || citedOffset > clip.durationSeconds + .001) {
+        throw new Error("The available recording does not include this timestamp.");
+      }
+      const path = `streams/${cameraKey}/clips/${clip.clipId}.mp4`;
+      const cacheKey = path + "|" + clip.expiresAt + "|" + clip.eventOffsetSeconds;
+      let url = new URL(path, session.base).href;
       if (!session.enterprise && session.token) {
-        if (blob.current?.path !== target.path) {
-          const response = await fetch(url, { headers: { Authorization: "Bearer " + session.token },
+        if (blob.current?.path !== cacheKey) {
+          const response = await fetch(url, { headers,
             signal: AbortSignal.any([AbortSignal.timeout(15000), controller.signal]), cache: "no-store", redirect: "error" });
           if (!response.ok) throw new Error("The recording has expired or is unavailable.");
           const content = await response.blob();
           if (controller.signal.aborted) return;
           if (blob.current) URL.revokeObjectURL(blob.current.url);
-          blob.current = { path: target.path, url: URL.createObjectURL(content) };
+          blob.current = { path: cacheKey, url: URL.createObjectURL(content) };
         }
         url = blob.current.url;
       }
-      onSeek({ format: "mp4", url, cameraId: target.cameraId, durationSeconds: target.durationSeconds, eventOffsetSeconds: offset });
+      // An end marker can coincide with the exclusive media end.
+      if (controller.signal.aborted) return;
+      const playableOffset = citedOffset >= clip.durationSeconds ? Math.max(0, clip.durationSeconds - .05) : Math.max(0, citedOffset);
+      onSeek({ format: "mp4", url, cameraId: target.cameraId, durationSeconds: clip.durationSeconds, eventOffsetSeconds: playableOffset });
     } catch (issue) {
       if (!controller.signal.aborted) setSeekError(issue instanceof Error ? issue.message : "The recording is unavailable.");
     }
   }
 
   return <div className="gv-triage-content gv-intelligence">
+    {automatic && <section className="gv-triage-content" aria-label="Automatic camera review in replay">
+      {automatic.outcome ? <FrameObservations automatic result={{ outcome: automatic.outcome,
+        explanation: automatic.explanation ?? "", sources: automatic.sources ?? [] }}
+        seek={(offset) => seek(offset, automatic.recording)} /> : <p role="status">{frameStatus(automatic)}</p>}
+      {automatic.videoFallback && <VideoObservations result={automatic.videoFallback}
+        seek={(offset) => seek(offset, automatic.videoFallback?.recording)} automatic />}
+    </section>}
     <button type="button" className="gv-button" aria-expanded={confirm} onClick={() => setConfirm(!confirm)}>Review with AI</button>
     {confirm && <div className="gv-triage-content">
       <p>{clipQuestion}</p>
-      <p>{placementName(features.placement)} · Selected frames, up to 12 seconds of recording</p>
-      <button type="button" className="gv-button" disabled={busy} onClick={() => {
-        seekRequest.current?.abort();
-        if (blob.current) URL.revokeObjectURL(blob.current.url);
-        blob.current = undefined;
-        setSeekError("");
-        void run({ type: "clip-review", incidentId: incident.id, event: { sensorId: event.observation.sensorId, id: event.observation.id } });
-      }}>{busy ? "Reviewing recording…" : "Analyze event frames"}</button>
-      {error && <p role="alert">{error}</p>}
-      {job && <div aria-label="AI draft observation">
-        <h4>Draft observation · {observations[job.outcome]}</h4>
-        <p>{job.explanation}</p>
-        {job.sources.map((frame) => <button key={frame.ref} type="button" className="gv-button" onClick={() => void seek(frame.offsetSeconds)}>
-          Seek to {clock(frame.occurredAt)}{frame.eventFrame ? " · Event frame" : ""}
-        </button>)}
-        {seekError && <p role="alert">{seekError}</p>}
+      {features.clipReview && <div className="gv-triage-content">
+        <p>{frameModel ? `${frameModel} · Event-time frame` : `${placementName(features.placement)} · Selected frames around the event`}</p>
+        {fallbackSetting?.enabled && <p>Pegasus will review the event clip if Nova is unable to verify the frame.</p>}
+        <button type="button" className="gv-button" disabled={busy} onClick={() => analyze("clip-review")}>Analyze event frames</button>
       </div>}
+      {features.videoReview && <div className="gv-triage-content">
+        <p>Pegasus 1.5 · Up to 12 seconds of video sent to Bedrock</p>
+        <button type="button" className="gv-button" disabled={busy} onClick={() => analyze("video-review")}>Analyze video clip</button>
+      </div>}
+      {busy && !fallback?.pending && <p role="status">Reviewing recording…</p>}
+      {error && <p role="alert">{error}</p>}
+      {job && "outcome" in job && <FrameObservations result={job} seek={seek} />}
+      {job && "segments" in job && <VideoObservations result={job} seek={seek} automatic={false} />}
+      {fallback && <VideoObservations result={fallback} seek={seek} automatic />}
     </div>}
+    {seekError && <p role="alert">{seekError}</p>}
   </div>;
 }
 
@@ -226,7 +342,14 @@ function units(metric: string, value: number) {
   return value.toFixed(1) + " s";
 }
 
-type TriageSetting = { available: boolean; enabled: boolean; revision: number; canManage: boolean; placement?: Placement; dailyLimit: number };
+type ReviewSetting = { available: boolean; enabled: boolean; revision: number; canManage: boolean };
+type AIQuota = {
+  available: true; canManage: boolean; dailyLimit: number; operatorReserve: number; revision: number;
+  usage: { operator: number; frame: number; triage: number; fallback: number };
+  operatorRemaining: number; automaticRemaining: number; protectedRemaining: number; resetsAt: string;
+};
+type QuotaDraft = { dailyLimit: string; operatorReserve: string; revision: number };
+type TriageSetting = ReviewSetting & { placement?: Placement; model?: string; dailyLimit: number };
 type TriageEvent = IntelligenceEvent & { ref: string; text: string; occurredAt: string };
 type TriageReview = { state: "collecting" } | {
   state: "processing" | "ready" | "timeline"; reason?: "limit" | "provider" | "restart" | "interrupted" | "disabled" | "expired";
@@ -241,37 +364,144 @@ const triageReasons = {
   expired: "This incident arrived outside the automatic review window.",
 };
 
-function AutomaticTriageSetting({ session }: { session: SiteSession }) {
-  const fetched = useRead<TriageSetting>(session.operator.automaticTriageAvailable ? session : undefined, "automatic-triage", 10000);
-  const [saved, setSaved] = useState<{ session: SiteSession; value: TriageSetting }>();
+function useReviewSetting<T extends ReviewSetting>(session: SiteSession, path: string, available = true) {
+  const fetched = useRead<T>(available ? session : undefined, path, 10000);
+  const [saved, setSaved] = useState<{ session: SiteSession; value: T }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const local = saved?.session === session ? saved.value : undefined;
-  const settings = fetched && local && local.revision >= fetched.revision ? local : fetched;
-  if (!settings?.available || !settings.canManage) return null;
-
-  async function save(selected: TriageSetting) {
+  const settings = fetched && local && local.revision > fetched.revision ? local : fetched;
+  async function save(selected: T) {
     setBusy(true);
     setError("");
     try {
-      const value = await siteRequest(session, "automatic-triage", { enabled: !selected.enabled, revision: selected.revision }) as TriageSetting;
+      const value = await siteRequest(session, path, { enabled: !selected.enabled, revision: selected.revision }) as T;
       setSaved({ session, value });
     } catch (issue) {
       if (issue instanceof SiteRequestError && issue.status === 409) setSaved(undefined);
-      setError(issue instanceof Error ? issue.message : "Unable to update automatic triage.");
+      setError(issue instanceof Error ? issue.message : "Unable to update the site review setting.");
     } finally {
       setBusy(false);
     }
   }
+  return { settings, busy, error, save };
+}
+
+function AIUsageAndQuota({ session }: { session: SiteSession }) {
+  const fetched = useRead<AIQuota | { available: false }>(session, "ai-quota", 3000);
+  const [saved, setSaved] = useState<AIQuota>();
+  const [draft, setDraft] = useState<QuotaDraft>();
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  if (!fetched?.available) return null;
+  const quota = saved && saved.revision > fetched.revision ? saved : fetched;
+  const values = draft ?? { dailyLimit: String(quota.dailyLimit), operatorReserve: String(quota.operatorReserve), revision: quota.revision };
+  const spent = quota.usage.operator + quota.usage.triage + quota.usage.frame + quota.usage.fallback;
+
+  function edit(key: "dailyLimit" | "operatorReserve", value: string) {
+    setDraft({ ...values, [key]: value });
+    setMessage("");
+    setError("");
+  }
+
+  async function save() {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      const next = await siteRequest(session, "ai-quota", {
+        dailyLimit: Number(values.dailyLimit), operatorReserve: Number(values.operatorReserve), revision: values.revision,
+      }) as AIQuota;
+      setSaved(next);
+      setDraft(undefined);
+      setMessage("AI quota saved.");
+    } catch (issue) {
+      if (issue instanceof SiteRequestError && issue.status === 409) setDraft(undefined);
+      setError(issue instanceof Error ? issue.message : "Unable to save the site AI quota.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <details className="gv-triage-section">
+    <summary>AI usage and quota <span>{spent} / {quota.dailyLimit} calls today</span></summary>
+    <div className="gv-triage-content">
+      <dl className="gv-ai-usage" aria-label="Today's AI usage">
+        <div><dt>Operator requests</dt><dd>{quota.usage.operator}</dd></div>
+        <div><dt>Automatic triage</dt><dd>{quota.usage.triage}</dd></div>
+        <div><dt>Automatic frame reviews</dt><dd>{quota.usage.frame}</dd></div>
+        <div><dt>Automatic Pegasus fallbacks</dt><dd>{quota.usage.fallback}</dd></div>
+      </dl>
+      <dl className="gv-ai-usage" aria-label="Remaining AI calls">
+        <div><dt>Available to operators</dt><dd>{quota.operatorRemaining}</dd></div>
+        <div><dt>Reserved for operators</dt><dd>{quota.protectedRemaining}</dd></div>
+        <div><dt>Available to automation</dt><dd>{quota.automaticRemaining}</dd></div>
+      </dl>
+      <p>Resets <time dateTime={quota.resetsAt}>{clock(quota.resetsAt)}</time>.</p>
+      {quota.canManage && <form className="gv-form gv-ai-quota-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+        <label>Daily AI call limit
+          <input type="number" required min={1} max={500} value={values.dailyLimit} disabled={saving}
+            onChange={(event) => edit("dailyLimit", event.target.value)} />
+        </label>
+        <label>Operator reserve
+          <input type="number" required min={1} max={Number(values.dailyLimit) || 1} value={values.operatorReserve} disabled={saving}
+            onChange={(event) => edit("operatorReserve", event.target.value)} />
+        </label>
+        <p>The reserve is available only to operator requests. Changes apply to future calls and usage already recorded today still counts.</p>
+        <button className="gv-button" type="submit" disabled={!draft || saving}>{saving ? "Saving…" : "Save AI quota"}</button>
+        {message && <p role="status">{message}</p>}
+        {error && <p role="alert">{error}</p>}
+      </form>}
+    </div>
+  </details>;
+}
+
+function AutomaticTriageSetting({ session }: { session: SiteSession }) {
+  const { settings, busy, error, save } = useReviewSetting<TriageSetting>(session, "automatic-triage", session.operator.automaticTriageAvailable === true);
+  if (!settings?.available || !settings.canManage) return null;
 
   return <details className="gv-triage-section">
     <summary>Automatic AI triage <span>{settings.enabled ? "On" : "Off"}</span></summary>
     <div className="gv-triage-content">
       <p>Summarize new camera-linked incidents from recorded timeline events. Each review includes timestamps that open in replay.</p>
-      <p>{placementName(settings.placement)} · Event metadata only · Up to {settings.dailyLimit} AI reviews per day</p>
+      <p>{reviewModel(settings.model) ?? placementName(settings.placement)} · Event metadata only · Up to {settings.dailyLimit} AI reviews per day</p>
       <label className="gv-checkbox">
         <input type="checkbox" checked={settings.enabled} disabled={busy} onChange={() => void save(settings)} />
         Enable automatic AI triage
+      </label>
+      {error && <p role="alert">{error}</p>}
+    </div>
+  </details>;
+}
+
+function AutomaticFrameReviewSetting({ session }: { session: SiteSession }) {
+  const { settings, busy, error, save } = useReviewSetting<ReviewSetting>(session, "automatic-frame-review");
+  if (!settings?.available || !settings.canManage) return null;
+  return <details className="gv-triage-section">
+    <summary>Automatic frame review <span>{settings.enabled ? "On" : "Off"}</span></summary>
+    <div className="gv-triage-content">
+      <p>Send one privacy-masked event frame to Nova for each new camera incident in an approved boundary. Operators can review the result in incident replay.</p>
+      <p>Uses the site’s automatic quota. Enable automatic video fallback to use Pegasus when Nova is unable to verify the frame.</p>
+      <label className="gv-checkbox">
+        <input type="checkbox" checked={settings.enabled} disabled={busy} onChange={() => void save(settings)} />
+        Enable automatic frame review
+      </label>
+      {error && <p role="alert">{error}</p>}
+    </div>
+  </details>;
+}
+
+function AutomaticVideoFallbackSetting({ session }: { session: SiteSession }) {
+  const { settings, busy, error, save } = useReviewSetting<ReviewSetting>(session, "ai-review-settings");
+  if (!settings?.available || !settings.canManage) return null;
+  return <details className="gv-triage-section">
+    <summary>Automatic video fallback <span>{settings.enabled ? "On" : "Off"}</span></summary>
+    <div className="gv-triage-content">
+      <p>When Nova is unable to verify a frame during an automatic or operator-requested review, send up to 12 seconds of privacy-masked, silent video to Pegasus.</p>
+      <label className="gv-checkbox">
+        <input type="checkbox" checked={settings.enabled} disabled={busy} onChange={() => void save(settings)} />
+        Enable automatic video fallback
       </label>
       {error && <p role="alert">{error}</p>}
     </div>
@@ -323,7 +553,10 @@ export function IntelligencePosture({ session, workspace, onCamera, onBoundary }
   const device = useRead<Degradation>(session, "device-degradation", 30000);
   const fusion = useRead<FusionRead>(session, "sensor-fusion", 10000);
   return <>
+    <AIUsageAndQuota key={session.base + "/" + session.operator.subject} session={session} />
     <AutomaticTriageSetting session={session} />
+    <AutomaticFrameReviewSetting session={session} />
+    <AutomaticVideoFallbackSetting session={session} />
     {device?.enabled && <details className="gv-triage-section">
       <summary>Device degradation warnings</summary>
       <div className="gv-triage-content">

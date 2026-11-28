@@ -198,8 +198,8 @@ The `usage_events` table has an RLS insert policy: `auth.uid() = user_id`. Even 
 
 ```bash
 curl -s -X POST \
-  "https://anwkkdzdxfcufxijqxff.supabase.co/auth/v1/token?grant_type=password" \
-  -H "apikey: sb_publishable_Ezq_RSeF65_vBfZVPeLNtg_nTBvmrAN" \
+  "${SUPABASE_URL}/auth/v1/token?grant_type=password" \
+  -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"email":"your@email.com","password":"yourpassword"}' | jq .
 ```

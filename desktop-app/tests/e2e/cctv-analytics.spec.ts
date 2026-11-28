@@ -141,6 +141,32 @@ async function stop(child: ChildProcess) {
   try { await done; } finally { clearTimeout(timer); }
 }
 
+async function promoteFixtureRules(gateway: string, headers: HeadersInit, names: string[]) {
+  const endpoint = gateway + "/api/site/";
+  const configuration = await fetch(endpoint + "configuration", { headers }).then((response) => response.json());
+  const post = (path: string, body: object) => fetch(endpoint + path, {
+    headers, method: "POST", body: JSON.stringify(body),
+  });
+  const publishedVersion = configuration.publishedVersion as number;
+  for (const camera of configuration.published.sensors) {
+    for (const rule of camera.analyticsRules ?? []) {
+      if (!names.includes(rule.name)) continue;
+      const response = await post("assets", { operation: "accept-rule", version: publishedVersion, cameraId: camera.id,
+        ruleId: rule.id, note: "Synthetic qualification receipt for the browser fixture.",
+        measurements: { truePositives: 10, falsePositives: 0, missedEvents: 0, cameraHours: 1,
+          p95LatencySeconds: 1, minimumRecall: .9, maximumFalseAlarmsPerHour: 1, maximumP95Seconds: 2 } });
+      expect(response.status, await response.text()).toBe(200);
+      rule.mode = "alert";
+    }
+  }
+  const draft = await post("configuration", { operation: "save", publishedVersion, draftRevision: configuration.draftRevision,
+    configuration: configuration.published });
+  expect(draft.status, await draft.clone().text()).toBe(200);
+  const publish = await post("configuration", { operation: "publish", publishedVersion, draftRevision: (await draft.json()).draftRevision,
+    message: "Promote fixture rules after acceptance" });
+  expect(publish.status, await publish.text()).toBe(200);
+}
+
 test("cloud and on-premises CCTV workers produce incidents and follow published compute placement", async ({ page, baseURL }) => {
   test.skip(![python, yolo11 ?? ground, drone, groundImage, droneImage, mediaMtx].every(Boolean), "Configure the local analytics models, two fixture images, and MediaMTX.");
   test.setTimeout(180_000);
@@ -228,7 +254,8 @@ test("cloud and on-premises CCTV workers produce incidents and follow published 
     await writeFile(workers, JSON.stringify({ "yard-camera": { cloud: groundToken, "on-premises": localGroundToken },
       "sky-camera": { "on-premises": droneToken } }));
     gatewayPort = (await spawnReady(start("python3", [gatewayScript, "--port", "0", "--state-dir", state, "--allow-source", "127.0.0.1/32",
-      "--site-access", access, "--telemetry-devices", tokens, "--analytics-workers", workers, "--axis-recorder", recorderAddress]), /Camera gateway listening on 127\.0\.0\.1:(\d+)/))[1];
+      "--site-access", access, "--origin", baseURL!, "--telemetry-devices", tokens, "--analytics-workers", workers,
+      "--axis-recorder", recorderAddress]), /Camera gateway listening on 127\.0\.0\.1:(\d+)/))[1];
     const gateway = `http://127.0.0.1:${gatewayPort}`;
     connectivity.listen(0, "127.0.0.1"); await once(connectivity, "listening");
     const uplink = "https://127.0.0.1:" + (connectivity.address() as { port: number }).port;
@@ -319,13 +346,13 @@ test("cloud and on-premises CCTV workers produce incidents and follow published 
     await editCamera("Yard CCTV");
     await editRule("Yard CCTV", "Yard entry", "zone-entry", "observe");
     await editCamera("Yard CCTV");
-    await editRule("Yard CCTV", "No stopping", "restricted-stop", "alert");
+    await editRule("Yard CCTV", "No stopping", "restricted-stop", "observe");
     await editCamera("Yard CCTV");
     await editRule("Yard CCTV", "Observed vehicle stop", "restricted-stop", "observe", true);
     await editCamera("Yard CCTV");
-    await editRule("Yard CCTV", "Time in yard", "zone-dwell", "alert");
+    await editRule("Yard CCTV", "Time in yard", "zone-dwell", "observe");
     await editCamera("Sky CCTV");
-    await editRule("Sky CCTV", "Sky watch", "drone-sighting", "alert");
+    await editRule("Sky CCTV", "Sky watch", "drone-sighting", "observe");
     await button(page, "Draft mode · Review changes").click();
     await button(posture, "Save site draft").click();
     await expect(posture.getByText("Shared site draft saved.")).toBeVisible();
@@ -401,6 +428,11 @@ test("cloud and on-premises CCTV workers produce incidents and follow published 
       kind: "owlv2", path: drone, fps: .3, device: process.env.PROXIGO_CCTV_OWLV2_DEVICE ?? "cpu",
     }, 768, 512, "on-premises");
     await expect.poll(async () => {
+      const snapshots = await fetch(gateway + "/api/site/monitoring", { headers: adminHeaders }).then((response) => response.json());
+      return ["yard-camera", "sky-camera"].every((id) => snapshots.analyticsWorkers[id]?.state === "running");
+    }, { timeout: 35_000 }).toBe(true);
+    await promoteFixtureRules(gateway, adminHeaders, ["No stopping", "Time in yard", "Sky watch"]);
+    await expect.poll(async () => {
       const status = await fetch(gateway + "/api/site/monitoring", { headers: adminHeaders }).then((response) => response.json());
       return status.alerts.some((alert: { observation: { eventType: string } }) => alert.observation.eventType === "restricted-stop");
     }, { timeout: 12_000 }).toBe(true);
@@ -416,7 +448,7 @@ test("cloud and on-premises CCTV workers produce incidents and follow published 
     await review.getByLabel("Current published version").check();
     await review.getByRole("button", { name: /^Person entered zone · Yard entry/ }).first().click();
     const observation = review.getByRole("region", { name: "Selected CCTV observation" });
-    await expect(observation).toContainText("Version 2");
+    await expect(observation).toContainText("Version 3");
     await button(observation, "Review recording").click();
     await expect(observation.locator("video")).toBeVisible({ timeout: 22_000 });
     await expect.poll(() => observation.locator("video").evaluate((element: HTMLVideoElement) => element.videoWidth), { timeout: 12_000 }).toBeGreaterThan(0);
@@ -445,7 +477,11 @@ test("cloud and on-premises CCTV workers produce incidents and follow published 
     await button(report, "Refresh report").click();
     await expect(yardReport.getByRole("region", { name: "Day", exact: true }).getByText(/Mean gateway delivery/)).toBeVisible();
     const hidden = await fetch(gateway + "/api/site/analytics-review?status=all", { headers: { Authorization: "Bearer " + viewerToken } });
-    expect((await hidden.json()).entries).toEqual([]);
+    expect((await hidden.json()).entries).toEqual(expect.arrayContaining([expect.objectContaining({
+      event: expect.objectContaining({ cameraId: "sky-camera" }),
+    })]));
+    expect((await fetch(gateway + "/api/site/analytics-review?camera=yard-camera&status=all",
+      { headers: { Authorization: "Bearer " + viewerToken } }).then((response) => response.json())).entries).toEqual([]);
     const scopedReport = await fetch(gateway + "/api/site/analytics-report", { headers: { Authorization: "Bearer " + viewerToken } }).then((response) => response.json());
     expect(scopedReport.rules.map((rule: { cameraId: string }) => rule.cameraId)).toEqual(["sky-camera"]);
     await button(rail, "Alerts").click();
@@ -481,11 +517,19 @@ test("cloud and on-premises CCTV workers produce incidents and follow published 
     await button(page, "Draft mode · Review changes").click();
     await button(posture, "Save site draft").click();
     await expect(posture.getByText("Shared site draft saved.")).toBeVisible();
+    const move = await fetch(gateway + "/api/site/configuration", { headers: adminHeaders }).then((response) => response.json());
+    const restaged = await update({ operation: "save", publishedVersion: move.publishedVersion, draftRevision: move.draftRevision,
+      configuration: { ...move.draft, sensors: move.draft.sensors.map((sensor: { id: string; analyticsRules: { mode: string }[] }) =>
+        sensor.id === "yard-camera" ? { ...sensor, analyticsRules: sensor.analyticsRules.map((rule) => ({ ...rule, mode: "observe" })) } : sensor) } });
+    expect(restaged.status).toBe(200);
+    await page.reload();
+    await connect();
+    if (await versionSummary.locator("..").getAttribute("open") === null) await versionSummary.click();
     await posture.getByLabel("Version note").fill("Move yard analytics on-premises");
     await button(posture, "Publish saved site draft").click();
-    await expect(page.getByText("Version 3", { exact: true })).toBeVisible();
+    await expect(page.getByText("Version 4", { exact: true })).toBeVisible();
     expect((await workerRequest("yard-camera", groundToken)).status).toBe(403);
-    expect(await (await workerRequest("yard-camera", localGroundToken)).json()).toMatchObject({ placement: "on-premises", version: 3 });
+    expect(await (await workerRequest("yard-camera", localGroundToken)).json()).toMatchObject({ placement: "on-premises", version: 4 });
     await expect.poll(() => cloudClients.size, { timeout: 9000 }).toBe(0);
     connectivity.closeAllConnections();
     await new Promise<void>((resolve) => connectivity.close(() => resolve()));
@@ -494,7 +538,7 @@ test("cloud and on-premises CCTV workers produce incidents and follow published 
       const status = await fetch(gateway + "/api/site/monitoring", { headers: adminHeaders }).then((response) => response.json());
       return status.siteEvents.some((event: { observation: { sensorId: string; analytics?: { placement: string; policyVersion: number } } }) => {
         const evidence = event.observation.analytics;
-        return event.observation.sensorId === "yard-camera" && evidence?.placement === "on-premises" && evidence.policyVersion === 3;
+        return event.observation.sensorId === "yard-camera" && evidence?.placement === "on-premises" && evidence.policyVersion === 4;
       });
     }, { timeout: 20_000 }).toBe(true);
   } finally {
@@ -925,7 +969,7 @@ async function exerciseCameraSite(page: Page, baseURL: string, testInfo: TestInf
       nativeArgs.push("--onvif-analytics", enrollment);
     }
     const gatewayPort = (await spawnReady(start("python3", [gatewayScript, "--port", "0", "--state-dir", join(directory, "gateway"),
-      "--allow-source", "127.0.0.1/32", "--site-access", access, "--analytics-workers", workers, ...nativeArgs]), /Camera gateway listening on 127\.0\.0\.1:(\d+)/))[1];
+      "--allow-source", "127.0.0.1/32", "--site-access", access, "--origin", baseURL, "--analytics-workers", workers, ...nativeArgs]), /Camera gateway listening on 127\.0\.0\.1:(\d+)/))[1];
     const gateway = "http://127.0.0.1:" + gatewayPort;
     const update = (payload: object) => fetch(gateway + "/api/site/configuration", { headers, method: "POST", body: JSON.stringify(payload) });
     const specialRule = dockFixture ? dockFixture.policy.rules[0] : stopVideo ? { id: "roadway-stop", name: "Roadway stop", kind: "restricted-stop", object: "vehicle",
@@ -937,7 +981,7 @@ async function exerciseCameraSite(page: Page, baseURL: string, testInfo: TestInf
       boundaryId: "entrance", mode: "observe", minimumScore: .25, minimumPixels: 12, seconds: .5,
       points: [[.04, .08], [.14, .08], [.14, .18], [.04, .18]] };
     const stairsRule = { id: "stairs", name: "School stairs crossing", kind: "line-crossing", object: "person",
-      boundaryId: "entrance", mode: "alert", minimumScore: .25, minimumPixels: 12, seconds: .5,
+      boundaryId: "entrance", mode: "observe", minimumScore: .25, minimumPixels: 12, seconds: .5,
       direction: "negative", scaleCrossingBuffer: true, points: [[.58, .70], [.58, .91]] };
     const configuration = {
       sensors: [...cameras.map(({ id, name, rotated }) => ({ id, name, modality: "vision", position: [-122.3, 37.78], analyticsPlacement: "on-premises",
@@ -1013,6 +1057,8 @@ async function exerciseCameraSite(page: Page, baseURL: string, testInfo: TestInf
     const dockEvents = new Set<string>();
     const windows = stairs || dwellCycles ? 0 : cameraCount === 1 ? 1 : 2;
     let intelligenceJob: string | undefined;
+    const concurrentCameras = new Set<string>();
+    let concurrencyCheck: Promise<void> | undefined;
     const sitePost = (route: string, body: object, token = admin) => fetch(gateway + "/api/site/" + route, {
       headers: { ...headers, Authorization: "Bearer " + token }, method: "POST", body: JSON.stringify(body),
     });
@@ -1036,6 +1082,21 @@ async function exerciseCameraSite(page: Page, baseURL: string, testInfo: TestInf
         expect(request.status).toBe(202);
         intelligenceJob = (await request.json()).id;
         await expect.poll(() => inferenceFixture?.requests.length, { timeout: 4000 }).toBe(1);
+        const activeRequest = inferenceFixture.requests[0];
+        concurrencyCheck = (async () => {
+          const deadline = Date.now() + 20000;
+          while (Date.now() < deadline) {
+            const site = await siteMonitoring();
+            for (const { id } of workerCameras) {
+              const worker = site.analyticsWorkers[id];
+              const measurement = worker?.reportedAt * 1000;
+              if (worker?.state === "running" && measurement >= activeRequest.startedAt &&
+                measurement <= (activeRequest.endedAt ?? Date.now())) concurrentCameras.add(id);
+            }
+            if (activeRequest.endedAt || concurrentCameras.size === workerCameras.length) return;
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        })();
         const playlist = await fetch(stream + "index.m3u8").then((response) => response.text());
         const segment = playlist.match(/^segment-\d+\.ts$/m)?.[0];
         expect(segment).toBeTruthy();
@@ -1097,12 +1158,13 @@ async function exerciseCameraSite(page: Page, baseURL: string, testInfo: TestInf
     }
     if (intelligenceJob && inferenceFixture) {
       const request = inferenceFixture.requests[0];
+      await concurrencyCheck;
       await expect.poll(async () => (await siteRead("ai-jobs/" + intelligenceJob)).state, { timeout: 20000 }).toBe("ready");
-      expect(request.endedAt).toBeGreaterThan(lastReport * 1000);
+      expect(concurrentCameras.size).toBe(cameraCount);
       expect(request.frames).toHaveLength(0);
       await testInfo.attach("Concurrent site intelligence load", {
         body: JSON.stringify({ cameraCount, playback: "segment delivered", state: "ready",
-          startedAt: request.startedAt, lastCameraReport: lastReport * 1000, endedAt: request.endedAt }),
+          startedAt: request.startedAt, workersReportingDuringRequest: concurrentCameras.size, endedAt: request.endedAt }),
         contentType: "application/json",
       });
     }
@@ -1192,7 +1254,10 @@ async function exerciseCameraSite(page: Page, baseURL: string, testInfo: TestInf
       expect.soft(cycleResults.filter(({ cycles }) => cycles.some((times) => times.length !== 1)), "Exactly one matching dwell per camera and loop").toEqual([]);
     }
 
-    if (stairs) await verifyStairCrossings(testInfo, clocks, siteMonitoring, modelMatches);
+    if (stairs) {
+      await verifyStairCrossings(testInfo, clocks, siteMonitoring, modelMatches);
+      await promoteFixtureRules(gateway, headers, ["School stairs crossing"]);
+    }
 
     await page.addInitScript(() => localStorage.setItem("proxigo.global-view.view.v1", "list"));
     await page.goto(baseURL);
@@ -1225,7 +1290,7 @@ async function exerciseCameraSite(page: Page, baseURL: string, testInfo: TestInf
       await button(rail, "Alerts").click();
       const alert = page.getByRole("region", { name: "Alerts", exact: true })
         .getByRole("button", { name: /^Person crossed line.*School stairs crossing/ }).first();
-      await alert.click();
+      await alert.click({ timeout: 60_000 });
       const evidence = page.getByRole("region", { name: "CCTV analytics evidence" });
       await expect(evidence).toContainText("School stairs crossing");
       await expect(evidence).toContainText("On-premises");

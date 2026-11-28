@@ -600,11 +600,17 @@ test("published held-open door and camera incident persists with both Chrome ope
     await expect(boundaryInsights).toContainText("Recording follow-up required");
     await expect(boundaryInsights).toContainText("Confirmed dark image");
     await expect(boundaryInsights).toContainText("Pilot door held open");
+    let recordingChecksInterrupted = false;
+    await second.route("**/api/site/assets", async (route) => {
+      recordingChecksInterrupted = true;
+      await route.abort("connectionreset");
+    }, { times: 1 });
     await button(rail(second), "Posture").click();
     const remoteInsights = posture(second).getByRole("region", { name: "Site insights" });
     await expect(remoteInsights).toContainText("Your assigned devices");
     await button(remoteInsights, "Inspect East access road").click();
     await expect(remoteInsights).toContainText("Recording follow-up required");
+    expect(recordingChecksInterrupted).toBe(true);
     await ready.getByLabel("Played the camera clip at the event time").check();
     await button(ready, "Save commissioning result").click();
     await expect(boundaryInsights).toContainText("Recording verified by drill");

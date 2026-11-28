@@ -4,6 +4,10 @@ The enterprise portal reads each site's gateway through the existing organizatio
 
 ## Run a guided incident
 
+In **Alerts → Open incident backlog**, the count covers all open incidents within the operator’s scope. Load older pages without expanding the map’s initial incident window. Organization dispatch shows each site’s open count and offers the same backlog when more incidents are available.
+
+In **Posture → Needs attention**, open the affected camera, boundary, or incident from the coverage, feed, notification, acceptance, or AI review count. A rejected notification keeps its delivery ID and signed payload. Transient failures retry independently. A supervisor can requeue a delivery that was rejected permanently or exhausted its retry attempts.
+
 1. In **Posture → Site configuration and versions**, open a site draft and expand **Response procedures**. Choose Forced door, Held-open door, or Loss of critical camera coverage. A procedure can apply to a specific boundary. For door procedures, an unscoped definition applies where a boundary-specific definition is absent.
 2. Add a template, edit its instructions, connect the next steps, and set the escalation interval. Save the draft and publish it. The gateway validates the procedure with the rest of the configuration.
 3. In **Alerts**, open the incident, take ownership, and work through **Guided response**. Use the evidence link to open replay. The incident records who answered each step and retains the configuration version used to create the procedure.
@@ -40,7 +44,7 @@ The five required device columns are `id,name,type,longitude,latitude`. Supporte
 
 Use a WGS 84 GeoJSON FeatureCollection with a stable string `id`, a single closed exterior Polygon ring, and `name`, `kind`, and optional `floorId` properties. Allowed boundary kinds are Perimeter, Restricted, and Access. New boundaries are paused. Fix any preview errors, inspect the draft on the map, apply the import, and publish the saved draft separately. [GeoJSON format](https://www.rfc-editor.org/info/rfc7946/)
 
-In **Posture**, use **Site insights** for modeled coverage, site field checks, live video, recorder drill results, and rule validation. Use **Site operations and connectors → Record rule validation** to document the evidence reviewed for a published rule, camera and model. Record site acceptance using independently labeled footage and the customer's threshold. A rule validation entry is a supervisor's sign-off.
+In **Posture**, use **Site insights** for modeled coverage, field checks, live video, recorder drill results, and rule acceptance. Publish a new or materially changed camera rule in **Observe** and verify the current worker reports its stream and model profile. In **Site operations and connectors → Camera rule acceptance**, a supervisor records true positives, false positives, missed events, camera-hours, and p95 latency against customer-agreed limits for recall, false alarms per hour, and latency. Passing measurements allow the same rule and profile to be promoted to **Alert**. Use authorized, independently reviewed footage and include the site's applicable lighting and operating conditions. For native camera rules, record the installed camera and producer configuration in the validation evidence.
 
 ## Connect a VMS
 
@@ -86,3 +90,10 @@ python scripts/dev/run_industry_vision_gate.py enterprise-integrated \
 ```
 
 Physical recorder firmware, licensed VMS versions, customer identity, site recovery, and detector quality on installed cameras require their own acceptance.
+
+For an eight-hour simulated operations soak, run the 12-camera quota test with `PROXIGO_POSTURE_SOAK_SECONDS=28800`. It checks two Chrome operator sessions, gateway restart, camera health recovery, the protected operator quota, and encrypted backup and restore. The attached report records gateway and signed webhook delivery latency, sampled recording availability, duplicate or missing fixture incidents, and manual review wait. Use a smaller value for a smoke test and the dedicated YOLO11 live-stream gate for detector throughput and quality.
+
+```bash
+cd desktop-app
+PROXIGO_POSTURE_SOAK_SECONDS=28800 npx playwright test tests/e2e/enterprise-upgrades.spec.ts -g "12-camera AI quota"
+```

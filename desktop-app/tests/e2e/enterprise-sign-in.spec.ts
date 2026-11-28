@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { createHash, generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { constants, createHash, generateKeyPairSync, randomUUID, sign, verify, X509Certificate } from "node:crypto";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { request as relayRequest, type IncomingMessage, type ServerResponse } from "node:http";
@@ -16,7 +16,7 @@ const dist = fileURLToPath(new URL("../../dist", import.meta.url));
 const footage = fileURLToPath(new URL("./fixtures/gate-recording.mp4", import.meta.url));
 const python = process.env.PROXIGO_ENTERPRISE_PYTHON;
 const mediaMtx = process.env.MEDIAMTX;
-const subject = "shared-directory-subject";
+const subject = "816f30dd-e201-4402-9bbb-954ccd454f2e";
 const admin = "9".repeat(64);
 const adapter = "8".repeat(64);
 const choose = (page: Page, label: string) => page.getByRole("navigation", { name: "Workspace panels" }).getByRole("button", { name: label, exact: true });
@@ -63,24 +63,30 @@ test("enterprise sign-in isolates organizations and live camera, incident, and s
   test.setTimeout(110_000);
   const folder = await mkdtemp(join(tmpdir(), "proxigo-oidc-e2e-"));
   const certPath = join(folder, "cert.pem"), keyPath = join(folder, "key.pem");
+  const clientCertPath = join(folder, "client-cert.pem"), clientKeyPath = join(folder, "client-key.pem");
   const children: ChildProcess[] = [];
   const servers: ReturnType<typeof createServer>[] = [];
   const contexts = await Promise.all([browser.newContext({ ignoreHTTPSErrors: true }), browser.newContext({ ignoreHTTPSErrors: true })]);
   let frontOrigin = "", directoryOrigin = "", portalPort = "";
-  let rejectNextToken: "tenant" | "audience" | "signature" | undefined;
+  let rejectNextToken: "tenant" | "audience" | "signature" | "missing-oid" | "invalid-oid" | "unenrolled-oid" | undefined;
   let lastCallback = "";
   const organizations = {
     alpha: { name: "Alpha Security", tenant: "directory-alpha", keys: generateKeyPairSync("rsa", { modulusLength: 2048 }) },
-    beta: { name: "Beta Security", tenant: "directory-beta", keys: generateKeyPairSync("rsa", { modulusLength: 2048 }) },
+    beta: { name: "Beta Security", tenant: "62b57f3c-20fe-4d62-b1e3-6cafef7fb8f2", keys: generateKeyPairSync("rsa", { modulusLength: 2048 }) },
   };
   type OrgId = keyof typeof organizations;
   const issuer = (org: OrgId) => `${directoryOrigin}/${org}`;
   const client = (org: OrgId) => org + "-global-view";
   const codes = new Map<string, { org: OrgId; query: URLSearchParams }>();
+  const assertions = new Set<string>();
   let exchanges = 0;
   try {
     execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1", "-keyout", keyPath,
       "-out", certPath, "-addext", "subjectAltName=IP:127.0.0.1", "-addext", "basicConstraints=critical,CA:TRUE"], { stdio: "ignore" });
+    execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=Portal client fixture",
+      "-keyout", clientKeyPath, "-out", clientCertPath], { stdio: "ignore" });
+    const clientCertificate = new X509Certificate(await readFile(clientCertPath));
+    const thumbprint = createHash("sha256").update(clientCertificate.raw).digest("base64url");
     const tls = { key: await readFile(keyPath), cert: await readFile(certPath) };
     const frontend = createServer(tls, (req, res) => {
       const upstream = relayRequest({ hostname: "127.0.0.1", port: portalPort, path: req.url, method: req.method, headers: req.headers }, (response) => {
@@ -106,7 +112,8 @@ test("enterprise sign-in isolates organizations and live camera, incident, and s
       if (resource === "authorize") {
         const query = url.searchParams;
         if (query.get("client_id") !== client(org) || query.get("redirect_uri") !== `${frontOrigin}${api}/callback/${org}`
-          || query.get("response_type") !== "code" || query.get("scope") !== "openid" || query.get("code_challenge_method") !== "S256"
+          || query.get("response_type") !== "code" || query.get("scope") !== (org === "beta" ? "openid profile" : "openid")
+          || query.get("code_challenge_method") !== "S256"
           || !query.get("code_challenge") || !query.get("nonce") || !query.get("state") || query.get("prompt") !== "login") return res.writeHead(400).end();
         const code = randomUUID();
         codes.set(code, { org, query });
@@ -120,17 +127,34 @@ test("enterprise sign-in isolates organizations and live camera, incident, and s
         const code = form.get("code") ?? "";
         const request = codes.get(code);
         const challenge = createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url");
-        const confidential = org === "alpha" ? req.headers.authorization === "Basic " + Buffer.from(client(org) + ":fixture-secret").toString("base64")
-          : form.get("client_id") === client(org) && form.get("client_secret") === "fixture-secret";
+        const now = Math.floor(Date.now() / 1000);
+        let confidential = req.headers.authorization === "Basic " + Buffer.from(client(org) + ":fixture-secret").toString("base64");
+        if (org === "beta") {
+          const [header, payload, signature] = (form.get("client_assertion") ?? "").split(".");
+          if (!header || !payload || !signature) return res.writeHead(400).end();
+          const decode = (segment: string) => JSON.parse(Buffer.from(segment, "base64url").toString());
+          const jwtHeader = decode(header), claims = decode(payload);
+          confidential = form.get("client_id") === client(org) && !form.has("client_secret") && !req.headers.authorization
+            && form.get("client_assertion_type") === "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            && jwtHeader.alg === "PS256" && jwtHeader["x5t#S256"] === thumbprint
+            && claims.iss === client(org) && claims.sub === client(org) && claims.aud === issuer(org) + "/token"
+            && typeof claims.jti === "string" && !assertions.has(claims.jti)
+            && claims.nbf <= now && claims.iat >= now - 10 && claims.exp > now && claims.exp <= now + 120
+            && verify("sha256", Buffer.from(`${header}.${payload}`), { key: clientCertificate.publicKey,
+              padding: constants.RSA_PKCS1_PSS_PADDING, saltLength: constants.RSA_PSS_SALTLEN_DIGEST }, Buffer.from(signature, "base64url"));
+          if (confidential) assertions.add(claims.jti);
+        }
         if (!request || request.org !== org || !confidential || challenge !== request.query.get("code_challenge")
           || form.get("grant_type") !== "authorization_code" || form.get("redirect_uri") !== request.query.get("redirect_uri")) return res.writeHead(400).end();
         codes.delete(code);
         exchanges++;
         const rejection = rejectNextToken;
         rejectNextToken = undefined;
-        const now = Math.floor(Date.now() / 1000);
+        const oid = rejection === "invalid-oid" ? "operator@example.test"
+          : rejection === "unenrolled-oid" ? randomUUID() : subject.toUpperCase();
         const token = encode({ alg: "RS256", kid: "directory-key" }) + "." + encode({ iss: issuer(org),
-          aud: rejection === "audience" ? "wrong-application" : client(org), sub: subject,
+          aud: rejection === "audience" ? "wrong-application" : client(org), sub: org === "alpha" ? subject : "pairwise-oidc-subject",
+          oid: org === "beta" && rejection !== "missing-oid" ? oid : undefined,
           exp: now + 600, iat: now, nonce: request.query.get("nonce"), tid: rejection === "tenant" ? "wrong-tenant" : account.tenant });
         const signer = rejection === "signature" ? organizations.alpha.keys.privateKey : account.keys.privateKey;
         return json({ id_token: token + "." + sign("sha256", Buffer.from(token), signer).toString("base64url") });
@@ -199,7 +223,8 @@ test("enterprise sign-in isolates organizations and live camera, incident, and s
     ]);
     const config = join(folder, "portal.json");
     const provider = (org: OrgId, sites: object) => ({ issuer: issuer(org), directoryTenant: organizations[org].tenant, tenantClaim: "tid", clientId: client(org),
-      clientSecret: "fixture-secret", tokenEndpointAuthMethod: org === "alpha" ? "client_secret_basic" : "client_secret_post", sites });
+      ...(org === "alpha" ? { clientSecret: "fixture-secret" } : { tokenEndpointAuthMethod: "private_key_jwt", subjectClaim: "oid",
+        clientCertificate: clientCertPath, clientPrivateKey: clientKeyPath }), sites });
     await writeFile(config, JSON.stringify({ publicOrigin: frontOrigin, organizations: { alpha: provider("alpha", { dock: aDock, annex: aAnnex, restricted: aRestricted }),
       beta: provider("beta", { dock: bDock }) } }));
     const service = spawn(python!, [portal, "--port", "0", "--frontend", dist, "--state", join(folder, "portal.sqlite3"), "--config", config],
@@ -235,17 +260,23 @@ test("enterprise sign-in isolates organizations and live camera, incident, and s
     await enter(alpha);
     await expect(alpha.getByText("Alpha Security · Alpha Dock")).toBeVisible();
 
-    for (const rejected of ["tenant", "audience", "signature"] as const) {
+    for (const rejected of ["tenant", "audience", "signature", "missing-oid", "invalid-oid"] as const) {
       rejectNextToken = rejected;
       await startLogin(beta, "beta");
       await enter(beta);
       await expect(beta.getByRole("alert")).toContainText("sign-in could not be completed");
       expect((await browserRequest(beta, api + "/session")).status).toBe(401);
     }
+    rejectNextToken = "unenrolled-oid";
+    await startLogin(beta, "beta");
+    await enter(beta);
+    await expect(beta.getByText("No sites are currently available to this account.")).toBeVisible();
+    await beta.getByRole("button", { name: "Sign out", exact: true }).click();
     await startLogin(beta, "beta");
     await enter(beta);
     await expect(beta.getByText("Beta Security · Beta Dock")).toBeVisible();
-    expect(exchanges).toBe(5);
+    expect(exchanges).toBe(8);
+    expect(assertions.size).toBe(7);
 
     for (const [page, org, site, own, foreign] of [[alpha, "alpha", "Alpha Dock", aDock, bDock], [beta, "beta", "Beta Dock", bDock, aDock]] as const) {
       const otherOrg = org === "alpha" ? "beta" : "alpha";

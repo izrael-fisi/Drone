@@ -8,6 +8,7 @@ export type SiteAssets = {
   recordingChecks?: { version: number; cameraId: string; boundaryId: string; createdAt: string; recording: boolean }[];
   testNotificationsEnabled?: boolean;
   validatedRules?: { cameraId: string; ruleId: string; createdAt: string; actor: string; note: string }[];
+  ruleAcceptances?: { cameraId: string; ruleId: string; createdAt: string; actor: string; note: string; passed: boolean }[];
 };
 
 export function useSiteAssets(session: SiteSession | undefined, version: number, active: boolean) {
@@ -20,20 +21,29 @@ export function useSiteAssets(session: SiteSession | undefined, version: number,
     const connected = session;
     const lifetime = new AbortController();
     let timer: number;
+    let retrying = false;
     async function load() {
+      let delay = 15_000;
       try {
         const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(6000)]);
         const assets: SiteAssets = await siteRequest(connected, "assets", undefined, signal);
-        if (!lifetime.signal.aborted) setSnapshot({ session: connected, version, assets });
+        if (lifetime.signal.aborted) return;
+        retrying = false;
+        setSnapshot({ session: connected, version, assets });
       } catch (error: unknown) {
         if (lifetime.signal.aborted) return;
         const denied = error instanceof SiteRequestError && [401, 403, 404].includes(error.status);
+        const transient = !(error instanceof SiteRequestError) || error.status >= 500 || error.status === 429;
+        if (transient && !retrying) {
+          delay = 1250;
+          retrying = true;
+        }
         const message = error instanceof Error ? error.message : "Could not load site checks.";
         setSnapshot((previous) => ({ session: connected, version, error: message,
           assets: !denied && previous?.session === connected && previous.version === version ? previous.assets : undefined }));
         if (denied) return;
       }
-      if (!lifetime.signal.aborted) timer = window.setTimeout(load, 15_000);
+      if (!lifetime.signal.aborted) timer = window.setTimeout(load, delay);
     }
     void load();
     return () => { lifetime.abort(); window.clearTimeout(timer); };

@@ -19,6 +19,7 @@ import tempfile
 import threading
 import time
 from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
+from urllib.error import HTTPError
 from urllib.request import ProxyHandler, Request, build_opener
 
 from onvif import CameraError, NoRedirect, OnvifDevice
@@ -58,6 +59,11 @@ MAX_CAMERAS = 128
 START_TIMEOUT = 17
 IDLE_TIMEOUT = 35
 DEFAULT_ORIGINS = tuple(f"http://{host}:{port}" for host in ("127.0.0.1", "localhost") for port in (1420, 4173, 4180))
+
+
+class GatewayHTTPServer(ThreadingHTTPServer):
+    # Opening Posture can bring several reads and camera requests in at once.
+    request_queue_size = 64
 
 
 def private_write(path, value):
@@ -193,10 +199,18 @@ class CameraGateway:
                          for boundary, state, cameras, updated, incident in db.execute(
                              "SELECT boundary,state,cameras,updated,incident FROM boundary_coverage ORDER BY boundary")
                          if actor["cameras"] == "*" or json.loads(cameras) and set(json.loads(cameras)) <= set(actor["cameras"])]
+            ai_attention = self.ai_jobs.attention(db, actor) if self.ai_jobs else None
             if not manages_site(actor):
-                return {"coverage": readiness}
+                return {"coverage": readiness, "aiAttention": ai_attention}
             telemetry = db.execute("SELECT max(received_at) FROM telemetry").fetchone()[0]
-            queued = db.execute("SELECT count(*),min(json_extract(payload,'$.occurredAt')) FROM alert_deliveries").fetchone()
+            queued = db.execute("SELECT count(*),min(json_extract(payload,'$.occurredAt')) FROM alert_deliveries WHERE blocked=0").fetchone()
+            failed_count = db.execute("SELECT count(*) FROM alert_deliveries WHERE failure IS NOT NULL").fetchone()[0]
+            failed = [{"sequence": sequence, "attempts": attempts, "reason": failure, "blocked": bool(blocked),
+                       "retryAt": retry, "incidentId": incident, "boundaryId": boundary}
+                      for sequence, attempts, failure, blocked, retry, incident, boundary in db.execute("""
+                SELECT sequence,attempts,failure,blocked,next_at,json_extract(payload,'$.incidentId'),json_extract(payload,'$.boundaryId')
+                FROM alert_deliveries WHERE failure IS NOT NULL ORDER BY blocked DESC,sequence DESC LIMIT 50
+            """)]
             video = db.execute("SELECT state,count(*) FROM recovery_jobs GROUP BY state").fetchall()
             caught_up = self.monitor.cases.progress(db)
         try:
@@ -204,7 +218,9 @@ class CameraGateway:
             backup_at = backup.get("createdAt")
         except (OSError, ValueError, TypeError):
             backup_at = None
-        return {"coverage": readiness, "lastTelemetryAt": telemetry, "notificationBacklog": queued[0], "oldestNotificationAt": queued[1],
+        return {"coverage": readiness, "aiAttention": ai_attention, "lastTelemetryAt": telemetry,
+                "notificationBacklog": queued[0], "oldestNotificationAt": queued[1],
+                "failedNotificationCount": failed_count, "failedNotifications": failed,
                 "recorderJobs": dict(video), "indexCurrent": caught_up, "lastBackupAt": backup_at}
 
     def validate_url(self, raw, schemes, allow_credentials=False):
@@ -406,9 +422,15 @@ class CameraGateway:
                 body = payload.encode()
                 request = Request(webhook, body, {"Content-Type": "application/json",
                                                  "X-Proxigo-Signature": hmac.new(secret, body, sha256).hexdigest()})
-                with opener.open(request, timeout=5):
-                    self.monitor.delivered(sequence)
-            except (OSError, sqlite3.Error):
+                try:
+                    with opener.open(request, timeout=5):
+                        self.monitor.delivered(sequence)
+                except HTTPError as error:
+                    error.close()
+                    self.monitor.delivery_failed(sequence, f"HTTP {error.code}", error.code in (408, 429) or error.code >= 500)
+                except OSError:
+                    self.monitor.delivery_failed(sequence, "Receiver unreachable", True)
+            except sqlite3.Error:
                 self.stopping.wait(3)
 
     def evaluate_site_response(self):
@@ -708,7 +730,8 @@ class Handler(BaseHTTPRequestHandler):
                                    "/api/site/configuration/preview", "/api/site/accounts", "/api/site/assets", "/api/site/commissioning-test", "/api/site/vms-playback",
                                    "/api/site/analytics-review", "/api/site/commissioning-runs", "/api/site/dock-schedules",
                                    "/api/site/cases", "/api/site/case-export", "/api/site/configuration/import", "/api/site/evidence-recording",
-                                   "/api/site/ai-jobs", "/api/site/automatic-triage", "/api/site/sensor-fusion")
+                                   "/api/site/ai-jobs", "/api/site/ai-quota", "/api/site/ai-review-settings", "/api/site/automatic-triage",
+                                   "/api/site/automatic-frame-review", "/api/site/sensor-fusion", "/api/site/retry-notification")
         evidence = self.path == "/api/clips/package" or self.path == "/api/clips/hold" and hasattr(self, "portal_actor")
         actor = self.site_actor() if site_write or evidence else None
         management = compare_digest(auth.encode(), ("Bearer " + gateway.token).encode())
@@ -757,14 +780,28 @@ class Handler(BaseHTTPRequestHandler):
                     if not gateway.ai_jobs:
                         raise PermissionError("AI review is disabled at this site.")
                     self.json(202, gateway.ai_jobs.create(actor, payload))
+                elif self.path.endswith("ai-review-settings"):
+                    if not gateway.ai_jobs:
+                        raise PermissionError("AI review is disabled at this site.")
+                    self.json(200, gateway.ai_jobs.review_settings(actor, payload))
+                elif self.path.endswith("ai-quota"):
+                    if not gateway.ai_jobs or not gateway.ai_jobs.provider:
+                        raise PermissionError("AI review is disabled at this site.")
+                    self.json(200, gateway.ai_jobs.quota.read(actor, payload))
                 elif self.path.endswith("automatic-triage"):
                     if not gateway.ai_jobs or not gateway.ai_jobs.automatic:
                         raise PermissionError("Automatic triage is unavailable at this site.")
                     self.json(200, gateway.ai_jobs.automatic.change(actor, payload))
+                elif self.path.endswith("automatic-frame-review"):
+                    if not gateway.ai_jobs or not gateway.ai_jobs.automatic_frames:
+                        raise PermissionError("Automatic frame review is unavailable at this site.")
+                    self.json(200, gateway.ai_jobs.automatic_frames.change(actor, payload))
                 elif self.path.endswith("sensor-fusion"):
                     if not gateway.sensor_fusion:
                         raise PermissionError("Gate sensor fusion is disabled at this site.")
                     self.json(200, gateway.sensor_fusion.review(actor, payload))
+                elif self.path.endswith("retry-notification"):
+                    self.json(200, gateway.monitor.retry_delivery(actor, payload.get("sequence")))
                 elif self.path.endswith("analytics-review"):
                     self.json(200, gateway.monitor.analytics_review.change(actor, payload))
                 elif self.path.endswith("commissioning-runs"):
@@ -926,7 +963,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.json(403, {"error": str(issue)})
             return
         job = AI_JOB_ROUTE.fullmatch(request.path)
-        if job or request.path in ("/api/site/ai-jobs", "/api/site/device-degradation", "/api/site/automatic-triage", "/api/site/sensor-fusion"):
+        if job or request.path in ("/api/site/ai-jobs", "/api/site/ai-quota", "/api/site/ai-review-settings", "/api/site/device-degradation",
+                                   "/api/site/automatic-triage", "/api/site/automatic-frame-review", "/api/site/sensor-fusion"):
             gateway = self.server.gateway
             actor = self.site_actor()
             if not actor:
@@ -939,11 +977,19 @@ class Handler(BaseHTTPRequestHandler):
                     data = gateway.ai_jobs.read(actor, job[1])
                 elif request.path.endswith("ai-jobs"):
                     data = gateway.ai_jobs.capabilities(actor) if gateway.ai_jobs else {"handoff": False, "clipReview": False}
-                elif request.path.endswith("automatic-triage"):
+                elif request.path.endswith("ai-review-settings"):
+                    data = gateway.ai_jobs.review_settings(actor) if gateway.ai_jobs else {"available": False}
+                elif request.path.endswith("ai-quota"):
+                    data = (gateway.ai_jobs.quota.read(actor) if gateway.ai_jobs and gateway.ai_jobs.provider
+                            else {"available": False})
+                elif request.path.endswith(("automatic-triage", "automatic-frame-review")):
                     identifier = parse_qs(request.query, max_num_fields=1).get("incidentId", [None])[0]
                     if identifier is not None and not 1 <= len(identifier) <= 450:
                         raise CameraError("Choose a valid incident.")
-                    automatic = gateway.ai_jobs.automatic if gateway.ai_jobs else None
+                    automatic = None
+                    if gateway.ai_jobs:
+                        automatic = (gateway.ai_jobs.automatic if request.path.endswith("automatic-triage")
+                                     else gateway.ai_jobs.automatic_frames)
                     data = automatic.read(actor, identifier) if automatic else {"available": False, "review": None}
                 elif request.path.endswith("device-degradation"):
                     data = gateway.device_degradation.read(actor) if gateway.device_degradation else {"enabled": False}
@@ -969,7 +1015,11 @@ class Handler(BaseHTTPRequestHandler):
             elif request.path.endswith("operations"):
                 self.json(200, self.server.gateway.operations(actor))
             elif request.path.endswith("dispatch"):
-                self.json(200, {**collaboration.monitor.dispatch(actor), "account": collaboration.session(actor)})
+                try:
+                    cursor = parse_qs(request.query, max_num_fields=1).get("cursor", [None])[0]
+                    self.json(200, {**collaboration.monitor.dispatch(actor, cursor), "account": collaboration.session(actor)})
+                except (CameraError, ValueError):
+                    self.json(400, {"error": "Choose a valid incident page."})
             elif request.path.endswith("incident-history"):
                 try:
                     identifier = parse_qs(request.query, max_num_fields=1).get("incidentId", [""])[0]
@@ -1269,7 +1319,7 @@ def main():
     gateway.recording_recovery = args.recording_recovery
     if args.commissioning_webhook:
         gateway.commissioning_webhook = (args.commissioning_webhook, webhook_secret.encode())
-    with ThreadingHTTPServer((args.host, args.port), Handler) as server:
+    with GatewayHTTPServer((args.host, args.port), Handler) as server:
         server.gateway = gateway
         server.origins = set(DEFAULT_ORIGINS + tuple(args.origin))
         cleanup = threading.Thread(target=gateway.clean_idle, daemon=True)

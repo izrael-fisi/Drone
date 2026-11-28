@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { once } from "node:events";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer as tlsServer } from "node:https";
+import { createServer as httpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,9 +37,11 @@ async function stop(child?: ChildProcess) {
   try { await done; } finally { clearTimeout(timer); }
 }
 
-async function start(state: string, roles: string, extras: string[] = [], port = "0") {
-  const child = spawn("python3", [source("gateway.py"), "--port", port, "--state-dir", state, "--site-access", roles,
-    "--allow-source", "127.0.0.1/32", ...extras], { stdio: ["ignore", "pipe", "pipe"] });
+async function start(state: string, roles: string, extras: string[] = [], port = "0", python = "python3", entry = source("gateway.py"),
+  env = process.env) {
+  const origins = process.env.PROXIGO_PLAYWRIGHT_PORT ? ["--origin", "http://127.0.0.1:" + process.env.PROXIGO_PLAYWRIGHT_PORT] : [];
+  const child = spawn(python, [entry, "--port", port, "--state-dir", state, "--site-access", roles,
+    "--allow-source", "127.0.0.1/32", ...origins, ...extras], { stdio: ["ignore", "pipe", "pipe"], env });
   let output = "";
   try {
     const address = await new Promise<string>((resolve, reject) => {
@@ -104,6 +107,807 @@ function makeCertificate(directory: string) {
     "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert, "-days", "1"], { stdio: "pipe" });
   return { cert, key };
 }
+
+test("live Bedrock reviews use Nova for triage and frames and Pegasus for clickable video segments", async ({ browser, baseURL }) => {
+  const fixture = process.env.PROXIGO_BEDROCK_TEST_CLIP;
+  test.skip(!fixture, "Set PROXIGO_BEDROCK_TEST_CLIP to a public MP4 showing a person at its midpoint to run live inference.");
+  test.setTimeout(125_000);
+  const directory = await mkdtemp(join(tmpdir(), "proxigo-bedrock-review-"));
+  const state = join(directory, "state"), roles = join(directory, "roles.json"), adapters = join(directory, "adapters.json");
+  const settings = join(directory, "intelligence.json"), cameraKey = "3".repeat(48);
+  const supervisor = await browser.newPage(), operator = await browser.newPage();
+  let gateway: Awaited<ReturnType<typeof start>> | undefined;
+  try {
+    const duration = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=1", fixture!], { encoding: "utf8" }).trim());
+    expect(duration).toBeGreaterThan(2);
+    const offset = Math.round(duration * 500) / 1000;
+    await mkdir(join(state, "clips"), { recursive: true });
+    await writeFile(join(state, "cameras.json"), JSON.stringify({ [camera.id]: { key: cameraKey, url: "rtsp://127.0.0.1/fixture" } }));
+    await writeFile(roles, JSON.stringify(roster));
+    await writeFile(adapters, JSON.stringify({ door: adapter, [camera.id]: adapter }));
+    await writeFile(settings, JSON.stringify({ ai: {
+      provider: "bedrock", region: "us-east-1", approveUsGeography: true, allowAutomatedTriage: true,
+      clipReview: true, cloudClips: true, videoReview: true, cloudVideo: true, clipBoundaries: [boundary.id],
+    } }));
+    gateway = await start(state, roles, ["--site-intelligence", settings, "--axis-recorder", "http://127.0.0.1:47999",
+      "--telemetry-devices", adapters, "--require-camera-session"], "0", process.env.PROXIGO_BEDROCK_TEST_PYTHON);
+    const { address } = gateway;
+    await config(address, "save", { configuration: { sensors: [{ ...camera, cameraGatewayKind: "rtsp",
+      cameraFeedUrl: address + "/streams/" + cameraKey + "/index.m3u8" }, door],
+    boundaries: [{ ...boundary, sensorIds: [camera.id, door.id] }] } });
+    await config(address, "publish", { message: "Live Bedrock test" });
+    const posture = await enter(supervisor, baseURL!, address, adminToken);
+    await posture.locator("summary", { hasText: "Automatic AI triage" }).click();
+    await expect(posture.getByText(/Nova 2 Lite · Event metadata only/)).toBeVisible();
+    const toggle = posture.getByRole("checkbox", { name: "Enable automatic AI triage" });
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    const stamp = Date.now();
+    const clipId = hash(cameraKey + ":" + stamp).slice(0, 32);
+    await copyFile(fixture!, join(state, "clips", clipId + ".mp4"));
+    await writeFile(join(state, "clips", clipId + ".json"), JSON.stringify({
+      cameraKey, clipId, occurredAt: stamp, durationSeconds: duration, eventOffsetSeconds: offset,
+      expiresAt: Math.floor(stamp / 1000) + 600,
+    }));
+    for (const observation of [
+      { id: "forced", sensorId: door.id, eventType: "door-forced-open", occurredAt: new Date(stamp).toISOString(), summary: "Forced door at the fixture" },
+      { id: "motion", sensorId: camera.id, eventType: "motion", occurredAt: new Date(stamp + 800).toISOString(), summary: "Motion at the gate camera" },
+    ]) await api(address, "telemetry", { type: "observation", ...observation }, adapter);
+
+    await operator.addInitScript(() => {
+      function capture(event: Event) {
+        if (event.target instanceof HTMLVideoElement)
+          ((window as Window & { seeks?: number[] }).seeks ??= []).push(event.target.currentTime);
+      }
+      document.addEventListener("seeked", capture, true);
+      document.addEventListener("playing", capture, true);
+    });
+    await enter(operator, baseURL!, address, operatorToken);
+    const pane = await openDoor(operator);
+    const facts = pane.getByLabel("Recorded timeline summary");
+    await expect(facts.getByText(/Forced-open door reported/)).toBeVisible({ timeout: 55_000 });
+    await expect(facts.getByText(/Camera motion reported/)).toBeVisible();
+    await pane.getByRole("button", { name: "Replay timeline" }).click();
+    await pane.getByRole("button", { name: "Review with AI" }).click();
+    await pane.getByRole("button", { name: "Analyze event frames" }).click();
+    await expect(pane.getByRole("heading", { name: "Draft observation · Occupancy observed" })).toBeVisible({ timeout: 25_000 });
+    const seekTimes = () => operator.evaluate(() => (window as Window & { seeks?: number[] }).seeks ?? []);
+    const frame = pane.getByRole("button", { name: /^Seek to .*Event frame/ });
+    await frame.click();
+    await expect.poll(async () => (await seekTimes()).some((value) => Math.abs(value - offset) <= .26)).toBeTruthy();
+
+    await pane.getByRole("button", { name: "Analyze video clip" }).click();
+    const video = pane.getByLabel("AI video review");
+    const startButton = video.getByRole("button", { name: /^Start · / }).first();
+    const endButton = video.getByRole("button", { name: /^End · / }).first();
+    await expect(startButton).toBeVisible({ timeout: 40_000 });
+    for (const button of [startButton, endButton]) {
+      const time = await button.locator("time").getAttribute("datetime");
+      const expected = (Date.parse(time!) - stamp) / 1000 + offset;
+      expect(expected).toBeGreaterThanOrEqual(-.001);
+      expect(expected).toBeLessThanOrEqual(duration + .001);
+      const before = (await seekTimes()).length;
+      await button.click();
+      await expect.poll(async () => (await seekTimes()).slice(before)
+        .some((value) => Math.abs(value - expected) <= .15)).toBeTruthy();
+    }
+  } finally {
+    await supervisor.close();
+    await operator.close();
+    await stop(gateway?.child);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+const fallbackFixtures: (string | undefined)[] = process.env.PROXIGO_BEDROCK_FALLBACK_TEST_CLIPS
+  ? JSON.parse(process.env.PROXIGO_BEDROCK_FALLBACK_TEST_CLIPS) : [undefined];
+
+for (const [index, fixture] of fallbackFixtures.entries()) {
+  test(`live Bedrock video fallback preserves the Nova result and opens Pegasus timestamps (${index + 1})`, async ({ browser, baseURL }, testInfo) => {
+    test.skip(!fixture, "Set PROXIGO_BEDROCK_FALLBACK_TEST_CLIPS to a JSON array of public MP4 fixtures that produce a Nova abstention.");
+    test.setTimeout(85_000);
+    const dir = await mkdtemp(join(tmpdir(), "proxigo-bedrock-fallback-"));
+    const state = join(dir, "state"), roles = join(dir, "roles.json"), devices = join(dir, "devices.json");
+    const settings = join(dir, "intelligence.json"), cameraKey = "4".repeat(48);
+    const supervisor = await browser.newPage(), operator = await browser.newPage();
+    let gateway: Awaited<ReturnType<typeof start>> | undefined;
+    try {
+      const python = process.env.PROXIGO_BEDROCK_TEST_PYTHON;
+      const duration = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", fixture!], { encoding: "utf8" }).trim());
+      expect(duration).toBeGreaterThan(1);
+      const offset = Math.round(duration * 500) / 1000;
+      await mkdir(join(state, "clips"), { recursive: true });
+      await writeFile(join(state, "cameras.json"), JSON.stringify({ [camera.id]: { key: cameraKey, url: "rtsp://127.0.0.1/fixture" } }));
+      await writeFile(roles, JSON.stringify(roster));
+      await writeFile(devices, JSON.stringify({ door: adapter }));
+      await writeFile(settings, JSON.stringify({ ai: {
+        provider: "bedrock", region: "us-east-1", approveUsGeography: true, allowAutomatedTriage: false,
+        clipReview: true, cloudClips: true, videoReview: true, cloudVideo: true, clipBoundaries: [boundary.id],
+      } }));
+      gateway = await start(state, roles, ["--site-intelligence", settings, "--axis-recorder", "http://127.0.0.1:47999",
+        "--telemetry-devices", devices, "--require-camera-session"], "0", python);
+      const { address } = gateway;
+      await config(address, "save", { configuration: { sensors: [{ ...camera, cameraGatewayKind: "rtsp",
+        cameraFeedUrl: address + "/streams/" + cameraKey + "/index.m3u8" }, door],
+      boundaries: [{ ...boundary, sensorIds: [camera.id, door.id] }] } });
+      await config(address, "publish", { message: "Live automatic fallback test" });
+      const stamp = Date.now();
+      const clipId = hash(cameraKey + ":" + stamp).slice(0, 32);
+      await copyFile(fixture!, join(state, "clips", clipId + ".mp4"));
+      await writeFile(join(state, "clips", clipId + ".json"), JSON.stringify({
+        cameraKey, clipId, occurredAt: stamp, durationSeconds: duration, eventOffsetSeconds: offset,
+        expiresAt: Math.floor(Date.now() / 1000) + 600,
+      }));
+      await api(address, "telemetry", { type: "observation", id: "forced", sensorId: door.id, eventType: "door-forced-open",
+        occurredAt: new Date(stamp).toISOString(), summary: "Forced door at the fixture" }, adapter);
+      const posture = await enter(supervisor, baseURL!, address, adminToken);
+      await posture.locator("summary", { hasText: "Automatic video fallback" }).click();
+      const toggle = posture.getByRole("checkbox", { name: "Enable automatic video fallback" });
+      await expect(toggle).not.toBeChecked();
+      expect((await fetchSite(address, "ai-review-settings", { enabled: true, revision: 0 }, operatorToken)).status).toBe(403);
+      await operator.addInitScript(() => {
+        function capture(event: Event) {
+          if (event.target instanceof HTMLVideoElement)
+            ((window as Window & { seeks?: number[] }).seeks ??= []).push(event.target.currentTime);
+        }
+        document.addEventListener("seeked", capture, true);
+        document.addEventListener("playing", capture, true);
+      });
+      await enter(operator, baseURL!, address, operatorToken);
+      const pane = await openDoor(operator);
+      await pane.getByRole("button", { name: "Replay timeline" }).click();
+      await pane.getByRole("button", { name: "Review with AI" }).click();
+      await expect(pane.locator("video")).toBeVisible({ timeout: 20_000 });
+      const frameButton = pane.getByRole("button", { name: "Analyze event frames" });
+      const nova = pane.getByRole("heading", { name: "Draft observation · Unable to verify" });
+      async function reviewFrame() {
+        const submitted = operator.waitForResponse((response) => response.url().endsWith("/api/site/ai-jobs")
+          && response.request().method() === "POST");
+        await frameButton.click();
+        return (await (await submitted).json()).id as string;
+      }
+      const baselineStarted = performance.now();
+      const baseline = await reviewFrame();
+      await expect(nova).toBeVisible({ timeout: 20_000 });
+      const baselineUiMs = Math.round(performance.now() - baselineStarted);
+      await expect(pane.getByLabel("Automatic Pegasus clip review")).toHaveCount(0);
+      await toggle.click();
+      await expect(toggle).toBeChecked();
+      await expect(pane.getByText(/Pegasus will review the event clip if Nova is unable/)).toBeVisible({ timeout: 14_000 });
+      const fallbackStarted = performance.now();
+      const job = await reviewFrame();
+      expect(job).not.toBe(baseline);
+      const video = pane.getByLabel("Automatic Pegasus clip review");
+      const startButton = video.getByRole("button", { name: /^Start · / }).first();
+      const endButton = video.getByRole("button", { name: /^End · / }).first();
+      await expect(startButton).toBeVisible({ timeout: 30_000 });
+      const fallbackUiMs = Math.round(performance.now() - fallbackStarted);
+      await expect(nova).toBeVisible();
+      await expect(video.getByText("Occupancy not observed")).toBeVisible();
+      const seekTimes = () => operator.evaluate(() => (window as Window & { seeks?: number[] }).seeks ?? []);
+      for (const button of [startButton, endButton]) {
+        const time = await button.locator("time").getAttribute("datetime");
+        const expected = (Date.parse(time!) - stamp) / 1000 + offset;
+        const before = (await seekTimes()).length;
+        await button.click();
+        await expect.poll(async () => (await seekTimes()).slice(before)
+          .some((value) => Math.abs(value - expected) <= .15)).toBeTruthy();
+      }
+      const audits = JSON.parse(execFileSync(python ?? "python3", ["-c", `
+import json, sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    print(json.dumps([json.loads(db.execute("SELECT audit FROM site_ai_jobs WHERE id=?", (job,)).fetchone()[0])
+                      for job in sys.argv[2:]]))
+`, join(state, "activity.sqlite3"), baseline, job], { encoding: "utf8" }));
+      expect(audits[0].videoFallback).toBeUndefined();
+      expect(audits[1].videoFallback).toMatchObject({ state: "ready", model: "us.twelvelabs.pegasus-1-5-v1:0",
+        submittedAt: expect.any(Number), latencyMs: expect.any(Number), inputVideoSeconds: expect.any(Number),
+        outputTokens: expect.any(Number) });
+      const evidence = testInfo.outputPath("fallback-evidence.json");
+      await writeFile(evidence, JSON.stringify({ fixture: fixture!.split(/[\\/]/).at(-1), baseline: audits[0], review: audits[1],
+        baselineUiMs, fallbackUiMs }, null, 2) + "\n");
+      await testInfo.attach("Fallback latency and usage", { contentType: "application/json", path: evidence });
+    } finally {
+      await supervisor.close();
+      await operator.close();
+      await stop(gateway?.child);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test("live Bedrock automatically reviews new camera incidents and opens Pegasus timestamps in Chrome", async ({ browser, baseURL }, testInfo) => {
+  const positive = process.env.PROXIGO_BEDROCK_AUTO_FRAME_POSITIVE;
+  const uncertain = process.env.PROXIGO_BEDROCK_AUTO_FRAME_UNCERTAIN;
+  test.skip(!positive || !uncertain, "Set both automatic frame review fixture paths to public MP4s.");
+  test.setTimeout(95_000);
+  const dir = await mkdtemp(join(tmpdir(), "proxigo-auto-frame-"));
+  const state = join(dir, "state"), roles = join(dir, "roles.json"), devices = join(dir, "devices.json");
+  const settings = join(dir, "intelligence.json"), cameraKey = "5".repeat(48);
+  const supervisor = await browser.newPage(), operator = await browser.newPage();
+  let gateway: Awaited<ReturnType<typeof start>> | undefined;
+  try {
+    const python = process.env.PROXIGO_BEDROCK_TEST_PYTHON;
+    await mkdir(join(state, "clips"), { recursive: true });
+    await writeFile(join(state, "cameras.json"), JSON.stringify({ [camera.id]: { key: cameraKey, url: "rtsp://127.0.0.1/fixture" } }));
+    await writeFile(roles, JSON.stringify(roster));
+    await writeFile(devices, JSON.stringify({ [camera.id]: adapter }));
+    await writeFile(settings, JSON.stringify({ ai: {
+      provider: "bedrock", region: "us-east-1", approveUsGeography: true, allowAutomatedTriage: false,
+      clipReview: true, cloudClips: true, videoReview: true, cloudVideo: true, clipBoundaries: [boundary.id],
+    } }));
+    gateway = await start(state, roles, ["--site-intelligence", settings, "--axis-recorder", "http://127.0.0.1:47999",
+      "--telemetry-devices", devices, "--require-camera-session"], "0", python);
+    const { address } = gateway;
+    await config(address, "save", { configuration: { sensors: [{ ...camera, cameraGatewayKind: "rtsp",
+      cameraFeedUrl: address + "/streams/" + cameraKey + "/index.m3u8" }], boundaries: [{ ...boundary, sensorIds: [camera.id] }] } });
+    await config(address, "publish", { message: "Automatic camera review fixtures" });
+    const posture = await enter(supervisor, baseURL!, address, adminToken);
+    for (const section of ["Automatic frame review", "Automatic video fallback"]) {
+      await posture.locator("summary", { hasText: section }).click();
+      const toggle = posture.getByRole("checkbox", { name: "Enable " + section.toLowerCase() });
+      await expect(toggle).not.toBeChecked();
+      await toggle.click();
+      await expect(toggle).toBeChecked();
+    }
+    expect((await fetchSite(address, "automatic-frame-review", { enabled: false, revision: 1 }, operatorToken)).status).toBe(403);
+    await operator.addInitScript(() => {
+      function capture(event: Event) {
+        if (event.target instanceof HTMLVideoElement)
+          ((window as Window & { seeks?: number[] }).seeks ??= []).push(event.target.currentTime);
+      }
+      document.addEventListener("seeked", capture, true);
+      document.addEventListener("playing", capture, true);
+    });
+    await enter(operator, baseURL!, address, operatorToken);
+
+    const results = [];
+    for (const [outcome, fixture] of [["observed", positive!], ["unable-to-verify", uncertain!]]) {
+      const usePegasus = outcome === "unable-to-verify";
+      const label = usePegasus ? "Twilight motion at the gate camera" : "Daylight motion at the gate camera";
+      const duration = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", fixture], { encoding: "utf8" }).trim());
+      expect(duration).toBeGreaterThan(1);
+      const offset = Math.round(duration * 500) / 1000;
+      const stamp = Date.now();
+      const clipId = hash(cameraKey + ":" + stamp).slice(0, 32);
+      await copyFile(fixture, join(state, "clips", clipId + ".mp4"));
+      await writeFile(join(state, "clips", clipId + ".json"), JSON.stringify({ cameraKey, clipId, occurredAt: stamp,
+        durationSeconds: duration, eventOffsetSeconds: offset, expiresAt: Math.floor(Date.now() / 1000) + 600 }));
+      await api(address, "telemetry", { type: "observation", id: outcome, sensorId: camera.id, eventType: "motion",
+        occurredAt: new Date(stamp).toISOString(), summary: label }, adapter);
+      await nav(operator, "Alerts").click();
+      await operator.getByRole("button", { name: new RegExp("^" + label) }).click();
+      const pane = inspector(operator);
+      const overview = pane.getByRole("region", { name: "Automatic camera review", exact: true });
+      await expect(overview.getByText(usePegasus ? "Pegasus clip review ready" : "Nova · Occupancy observed"))
+        .toBeVisible({ timeout: 35_000 });
+      const visibleMs = Date.now() - stamp;
+      await overview.getByRole("button", { name: "Open automatic review in replay" }).click();
+      const review = pane.getByRole("region", { name: "Automatic camera review in replay" });
+      await expect(review.getByRole("heading", { name: usePegasus
+        ? "Nova draft observation · Unable to verify" : "Nova draft observation · Occupancy observed" })).toBeVisible();
+      const pegasus = review.getByLabel("Automatic Pegasus clip review");
+      const seekTimes = () => operator.evaluate(() => (window as Window & { seeks?: number[] }).seeks ?? []);
+      if (usePegasus) {
+        await expect(pegasus.getByText("Occupancy not observed")).toBeVisible();
+        for (const phase of ["Start", "End"]) {
+          const button = pegasus.getByRole("button", { name: new RegExp("^" + phase + " · ") }).first();
+          const dateTime = await button.locator("time").getAttribute("datetime");
+          const timestamp = (Date.parse(dateTime!) - stamp) / 1000 + offset;
+          const before = (await seekTimes()).length;
+          await button.click();
+          await expect.poll(async () => (await seekTimes()).slice(before)
+            .some((time) => Math.abs(time - timestamp) <= .15)).toBeTruthy();
+        }
+      } else {
+        await expect(pegasus).toHaveCount(0);
+        const before = (await seekTimes()).length;
+        await review.getByRole("button", { name: /Event frame/ }).click();
+        await expect.poll(async () => (await seekTimes()).slice(before)
+          .some((time) => Math.abs(time - offset) <= .15)).toBeTruthy();
+      }
+      await pane.getByRole("button", { name: "Close replay" }).click();
+      results.push({ outcome, fixture: fixture.split(/[\\/]/).at(-1), eventToResultVisibleMs: visibleMs });
+    }
+    const audits = JSON.parse(execFileSync(python ?? "python3", ["-c", `
+import json, sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    print(json.dumps([json.loads(audit) for (audit,) in db.execute(
+        "SELECT audit FROM site_ai_jobs WHERE kind='automatic-frame-review' AND state='ready' ORDER BY created")]))
+`, join(state, "activity.sqlite3")], { encoding: "utf8" }));
+    expect(audits).toHaveLength(2);
+    expect(audits[0]).toMatchObject({ model: "us.amazon.nova-2-lite-v1:0", frameLatencyMs: expect.any(Number),
+      inputTokens: expect.any(Number), outputTokens: expect.any(Number) });
+    expect(audits[0].videoFallback).toBeUndefined();
+    expect(audits[1].videoFallback).toMatchObject({ state: "ready", model: "us.twelvelabs.pegasus-1-5-v1:0",
+      latencyMs: expect.any(Number), inputVideoSeconds: expect.any(Number), outputTokens: expect.any(Number) });
+    const evidence = testInfo.outputPath("automatic-frame-evidence.json");
+    await writeFile(evidence, JSON.stringify(results.map((result, index) => ({ ...result, audit: audits[index] })), null, 2) + "\n");
+    await testInfo.attach("Automatic camera review latency and usage", { contentType: "application/json", path: evidence });
+  } finally {
+    await supervisor.close();
+    await operator.close();
+    await stop(gateway?.child);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("12-camera AI quota protects operator reviews when automation reaches its limit", async ({ browser, baseURL }, testInfo) => {
+  const soakSeconds = Number(process.env.PROXIGO_POSTURE_SOAK_SECONDS ?? 0);
+  expect(Number.isInteger(soakSeconds) && soakSeconds >= 0 && soakSeconds <= 28800).toBe(true);
+  test.setTimeout(75_000 + (soakSeconds ? soakSeconds * 1000 + 60_000 : 0));
+  const directory = await mkdtemp(join(tmpdir(), "proxigo-ai-quota-"));
+  const state = join(directory, "state"), roles = join(directory, "roles.json"), adapters = join(directory, "adapters.json");
+  const settings = join(directory, "intelligence.json");
+  const entry = fileURLToPath(new URL("./fixtures/bedrock_gateway.py", import.meta.url));
+  const cameras = Array.from({ length: 12 }, (_, index) => {
+    const number = String(index + 1).padStart(2, "0");
+    return { ...camera, id: "cam-" + number, name: "Camera " + number, key: hash("quota-" + number).slice(0, 48) };
+  });
+  const cameraIds = cameras.map(({ id }) => id);
+  let supervisor = await browser.newPage(), operator = await browser.newPage();
+  const fixtureVideo = await readFile(clipFixture);
+  const identity = soakSeconds ? makeCertificate(directory) : undefined;
+  const notifications = new Map<string, { latency: number; count: number }>();
+  const secret = "test-only-soak-webhook-signature";
+  const receiver = identity && tlsServer({ cert: await readFile(identity.cert), key: await readFile(identity.key) }, async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks);
+    if (request.headers["x-proxigo-signature"] !== createHmac("sha256", secret).update(body).digest("hex")) {
+      response.writeHead(401).end(); return;
+    }
+    const payload = JSON.parse(body.toString());
+    if (payload.summary?.startsWith("Soak round ")) notifications.set(payload.summary, {
+      latency: Date.now() - Date.parse(payload.occurredAt), count: (notifications.get(payload.summary)?.count ?? 0) + 1,
+    });
+    response.writeHead(204).end();
+  });
+  const recorder = httpServer((request, response) => {
+    if (request.url?.startsWith("/axis-cgi/record/list.cgi")) {
+      const start = Date.parse(new URL(request.url, "http://localhost").searchParams.get("starttime") ?? "");
+      response.end(`<root><recording recordingid="fixture" diskid="disk" starttime="${new Date(start).toISOString()}"
+        stoptime="${new Date(start + 6000).toISOString()}"/></root>`);
+    } else if (request.url?.startsWith("/axis-cgi/record/export/exportrecording.cgi")) response.end(fixtureVideo);
+    else response.writeHead(404).end();
+  });
+  let gateway: Awaited<ReturnType<typeof start>> | undefined;
+  try {
+    recorder.listen(0, "127.0.0.1"); await once(recorder, "listening");
+    await mkdir(join(state, "clips"), { recursive: true });
+    await writeFile(join(state, "cameras.json"), JSON.stringify(Object.fromEntries(cameras.map(({ id, key }) =>
+      [id, { key, url: "rtsp://127.0.0.1/" + id }]))));
+    await writeFile(roles, JSON.stringify({ ...roster, operators: { ...roster.operators,
+      operator: { ...roster.operators.operator, cameras: cameraIds } } }));
+    await writeFile(adapters, JSON.stringify(Object.fromEntries(cameraIds.map((id) => [id, adapter]))));
+    await writeFile(settings, JSON.stringify({ ai: {
+      provider: "bedrock", approveUsGeography: true, allowAutomatedTriage: false,
+      clipReview: true, cloudClips: true, videoReview: true, cloudVideo: true, clipBoundaries: [boundary.id],
+    } }));
+    const args = ["--site-intelligence", settings, "--axis-recorder",
+      "http://127.0.0.1:" + (recorder.address() as { port: number }).port, "--telemetry-devices", adapters, "--require-camera-session"];
+    const environment = identity ? { ...process.env, SSL_CERT_FILE: identity.cert, PROXIGO_WEBHOOK_SECRET: secret } : process.env;
+    if (receiver) {
+      receiver.listen(0, "127.0.0.1"); await once(receiver, "listening");
+      args.push("--alert-webhook", "https://127.0.0.1:" + (receiver.address() as { port: number }).port + "/alert");
+    }
+    gateway = await start(state, roles, args, "0", "python3", entry, environment);
+    const { address } = gateway;
+    const sensors = cameras.map(({ key, ...device }) => ({ ...device, cameraGatewayKind: "rtsp",
+      cameraFeedUrl: address + "/streams/" + key + "/index.m3u8" }));
+    await config(address, "save", { configuration: { sensors, boundaries: [{ ...boundary, sensorIds: cameraIds }] } });
+    await config(address, "publish", { message: "Publish 12 cameras for quota test" });
+
+    const posture = await enter(supervisor, baseURL!, address, adminToken);
+    const quotaSummary = (page: Page) => page.locator("summary").filter({ hasText: "AI usage and quota" });
+    const usage = (page: Page, label: string) => page.locator(".gv-ai-usage > div").filter({ hasText: label }).locator("dd");
+    await expect(quotaSummary(supervisor)).toContainText("0 / 30 calls today");
+    await quotaSummary(supervisor).click();
+    await expect(posture.getByRole("spinbutton", { name: "Operator reserve" })).toHaveValue("10");
+    await posture.getByRole("spinbutton", { name: "Daily AI call limit" }).fill("6");
+    await posture.getByRole("spinbutton", { name: "Operator reserve" }).fill("2");
+    await posture.getByRole("button", { name: "Save AI quota" }).click();
+    await expect(posture.getByText("AI quota saved.")).toBeVisible();
+    await expect(usage(supervisor, "Available to automation")).toHaveText("4");
+    for (const section of ["Automatic frame review", "Automatic video fallback"]) {
+      await posture.locator("summary", { hasText: section }).click();
+      const toggle = posture.getByRole("checkbox", { name: "Enable " + section.toLowerCase() });
+      await toggle.click();
+      await expect(toggle).toBeChecked();
+    }
+    expect((await fetchSite(address, "ai-quota", { dailyLimit: 10, operatorReserve: 1, revision: 1 }, operatorToken)).status).toBe(403);
+    const operatorPosture = await enter(operator, baseURL!, address, operatorToken);
+    await quotaSummary(operator).click();
+    await expect(operatorPosture.getByRole("button", { name: "Save AI quota" })).toHaveCount(0);
+    await expect(usage(operator, "Reserved for operators")).toHaveText("2");
+
+    const stamp = Date.now();
+    for (const [index, device] of cameras.entries()) {
+      const timestamp = stamp + index;
+      const clipId = hash(device.key + ":" + timestamp).slice(0, 32);
+      await copyFile(clipFixture, join(state, "clips", clipId + ".mp4"));
+      await writeFile(join(state, "clips", clipId + ".json"), JSON.stringify({ cameraKey: device.key, clipId, occurredAt: timestamp,
+        durationSeconds: 6, eventOffsetSeconds: 2, expiresAt: Math.floor(Date.now() / 1000) + 600 }));
+      await api(address, "telemetry", { type: "observation", id: "motion-" + device.id, sensorId: device.id, eventType: "motion",
+        occurredAt: new Date(timestamp).toISOString(), summary: "Quota motion on " + device.name }, adapter);
+    }
+    await expect(quotaSummary(operator)).toContainText("4 / 6 calls today", { timeout: 35_000 });
+    await expect(usage(operator, "Automatic frame reviews")).toHaveText("2");
+    await expect(usage(operator, "Automatic Pegasus fallbacks")).toHaveText("2");
+    await expect(usage(operator, "Available to automation")).toHaveText("0");
+    await expect(usage(operator, "Available to operators")).toHaveText("2");
+    const { alerts } = await api(address, "dispatch", undefined, operatorToken);
+    expect(alerts).toHaveLength(12);
+    const last = alerts.find(({ cameraId }: { cameraId: string }) => cameraId === cameras.at(-1)!.id);
+    await expect.poll(async () => (await api(address,
+      "automatic-frame-review?" + new URLSearchParams({ incidentId: last.id }), undefined, operatorToken)).review?.state).toBe("failed");
+
+    const attention = operatorPosture.getByRole("region", { name: "Needs attention" });
+    await attention.locator("summary", { hasText: "Skipped or interrupted AI reviews" }).click();
+    const skipped = attention.getByRole("button", { name: /Quota motion on Camera 12.*Automatic quota exhausted/ });
+    await expect(skipped).toBeVisible();
+    await skipped.click();
+    await expect(inspector(operator).getByRole("heading", { name: "Quota motion on Camera 12" })).toBeVisible();
+    await nav(operator, "Alerts").click();
+    await operator.getByRole("button", { name: /^Quota motion on Camera 12/ }).click();
+    const pane = inspector(operator);
+    await expect(pane.getByRole("region", { name: "Automatic camera review" }).getByText(/automatic AI review limit/)).toBeVisible();
+    await pane.getByRole("button", { name: "Replay timeline" }).click();
+    await pane.getByRole("button", { name: "Review with AI" }).click();
+    const manualStart = performance.now();
+    await pane.getByRole("button", { name: "Analyze event frames" }).click();
+    await expect(pane.getByRole("heading", { name: "Draft observation · Unable to verify" })).toBeVisible();
+    const manualReviewMs = Math.round(performance.now() - manualStart);
+    await expect(pane.getByLabel("Automatic Pegasus clip review").getByText(/automatic AI review limit/)).toBeVisible();
+    await pane.getByRole("button", { name: "Analyze video clip" }).click();
+    await expect(pane.getByLabel("AI video review").getByText("A person crossed the fixture gate.")).toBeVisible();
+    await pane.getByRole("button", { name: "Analyze event frames" }).click();
+    await expect(pane.getByRole("alert").filter({ hasText: "The site has reached its AI review limit." })).toBeVisible();
+    await expect(quotaSummary(supervisor)).toContainText("6 / 6 calls today", { timeout: 10_000 });
+    await expect(usage(supervisor, "Operator requests")).toHaveText("2");
+    await expect(usage(supervisor, "Available to operators")).toHaveText("0");
+
+    if (soakSeconds) {
+      const port = new URL(address).port;
+      let supervisorToken = adminToken, currentOperatorToken = operatorToken;
+      let restoreReceipt: unknown;
+      let attempted = 0, missed = 0, duplicates = 0, recorderChecks = 0, recordingsAvailable = 0;
+      const latency: number[] = [];
+      const started = Date.now();
+      const duration = soakSeconds * 1000;
+      const interval = Math.min(120_000, Math.max(10_500, duration / 3));
+      const probe = cameras[0];
+      const progressPath = testInfo.outputPath("posture-soak-progress.json");
+      const progress = () => writeFile(progressPath, JSON.stringify({
+        startedAt: new Date(started).toISOString(), expectedSeconds: soakSeconds, elapsedSeconds: (Date.now() - started) / 1000,
+        attempted, missed, duplicates, recorderChecks, recordingsAvailable, notificationsDelivered: notifications.size,
+        restored: !!restoreReceipt, manualReviewMs,
+      }, null, 2) + "\n");
+
+      async function batch(round: number) {
+        const startedAt = Date.now();
+        const observations = cameras.map((device, index) => ({ type: "observation", id: `soak-${round}-${device.id}`, sensorId: device.id,
+          eventType: "motion", occurredAt: new Date(startedAt + index).toISOString(), summary: `Soak round ${round} · ${device.name}` }));
+        for (const observation of observations) {
+          const start = performance.now();
+          await api(address, "telemetry", observation, adapter);
+          latency.push(Math.round(performance.now() - start));
+        }
+        await api(address, "telemetry", observations[0], adapter);
+        const snapshot = await api(address, "monitoring", undefined, currentOperatorToken);
+        for (const observation of observations) {
+          const count = snapshot.alerts.filter((alert: { observation: { id: string } }) => alert.observation.id === observation.id).length;
+          attempted++;
+          if (!count) missed++;
+          duplicates += Math.max(0, count - 1);
+        }
+        await expect.poll(() => observations.filter(({ summary }) => !notifications.has(summary)).length,
+          { timeout: 30_000, intervals: [500] }).toBe(0);
+        await progress();
+        return startedAt;
+      }
+
+      async function recordingAt(key: string, at: number) {
+        const response = await fetch(`${address}/streams/${key}/recording.json?at=${at}`,
+          { headers: { Authorization: "Bearer " + currentOperatorToken }, signal: AbortSignal.timeout(20000) });
+        return response.ok ? await response.json() : undefined;
+      }
+
+      async function checkRecording(at: number) {
+        recorderChecks++;
+        const clip = await recordingAt(probe.key, at);
+        const clipId = hash(probe.key + ":" + at).slice(0, 32);
+        if (clip?.state !== "available" || clip.occurredAt !== at || clip.clipId !== clipId) return;
+        const media = await fetch(`${address}/streams/${probe.key}/clips/${clipId}.mp4`, {
+          headers: { Authorization: "Bearer " + currentOperatorToken, Range: "bytes=0-63" },
+          signal: AbortSignal.timeout(20000),
+        });
+        const header = Buffer.from(await media.arrayBuffer());
+        if (media.status === 206 && header.subarray(4, 8).toString() === "ftyp") recordingsAvailable++;
+      }
+
+      let stamp = await batch(1);
+      await api(address, "telemetry", { type: "health", id: "soak-offline", sensorId: probe.id, state: "offline",
+        occurredAt: new Date().toISOString() }, adapter);
+      const portReady = () => api(address, "session", undefined, currentOperatorToken);
+      await stop(gateway.child);
+      gateway = await start(state, roles, args, port, "python3", entry, environment);
+      expect((await portReady()).cameras).toEqual(cameraIds);
+      await api(address, "telemetry", { type: "health", id: "soak-online", sensorId: probe.id, state: "online",
+        occurredAt: new Date().toISOString() }, adapter);
+      const healthy = (await api(address, "monitoring", undefined, currentOperatorToken)).health.find((row: { sensorId: string }) => row.sensorId === probe.id);
+      expect(healthy.state).toBe("online");
+
+      for (let round = 2; Date.now() - started < duration; round++) {
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.min(interval, duration - (Date.now() - started)))));
+        if (Date.now() - stamp >= 10_000) {
+          if (!recorderChecks) {
+            // Another camera can request a clip before the operator reopens this cached recording.
+            await expect.poll(async () => (await recordingAt(probe.key, stamp))?.state).toBe("available");
+            await expect.poll(async () => (await recordingAt(cameras[1].key, stamp + 1))?.state).toBe("available");
+          }
+          await checkRecording(stamp);
+        }
+        if (!restoreReceipt && Date.now() - started >= duration / 2) {
+          const { cert, key } = identity!;
+          const approved = join(directory, "approved.json"), archive = join(directory, "backup.p7m"), restored = join(directory, "restored");
+          supervisorToken = restoreToken;
+          currentOperatorToken = "e".repeat(64);
+          await writeFile(approved, JSON.stringify({ ...roster, operators: {
+            supervisor: { ...roster.operators.supervisor, tokenSha256: hash(supervisorToken) },
+            operator: { ...roster.operators.operator, cameras: cameraIds, tokenSha256: hash(currentOperatorToken) },
+          } }));
+          await stop(gateway.child);
+          execFileSync("python3", [source("gateway_backup.py"), "backup", "--state-dir", state, "--archive", archive, "--recipient-cert", cert]);
+          restoreReceipt = JSON.parse(execFileSync("python3", [source("gateway_backup.py"), "restore", "--state-dir", restored, "--archive", archive,
+            "--recipient-cert", cert, "--recipient-key", key, "--approved-access", approved]).toString());
+          gateway = await start(restored, approved, args, port, "python3", entry, environment);
+          expect((await fetchSite(address, "dispatch", undefined, operatorToken)).status).toBe(401);
+          expect((await portReady()).cameras).toEqual(cameraIds);
+          expect((await api(address, "ai-quota", undefined, supervisorToken))).toMatchObject({ dailyLimit: 6, operatorReserve: 2 });
+          // Use fresh Chrome sessions with the replacement credentials.
+          await supervisor.close();
+          await operator.close();
+          supervisor = await browser.newPage();
+          operator = await browser.newPage();
+          for (const [review, token] of [[supervisor, supervisorToken], [operator, currentOperatorToken]] as const) {
+            await enter(review, baseURL!, address, token);
+            await nav(review, "Alerts").click();
+            const backlog = review.locator("summary", { hasText: "Open incident backlog" });
+            await expect(backlog).toContainText(/[0-9]+ open/);
+          }
+          await progress();
+        }
+        stamp = await batch(round);
+      }
+      const p95 = (samples: number[]) => {
+        const sorted = [...samples].sort((a, b) => a - b);
+        return sorted[Math.max(0, Math.ceil(sorted.length * .95) - 1)];
+      };
+      const notified = [...notifications.values()];
+      const report = testInfo.outputPath("posture-soak-report.json");
+      await writeFile(report, JSON.stringify({
+        elapsedSeconds: (Date.now() - started) / 1000, attempted, missed, duplicates, recorderChecks, recordingsAvailable,
+        p95GatewayAcceptanceMs: p95(latency), p95NotificationDeliveryMs: p95(notified.map(({ latency }) => latency)),
+        notificationsDelivered: notified.length, duplicateNotifications: notified.filter(({ count }) => count > 1).length,
+        manualReviewMs, restoreReceipt,
+      }, null, 2) + "\n");
+      await testInfo.attach("12-camera simulated shift report", { contentType: "application/json", path: report });
+      expect(restoreReceipt).toBeTruthy();
+      expect(attempted / cameraIds.length).toBeGreaterThanOrEqual(Math.max(2, Math.floor(duration / (interval + 10000))));
+      expect({ missed, duplicates }).toEqual({ missed: 0, duplicates: 0 });
+      expect(recorderChecks).toBeGreaterThan(0);
+      expect(recordingsAvailable).toBe(recorderChecks);
+      expect(notified).toHaveLength(attempted);
+      expect(notified.every(({ count }) => count === 1)).toBe(true);
+    }
+  } finally {
+    await supervisor.close();
+    await operator.close();
+    await stop(gateway?.child);
+    await new Promise<void>((resolve) => recorder.close(() => resolve()));
+    if (receiver) await new Promise<void>((resolve) => receiver.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Posture exposes a rejected notification and Alerts reaches the oldest of 255 open incidents", async ({ page, baseURL }) => {
+  test.setTimeout(75_000);
+  const directory = await mkdtemp(join(tmpdir(), "proxigo-posture-backlog-"));
+  const state = join(directory, "state"), roles = join(directory, "roles.json"), devices = join(directory, "devices.json");
+  const { cert, key } = makeCertificate(directory);
+  const secret = "local-test-only-incident-notifications";
+  const attempts: { summary: string; id: string; signed: boolean }[] = [];
+  let allowRetry = false;
+  const receiver = tlsServer({ cert: await readFile(cert), key: await readFile(key) }, async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks);
+    const payload = JSON.parse(body.toString());
+    attempts.push({ summary: payload.summary, id: payload.deliveryId,
+      signed: request.headers["x-proxigo-signature"] === createHmac("sha256", secret).update(body).digest("hex") });
+    response.writeHead(payload.summary === "Oldest watch incident" && !allowRetry ? 422 : 204).end();
+  });
+  let gateway: Awaited<ReturnType<typeof start>> | undefined;
+  try {
+    receiver.listen(0, "127.0.0.1"); await once(receiver, "listening");
+    const port = (receiver.address() as { port: number }).port;
+    await writeFile(roles, JSON.stringify(roster));
+    await writeFile(devices, JSON.stringify({ [camera.id]: adapter }));
+    gateway = await start(state, roles, ["--telemetry-devices", devices, "--alert-webhook", `https://127.0.0.1:${port}/notify`],
+      "0", "python3", source("gateway.py"), { ...process.env, SSL_CERT_FILE: cert, PROXIGO_WEBHOOK_SECRET: secret });
+    const { address } = gateway;
+    await config(address, "save", { configuration: { sensors: [camera], boundaries: [{ ...boundary, sensorIds: [camera.id] }] } });
+    await config(address, "publish", { message: "Publish the backlog fixture" });
+    const emit = (number: number) => api(address, "telemetry", { type: "observation", id: "watch-" + number, sensorId: camera.id,
+      eventType: "motion", occurredAt: new Date().toISOString(), summary: number === 0 ? "Oldest watch incident" : "Watch incident " + number }, adapter);
+    await emit(0);
+    await emit(1);
+    await expect.poll(() => attempts.map(({ summary }) => summary), { timeout: 8000 }).toEqual(["Oldest watch incident", "Watch incident 1"]);
+    const posture = await enter(page, baseURL!, address, adminToken);
+    const attention = posture.getByRole("region", { name: "Needs attention" });
+    await attention.locator("summary", { hasText: "Delivery failures" }).click();
+    await expect(attention.getByText(/HTTP 422.*Manual retry required/)).toBeVisible();
+    const blocked = (await api(address, "operations")).failedNotifications[0];
+    expect((await fetchSite(address, "retry-notification", { sequence: blocked.sequence }, operatorToken)).status).toBe(403);
+    allowRetry = true;
+    await attention.getByRole("button", { name: "Retry notification" }).click();
+    await expect.poll(() => attempts.filter(({ summary }) => summary === "Oldest watch incident").length).toBe(2);
+    expect(attempts[2]).toEqual(attempts[0]);
+    expect(attempts.every(({ signed }) => signed)).toBe(true);
+
+    for (let number = 2; number < 255; number++) await emit(number);
+    const initial = await api(address, "monitoring");
+    expect(initial.alerts).toHaveLength(250);
+    expect(initial.alerts.some(({ observation }: { observation: { id: string } }) => observation.id === "watch-0")).toBe(false);
+    await nav(page, "Alerts").click();
+    const label = page.locator("summary", { hasText: "Open incident backlog" });
+    await expect(label).toContainText("255 open");
+    await label.click();
+    const backlog = label.locator("..");
+    for (let pageNumber = 0; pageNumber < 8; pageNumber++)
+      await backlog.getByRole("button", { name: "Load older open incidents" }).click();
+    await backlog.getByRole("button", { name: /^Oldest watch incident/ }).click();
+    await expect(inspector(page).getByRole("heading", { name: "Oldest watch incident" })).toBeVisible();
+  } finally {
+    await stop(gateway?.child);
+    await new Promise<void>((resolve) => receiver.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a supervisor records field acceptance before promoting a camera rule", async ({ page, baseURL }) => {
+  const directory = await mkdtemp(join(tmpdir(), "proxigo-rule-acceptance-"));
+  const state = join(directory, "state"), roles = join(directory, "roles.json"), workers = join(directory, "workers.json");
+  let gateway: Awaited<ReturnType<typeof start>> | undefined;
+  try {
+    await writeFile(roles, JSON.stringify(roster));
+    await writeFile(workers, JSON.stringify({ [camera.id]: { "on-premises": adapter } }));
+    gateway = await start(state, roles, ["--analytics-workers", workers]);
+    const { address } = gateway;
+    const rule = { id: "gate-entry", name: "Gate entry", kind: "zone-entry", object: "person", boundaryId: boundary.id, minimumScore: .30,
+      minimumPixels: 20, seconds: 1, points: [[0, 0], [1, 0], [1, 1], [0, 1]] };
+    const save = (mode: string, minimumScore = rule.minimumScore) => config(address, "save", { configuration: {
+      sensors: [{ ...camera, analyticsPlacement: "on-premises", analyticsRules: [{ ...rule, minimumScore, mode }] }],
+      boundaries: [{ ...boundary, sensorIds: [camera.id] }],
+    } });
+    async function publish() {
+      const { publishedVersion, draftRevision } = await api(address, "configuration");
+      return fetchSite(address, "configuration", { operation: "publish", publishedVersion, draftRevision, message: "Camera rule release" });
+    }
+    await save("alert");
+    expect((await publish()).status).toBe(409);
+    await save("observe");
+    expect((await publish()).status).toBe(200);
+    const heartbeat = await fetch(address + "/api/cameras/" + camera.id + "/analytics", { method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + adapter },
+      body: JSON.stringify({ state: "running", version: 1, models: ["yolo11:" + "2".repeat(16)],
+        profileDigest: "2".repeat(64), pending: 0, fps: 4, frameAgeSeconds: .1 }) });
+    expect(heartbeat.status).toBe(200);
+    expect((await api(address, "assets")).ruleAcceptances).toEqual([]);
+    const posture = await enter(page, baseURL!, address, adminToken);
+    await posture.locator("summary", { hasText: "Unverified camera rules" }).click();
+    await expect(posture.getByRole("button", { name: "Gate camera · Gate entry" })).toBeVisible();
+    await posture.locator("summary", { hasText: "Site operations and connectors" }).click();
+    await posture.getByLabel("Rule to validate").selectOption(camera.id + ":" + rule.id);
+    for (const [label, value] of [
+      ["True positives", "20"], ["False positives", "2"], ["Missed events", "1"], ["Reviewed camera-hours", "8"],
+      ["Measured p95 alert latency (seconds)", "2"], ["Minimum recall (0 to 1)", ".9"],
+      ["Maximum false alarms per camera-hour", ".1"], ["Maximum p95 alert latency (seconds)", "3"],
+    ]) await posture.getByLabel(label, { exact: true }).fill(value);
+    await posture.getByLabel("Validation evidence").fill("Site fixture with reviewed day and night operating windows.");
+    await posture.getByRole("button", { name: "Record rule acceptance" }).click();
+    await expect(posture.getByText(/did not meet the customer thresholds/)).toBeVisible();
+    await save("alert");
+    expect((await publish()).status).toBe(409);
+    await posture.getByLabel("Maximum false alarms per camera-hour").fill(".25");
+    await posture.getByLabel("Validation evidence").fill("Approved fixture thresholds.");
+    await posture.getByRole("button", { name: "Record rule acceptance" }).click();
+    await expect(posture.getByText(/Acceptance passed/)).toBeVisible();
+    expect((await publish()).status).toBe(200);
+    await save("alert", .35);
+    expect((await publish()).status).toBe(409);
+  } finally {
+    await stop(gateway?.child);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("AI replay refreshes an expired recording and seeks to the same cited timestamp", async ({ page, baseURL }) => {
+  test.setTimeout(50_000);
+  const directory = await mkdtemp(join(tmpdir(), "proxigo-expired-ai-clip-"));
+  const state = join(directory, "state"), roles = join(directory, "roles.json"), devices = join(directory, "devices.json");
+  const settings = join(directory, "intelligence.json"), cameraKey = "8".repeat(48);
+  const { localInferenceFixture } = await import("./fixtures/local-inference");
+  const provider = await localInferenceFixture();
+  const clipBytes = await readFile(clipFixture);
+  let eventTime = 0, fetches = 0, recorderAvailable = true;
+  const recorder = httpServer((request, response) => {
+    if (!recorderAvailable) { response.end("<root/>"); return; }
+    if (request.url?.startsWith("/axis-cgi/record/list.cgi")) {
+      response.end(`<root><recording recordingid="record" diskid="disk" starttime="${new Date(eventTime - 1000).toISOString()}"
+         stoptime="${new Date(eventTime + 5000).toISOString()}"/></root>`);
+    } else if (request.url?.startsWith("/axis-cgi/record/export/exportrecording.cgi")) {
+      fetches++;
+      response.end(clipBytes);
+    } else response.writeHead(404).end();
+  });
+  let gateway: Awaited<ReturnType<typeof start>> | undefined;
+  try {
+    recorder.listen(0, "127.0.0.1"); await once(recorder, "listening");
+    await mkdir(join(state, "clips"), { recursive: true });
+    await writeFile(join(state, "cameras.json"), JSON.stringify({ [camera.id]: { key: cameraKey, url: "rtsp://127.0.0.1/fixture" } }));
+    await writeFile(roles, JSON.stringify(roster));
+    await writeFile(devices, JSON.stringify({ [door.id]: adapter }));
+    await writeFile(settings, JSON.stringify({ ai: {
+      provider: "on-premises", localOrigin: provider.origin, clipReview: true, clipBoundaries: [boundary.id],
+    } }));
+    gateway = await start(state, roles, ["--site-intelligence", settings, "--axis-recorder",
+      "http://127.0.0.1:" + (recorder.address() as { port: number }).port, "--telemetry-devices", devices, "--require-camera-session"]);
+    const { address } = gateway;
+    await config(address, "save", { configuration: { sensors: [{ ...camera, cameraGatewayKind: "rtsp",
+      cameraFeedUrl: address + "/streams/" + cameraKey + "/index.m3u8" }, door],
+    boundaries: [{ ...boundary, sensorIds: [camera.id, door.id] }] } });
+    await config(address, "publish", { message: "Replay archive fixture" });
+    eventTime = Date.now();
+    const clipId = hash(cameraKey + ":" + eventTime).slice(0, 32);
+    const catalog = join(state, "clips", clipId + ".json");
+    const clip = { cameraKey, clipId, occurredAt: eventTime, durationSeconds: 6, eventOffsetSeconds: 2, expiresAt: eventTime / 1000 + 600 };
+    await copyFile(clipFixture, join(state, "clips", clipId + ".mp4"));
+    await writeFile(catalog, JSON.stringify(clip));
+    await api(address, "telemetry", { type: "observation", id: "forced", sensorId: door.id, eventType: "door-forced-open",
+      occurredAt: new Date(eventTime).toISOString(), summary: "Forced door at the fixture" }, adapter);
+    await enter(page, baseURL!, address, operatorToken);
+    const pane = await openDoor(page);
+    await pane.getByRole("button", { name: "Replay timeline" }).click();
+    await pane.getByRole("button", { name: "Review with AI" }).click();
+    await expect(pane.locator("video")).toBeVisible({ timeout: 20_000 });
+    await pane.getByRole("button", { name: "Analyze event frames" }).click();
+    const timestamp = pane.getByRole("button", { name: /^Seek to .*Event frame/ });
+    await expect(timestamp).toBeVisible({ timeout: 15_000 });
+    await writeFile(catalog, JSON.stringify({ ...clip, expiresAt: 0 }));
+    await page.evaluate(() => document.addEventListener("seeked", (event) => {
+      if (event.target instanceof HTMLVideoElement) (document.body.dataset.lastSeek = String(event.target.currentTime));
+    }, true));
+    await timestamp.click();
+    await expect.poll(() => fetches).toBe(1);
+    await expect.poll(() => page.evaluate(() => Number(document.body.dataset.lastSeek))).toBeCloseTo(1, 1);
+    expect(provider.requests).toHaveLength(1);
+    recorderAvailable = false;
+    await writeFile(catalog, JSON.stringify({ ...clip, expiresAt: 0 }));
+    await timestamp.click();
+    await expect(pane.getByText("The recorder could not supply footage for this timestamp.")).toBeVisible();
+    await expect(pane.getByRole("list", { name: "Replay timeline" })).toBeVisible();
+  } finally {
+    await stop(gateway?.child);
+    await provider.close();
+    await new Promise<void>((resolve) => recorder.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("two Chrome operators complete a pinned procedure and export a two-camera case through restart and restore", async ({ browser, baseURL }) => {
   test.setTimeout(135_000);

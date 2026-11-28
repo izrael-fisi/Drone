@@ -17,6 +17,7 @@ from inspection_results import InspectionResults
 from dock_schedules import DockSchedules
 from door_passages import ACCESS_FACTS, DoorPassages
 from native_camera_events import NativeEvents
+from site_accounts import manages_site
 
 
 def encode(value):
@@ -177,7 +178,9 @@ class SiteMonitoring:
                     sensor TEXT PRIMARY KEY, event_at REAL NOT NULL, change_id INTEGER NOT NULL, body TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS alert_deliveries (
-                    sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0, next_at REAL NOT NULL DEFAULT 0,
+                    failure TEXT, blocked INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS recovery_jobs (
                     incident TEXT PRIMARY KEY, camera TEXT NOT NULL, event_at REAL NOT NULL, high INTEGER NOT NULL,
@@ -191,7 +194,18 @@ class SiteMonitoring:
                 CREATE TABLE IF NOT EXISTS analytics_workers (
                     camera TEXT PRIMARY KEY, updated_at REAL NOT NULL, body TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS camera_rule_acceptance (
+                    camera TEXT NOT NULL, rule TEXT NOT NULL, fingerprint TEXT NOT NULL, created TEXT NOT NULL,
+                    actor TEXT NOT NULL, note TEXT NOT NULL, measurements TEXT NOT NULL, passed INTEGER NOT NULL,
+                    PRIMARY KEY(camera,rule,fingerprint)
+                );
             """)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(alert_deliveries)")}
+            for name, definition in (("attempts", "INTEGER NOT NULL DEFAULT 0"), ("next_at", "REAL NOT NULL DEFAULT 0"),
+                                     ("failure", "TEXT"), ("blocked", "INTEGER NOT NULL DEFAULT 0")):
+                if name not in columns:
+                    db.execute(f"ALTER TABLE alert_deliveries ADD COLUMN {name} {definition}")
+            db.execute("CREATE INDEX IF NOT EXISTS alert_deliveries_ready ON alert_deliveries(sequence) WHERE blocked=0")
         from response_procedures import ResponseProcedures
         self.procedures = ResponseProcedures(activity, organization, site)
         from evidence_cases import EvidenceCases
@@ -231,9 +245,12 @@ class SiteMonitoring:
                 or not isinstance(models, list) or len(models) > 2 or any(not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9_.:+/-]{1,96}", model) for model in models)
                 or type(pending) is not int or not 0 <= pending <= 10000 or not number(fps, 0, 60) or (lag is not None and not number(lag, 0, 86400))):
             raise CameraError("Provide a valid CCTV worker status.")
+        profile = payload.get("profileDigest")
+        if profile is not None and (not isinstance(profile, str) or not re.fullmatch(r"[a-f0-9]{64}", profile)):
+            raise CameraError("Provide a valid camera stream and model profile digest.")
         now = time.time()
         result = {"state": state, "version": version, "models": models, "pending": pending, "fps": fps, "frameAgeSeconds": lag, "reportedAt": now,
-                  **({"placement": placement} if placement else {})}
+                  **({"placement": placement} if placement else {}), **({"profileDigest": profile} if profile else {})}
         with self.activity.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             policy = self.analytics_policy(db, camera, placement)
@@ -332,7 +349,34 @@ class SiteMonitoring:
 
     def pending(self):
         with self.activity.connect() as db:
-            return db.execute("SELECT sequence,payload FROM alert_deliveries ORDER BY sequence LIMIT 1").fetchone()
+            return db.execute("""SELECT sequence,payload FROM alert_deliveries
+                                 WHERE blocked=0 AND next_at<=? ORDER BY sequence LIMIT 1""", (time.time(),)).fetchone()
+
+    def delivery_failed(self, sequence, failure, retryable):
+        with self.activity.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT attempts FROM alert_deliveries WHERE sequence=?", (sequence,)).fetchone()
+            if row:
+                attempts = row[0] + 1
+                db.execute("UPDATE alert_deliveries SET attempts=?,next_at=?,failure=?,blocked=? WHERE sequence=?",
+                           (attempts, time.time() + min(300, 3 * 2 ** min(attempts - 1, 7)), failure,
+                            int(not retryable or attempts >= 10), sequence))
+
+    def retry_delivery(self, actor, sequence):
+        if not manages_site(actor):
+            raise PermissionError("A site supervisor is required to retry notification delivery.")
+        if type(sequence) is not int or not 1 <= sequence < 2**53:
+            raise CameraError("Choose a failed notification.")
+        with self.activity.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            changed = db.execute("""UPDATE alert_deliveries SET attempts=0,next_at=0,failure=NULL,blocked=0
+                                    WHERE sequence=? AND blocked=1""", (sequence,))
+            if changed.rowcount != 1:
+                raise CameraError("This notification is already queued or was delivered.")
+            from site_collaboration import iso_now
+            db.execute("INSERT INTO activity_audit(occurred_at,actor,action,resource,detail) VALUES(?,?,?,?,?)",
+                       (iso_now(), actor["subject"], "retry-notification", str(sequence), "Queued for retry"))
+        return {"queued": True}
 
     def delivered(self, sequence):
         with self.activity.connect() as db:
@@ -419,20 +463,31 @@ class SiteMonitoring:
                 "alerts": [{**json.loads(body), **({"owner": owner} if owner else {}), "status": "resolved" if closed else "acknowledged" if owner else "new"}
                            for body, owner, closed in rows], "siteEvents": [json.loads(row[0]) for row in events], "health": [json.loads(body) for _, body in health_rows]}
 
-    def dispatch(self, actor):
+    def dispatch(self, actor, cursor=None):
+        after = ()
+        if cursor is not None:
+            if not re.fullmatch(r"[01]:-?[0-9]{1,16}:[0-9]{1,16}", cursor):
+                raise CameraError("Choose a valid incident page.")
+            priority, stamp, sequence = map(int, cursor.split(":"))
+            after = (priority, stamp, sequence)
         with self.activity.connect() as db:
             db.execute("BEGIN")
             active = self.configuration.published(db)
             restriction = "" if actor["cameras"] == "*" else " AND a.camera IN (SELECT value FROM json_each(?))"
             params = () if not restriction else (encode(actor["cameras"]),)
-            rows = db.execute("""SELECT a.id,a.body,i.owner,r.state,p.definition,p.step FROM monitored_alerts a
+            scope = " WHERE a.member_of IS NULL AND coalesce(i.closed,0)=0" + restriction
+            count = db.execute("SELECT count(*) FROM monitored_alerts a LEFT JOIN shared_incidents i ON i.id=a.id" + scope,
+                               params).fetchone()[0]
+            order = "(json_extract(a.body,'$.severity')='High'),CAST(a.event_at*1000 AS INTEGER),a.seq"
+            rows = db.execute("""SELECT a.id,a.body,i.owner,r.state,p.definition,p.step,
+                (json_extract(a.body,'$.severity')='High') AS priority,CAST(a.event_at*1000 AS INTEGER) AS occurred,a.seq FROM monitored_alerts a
                 LEFT JOIN shared_incidents i ON i.id=a.id
                 LEFT JOIN recovery_jobs r ON r.incident=a.id
                 LEFT JOIN incident_procedures p ON p.incident=a.id
-                WHERE a.member_of IS NULL AND coalesce(i.closed,0)=0""" + restriction + """
-                ORDER BY json_extract(a.body,'$.severity')='High' DESC,a.event_at DESC LIMIT 30""", params).fetchall()
+                """ + scope + (" AND (" + order + ") < (?,?,?)" if after else "") +
+                " ORDER BY priority DESC,occurred DESC,a.seq DESC LIMIT 31", params + after).fetchall()
             alerts = []
-            for identifier, body, owner, recording, definition, step in rows:
+            for identifier, body, owner, recording, definition, step, *_ in rows[:30]:
                 alert = json.loads(body)
                 next_step = None
                 if step:
@@ -444,7 +499,8 @@ class SiteMonitoring:
                 alerts.append({**alert, "owner": owner, "status": "acknowledged" if owner else "new",
                                "recordingState": recording or ("available" if alert["observation"].get("recording") else "unverified"),
                                "nextAction": handoff[0] if handoff else next_step})
-        return {"publishedVersion": active[0] if active else 0, "alerts": alerts}
+        return {"publishedVersion": active[0] if active else 0, "alerts": alerts, "openCount": count,
+                "nextCursor": ":".join(map(str, rows[29][-3:])) if len(rows) > 30 else None}
 
     def incident_history(self, actor, identifier):
         from site_collaboration import SiteCollaboration
