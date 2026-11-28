@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:global-view": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
+    "build:global-view:production": "tsc && vite build --mode global-view-production --outDir dist-global-view-production",
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "tauri": "tauri"

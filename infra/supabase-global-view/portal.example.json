@@ -1,0 +1,21 @@
+{
+  "publicOrigin": "https://global-view.example",
+  "production": true,
+  "supabaseAuth": {
+    "origin": "https://PROJECT_REF.supabase.co",
+    "publishableKey": "sb_publishable_REPLACE_WITH_PROJECT_KEY",
+    "methods": ["email", "google", "microsoft"]
+  },
+  "organizations": {
+    "example-customer": {
+      "identityProvider": "supabase",
+      "directoryTenant": "example-customer-auth",
+      "sites": {
+        "office": {
+          "origin": "http://127.0.0.1:8778",
+          "proxyToken": "REPLACE_WITH_UNIQUE_64_CHARACTER_HEX_TOKEN"
+        }
+      }
+    }
+  }
+}

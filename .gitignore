@@ -51,6 +51,7 @@ transfer/pi_to_mac/*
 # Desktop app build/dependency outputs
 desktop-app/node_modules/
 desktop-app/dist/
+desktop-app/dist-global-view-production/
 desktop-app/playwright-report/
 desktop-app/test-results/
 desktop-app/.npm-cache/

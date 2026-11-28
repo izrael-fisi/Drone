@@ -6,15 +6,17 @@ Global View is the active product. It brings fixed detection appliances into the
 
 Use the existing map and imagery stack. The first appliance integrations should translate camera analytics, RF detections, or access-control events into a vendor-independent observation. A customer can then combine different modalities on the same site map without changing the boundary workflow. The UI takes inspiration from area-based monitoring in [Vantor Hub](https://vantor.com/product/platform/hub/) and drawing, layers, and inspection in [Palantir Foundry Map](https://www.palantir.com/docs/foundry/map/getting-started).
 
-## Run the preview
+## Develop locally
 
 ```bash
 cd desktop-app
 npm ci
-npm run dev
+npm run dev:global-view
 ```
 
-The app opens Global View at `/` and `/monitoring`. The earlier Proxigo sign-in and flight-research routes remain accessible under `/home` and their existing paths. The default campus and sensor events are synthetic. The preview stores boundaries, devices, groups, labels, and alert reviews in one local browser workspace.
+Open `http://127.0.0.1:1420` for Global View. The development server listens on loopback and opens the workspace without an account or MFA. It starts with a synthetic site and stores preview edits in local browser storage. Use fixture cameras and gateway state for development. The earlier flight-research workspace and its sign-in are available under `/home`.
+
+The [production release](../infra/supabase-global-view/README.md) has its own build, HTTPS origin, identity configuration, and gateway state. Use the local enterprise pilot when a change needs to be tested with sign-in and MFA.
 
 The map fills the workspace. The same left rail provides **Map**, **Site list**, **Cameras**, **Alerts**, **Devices**, **Boundaries**, **Posture**, **Map layers**, and **Search**. Choose **Map**, **Site list**, or **Cameras** to switch workspaces. Selecting a map marker opens its inspector over the map. On narrow displays, panels open at the bottom so the map stays available above them. Use **Search** or Ctrl/Command+K to jump to a device, boundary, or alert with the arrow keys and Enter.
 
@@ -284,15 +286,15 @@ Deploy the enterprise portal as the public HTTPS entry point. Operators enter th
 
 Each customer uses its own organization ID and sign-in configuration. Connect the customer's work identity provider for single sign-on, or configure an OpenID Connect provider that signs users in with their customer email addresses. Global View uses the verified directory subject for enrollment and checks the customer's site membership and camera scope separately from sign-in.
 
-For customer-facing deployments, use the [production sign-in configuration](../infra/auth0-global-view/README.md) for hosted email and password, Google, Microsoft, and customer SSO. Production mode verifies authenticator completion before issuing a portal session.
+For customer-facing deployments, follow the [Supabase production release](../infra/supabase-global-view/README.md) for email/password, Google, and Microsoft. The portal requires production mode with verified MFA and the production frontend build for non-loopback origins. The direct OIDC setup below is for loopback pilots.
 
 1. Register a confidential web client for each organization with its own exact issuer and callback. For Microsoft Entra, use the tenant-specific v2 issuer, `tid` as the tenant claim, and `client_secret_post` for token exchange. Register the redirect URI as Web. Use the verified `sub` claim as the stable subject in **Organization accounts** at each authorized site. Role and camera scope come from that site's account record. [Microsoft Entra OpenID Connect](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc)
 2. Start each gateway with `--site-access`, `--require-camera-session`, and a distinct `PROXIGO_IDENTITY_PROXY_TOKEN` created with `openssl rand -hex 32`. Match `organization.id`, `organization.directoryTenant`, and `siteId` to the portal configuration. Keep gateway listeners private. Use HTTPS for portal-to-gateway links across hosts. A loopback HTTP gateway can run on the portal host.
-3. Create the private portal JSON file. This example registers the callback `https://security.example/api/enterprise/callback/harbor-logistics`. Keep the client secret and site proxy tokens in the server-side config file with restricted permissions.
+3. Create the private portal JSON file. This example registers the callback `https://localhost:8775/api/enterprise/callback/harbor-logistics`. Keep the client secret and site proxy tokens in the server-side config file with restricted permissions.
 
 ```json
 {
-  "publicOrigin": "https://security.example",
+  "publicOrigin": "https://localhost:8775",
   "organizations": {
     "harbor-logistics": {
       "issuer": "https://login.microsoftonline.com/DIRECTORY_TENANT_ID/v2.0",
@@ -333,7 +335,7 @@ The Chrome fixture uses two local OIDC issuers and four gateways with an overlap
 
 The `proxigo` tenant configuration below serves Proxigo employees and internal testing.
 
-Register **Proxigo Global View Pilot** as a single-tenant **Web** app in the Proxigo Entra tenant. Register the portal's exact HTTPS callback ending in `/api/enterprise/callback/proxigo`. The local pilot uses `https://localhost:8775/api/enterprise/callback/proxigo` with a localhost HTTPS terminator. Register the deployed HTTPS origin separately when that environment is ready. Use only the `openid` and `profile` delegated scopes for the object-ID enrollment below. [Microsoft Web app registration](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri)
+Register **Proxigo Global View Pilot** as a single-tenant **Web** app in the Proxigo Entra tenant. The local pilot uses `https://localhost:8775/api/enterprise/callback/proxigo` with a localhost HTTPS terminator. Use only the `openid` and `profile` delegated scopes for the object-ID enrollment below. [Microsoft Web app registration](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri)
 
 Upload the portal's public RSA certificate under **Certificates & secrets → Certificates**. Store the matching PEM private key in the portal's private deployment configuration with owner-only permissions. Use absolute file paths and omit `clientSecret` for this certificate-based registration. [Microsoft certificate credentials](https://learn.microsoft.com/en-us/entra/identity-platform/certificate-credentials)
 

@@ -767,6 +767,8 @@
 .gv-enterprise-card h1 { font-size: 23px; font-weight: 650; }
 .gv-enterprise-card p { color: var(--gv-muted); }
 .gv-enterprise-card .gv-button { justify-self: start; white-space: normal; }
+.gv-enterprise-qr { background: white; padding: 6px; border-radius: 6px; }
+.gv-enterprise-setup-key { display: block; color: var(--gv-text); overflow-wrap: anywhere; }
 .gv-enterprise-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .gv-enterprise-controls select {
   max-width: min(36vw, 170px);

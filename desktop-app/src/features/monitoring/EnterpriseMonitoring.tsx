@@ -1,25 +1,32 @@
 import { useEffect, useState } from "react";
 import { GlobalView } from "./GlobalView";
 import { isSiteOperator, type SiteSession } from "./SiteOperator";
+import { EnterpriseAuthenticator } from "./EnterpriseAuthenticator";
 
 const API = "/api/enterprise";
 const SITE_ID = /^[a-z0-9][a-z0-9-]{0,79}$/;
-type SignInMethod = { id: string; label: string };
+type SignInMethod = { id: string; label: string; passwordForm?: boolean };
 
 function sameSites(left: SiteSession[], right: SiteSession[]) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export function EnterpriseMonitoring() {
+  if (new URLSearchParams(location.search).get("sign-in") === "mfa") return <EnterpriseAuthenticator />;
+  return <EnterpriseSession />;
+}
+
+function EnterpriseSession() {
   const [sites, setSites] = useState<SiteSession[]>();
   const [active, setActive] = useState<{ base: string; incidentId?: string; incidentReplay?: boolean }>();
   const [signedIn, setSignedIn] = useState(false);
   const [organization, setOrganization] = useState("");
+  const [passwordForm, setPasswordForm] = useState(false);
   const [loginOptions, setLoginOptions] = useState<{ organization: string; methods: SignInMethod[] }>();
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState(() => new URLSearchParams(location.search).get("sign-in") === "failed"
-    ? "Enterprise sign-in could not be completed. Check your organization ID and try again." : "");
+    ? "Enterprise sign-in could not be completed. Check your organization ID, credentials, and site access." : "");
 
   useEffect(() => {
     const lifetime = new AbortController();
@@ -125,15 +132,24 @@ export function EnterpriseMonitoring() {
       <h1 id="gv-enterprise-heading">Proxigo Global View</h1>
       {sites === undefined ? <p role="status">Checking your enterprise session…</p>
         : signedIn ? <><p>No sites are currently available to this account.</p>{signOutButton}</>
+          : passwordForm ? <form method="post" action={API + "/supabase/password"} className="gv-incident-form">
+            <p>Sign in to {organization}</p>
+            <input type="hidden" name="organization" value={organization} />
+            <label>Email<input type="email" name="email" autoComplete="username" required maxLength={254} /></label>
+            <label>Password<input type="password" name="password" autoComplete="current-password" required maxLength={512} /></label>
+            <button className="gv-button gv-primary" type="submit">Sign in</button>
+            <button className="gv-button" type="button" onClick={() => setPasswordForm(false)}>Back to sign-in options</button>
+          </form>
           : <form method="post" action={API + "/login"} className="gv-incident-form">
             <label>Organization ID<input name="organization" autoComplete="organization" autoCapitalize="none" required maxLength={80}
               value={organization} onChange={(event) => {
                 setLoginOptions(undefined);
                 setOrganization(event.target.value.toLowerCase());
               }} /></label>
-            {methods?.length ? methods.map(({ id, label }, index) =>
+            {methods?.length ? methods.map(({ id, label, passwordForm: needsPassword }, index) =>
               <button key={id} className={index === 0 ? "gv-button gv-primary" : "gv-button"}
-                type="submit" name="method" value={id}>{label}</button>) :
+                type={needsPassword ? "button" : "submit"} name="method" value={id}
+                onClick={needsPassword ? () => setPasswordForm(true) : undefined}>{label}</button>) :
               <button className="gv-button gv-primary" type="submit" disabled>Sign in with your organization</button>}
             {methods?.length === 0 && <p role="status">Sign-in options are unavailable. Check your organization ID.</p>}
           </form>}

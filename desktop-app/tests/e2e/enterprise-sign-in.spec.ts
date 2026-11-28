@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const gateway = fileURLToPath(new URL("../../../services/camera-gateway/gateway.py", import.meta.url));
 const portal = fileURLToPath(new URL("../../../services/camera-gateway/enterprise_portal.py", import.meta.url));
-const dist = fileURLToPath(new URL("../../dist", import.meta.url));
+const dist = process.env.PROXIGO_ENTERPRISE_FRONTEND ?? fileURLToPath(new URL("../../dist", import.meta.url));
 const footage = fileURLToPath(new URL("./fixtures/gate-recording.mp4", import.meta.url));
 const python = process.env.PROXIGO_ENTERPRISE_PYTHON;
 const mediaMtx = process.env.MEDIAMTX;
@@ -585,6 +585,214 @@ test("production email, Google, and Microsoft require fresh authenticator proof"
     await verifySiteAndSignOut();
   } finally {
     await context.close();
+    for (const server of servers) { server.closeAllConnections(); server.close(); }
+    await Promise.all(children.filter((child) => child.exitCode === null && child.signalCode === null).map(async (child) => {
+      const exited = once(child, "exit");
+      child.kill();
+      const timer = setTimeout(() => child.kill("SIGKILL"), 3000);
+      try { await exited; } finally { clearTimeout(timer); }
+    }));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Supabase sign-in keeps both customer camera rosters private until MFA", async ({ browser }) => {
+  test.skip(!python, "Set PROXIGO_ENTERPRISE_PYTHON and build the frontend.");
+  test.setTimeout(90_000);
+  const directory = await mkdtemp(join(tmpdir(), "proxigo-supabase-e2e-"));
+  const keyPath = join(directory, "tls.key"), certPath = join(directory, "tls.pem");
+  const children: ChildProcess[] = [];
+  const servers: ReturnType<typeof createServer>[] = [];
+  const contexts = await Promise.all([browser.newContext({ ignoreHTTPSErrors: true }), browser.newContext({ ignoreHTTPSErrors: true })]);
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const betaUser = randomUUID(), factor = randomUUID();
+  const users = { password: subject, google: subject, azure: betaUser };
+  const enrolled = new Set<string>();
+  const codes = new Map<string, { challenge: string; provider: "google" | "azure" }>();
+  const attempts = new Map<string, { user: string; session: string }>();
+  const exchanged: string[] = [];
+  let portalPort = "", issuer = "", forceAal1 = false;
+  try {
+    execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1",
+      "-keyout", keyPath, "-out", certPath, "-addext", "subjectAltName=IP:127.0.0.1", "-addext", "basicConstraints=critical,CA:TRUE"], { stdio: "ignore" });
+    const tls = { key: await readFile(keyPath), cert: await readFile(certPath) };
+    const frontend = createServer(tls, (req, res) => {
+      const upstream = relayRequest({ hostname: "127.0.0.1", port: portalPort, path: req.url, method: req.method, headers: req.headers }, (response) => {
+        res.writeHead(response.statusCode!, response.headers);
+        response.pipe(res);
+      });
+      upstream.on("error", () => res.writeHead(502).end());
+      req.pipe(upstream);
+    });
+    servers.push(frontend);
+    const origin = "https://127.0.0.1:" + await listen(frontend);
+    const publishableKey = "sb_publishable_fixture_only";
+
+    function tokenFor(user: string, session: string, aal: string) {
+      const now = Math.floor(Date.now() / 1000);
+      const input = encode({ alg: "ES256", kid: "supabase-fixture" }) + "." + encode({
+        iss: issuer, aud: "authenticated", role: "authenticated", sub: user, session_id: session,
+        is_anonymous: false, iat: now, exp: now + 600, aal,
+      });
+      const token = input + "." + sign("sha256", Buffer.from(input), { key: privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url");
+      attempts.set(token, { user, session });
+      return { access_token: token, refresh_token: "test-only-refresh" };
+    }
+
+    const auth = createServer(tls, async (req, res) => {
+      const url = new URL(req.url!, issuer);
+      const path = url.pathname.replace(/^\/auth\/v1/, "");
+      const json = (payload: object, status = 200) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(payload));
+      if (path === "/.well-known/jwks.json") return json({ keys: [{ ...publicKey.export({ format: "jwk" }), kid: "supabase-fixture", alg: "ES256" }] });
+      if (path === "/authorize") {
+        const provider = url.searchParams.get("provider"), challenge = url.searchParams.get("code_challenge");
+        const callback = new URL(url.searchParams.get("redirect_to")!);
+        if (!challenge || (provider !== "google" && provider !== "azure") || url.searchParams.get("code_challenge_method") !== "s256"
+          || callback.origin !== origin || (provider === "azure" && url.searchParams.get("scopes") !== "email")) return res.writeHead(400).end();
+        const code = randomUUID();
+        codes.set(code, { challenge, provider });
+        callback.searchParams.set("code", code);
+        return res.writeHead(200, { "Content-Type": "text/html" }).end(`<h1>${provider === "azure" ? "Microsoft" : "Google"} fixture</h1><a href="${callback.href}">Continue as operator</a>`);
+      }
+      if (req.headers.apikey !== publishableKey) return json({}, 401);
+      const payload = req.method === "POST" ? JSON.parse(await body(req)) : {};
+      if (path === "/token") {
+        const grant = url.searchParams.get("grant_type");
+        if (grant === "password" && payload.email === "operator@example.test" && payload.password === "fixture-password") {
+          exchanged.push(grant);
+          return json(tokenFor(subject, randomUUID(), "aal1"));
+        }
+        const code = codes.get(payload.auth_code);
+        if (grant === "pkce" && code && createHash("sha256").update(payload.code_verifier).digest("base64url") === code.challenge) {
+          codes.delete(payload.auth_code);
+          exchanged.push(code.provider);
+          return json(tokenFor(users[code.provider], randomUUID(), "aal1"));
+        }
+        return json({}, 400);
+      }
+      const session = attempts.get(req.headers.authorization?.replace("Bearer ", "") ?? "");
+      if (!session) return json({}, 401);
+      if (path === "/user") return json({ id: session.user, email_confirmed_at: "fixture-confirmation",
+        factors: enrolled.has(session.user) ? [{ id: factor, factor_type: "totp", status: "verified" }] : [] });
+      if (path === "/factors" && payload.factor_type === "totp") return json({ id: factor,
+        totp: { secret: "FIXTURESETUPKEY", qr_code: '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"></svg>' } });
+      if (path === `/factors/${factor}/challenge`) return json({ id: session.session });
+      if (path === `/factors/${factor}/verify` && payload.challenge_id === session.session && payload.code === "123456") {
+        enrolled.add(session.user);
+        return json(tokenFor(session.user, session.session, forceAal1 ? "aal1" : "aal2"));
+      }
+      return json({}, 400);
+    });
+    servers.push(auth);
+    const supabaseOrigin = "https://127.0.0.1:" + await listen(auth);
+    issuer = supabaseOrigin + "/auth/v1";
+
+    async function site(org: "alpha" | "beta", operator: string, cameraKey: string) {
+      const siteName = org === "alpha" ? "Alpha Office" : "Beta Office";
+      const state = join(directory, org), access = state + ".json";
+      const proxyToken = createHash("sha256").update(org).digest("hex");
+      const key = cameraKey.repeat(48), restricted = "f".repeat(48), source = "rtsp://127.0.0.1:9/camera";
+      await mkdir(state);
+      await writeFile(join(state, "cameras.json"), JSON.stringify({ camera: { key, url: source }, hidden: { key: restricted, url: source } }));
+      await writeFile(access, JSON.stringify({ site: siteName, siteId: "office", organization: {
+        id: org, name: org.toUpperCase(), directoryTenant: org,
+      }, operators: {
+        admin: { name: "Setup Admin", role: "org-admin", cameras: "*", tokenSha256: createHash("sha256").update(admin).digest("hex") },
+        [operator]: { name: "Operator", role: "operator", cameras: ["camera"] },
+      } }));
+      const process = spawn(python!, [gateway, "--port", "0", "--allow-source", "127.0.0.1/32", "--state-dir", state,
+        "--site-access", access, "--require-camera-session"], { env: { ...globalThis.process.env, PROXIGO_IDENTITY_PROXY_TOKEN: proxyToken } });
+      children.push(process);
+      const port = (await ready(process, /Camera gateway listening on .*:(\d+)/))[1];
+      const origin = "http://127.0.0.1:" + port;
+      const configuration = { sensors: [["camera", key, siteName + " camera"], ["hidden", restricted, siteName + " restricted camera"]]
+        .map(([id, stream, name]) => ({ id, name, modality: "vision", position: [-122.3, 37.78], cameraGatewayKind: "rtsp",
+          cameraFeedUrl: `${origin}/streams/${stream}/index.m3u8` })), boundaries: [] };
+      const save = await post(origin + "/api/site/configuration", admin, { operation: "save", draftRevision: 0, publishedVersion: 0, configuration });
+      expect(save.status, await save.clone().text()).toBe(200);
+      const publish = await post(origin + "/api/site/configuration", admin, { operation: "publish", publishedVersion: 0,
+        draftRevision: (await save.json()).draftRevision, message: "Supabase fixture" });
+      expect(publish.status).toBe(200);
+      return { origin, proxyToken, key, restricted, siteName };
+    }
+    const sites = { alpha: await site("alpha", subject, "a"), beta: await site("beta", betaUser, "b") };
+    const config = join(directory, "portal.json");
+    await writeFile(config, JSON.stringify({ publicOrigin: origin, production: true,
+      supabaseAuth: { origin: supabaseOrigin, publishableKey },
+      organizations: Object.fromEntries(Object.entries(sites).map(([org, office]) =>
+        [org, { identityProvider: "supabase", directoryTenant: org, sites: { office } }])),
+    }));
+    const portalProcess = spawn(python!, [portal, "--port", "0", "--frontend", dist, "--state", join(directory, "portal.sqlite3"), "--config", config],
+      { env: { ...process.env, SSL_CERT_FILE: certPath } });
+    children.push(portalProcess);
+    portalPort = (await ready(portalProcess, /Enterprise portal listening on .*:(\d+)/))[1];
+
+    const [alpha, beta] = await Promise.all(contexts.map((context) => context.newPage()));
+    await Promise.all([alpha, beta].map((page) => page.addInitScript(() => localStorage.setItem("proxigo.global-view.view.v1", "list"))));
+    const get = (page: Page, path: string) => page.request.get(origin + path);
+    async function signIn(page: Page, org: "alpha" | "beta", method: "email" | "Google" | "Microsoft") {
+      await page.goto(origin);
+      await page.getByLabel("Organization ID").fill(org);
+      await page.getByRole("button", { name: "Continue with " + method, exact: true }).click();
+      if (method === "email") {
+        await page.getByLabel("Email").fill("operator@example.test");
+        await page.getByLabel("Password").fill("fixture-password");
+        await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      } else {
+        await expect(page.getByRole("heading", { name: method + " fixture" })).toBeVisible();
+        await page.getByRole("link", { name: "Continue as operator" }).click();
+      }
+      expect((await get(page, api + "/session")).status()).toBe(401);
+    }
+    async function verifyMfa(page: Page, code = "123456") {
+      await page.getByLabel("Authenticator code").fill(code);
+      await page.getByRole("button", { name: "Verify", exact: true }).click();
+    }
+    async function access(page: Page, own: "alpha" | "beta", foreign: "alpha" | "beta") {
+      await expect(page.getByText(own.toUpperCase() + " · " + sites[own].siteName)).toBeVisible();
+      const result = await get(page, api + "/session");
+      expect(result.status()).toBe(200);
+      const session = await result.json();
+      expect(session.organizationId).toBe(own);
+      expect(session.sites.map((site: { site: string }) => site.site)).toEqual([sites[own].siteName]);
+      await choose(page, "Cameras").click();
+      const cameras = page.getByRole("region", { name: "Cameras", exact: true });
+      await expect(cameras.getByText(sites[own].siteName + " camera", { exact: true }).first()).toBeVisible();
+      await expect(cameras.getByText(/restricted camera/)).toHaveCount(0);
+      await expect(cameras.getByText(new RegExp(sites[foreign].siteName))).toHaveCount(0);
+      expect((await get(page, route(foreign, "office") + "/api/site/configuration")).status()).toBe(404);
+      expect((await get(page, route(foreign, "office") + "/streams/" + sites[foreign].key + "/index.m3u8")).status()).toBe(404);
+      expect((await get(page, route(own, "office") + "/streams/" + sites[own].restricted + "/index.m3u8")).status()).toBe(403);
+    }
+
+    await signIn(alpha, "beta", "email");
+    await expect(alpha.getByRole("alert")).toContainText("sign-in could not be completed");
+    await signIn(alpha, "alpha", "email");
+    await alpha.getByRole("button", { name: "Set up authenticator" }).click();
+    await expect(alpha.getByRole("img", { name: "Authenticator setup QR code" })).toBeVisible();
+    await verifyMfa(alpha, "000000");
+    await expect(alpha.getByRole("alert")).toContainText("Verification failed");
+    expect((await get(alpha, api + "/session")).status()).toBe(401);
+    await verifyMfa(alpha);
+    await access(alpha, "alpha", "beta");
+    await alpha.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect.poll(async () => (await get(alpha, api + "/session")).status()).toBe(401);
+    await signIn(alpha, "alpha", "Google");
+    await expect(alpha.getByRole("heading", { name: "Verify your sign-in" })).toBeVisible();
+    forceAal1 = true;
+    await verifyMfa(alpha);
+    await expect(alpha.getByRole("alert")).toContainText("Verification failed");
+    expect((await get(alpha, api + "/session")).status()).toBe(401);
+    forceAal1 = false;
+    await verifyMfa(alpha);
+    await access(alpha, "alpha", "beta");
+    await signIn(beta, "beta", "Microsoft");
+    await beta.getByRole("button", { name: "Set up authenticator" }).click();
+    await verifyMfa(beta);
+    await access(beta, "beta", "alpha");
+    expect(exchanged).toEqual(["password", "password", "google", "azure"]);
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
     for (const server of servers) { server.closeAllConnections(); server.close(); }
     await Promise.all(children.filter((child) => child.exitCode === null && child.signalCode === null).map(async (child) => {
       const exited = once(child, "exit");

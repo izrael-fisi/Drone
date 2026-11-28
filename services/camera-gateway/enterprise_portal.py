@@ -28,12 +28,15 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 import jwt
 
 from gateway import CLIP, EVENTS, GRID_STREAM, RECORDING, STREAM, VIDEO_STATUS
+from supabase_login import SOCIAL_PROVIDERS, SupabaseAuth, user_id
 
 PREFIX = "/api/enterprise"
 SESSION_COOKIE = "__Host-proxigo-session"
 FLOW_COOKIE = "__Host-proxigo-login"
+SUPABASE_COOKIE = "__Host-proxigo-supabase"
 SESSION_AGE = 8 * 60 * 60
 FLOW_AGE = 300
+MFA_AGE = 600
 MFA_LEEWAY = 30
 MFA_CLAIM = "https://proxigo.ai/claims/mfa_at"
 CONNECTION_CLAIM = "https://proxigo.ai/claims/connection"
@@ -53,6 +56,8 @@ SITE_WRITE = {"incident", "maintenance", "configuration", "configuration/preview
               "automatic-triage", "automatic-frame-review", "sensor-fusion", "retry-notification"}
 ASSET = re.compile(r"/assets/[a-zA-Z0-9_.-]+")
 MAX_JSON = 1_048_576
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+ENTERPRISE_HTML = b'<html data-enterprise="true" '
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -69,7 +74,7 @@ def digest(value):
 
 def endpoint(value, *, origin=False, gateway=False):
     parsed = urlsplit(value)
-    loopback = parsed.hostname in ("127.0.0.1", "localhost", "::1")
+    loopback = parsed.hostname in LOOPBACK_HOSTS
     if (parsed.scheme != "https" and not (gateway and loopback and parsed.scheme == "http")
             or not parsed.hostname or parsed.username is not None or parsed.fragment or parsed.query
             or parsed.port == 0 or origin and parsed.path not in ("", "/")
@@ -130,9 +135,12 @@ class Organization:
     subject_claim: str
     certificate: ClientCertificate | None
     connections: dict[str, str]
+    supabase: SupabaseAuth | None
 
     @property
     def binding(self):
+        if self.supabase:
+            return digest(json.dumps(["supabase", self.issuer, self.tenant, sorted(self.supabase.methods)]))
         return digest(json.dumps([self.issuer, self.client_id, self.tenant, self.tenant_claim,
                                   self.subject_claim, self.connections], sort_keys=True))
 
@@ -140,20 +148,36 @@ class Organization:
 class Portal:
     def __init__(self, config, frontend, state):
         self.origin = endpoint(config["publicOrigin"], origin=True)
-        self.frontend = frontend.resolve(strict=True)
-        self.index = (self.frontend / "index.html").read_bytes().replace(b"<html ", b'<html data-enterprise="true" ', 1)
-        self.state = state
-        self.organizations = {}
-        self.invitation_orgs = {}
         production = config.get("production", False)
         if type(production) is not bool:
             raise ValueError("Set production to true or false.")
+        public_origin = urlsplit(self.origin).hostname not in LOOPBACK_HOSTS
+        if public_origin and not production:
+            raise ValueError("Non-loopback portal origins require production mode with verified MFA.")
+        self.frontend = frontend.resolve(strict=True)
+        self.index = (self.frontend / "index.html").read_bytes()
+        if ENTERPRISE_HTML not in self.index:
+            if public_origin:
+                raise ValueError("Non-loopback portals require the Global View production frontend build.")
+            self.index = self.index.replace(b"<html ", ENTERPRISE_HTML, 1)
+        self.state = state
+        self.organizations = {}
+        self.invitation_orgs = {}
+        supabase = None
+        if settings := config.get("supabaseAuth"):
+            supabase = SupabaseAuth(endpoint(settings["origin"], origin=True), settings["publishableKey"],
+                                    settings.get("methods", ["email", "google", "microsoft"]), read_json)
         issuer_tenants, gateways, secrets = {}, set(), set()
         for org_id, raw in config["organizations"].items():
             if not re.fullmatch(SLUG, org_id):
                 raise ValueError("Use stable lowercase organization IDs.")
-            issuer = endpoint(raw["issuer"])
-            tenant, client = (raw[key] for key in ("directoryTenant", "clientId"))
+            provider = raw.get("identityProvider", "oidc")
+            if provider not in ("oidc", "supabase") or provider == "supabase" and not supabase:
+                raise ValueError("Configure the selected organization identity provider.")
+            hosted = supabase if provider == "supabase" else None
+            issuer = hosted.issuer if hosted else endpoint(raw["issuer"])
+            tenant = raw["directoryTenant"]
+            client = "authenticated" if hosted else raw["clientId"]
             secret = raw.get("clientSecret")
             tenant_claim = raw.get("tenantClaim")
             token_auth = raw.get("tokenEndpointAuthMethod", "client_secret_basic")
@@ -164,7 +188,10 @@ class Portal:
                            or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", name) for method, name in connections.items())
                     or len(set(connections.values())) != len(connections)):
                 raise ValueError("Configure a distinct Auth0 connection name for each enabled sign-in method.")
-            if production and not connections:
+            if hosted and (connections or tenant_claim is not None or subject_claim != "sub" or secret is not None
+                           or "tokenEndpointAuthMethod" in raw or "clientId" in raw or "issuer" in raw):
+                raise ValueError("Supabase uses the project issuer and the user's ID from Supabase Auth.")
+            if production and not (connections or hosted):
                 raise ValueError("Production organizations require hosted sign-in with verified MFA.")
             if connections:
                 if (tenant_claim not in (None, "org_id") or subject_claim != "sub"
@@ -180,17 +207,23 @@ class Portal:
                     or subject_claim == "oid" and (tenant_claim != "tid" or not GUID.fullmatch(tenant))):
                 raise ValueError("Configure a distinct organization issuer, client, and directory tenant.")
             certificate = None
-            if token_auth == "private_key_jwt":
+            if not hosted and token_auth == "private_key_jwt":
                 if secret is not None:
                     raise ValueError("Configure only one OIDC client credential.")
                 certificate = ClientCertificate.load(raw["clientCertificate"], raw["clientPrivateKey"])
-            elif not isinstance(secret, str) or not secret:
+            elif not hosted and (not isinstance(secret, str) or not secret):
                 raise ValueError("Configure the OIDC client secret.")
             issuer_key = issuer.rstrip("/")
             tenants = issuer_tenants.setdefault(issuer_key, set())
-            if tenants and (not connections or None in tenants or tenant in tenants):
-                raise ValueError("Only separately bound Auth0 organizations may share an issuer.")
-            tenants.add(tenant if connections else None)
+            if not hosted:
+                if (supabase and issuer_key == supabase.issuer
+                        or tenants and (not connections or None in tenants or tenant in tenants)):
+                    raise ValueError("Only separately bound Auth0 organizations may share an OIDC issuer.")
+                tenants.add(tenant if connections else None)
+            elif tenant in tenants:
+                raise ValueError("Each Supabase organization requires a distinct gateway directory binding.")
+            else:
+                tenants.add(tenant)
             sites = {}
             if not isinstance(raw["sites"], dict) or not 1 <= len(raw["sites"]) <= 64:
                 raise ValueError("Configure between one and 64 sites per organization.")
@@ -202,7 +235,7 @@ class Portal:
                 secrets.add(token)
                 sites[site_id] = Site(address, token)
             self.organizations[org_id] = Organization(issuer, client, secret, tenant, tenant_claim, token_auth, sites,
-                                                      subject_claim, certificate, connections)
+                                                      subject_claim, certificate, connections, hosted)
         if not self.organizations:
             raise ValueError("Configure at least one organization.")
         self.state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -215,6 +248,10 @@ class Portal:
                 );
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY, org TEXT NOT NULL, subject TEXT NOT NULL, expires INTEGER NOT NULL, auth_binding TEXT
+                );
+                CREATE TABLE IF NOT EXISTS supabase_flows (
+                    id TEXT PRIMARY KEY, org TEXT NOT NULL, auth_binding TEXT NOT NULL, expires INTEGER NOT NULL,
+                    verifier TEXT, token TEXT, subject TEXT, provider_session TEXT, factor TEXT, attempts INTEGER NOT NULL DEFAULT 0
                 );
             """)
             db.execute("BEGIN IMMEDIATE")
@@ -233,6 +270,9 @@ class Portal:
         org = self.organizations.get(org_id)
         if not org:
             raise ValueError("Unknown organization.")
+        if org.supabase:
+            return [{"id": method, "label": label, **({"passwordForm": True} if method == "email" else {})}
+                    for method, label in SIGN_IN_LABELS.items() if method in org.supabase.methods]
         if not org.connections:
             return [{"id": "", "label": SIGN_IN_LABELS["sso"]}]
         return [{"id": method, "label": label} for method, label in SIGN_IN_LABELS.items() if method in org.connections]
@@ -275,6 +315,91 @@ class Portal:
         if invitation:
             query["invitation"] = invitation
         return authorize + "?" + urlencode(query), browser
+
+    def start_supabase_social(self, org_id, method):
+        org = self.organizations[org_id]
+        if not org.supabase or method not in org.supabase.methods or method not in SOCIAL_PROVIDERS:
+            raise ValueError("Unknown social sign-in method.")
+        browser, verifier = token_urlsafe(32), token_urlsafe(32)
+        challenge = base64.urlsafe_b64encode(sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        callback = f"{self.origin}{PREFIX}/supabase/callback/{org_id}"
+        self.save_supabase_flow(org_id, browser, int(time.time()) + FLOW_AGE, verifier=verifier)
+        return org.supabase.authorize(method, callback, challenge), browser
+
+    def save_supabase_flow(self, org_id, browser, expires, *, verifier=None, token=None, claims=None):
+        with closing(self.connect()) as db, db:
+            db.execute("DELETE FROM supabase_flows WHERE expires<=?", (time.time(),))
+            db.execute("""INSERT INTO supabase_flows(id,org,auth_binding,expires,verifier,token,subject,provider_session)
+                          VALUES(?,?,?,?,?,?,?,?)""",
+                       (digest(browser), org_id, self.organizations[org_id].binding, expires, verifier, token,
+                        claims and claims["sub"], claims and claims["session_id"]))
+
+    def start_supabase_mfa(self, org_id, payload):
+        supabase = self.organizations[org_id].supabase
+        token = payload["access_token"]
+        claims = supabase.claims(token)
+        if claims["aal"] != "aal1" or not self.member_sites(org_id, claims["sub"]):
+            raise ValueError("This account has no site membership for this sign-in.")
+        supabase.factors(token, claims["sub"])
+        browser = token_urlsafe(32)
+        self.save_supabase_flow(org_id, browser, min(claims["exp"], int(time.time()) + MFA_AGE), token=token, claims=claims)
+        return browser
+
+    def finish_supabase_social(self, org_id, browser, query):
+        org = self.organizations[org_id]
+        code = one(query, "code")
+        if not org.supabase or not browser or not code or "error" in query:
+            raise ValueError("Supabase did not authorize this sign-in.")
+        with closing(self.connect()) as db, db:
+            row = db.execute("""DELETE FROM supabase_flows WHERE id=? AND org=? AND auth_binding=? AND expires>?
+                                 AND verifier IS NOT NULL RETURNING verifier""",
+                             (digest(browser), org_id, org.binding, time.time())).fetchone()
+        if not row:
+            raise ValueError("Sign-in has expired.")
+        return self.start_supabase_mfa(org_id, org.supabase.request("/token?grant_type=pkce", {
+            "auth_code": code, "code_verifier": row[0],
+        }))
+
+    def pending_mfa(self, browser, *, verify=False):
+        order = "UPDATE supabase_flows SET attempts=attempts+1" if verify else (
+            "SELECT org,auth_binding,token,subject,provider_session,factor FROM supabase_flows")
+        returning = " AND attempts<5 RETURNING org,auth_binding,token,subject,provider_session,factor" if verify else ""
+        with closing(self.connect()) as db, db:
+            row = db.execute(order + " WHERE id=? AND expires>? AND token IS NOT NULL" + returning,
+                             (digest(browser), time.time())).fetchone()
+        if not row or (org := self.organizations.get(row[0])) is None or not org.supabase or row[1] != org.binding:
+            raise ValueError("Sign-in attempt expired. Start sign-in again.")
+        return row[0], org.supabase, *row[2:]
+
+    def enroll_supabase_factor(self, browser):
+        _, supabase, token, subject, _, factor = self.pending_mfa(browser)
+        if factor or supabase.factors(token, subject):
+            raise ValueError("An authenticator is already available.")
+        enrollment = supabase.enroll(token)
+        with closing(self.connect()) as db, db:
+            row = db.execute("""UPDATE supabase_flows SET factor=? WHERE id=? AND expires>? AND factor IS NULL RETURNING id""",
+                             (enrollment["id"], digest(browser), time.time())).fetchone()
+        if not row:
+            raise ValueError("Sign-in attempt expired. Start sign-in again.")
+        return enrollment
+
+    def verify_supabase_factor(self, browser, factor, code, old):
+        org_id, supabase, token, subject, provider_session, enrollment = self.pending_mfa(browser, verify=True)
+        if not re.fullmatch(r"[0-9]{6}", code) or (user_id(factor) != enrollment and not any(
+                existing["id"] == factor for existing in supabase.factors(token, subject))):
+            raise ValueError("Enter the six-digit code from your authenticator.")
+        claims = supabase.verify(token, factor, code)
+        if claims["aal"] != "aal2" or claims["sub"] != subject or claims["session_id"] != provider_session:
+            raise ValueError("Supabase did not verify MFA for this sign-in.")
+        if not self.member_sites(org_id, subject) or not self.cancel_supabase_flow(browser, active=True):
+            raise ValueError("This sign-in has expired or site access has changed.")
+        return self.issue_session(org_id, subject, old)
+
+    def cancel_supabase_flow(self, browser, *, active=False):
+        if browser:
+            with closing(self.connect()) as db, db:
+                return db.execute("DELETE FROM supabase_flows WHERE id=? AND (NOT ? OR expires>?) RETURNING id",
+                                  (digest(browser), active, time.time())).fetchone()
 
     def finish_login(self, org_id, state, browser, query):
         now = int(time.time())
@@ -439,6 +564,23 @@ class Handler(BaseHTTPRequestHandler):
     def get(self):
         portal = self.server.portal
         target = urlsplit(self.path)
+        if callback := re.fullmatch(PREFIX + rf"/supabase/callback/({SLUG})", target.path):
+            try:
+                query = parse_qs(target.query, max_num_fields=10)
+                browser = portal.finish_supabase_social(callback[1], self.read_cookie(SUPABASE_COOKIE), query)
+                self.redirect("/?sign-in=mfa", cookie(SUPABASE_COOKIE, browser, MFA_AGE))
+            except (OSError, ValueError, KeyError, TypeError, jwt.PyJWTError):
+                self.redirect("/?sign-in=failed", cookie(SUPABASE_COOKIE))
+            return
+        if target.path == PREFIX + "/supabase/mfa":
+            try:
+                _, supabase, token, subject, _, enrollment = portal.pending_mfa(self.read_cookie(SUPABASE_COOKIE))
+                if enrollment:
+                    raise ValueError("Restart interrupted enrollment.")
+                self.reply(200, json.dumps({"factors": supabase.factors(token, subject)}).encode())
+            except (OSError, ValueError, KeyError, TypeError):
+                self.error(401, "Sign-in attempt expired. Start sign-in again.")
+            return
         callback = re.fullmatch(PREFIX + rf"/callback/({SLUG})", target.path)
         if callback:
             try:
@@ -499,13 +641,49 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == PREFIX + "/login":
             try:
                 query = parse_qs(self.body(4096, "application/x-www-form-urlencoded").decode(), max_num_fields=2)
-                url, browser = portal.start_login(one(query, "organization"), one(query, "method"))
-                self.redirect(url, cookie(FLOW_COOKIE, browser, FLOW_AGE))
+                org_id, method = one(query, "organization"), one(query, "method")
+                portal.cancel_supabase_flow(self.read_cookie(SUPABASE_COOKIE))
+                if portal.organizations[org_id].supabase:
+                    url, browser = portal.start_supabase_social(org_id, method)
+                    self.redirect(url, cookie(FLOW_COOKIE), cookie(SUPABASE_COOKIE, browser, FLOW_AGE))
+                else:
+                    url, browser = portal.start_login(org_id, method)
+                    self.redirect(url, cookie(FLOW_COOKIE, browser, FLOW_AGE), cookie(SUPABASE_COOKIE))
             except (OSError, ValueError, KeyError, TypeError):
                 self.redirect("/?sign-in=failed", cookie(FLOW_COOKIE))
+        elif self.path == PREFIX + "/supabase/password":
+            try:
+                query = parse_qs(self.body(16_384, "application/x-www-form-urlencoded").decode(), max_num_fields=3)
+                org_id, email, password = (one(query, key) for key in ("organization", "email", "password"))
+                supabase = portal.organizations[org_id].supabase
+                if not supabase or "email" not in supabase.methods or not 1 <= len(email) <= 254 or not 1 <= len(password) <= 512:
+                    raise ValueError("Enter your email and password.")
+                portal.cancel_supabase_flow(self.read_cookie(SUPABASE_COOKIE))
+                tokens = supabase.request("/token?grant_type=password", {"email": email, "password": password})
+                browser = portal.start_supabase_mfa(org_id, tokens)
+                self.redirect("/?sign-in=mfa", cookie(FLOW_COOKIE), cookie(SUPABASE_COOKIE, browser, MFA_AGE))
+            except (OSError, ValueError, KeyError, TypeError, jwt.PyJWTError):
+                self.redirect("/?sign-in=failed", cookie(SUPABASE_COOKIE))
+        elif self.path == PREFIX + "/supabase/mfa/enroll":
+            try:
+                enrollment = portal.enroll_supabase_factor(self.read_cookie(SUPABASE_COOKIE))
+                self.reply(200, json.dumps(enrollment).encode())
+            except (OSError, ValueError, KeyError, TypeError):
+                self.error(400, "Authenticator setup could not be started. Start sign-in again.")
+        elif self.path == PREFIX + "/supabase/mfa/verify":
+            try:
+                data = json.loads(self.body(1024, "application/json"))
+                session = portal.verify_supabase_factor(self.read_cookie(SUPABASE_COOKIE), data["factor"], data["code"],
+                                                        self.read_cookie(SESSION_COOKIE))
+                self.reply(204, headers=[("Set-Cookie", cookie(SUPABASE_COOKIE)),
+                                         ("Set-Cookie", cookie(SESSION_COOKIE, session, SESSION_AGE))])
+            except (OSError, ValueError, KeyError, TypeError, jwt.PyJWTError):
+                self.error(400, "Verification failed. Check the code or start sign-in again.")
         elif self.path == PREFIX + "/logout":
             portal.revoke(self.read_cookie(SESSION_COOKIE))
-            self.reply(204, headers=[("Set-Cookie", cookie(SESSION_COOKIE)), ("Set-Cookie", cookie(FLOW_COOKIE))])
+            portal.cancel_supabase_flow(self.read_cookie(SUPABASE_COOKIE))
+            self.reply(204, headers=[("Set-Cookie", cookie(SESSION_COOKIE)), ("Set-Cookie", cookie(FLOW_COOKIE)),
+                                     ("Set-Cookie", cookie(SUPABASE_COOKIE))])
         elif match := SITE_ROUTE.fullmatch(self.path):
             self.relay(match)
         else:
@@ -569,7 +747,10 @@ def main():
     parser.add_argument("--port", type=int, default=8775)
     args = parser.parse_args()
     os.umask(0o077)
-    portal = Portal(json.loads(args.config.read_text()), args.frontend, args.state)
+    config = json.loads(args.config.read_text())
+    if config.get("production") is not True and args.host not in LOOPBACK_HOSTS:
+        parser.error("A development portal must listen on a loopback address.")
+    portal = Portal(config, args.frontend, args.state)
     with ThreadingHTTPServer((args.host, args.port), Handler) as server:
         server.portal = portal
         print(f"Enterprise portal listening on {server.server_name}:{server.server_port}", flush=True)
